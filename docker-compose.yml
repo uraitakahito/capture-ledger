@@ -119,7 +119,11 @@ services:
       - openfga-db
 
   seaweedfs:
-    image: docker.io/chrislusf/seaweedfs:4.23
+    # 版は .upstream/seaweedfs (submodule) の docker-compose.yml と揃える ——
+    # check:seaweedfs-pin が比べて、ずれたら落とす。上げるときは先に submodule 側の
+    # scripts/verify.sh を回す。4.27 未満に戻さないこと: 空にしたバケットが再起動で
+    # 書けなくなる (上流 #9563)。
+    image: docker.io/chrislusf/seaweedfs:4.46
     # entrypoint は bucket の作成も担う (背後で再試行ループを回す) —— 順序を
     # 気にしてやる必要のある、使い捨ての init コンテナは別に無い。
     entrypoint: ["/etc/seaweedfs/entrypoint.sh"]
