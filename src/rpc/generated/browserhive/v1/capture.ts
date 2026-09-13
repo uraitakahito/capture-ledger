@@ -126,8 +126,9 @@ export enum ErrorType {
   ERROR_TYPE_SIGNING = 4,
   ERROR_TYPE_INTERNAL = 5,
   /**
-   * ERROR_TYPE_ARTIFACT_SINK - 成果物を受け口へ押し出せなかった。**この経路には待ち場所が無い**ので、
-   * 取り込みは丸ごと失われている。受け口を直して投げ直す。
+   * ERROR_TYPE_ARTIFACT_SINK - 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け口) へ置けなかった。
+   * 書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。
+   * 書き込み先を直して投げ直す。message は書き込み先から始まる。
    */
   ERROR_TYPE_ARTIFACT_SINK = 6,
   /** ERROR_TYPE_CANCELLED - 呼ぶ側が途中で切った(deadline / cancel)。取り込みは打ち切られ、成果物は残らない。 */
@@ -567,11 +568,28 @@ export interface CaptureRequest {
 export interface GetServerStatusRequest {
 }
 
-/** Capture の応答。結果そのもの。 */
+/** Capture の応答。結果そのものと、それを記録できたか。 */
 export interface CaptureResponse {
   /** 成果物と manifest(`.result.json`)の鍵。ここで初めて呼ぶ側に渡る。 */
   taskId: string;
-  report?: CaptureResultReport | undefined;
+  report?:
+    | CaptureResultReport
+    | undefined;
+  /**
+   * report を `.result.json` として書けたか。書けなかったなら、この応答が唯一の記録。
+   * report の中には無い —— 自分の書き込みの結末を、書き込む本文には書けないため。
+   */
+  manifest?: ManifestOutcome | undefined;
+}
+
+/** 結果の記録 (manifest) の結末。 */
+export interface ManifestOutcome {
+  /** 書けた場所 (`s3://…`、または受け口が返した場所)。 */
+  location?:
+    | string
+    | undefined;
+  /** 書けなかった理由。書き込み先から始まる。 */
+  error?: string | undefined;
 }
 
 /** 成果物の置き場所 (s3://…)。取得しなかった形式は空のまま。 */
@@ -636,7 +654,15 @@ export interface CaptureErrorDetails {
   message: string;
   httpStatusCode?: number | undefined;
   httpStatusText?: string | undefined;
-  timeoutMs?: number | undefined;
+  timeoutMs?:
+    | number
+    | undefined;
+  /**
+   * 時間切れか cancel で終わったとき、取り込みがどの段階に居たか。
+   * check-address / start-recording / load-pages / write-formats / package-wacz / upload-wacz。
+   * message の末尾にも、段階の中の細部と経過とともに同じことが書いてある。
+   */
+  step?: string | undefined;
 }
 
 export interface CaptureResultReport {
@@ -2768,7 +2794,7 @@ export const GetServerStatusRequest: MessageFns<GetServerStatusRequest> = {
 };
 
 function createBaseCaptureResponse(): CaptureResponse {
-  return { taskId: "", report: undefined };
+  return { taskId: "", report: undefined, manifest: undefined };
 }
 
 export const CaptureResponse: MessageFns<CaptureResponse> = {
@@ -2778,6 +2804,9 @@ export const CaptureResponse: MessageFns<CaptureResponse> = {
     }
     if (message.report !== undefined) {
       CaptureResultReport.encode(message.report, writer.uint32(18).fork()).join();
+    }
+    if (message.manifest !== undefined) {
+      ManifestOutcome.encode(message.manifest, writer.uint32(26).fork()).join();
     }
     return writer;
   },
@@ -2811,6 +2840,14 @@ export const CaptureResponse: MessageFns<CaptureResponse> = {
             message.report = CaptureResultReport.decode(reader, reader.uint32());
             continue;
           }
+          case 3: {
+            if (tag !== 26) {
+              break;
+            }
+
+            message.manifest = ManifestOutcome.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -2831,6 +2868,7 @@ export const CaptureResponse: MessageFns<CaptureResponse> = {
         ? globalThis.String(object.task_id)
         : "",
       report: isSet(object.report) ? CaptureResultReport.fromJSON(object.report) : undefined,
+      manifest: isSet(object.manifest) ? ManifestOutcome.fromJSON(object.manifest) : undefined,
     };
   },
 
@@ -2841,6 +2879,9 @@ export const CaptureResponse: MessageFns<CaptureResponse> = {
     }
     if (message.report !== undefined) {
       obj.report = CaptureResultReport.toJSON(message.report);
+    }
+    if (message.manifest !== undefined) {
+      obj.manifest = ManifestOutcome.toJSON(message.manifest);
     }
     return obj;
   },
@@ -2854,6 +2895,94 @@ export const CaptureResponse: MessageFns<CaptureResponse> = {
     message.report = (object.report !== undefined && object.report !== null)
       ? CaptureResultReport.fromPartial(object.report)
       : undefined;
+    message.manifest = (object.manifest !== undefined && object.manifest !== null)
+      ? ManifestOutcome.fromPartial(object.manifest)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseManifestOutcome(): ManifestOutcome {
+  return { location: undefined, error: undefined };
+}
+
+export const ManifestOutcome: MessageFns<ManifestOutcome> = {
+  encode(message: ManifestOutcome, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.location !== undefined) {
+      writer.uint32(10).string(message.location);
+    }
+    if (message.error !== undefined) {
+      writer.uint32(18).string(message.error);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ManifestOutcome {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseManifestOutcome();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.location = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.error = reader.string();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): ManifestOutcome {
+    return {
+      location: isSet(object.location) ? globalThis.String(object.location) : undefined,
+      error: isSet(object.error) ? globalThis.String(object.error) : undefined,
+    };
+  },
+
+  toJSON(message: ManifestOutcome): unknown {
+    const obj: any = {};
+    if (message.location !== undefined) {
+      obj.location = message.location;
+    }
+    if (message.error !== undefined) {
+      obj.error = message.error;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ManifestOutcome>, I>>(base?: I): ManifestOutcome {
+    return ManifestOutcome.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ManifestOutcome>, I>>(object: I): ManifestOutcome {
+    const message = createBaseManifestOutcome();
+    message.location = object.location ?? undefined;
+    message.error = object.error ?? undefined;
     return message;
   },
 };
@@ -3596,7 +3725,14 @@ export const WaczCompleteness: MessageFns<WaczCompleteness> = {
 };
 
 function createBaseCaptureErrorDetails(): CaptureErrorDetails {
-  return { type: 0, message: "", httpStatusCode: undefined, httpStatusText: undefined, timeoutMs: undefined };
+  return {
+    type: 0,
+    message: "",
+    httpStatusCode: undefined,
+    httpStatusText: undefined,
+    timeoutMs: undefined,
+    step: undefined,
+  };
 }
 
 export const CaptureErrorDetails: MessageFns<CaptureErrorDetails> = {
@@ -3615,6 +3751,9 @@ export const CaptureErrorDetails: MessageFns<CaptureErrorDetails> = {
     }
     if (message.timeoutMs !== undefined) {
       writer.uint32(40).int32(message.timeoutMs);
+    }
+    if (message.step !== undefined) {
+      writer.uint32(50).string(message.step);
     }
     return writer;
   },
@@ -3672,6 +3811,14 @@ export const CaptureErrorDetails: MessageFns<CaptureErrorDetails> = {
             message.timeoutMs = reader.int32();
             continue;
           }
+          case 6: {
+            if (tag !== 50) {
+              break;
+            }
+
+            message.step = reader.string();
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -3703,6 +3850,7 @@ export const CaptureErrorDetails: MessageFns<CaptureErrorDetails> = {
         : isSet(object.timeout_ms)
         ? globalThis.Number(object.timeout_ms)
         : undefined,
+      step: isSet(object.step) ? globalThis.String(object.step) : undefined,
     };
   },
 
@@ -3723,6 +3871,9 @@ export const CaptureErrorDetails: MessageFns<CaptureErrorDetails> = {
     if (message.timeoutMs !== undefined) {
       obj.timeoutMs = Math.round(message.timeoutMs);
     }
+    if (message.step !== undefined) {
+      obj.step = message.step;
+    }
     return obj;
   },
 
@@ -3736,6 +3887,7 @@ export const CaptureErrorDetails: MessageFns<CaptureErrorDetails> = {
     message.httpStatusCode = object.httpStatusCode ?? undefined;
     message.httpStatusText = object.httpStatusText ?? undefined;
     message.timeoutMs = object.timeoutMs ?? undefined;
+    message.step = object.step ?? undefined;
     return message;
   },
 };
@@ -4562,7 +4714,10 @@ export const CaptureServiceService = {
    *   走行中(1 台 1 件)      -> RESOURCE_EXHAUSTED  呼ぶ側は別の台へ、無ければ少し待って再度
    *   browser に繋がらない   -> UNAVAILABLE
    *
-   * client が途中で切っても取り込みは最後まで走る(manifest は書かれる)。
+   * client が途中で切ったら (cancel / deadline)、取り込みはページごと壊されて cancelled の
+   * 結果になる。応答は届かないが、manifest には切られた記録が書かれる。
+   *
+   * 応答は、結果の記録 (manifest) を書き終えてから返す (書き込みの予算は 10 秒)。
    */
   capture: {
     path: "/browserhive.v1.CaptureService/Capture" as const,
@@ -4599,7 +4754,10 @@ export interface CaptureServiceServer extends UntypedServiceImplementation {
    *   走行中(1 台 1 件)      -> RESOURCE_EXHAUSTED  呼ぶ側は別の台へ、無ければ少し待って再度
    *   browser に繋がらない   -> UNAVAILABLE
    *
-   * client が途中で切っても取り込みは最後まで走る(manifest は書かれる)。
+   * client が途中で切ったら (cancel / deadline)、取り込みはページごと壊されて cancelled の
+   * 結果になる。応答は届かないが、manifest には切られた記録が書かれる。
+   *
+   * 応答は、結果の記録 (manifest) を書き終えてから返す (書き込みの予算は 10 秒)。
    */
   capture: handleUnaryCall<CaptureRequest, CaptureResponse>;
   /**
@@ -4618,7 +4776,10 @@ export interface CaptureServiceClient extends Client {
    *   走行中(1 台 1 件)      -> RESOURCE_EXHAUSTED  呼ぶ側は別の台へ、無ければ少し待って再度
    *   browser に繋がらない   -> UNAVAILABLE
    *
-   * client が途中で切っても取り込みは最後まで走る(manifest は書かれる)。
+   * client が途中で切ったら (cancel / deadline)、取り込みはページごと壊されて cancelled の
+   * 結果になる。応答は届かないが、manifest には切られた記録が書かれる。
+   *
+   * 応答は、結果の記録 (manifest) を書き終えてから返す (書き込みの予算は 10 秒)。
    */
   capture(
     request: CaptureRequest,
