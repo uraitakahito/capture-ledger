@@ -28,7 +28,7 @@ nvm use
 pnpm install
 sudo container system dns create capture-ledger   # once per machine
 ./setup.sh          # submodules + .env
-pnpm run check       # typecheck + lint + format:check + env + tests
+pnpm run check       # audit + typecheck + lint + format:check + env + tests
 ```
 
 `setup.sh` is mandatory before any `container-compose` invocation: it
@@ -91,7 +91,8 @@ that rule too.
 | `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked).      |
 | `pnpm run format` / `format:check`        | Prettier. `.prettierignore` skips `dist/` and `src/rpc/generated/`. |
 | `pnpm test` / `test:watch`                | Vitest unit tests under `test/`.                                    |
-| `pnpm run check`                          | typecheck + lint + format:check + test. Run before pushing.         |
+| `pnpm run audit`                          | Known vulnerabilities in `pnpm-lock.yaml`. CI also runs it daily.   |
+| `pnpm run check`                          | audit + typecheck + lint + format:check + test. Run before pushing. |
 | `pnpm run db:migrate` / `db:migrate:down` | Kysely migrations against `DATABASE_URL`.                           |
 | `pnpm run db:seed` / `db:seed:down`       | Kysely seeds from `src/db/seeds/`.                                  |
 | `pnpm run proto:generate`                 | Regenerate `src/rpc/generated/` from the vendored `.proto` (buf).   |

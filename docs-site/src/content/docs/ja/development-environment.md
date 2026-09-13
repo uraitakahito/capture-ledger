@@ -26,7 +26,7 @@ nvm use
 pnpm install
 sudo container system dns create capture-ledger   # マシンごとに 1 回
 ./setup.sh          # submodule 初期化 + .env
-pnpm run check       # typecheck + lint + format:check + env + テスト
+pnpm run check       # audit + typecheck + lint + format:check + env + テスト
 ```
 
 `setup.sh` は `container-compose` を叩く前に必須です。すべての build context が
@@ -86,7 +86,8 @@ NAME=value     # 値を渡す
 | `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked)。         |
 | `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。 |
 | `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                  |
-| `pnpm run check`                          | typecheck + lint + format:check + test。push 前に実行。                 |
+| `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                    |
+| `pnpm run check`                          | audit + typecheck + lint + format:check + test。push 前に実行。         |
 | `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                       |
 | `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                               |
 | `pnpm run proto:generate`                 | vendored の `.proto` から `src/rpc/generated/` を再生成 (buf)。         |

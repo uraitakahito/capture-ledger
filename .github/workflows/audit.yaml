@@ -1,0 +1,48 @@
+name: audit
+
+# 既知の脆弱性の門。中身は package.json の `audit` (= `check` の先頭) と同じもの。
+# docs-site も同じ workspace に入っているので、lockfile は pnpm-lock.yaml の 1 本で済む。
+#
+# 勧告は PR と無関係に公開されるので、PR と push に加えて毎日も走らせる。2026-09-13 に
+# docs-site の依存 (astro の critical、sharp・js-yaml・svgo) の 5 件が、Dependabot の
+# アラートは出ているのに何も赤くならないまま残っていた。
+#
+# schedule と workflow_dispatch は default branch (main) に在る workflow でしか動かない。
+# develop に入った時点で効くのは pull_request と push。
+#
+# Security:
+#   - permissions は contents:read だけ。secret を 1 つも参照しない。submodule も取らない
+#     —— pnpm audit は lockfile しか読まない。
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  schedule:
+    - cron: "17 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Known vulnerabilities
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # install しない。pnpm audit は lockfile を読む。env の 1 行がそれを本当にする ——
+      # pnpm 11 は node_modules が無いと `pnpm run` の前に依存を入れる
+      # (verifyDepsBeforeRun の既定が install)。止めないと全部を落としてから audit する
+      # (2026-09-13 に capture-scheduler で 457 個、browserhive で 480 個入れていた)。
+      # 判定の対象もコミットした lockfile そのものになる。lockfile の古さを落とすのは
+      # ci.yaml の frozen install の仕事で、ここで解き直すことではない。
+      - name: Audit the lockfile
+        run: pnpm run audit
+        env:
+          pnpm_config_verify_deps_before_run: "false"
