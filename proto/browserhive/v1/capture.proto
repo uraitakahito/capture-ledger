@@ -21,7 +21,10 @@ service CaptureService {
   //   走行中(1 台 1 件)      -> RESOURCE_EXHAUSTED  呼ぶ側は別の台へ、無ければ少し待って再度
   //   browser に繋がらない   -> UNAVAILABLE
   //
-  // client が途中で切っても取り込みは最後まで走る(manifest は書かれる)。
+  // client が途中で切ったら (cancel / deadline)、取り込みはページごと壊されて cancelled の
+  // 結果になる。応答は届かないが、manifest には切られた記録が書かれる。
+  //
+  // 応答は、結果の記録 (manifest) を書き終えてから返す (書き込みの予算は 10 秒)。
   rpc Capture(CaptureRequest) returns (CaptureResponse);
 
   // この台の現在。**server 全体**の話で、取り込み 1 件のことは言わない —— 結果は
@@ -57,8 +60,9 @@ enum ErrorType {
   ERROR_TYPE_CONNECTION = 3;
   ERROR_TYPE_SIGNING = 4;
   ERROR_TYPE_INTERNAL = 5;
-  // 成果物を受け口へ押し出せなかった。**この経路には待ち場所が無い**ので、
-  // 取り込みは丸ごと失われている。受け口を直して投げ直す。
+  // 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け口) へ置けなかった。
+  // 書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。
+  // 書き込み先を直して投げ直す。message は書き込み先から始まる。
   ERROR_TYPE_ARTIFACT_SINK = 6;
   // 呼ぶ側が途中で切った(deadline / cancel)。取り込みは打ち切られ、成果物は残らない。
   ERROR_TYPE_CANCELLED = 7;
@@ -376,11 +380,24 @@ message GetServerStatusRequest {}
 
 // -- 結果 ------------------------------------------------------------------
 
-// Capture の応答。結果そのもの。
+// Capture の応答。結果そのものと、それを記録できたか。
 message CaptureResponse {
   // 成果物と manifest(`.result.json`)の鍵。ここで初めて呼ぶ側に渡る。
   string task_id = 1;
   CaptureResultReport report = 2;
+  // report を `.result.json` として書けたか。書けなかったなら、この応答が唯一の記録。
+  // report の中には無い —— 自分の書き込みの結末を、書き込む本文には書けないため。
+  ManifestOutcome manifest = 3;
+}
+
+// 結果の記録 (manifest) の結末。
+message ManifestOutcome {
+  oneof outcome {
+    // 書けた場所 (`s3://…`、または受け口が返した場所)。
+    string location = 1;
+    // 書けなかった理由。書き込み先から始まる。
+    string error = 2;
+  }
 }
 
 // 成果物の置き場所 (s3://…)。取得しなかった形式は空のまま。
@@ -442,6 +459,10 @@ message CaptureErrorDetails {
   optional int32 http_status_code = 3;
   optional string http_status_text = 4;
   optional int32 timeout_ms = 5;
+  // 時間切れか cancel で終わったとき、取り込みがどの段階に居たか。
+  // check-address / start-recording / load-pages / write-formats / package-wacz / upload-wacz。
+  // message の末尾にも、段階の中の細部と経過とともに同じことが書いてある。
+  optional string step = 6;
 }
 
 message CaptureResultReport {
