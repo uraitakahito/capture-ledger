@@ -7,7 +7,14 @@
  *
  * 偽の DB は **呼ばれたら記録する**。「404 が返った」だけでは、DB を叩いた後で
  * 404 にしているのか、叩く前に落としているのかを区別できない。
+ *
+ * もう 1 つ固めているのは **本文をバイトのまま置くこと**。以前の試験は
+ * `application/wacz+zip` しか送らず、BrowserHive の JSON の成果物 (`.links.json` と
+ * `.result.json`) が Fastify 既定の解析器に取られて 400 になるのを見逃した。偽の s3 は
+ * **受け取った PutObject の入力を記録する** —— 「200 が返った」だけでは、置いた中身が
+ * 送った本文と同じかを確かめられない。
  */
+import type { PutObjectCommandInput } from "@aws-sdk/client-s3";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -20,12 +27,15 @@ let app: FastifyInstance;
 let selects: number;
 /** 偽の `crawls` 行。試験ごとに書き換えて、置き場所の決まり方を分ける。 */
 let crawlRow: { orgId: string; artifactKeyPrefix: string | null };
+/** 偽の s3 が受け取った PutObject の入力。 */
+let puts: PutObjectCommandInput[];
 
 const bearer = (crawlId: string): string =>
   `Bearer ${issueSinkToken(SECRET, crawlId, new Date(Date.now() + 60_000))}`;
 
 beforeEach(() => {
   selects = 0;
+  puts = [];
   // 既定は `013` より前に作られた行 —— 記録が無いので従来の綴りに落ちる。
   crawlRow = { orgId: "acme", artifactKeyPrefix: null };
   app = Fastify();
@@ -39,7 +49,12 @@ beforeEach(() => {
       };
     },
   };
-  const s3 = { send: () => Promise.resolve({}) };
+  const s3 = {
+    send: (command: { input: PutObjectCommandInput }) => {
+      puts.push(command.input);
+      return Promise.resolve({});
+    },
+  };
   registerSinkRoutes(app, {
     db: db as never,
     s3: s3 as never,
@@ -130,5 +145,71 @@ describe("受け口の口", () => {
     });
 
     expect(res.statusCode).toBe(400);
+  });
+});
+
+/**
+ * BrowserHive が受け口へ送る content-type を全部並べる (BrowserHive の
+ * src/storage/types.ts の ArtifactContentType)。加えて、BrowserHive は送らないが
+ * Fastify が既定の解析器を持つ `text/plain` —— 既定の解析器を持つ型は、どれも同じ形で
+ * 本文を取られるので、JSON だけを見ていると取りこぼす。
+ */
+const ARTIFACT_TYPES = [
+  "image/png",
+  "image/webp",
+  "text/html",
+  "application/json",
+  "multipart/related",
+  "application/wacz+zip",
+  "text/plain",
+];
+
+describe("受け口の本文", () => {
+  /**
+   * 本文を **正しい JSON** にしてあるのが肝。JSON として読めない本文なら、既定の解析器に
+   * 取られても 400 で落ちるので、「取られて中身が変わる」形と区別できない。
+   */
+  it.each(ARTIFACT_TYPES)("%s の本文をバイトのまま置く", async (type) => {
+    const body = Buffer.from('{"taskId":"t","status":"CAPTURE_STATUS_SUCCESS"}');
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/sink/${CRAWL}/t_c.result.json`,
+      headers: { authorization: bearer(CRAWL), "content-type": type },
+      payload: body,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(puts).toHaveLength(1);
+    expect(Buffer.isBuffer(puts[0]!.Body)).toBe(true);
+    expect(Buffer.compare(puts[0]!.Body as Buffer, body)).toBe(0);
+    expect(puts[0]!.ContentType).toBe(type);
+  });
+
+  /**
+   * **受け口の解析器を外へ漏らさない。** 漏れると、JSON の API に JSON でない本文が
+   * Buffer のまま届く —— 受け口を出していない配備では 415 なのに、出している配備でだけ通る。
+   */
+  it("隣の JSON の API は JSON を読み、JSON でない本文は 415", async () => {
+    app.post("/api/json", (request, reply) =>
+      reply.send({ kind: Buffer.isBuffer(request.body) ? "buffer" : typeof request.body }),
+    );
+
+    const json = await app.inject({
+      method: "POST",
+      url: "/api/json",
+      headers: { "content-type": "application/json" },
+      payload: '{"x":1}',
+    });
+    expect(json.statusCode).toBe(200);
+    expect(json.json()).toEqual({ kind: "object" });
+
+    const bytes = await app.inject({
+      method: "POST",
+      url: "/api/json",
+      headers: { "content-type": "application/octet-stream" },
+      payload: Buffer.from("zz"),
+    });
+    expect(bytes.statusCode).toBe(415);
   });
 });
