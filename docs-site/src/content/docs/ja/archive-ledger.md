@@ -44,8 +44,9 @@ Outbox 行として記録します。両方入るか、どちらも入らない�
 Windmill の flow です。
 
 **クロール** ― クロールは、flow が段を報告した時点で自分が取り込んだぶんを
-登録します（`src/crawl/admit-level.ts`）。段の報告には成果物の在り処が
-載っていないので、`.result.json` を読み直してから登録します。こちらが速い経路で、
+登録します（`src/crawl/admit-level.ts`）。段の報告が運ぶのは各 capture の
+`.result.json` の置き場所で、結果そのものは載っていないので、報告された鍵のとおりに
+manifest を読み直してから登録します。こちらが速い経路で、
 取り込んだページは 1 往復のうちに台帳へ入ります。
 
 **Reconcile** ― `pnpm run fga:reconcile` は BrowserHive が各 capture の

@@ -68,6 +68,10 @@ export interface CaptureSubmissionsTable {
   orgId: string;
   submittedBy: string | null;
   submittedAt: ColumnType<Date, string | undefined, never>;
+  /** 結果 manifest の鍵 (bucket を除く)。段の報告が運んだもの。`014`。 */
+  manifestKey: string | null;
+  /** manifest を書けなかった、または台帳に読めない場所だった理由。`014`。 */
+  manifestError: string | null;
 }
 
 /**

@@ -15,9 +15,10 @@
  *
  * ## 報告からは登録できない
  *
- * 段の報告が運ぶのは `taskId` と状態だけで、`admitArchive` が要る
+ * 段の報告が運ぶのは `taskId` と状態と manifest の置き場所だけで、`admitArchive` が要る
  * `CaptureResultReport` (成果物の在り処、`waczComplete`、署名、取り込み時刻) は
- * 入っていない。だから **S3 の manifest を読み直す**。
+ * 入っていない。だから **S3 の manifest を、報告された鍵で読み直す**。鍵はこちらで
+ * 組まない —— 書いた本人が応答で答えた場所を、flow がそのまま運んでくる。
  *
  * 同じ handler が `.links.json` を S3 から読んでいるので、経路は増えない。
  *
@@ -47,7 +48,7 @@
  */
 import type { Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
-import { manifestKey, readManifest } from "../archive/manifest.js";
+import { readManifest } from "../archive/manifest.js";
 import { getJsonObject } from "../archive/s3.js";
 import { admitArchive } from "../archive/admit.js";
 import type { Database } from "../db/database.js";
@@ -58,8 +59,12 @@ const log = createChildLogger({ module: "crawl-admit-level" });
 /** 段の報告のうち、台帳に載せうるもの。 */
 export interface CapturedPage {
   taskId: string;
-  correlationId?: string;
   url: string;
+  /**
+   * 報告が運んだ manifest の鍵 (bucket を除く)。書けなかった、または台帳に読めない場所
+   * だった取り込みには無い (`archive/manifest.ts` の `manifestOutcome`)。
+   */
+  manifestKey: string | null;
 }
 
 export interface AdmitLevelOptions {
@@ -69,8 +74,6 @@ export interface AdmitLevelOptions {
   crawlId: string;
   orgId: string;
   requestedBy: string;
-  /** 成果物の置き場所の接頭辞。受け口が受ける構成でのみ付く。 */
-  keyPrefix?: string;
 }
 
 export interface AdmitLevelResult {
@@ -97,14 +100,9 @@ export const admitLevel = async (
   let registered = 0;
   const admittedUrls: string[] = [];
   for (const page of pages) {
-    // クロールは `labels: []` / `correlationId: <crawlId>` で投げている
-    // (capture-scheduler の crawl_host.ts)。鍵はその 3 つから決まる。
-    const key = manifestKey(
-      page.taskId,
-      page.correlationId ?? options.crawlId,
-      [],
-      options.keyPrefix,
-    );
+    // **鍵は報告が運んだもの。** 書けなかった取り込みには、読みに行く先が無い。
+    if (page.manifestKey === null) continue;
+    const key = page.manifestKey;
     try {
       const raw = await getJsonObject(options.s3, options.bucket, key);
       if (raw === undefined) {
