@@ -23,8 +23,9 @@
  * ## 帰属
  *
  * 投げるのが ledger でなくなっても、`capture_submissions` はここで書く。段ごとの
- * 報告に taskId が載っているので、そのときに書けばよい。reconciler が
- * `unattributed` を数えている理由 (`archive/reconcile.ts`) はそのまま残る。
+ * 報告に taskId と manifest の置き場所が載っているので、そのときに書けばよい。
+ * reconciler (`archive/reconcile.ts`) はこの行だけを読む —— **報告の届かなかった
+ * 取り込みは、ここに行が無いので台帳に入らない**。
  */
 import type { FastifyInstance } from "fastify";
 import type { OpenFgaClient } from "@openfga/sdk";
@@ -500,12 +501,12 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       }
 
       // ── 2. 帰属を書く ────────────────────────────────────────────────
-      // 投げたのが ledger でなくても、記録はここに残す。reconciler が
-      // `unattributed` を数える経路を壊さないため。
+      // 投げたのが ledger でなくても、記録はここに残す。reconciler はこの行 (帰属と
+      // manifest の鍵) だけを読む。
       //
       // **状態は問わない。`taskId` を持つ全件に書く。** 以前は `captured` だけに
       // 書いていたが、それだと失敗と報告された取り込みの帰属が残らない ——
-      // 実体が S3 に在っても組織が言えず、reconciler からは `unattributed` に見える。
+      // 実体が S3 に在っても組織が言えず、台帳に入れようがない。
       // 投入が通っている限り id は在るので、書かない理由が無い。
       const submitted = results.filter(
         (r): r is PageReport & { taskId: string } =>
@@ -748,11 +749,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 終わった行に後から `failed` を被せない。段の失敗が遅れて届くことはありうるし、
    * そのとき既に別の段が締めていれば、**そちらの理由のほうが正しい**。
    *
-   * ## 取り込めたぶんは失われない
+   * ## 落ちた段の取り込みは台帳に入らない
    *
-   * 落ちた段でも、そこまでに成功した取り込みの成果物は S3 に在る。報告が来ないので
-   * `crawl_pages` は `pending` のままだが、`reconcile` が manifest を走査して台帳には
-   * 入れる。**台帳は自己修復し、クロールの記録だけが欠ける。**
+   * 落ちた段でも、そこまでに成功した取り込みの成果物は S3 に在る。けれど報告が来ないので
+   * `crawl_pages` は `pending` のまま、`capture_submissions` も書かれない —— 帰属も
+   * manifest の鍵も分からないので、`reconcile` もそれを台帳に入れられない。bucket を
+   * 一覧していた頃も同じで、見つけても帰属が無く `unattributed` と数えるだけだった。
+   * **成果物は残るが、台帳とクロールの記録からは欠ける。**
    */
   app.post<{ Params: { id: string }; Body: { reason?: string } }>(
     "/api/crawls/:id/failed",

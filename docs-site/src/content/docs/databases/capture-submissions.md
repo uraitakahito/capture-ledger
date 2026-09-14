@@ -69,11 +69,11 @@ again, hence `onConflict … doNothing()`.
 
 ## How it is read
 
-`reconcile.ts` reads it while filling the ledger from bucket manifests.
+`reconcile.ts` reads the rows that carry a `manifest_key` and have no archive yet:
 
 ```
-read taskId from .result.json
-  → look up org_id and submitted_by in capture_submissions
+capture_submissions row with manifest_key, no archives row
+  → GetObject(manifest_key)
   → register in archives, and queue tuples with that org_id and submitted_by
 ```
 

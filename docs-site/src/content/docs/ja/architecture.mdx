@@ -57,7 +57,7 @@ capture-ledger の設定に BrowserHive の在り処は 1 つも入っていま�
   少し遅れただけで段の報告が 500 になり、クロールが止まります。遅れたぶんは
   reconcile が拾います。
 - `capture_submissions` は `taskId` を持つ**全件**に書きます（成功したものだけでは
-  ありません）。後で reconciler が要るのは、まさにこの帰属です。
+  ありません）。後で reconciler が要るのは、まさにこの帰属と manifest の鍵です。
 
 ## 台帳と認可
 
@@ -71,12 +71,13 @@ flowchart LR
   subgraph W["capture-ledger"]
     direction TB
     REG["watch.ts → register.ts<br/>結果を待って登録"]
-    RC["reconcile.ts<br/>bucket を走査して穴を埋める"]
+    RC["reconcile.ts<br/>書き留めた manifest の鍵を読む"]
     OW["outbox-worker.ts<br/>タプルを配送"]
     API["api/routes.ts<br/>署名エンドポイント"]
   end
   S3 -.->|.result.json| REG
   S3 -.->|.result.json| RC
+  PG -.->|未登録の manifest の鍵| RC
   REG --> PG
   RC --> PG
   PG[("Postgres<br/>archives + fga_outbox")]
@@ -100,8 +101,8 @@ flowchart LR
 - **所属は保存しません。** 「この人はどの組織か」はトークンから来て、Check のたびに
   contextual tuple として渡されます。
 - 台帳へ入る道は 2 本あります。**クロール**が段で取り込んだぶんを載せる経路
-  （速い。`src/crawl/admit-level.ts`）と、`reconcile` が bucket を走査する経路
-  （capture-ledger が止まっていた間の取りこぼしを拾う）。どちらも `admitArchive` を通り、
+  （速い。`src/crawl/admit-level.ts`）と、`reconcile` が段の報告の書き留めた manifest の鍵を
+  読む経路（速い経路で入らなかったものを拾う）。どちらも `admitArchive` を通り、
   `(bucket, object_key)` が unique なので、同じ取り込みに 2 度届いても増えません。
 
 詳しくは[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)を参照してください。

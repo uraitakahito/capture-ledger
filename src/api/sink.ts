@@ -93,16 +93,12 @@ export const sinkObjectKey = (orgId: string, filename: string): string =>
  * そのクロールの成果物を置く場所。**クロールを作るときに 1 度だけ計算し、
  * `crawls.artifact_key_prefix` に書く。**
  *
- * 組織で分けたうえに、さらに月で分ける。月が要るのは reconcile のため ——
- * S3 の list は prefix でしか絞れず、組織だけでは効かない (掃除は全組織を対象に
- * するので、組織ごとに回れば歩く総量は同じ)。効くのは時間の軸で、そのためには
- * 鍵そのものに月が要る。
+ * 組織で分けたうえに、さらに月で分ける。月は、reconcile が bucket を一覧していた頃に
+ * 「直近の月だけを歩く」ために入れたもの。いまの reconcile は bucket を歩かず、報告が
+ * 書き留めた鍵だけを読むので、**月はもう何の判断にも使われていない** —— 置き場所の形を
+ * 変える理由も無いので、そのまま残している。
  *
- * **UTC で切る。** ローカル時刻で切ると、置いた側と探す側が別の TZ で動いた瞬間に
- * 1 か月ずれる —— この列がまさに塞ごうとしているずれを、別の形で作り直すことになる。
- *
- * 月ごとにしたのは粒度の選択。日ごとだと 30 日を掃くのに 30 回 list することになり、
- * クロールごとだとクロール本数ぶんの list になる。月なら直近 30 日が 1〜2 回で済む。
+ * **UTC で切る。** ローカル時刻で切ると、実行環境の TZ で月の境目がずれる。
  */
 export const crawlKeyPrefix = (orgId: string, at: Date): string =>
   `org/${orgId}/${String(at.getUTCFullYear())}-${String(at.getUTCMonth() + 1).padStart(2, "0")}/`;

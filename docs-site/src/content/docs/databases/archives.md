@@ -46,7 +46,7 @@ correct.**
 Two paths fill the ledger.
 
 - **the crawl** — admits what a level captured as soon as the flow reports it (fast)
-- **the reconciler** — sweeps the bucket's manifests for anything the ledger lacks
+- **the reconciler** — reads the manifest keys recorded in `capture_submissions` for captures the ledger lacks
 
 **Both can reach the same capture, and either can be re-run.**
 
