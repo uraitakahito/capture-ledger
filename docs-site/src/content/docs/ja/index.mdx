@@ -29,8 +29,8 @@ BrowserHive のチェックアウトで `pnpm run docs:local` を実行して読
 チャンネルを持っていて、capture-ledger の設定に BrowserHive の在り処は 1 つも入って
 いません。flow が報告する 1 段には、ページごとの `taskId` が載っています。capture-ledger は
 そこからアーカイブを生んだものを[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)に
-記録します。取りこぼしは後から `pnpm run fga:reconcile` が bucket の結果 manifest を
-走査して拾います。
+記録します。そこで入らなかったものは、後から `pnpm run fga:reconcile` が、段の報告の
+書き留めた manifest の鍵を読んで拾います。
 
 ## 目的別の入口
 

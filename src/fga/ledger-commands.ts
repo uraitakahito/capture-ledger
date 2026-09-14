@@ -7,18 +7,17 @@
  * 役に立つから。`capture-ledger` は目的が 1 つのコマンドのままにしておく。
  *
  *   capture-ledger drain      積まれた tuple を OpenFGA へ配送する
- *   capture-ledger reconcile  bucket の manifest から台帳の穴を埋める
+ *   capture-ledger reconcile  報告が書き留めた manifest の鍵から台帳の穴を埋める
  *   capture-ledger grant      組織に対する権限を与える
  *   capture-ledger revoke     それを取り消す
  */
 import { Command, InvalidArgumentError, Option } from "commander";
-import { sql } from "kysely";
 import { fgaConfig, storageConfig } from "../config/env.js";
 import { createKyselyClient } from "../db/kysely.js";
 import { createFgaClient } from "./client.js";
 import { drainOutbox } from "./outbox-worker.js";
 import { createS3Client } from "../archive/s3.js";
-import { narrowingFrom, reconcile } from "../archive/reconcile.js";
+import { reconcile } from "../archive/reconcile.js";
 import { isAlreadyInDesiredState } from "./client.js";
 import { fatal, logger } from "../logger.js";
 
@@ -52,28 +51,13 @@ const runReconcile = async (databaseUrl: string, sinceDays: number | undefined):
   const storage = storageConfig();
   const db = createKyselyClient(databaseUrl);
   try {
-    // 既定は全走査。`--since-days` を渡したときだけ、その窓のクロールが実際に使った
-    // 接頭辞を引いて、そこだけを歩く。
-    let prefixes: string[] | undefined;
-    if (sinceDays !== undefined) {
-      const rows = await db
-        .selectFrom("crawls")
-        .select("artifactKeyPrefix")
-        .where("startedAt", ">=", sql<Date>`now() - make_interval(days => ${sinceDays})`)
-        .execute();
-      prefixes = narrowingFrom(rows);
-      if (prefixes === undefined) {
-        // **黙って全走査に落ちない。** 言わずに落とすと、運用者は絞れたつもりで
-        // 速さだけを見ることになる。
-        logger.warn(
-          { sinceDays, crawls: rows.length },
-          "Some crawls in the window have no recorded artifact key prefix; walking the whole bucket",
-        );
-      } else {
-        logger.info({ sinceDays, prefixes }, "Narrowed the walk to recorded prefixes");
-      }
-    }
-    const result = await reconcile(db, createS3Client(storage), storage.bucket, prefixes);
+    // `--since-days` は「その日数のうちに報告された取り込み」。bucket を歩かないので、
+    // 絞れない経路も、絞れずに全走査へ落ちる場合も無い。時刻は DB の `now()` ではなく
+    // この process の時計で決める —— 窓は運用者が「いまから何日」と言ったもので、
+    // 問い合わせは 1 本なので DB と数秒ずれても結果は変わらない。
+    const since =
+      sinceDays === undefined ? undefined : new Date(Date.now() - sinceDays * 86_400_000);
+    const result = await reconcile(db, createS3Client(storage), storage.bucket, since);
     logger.info(result, "Reconcile finished");
   } finally {
     await db.destroy();
@@ -138,15 +122,14 @@ program
 
 program
   .command("reconcile")
-  .description("Register any capture whose manifest is in the bucket but missing from the ledger")
+  .description(
+    "Register any reported capture whose manifest was written but is missing from the ledger",
+  )
   .addOption(databaseUrlOption)
   .addOption(
-    new Option(
-      "--since-days <n>",
-      "Only walk the key prefixes used by crawls started within the last n days " +
-        "(sink deployments only; falls back to the whole bucket if any of those " +
-        "crawls has no recorded prefix)",
-    ).argParser(positiveInt),
+    new Option("--since-days <n>", "Only captures reported within the last n days").argParser(
+      positiveInt,
+    ),
   )
   .action(async (opts: { databaseUrl: string; sinceDays?: number }) => {
     await runReconcile(opts.databaseUrl, opts.sinceDays);

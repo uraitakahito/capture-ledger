@@ -30,8 +30,8 @@ published on the web — build them from the BrowserHive checkout with
 capture-ledger has no BrowserHive address in its configuration at all. Each level the
 flow reports comes back with a `taskId` per page, and capture-ledger registers what
 produced an archive in the [archive ledger](/capture-ledger/archive-ledger/). Anything
-missed is picked up later by `pnpm run fga:reconcile`, which sweeps the bucket's
-result manifests.
+the level handler failed to admit is picked up later by `pnpm run fga:reconcile`,
+which reads the manifest keys those reports recorded.
 
 ## Where things are
 

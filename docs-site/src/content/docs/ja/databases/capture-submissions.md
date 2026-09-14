@@ -68,11 +68,11 @@ submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
 
 ## 読まれ方
 
-`reconcile.ts` が、bucket の manifest から台帳を埋めるときに引きます。
+`reconcile.ts` が、`manifest_key` を持ち、まだアーカイブの無い行を引きます。
 
 ```
-.result.json から taskId を得る
-  → capture_submissions で org_id と submitted_by を引く
+manifest_key を持ち、archives に行の無い capture_submissions の行
+  → GetObject(manifest_key)
   → archives に登録し、その org_id と submitted_by で tuple を積む
 ```
 

@@ -44,7 +44,7 @@ if (report.status !== CaptureStatus.CAPTURE_STATUS_SUCCESS ||
 台帳を埋める道は 2 本あります。
 
 - **クロール** — flow が段を報告した時点で、取り込めたぶんを登録する（速い）
-- **reconciler** — bucket の manifest を走査して、台帳に無いものを登録する（穴を埋める）
+- **reconciler** — `capture_submissions` に書き留めた manifest の鍵を読み、台帳に無いものを登録する（穴を埋める）
 
 **両方が同じ取り込みに辿り着けますし、どちらも再実行されえます。**
 
