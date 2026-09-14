@@ -37,11 +37,12 @@ import { admitLevel } from "../crawl/admit-level.js";
 import { acceptLinks, parseHttpUrl, type DiscoveredLink, type ParsedUrl } from "../crawl/scope.js";
 import { planNextLevel } from "../crawl/budget.js";
 import { getJsonObject } from "../archive/s3.js";
+import { manifestOutcome } from "../archive/manifest.js";
 import { isUniqueViolation, maySubmit, unauthorized } from "./authorization.js";
 import { withLinks, type CaptureFormats, type CaptureSettings } from "../config/capture-formats.js";
 import { loadTargets } from "../data/url-source.js";
 import { createChildLogger } from "../logger.js";
-import { crawlKeyPrefix, keyPrefixFor, sinkForCrawl, type SinkConfig } from "./sink.js";
+import { crawlKeyPrefix, sinkForCrawl, type SinkConfig } from "./sink.js";
 
 const log = createChildLogger({ module: "api" });
 
@@ -151,6 +152,13 @@ interface PageReport {
   finishedAt?: string;
   /** `.links.json` の置き場所 (`s3://bucket/key`)。中身を読むのはこちら。 */
   linksLocation?: string;
+  /**
+   * `.result.json` を書けた場所 (`s3://bucket/key`)。BrowserHive (または受け口) の答えのまま。
+   * **台帳はこれを組み直さない。**
+   */
+  manifestLocation?: string;
+  /** 書けなかった理由。`taskId` を持つ報告は、この 2 つのどちらか一方を必ず持つ。 */
+  manifestError?: string;
 }
 
 interface LevelBody {
@@ -427,6 +435,18 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                   submittedAt: { type: "string", format: "date-time" },
                   finishedAt: { type: "string", format: "date-time" },
                   linksLocation: { type: "string" },
+                  manifestLocation: { type: "string", minLength: 1 },
+                  manifestError: { type: "string", minLength: 1 },
+                },
+                // taskId を持つ報告は manifest の結末をちょうど 1 つ持ち、結末は taskId 無しでは
+                // 来ない。**運び忘れた flow をここで断る** —— 黙って受けると、その取り込みは
+                // 読みに行く鍵を持たないまま台帳に残り、誰も拾わない。
+                dependencies: {
+                  taskId: {
+                    oneOf: [{ required: ["manifestLocation"] }, { required: ["manifestError"] }],
+                  },
+                  manifestLocation: ["taskId"],
+                  manifestError: ["taskId"],
                 },
               },
             },
@@ -491,6 +511,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         (r): r is PageReport & { taskId: string } =>
           typeof r.taskId === "string" && r.taskId !== "",
       );
+      // 報告の場所を台帳の形に。**1 度だけ計算し、書き留める値と読みに行く鍵に同じものを使う。**
+      const manifests = new Map(submitted.map((r) => [r.taskId, manifestOutcome(r, deps.bucket)]));
       let recovered: string[] = [];
       if (submitted.length > 0) {
         await db
@@ -505,6 +527,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               correlationId: r.correlationId ?? crawlId,
               orgId: crawl.orgId,
               submittedBy: crawl.requestedBy,
+              // nullable な列は `Insertable` で省略できる —— 書き忘れても typecheck は緑。
+              // 値は `test/routes-crawls-manifest.test.ts` が見ている。
+              manifestKey: manifests.get(r.taskId)?.key ?? null,
+              manifestError: manifests.get(r.taskId)?.error ?? null,
             })),
           )
           .onConflict((oc) => oc.column("taskId").doNothing())
@@ -517,20 +543,24 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // **失敗の報告も渡す。** 報告は flow の言い分で、正本は BrowserHive が成果物の
         // 隣に書く manifest。`failed` と報告されたページに成功の manifest が在れば、
         // 取り込みは成功している。
-        const keyPrefix = keyPrefixFor(crawl, sink);
-        const admitted = await admitLevel(submitted, {
-          db,
-          s3: deps.s3,
-          bucket: deps.bucket,
-          crawlId,
-          orgId: crawl.orgId,
-          requestedBy: crawl.requestedBy,
-          // **このクロールが実際に置いた場所を読む。** 接頭辞がずれると manifest が
-          // 見つからず、台帳に 1 行も入らないまま静かに終わる —— だから「いまの
-          // 設定から導く」のをやめ、`013` の列に書き残したものを使う。
-          // 記録の無い行 (`013` より前のクロール) だけ、従来どおり設定から導く。
-          ...(keyPrefix !== undefined && { keyPrefix }),
-        });
+        //
+        // **読むのは報告が運んだ鍵。** 書けなかった取り込みには鍵が無く、admitLevel は
+        // それを飛ばす。
+        const admitted = await admitLevel(
+          submitted.map((r) => ({
+            taskId: r.taskId,
+            url: r.url,
+            manifestKey: manifests.get(r.taskId)?.key ?? null,
+          })),
+          {
+            db,
+            s3: deps.s3,
+            bucket: deps.bucket,
+            crawlId,
+            orgId: crawl.orgId,
+            requestedBy: crawl.requestedBy,
+          },
+        );
 
         // ── 2c. 拾えたものは記録を直す ──────────────────────────────────
         // **台帳には在るのにクロールの記録では失敗している、を残さない。**

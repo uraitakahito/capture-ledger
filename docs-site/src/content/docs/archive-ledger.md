@@ -47,8 +47,9 @@ for each capture it had submitted. Both the CLI and capture-ledger's gRPC client
 gone; the Windmill flow submits now.)
 
 **Crawling** — a crawl registers what it captured as soon as the flow reports a
-level (`src/crawl/admit-level.ts`). The level report does not carry artifact
-locations, so it re-reads `.result.json` before registering. This is the fast
+level (`src/crawl/admit-level.ts`). The level report carries where each capture's
+`.result.json` was written, not the result itself, so the handler reads that
+manifest back — at exactly the reported key — before registering. This is the fast
 path: a page is in the ledger within one round trip of being taken.
 
 **Reconciling** — `pnpm run fga:reconcile` walks the `.result.json` manifests

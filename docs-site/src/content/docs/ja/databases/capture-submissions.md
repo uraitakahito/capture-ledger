@@ -9,6 +9,12 @@ description: 投げた瞬間に「誰のために投げたか」を残すテー�
 
 ```
 
+取り込みごとの結果 manifest の在り処は `014` で足しました。
+
+```ts file="src/db/migrations/014-add-capture-submissions-manifest.ts#capture-submissions-manifest-columns"
+
+```
+
 ## なぜ必要か
 
 **BrowserHive に「組織」という概念はありません。** 取り込みを投げるとき capture-ledger は
@@ -32,21 +38,33 @@ capture_targets.org_id ──┐      taskId
 
 ## 書かれ方
 
-`run.ts` が、受理された取り込みについてまとめて 1 回書きます。
+段の報告を受ける handler（`src/api/crawls.ts`）が、報告のうち `taskId` を持つページ
+すべて（失敗も含む）について 1 行ずつ書きます。その取り込みの `.result.json` が
+書かれた場所も一緒です。
 
 ```ts
-await db
-  .insertInto("captureSubmissions")
-  .values(accepted.map((r) => ({ taskId: r.taskId, orgId: r.orgId, ... })))
-  .onConflict((oc) => oc.column("taskId").doNothing())
-  .execute();
+submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
+  taskId: r.taskId,
+  correlationId: r.correlationId ?? crawlId,
+  orgId: crawl.orgId,
+  submittedBy: crawl.requestedBy,
+  manifestKey: manifests.get(r.taskId)?.key ?? null,
+  manifestError: manifests.get(r.taskId)?.error ?? null,
+}));
 ```
 
-**取り込みを待ち始める前に書きます。** 待っている間にプロセスが落ちても、
-帰属の情報だけは残るためです。
+**capture-ledger は manifest の鍵を組みません。** BrowserHive（または受け口）は `Capture`
+の応答で manifest を書いた場所を答え、Windmill の flow がそれを `manifestLocation` として
+運びます。handler は、その場所が設定の bucket の中なら鍵の部分を残します。manifest を
+書けなかった取り込みは代わりに `manifestError` で報告され、その理由がここに入ります。
+別の bucket や `s3://` でない場所も理由として入ります —— 読み先を報告する側に選ばせない
+ためです。
 
-`taskId` が再投稿されることはありません（server が採番するため）が、**この関数
-自体が再実行されることはある**ので `onConflict … doNothing()` を置いています。
+`taskId` を持つのに、この 2 つのちょうど 1 つを持たない報告は 400 で断ります。受け付けると、
+読みに行く先の無い取り込みが残るからです。
+
+`taskId` は BrowserHive が採番し、使い回されることはありませんが、段の報告が送り直される
+ことはあるので `onConflict … doNothing()` を置いています。
 
 ## 読まれ方
 
@@ -60,12 +78,14 @@ await db
 
 ## 列の要点
 
-| 列             | 要点                                                                  |
-| -------------- | --------------------------------------------------------------------- |
-| `task_id`      | **主キー。** BrowserHive が採番したもので、結果の報告へ戻る join の鍵 |
-| `org_id`       | `not null`。**この表が在る理由そのもの**                              |
-| `submitted_by` | それを求めた利用者。**人ではなく組織に属する定期実行では NULL**       |
-| `submitted_at` | `now()` 既定                                                          |
+| 列               | 要点                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `task_id`        | **主キー。** BrowserHive が採番したもので、結果の報告へ戻る join の鍵                                                         |
+| `org_id`         | `not null`。**この表が在る理由そのもの**                                                                                      |
+| `submitted_by`   | それを求めた利用者。**人ではなく組織に属する定期実行では NULL**                                                               |
+| `submitted_at`   | `now()` 既定                                                                                                                  |
+| `manifest_key`   | その取り込みの `.result.json` の在り処（bucket を除く）。報告のまま。`manifest_error` が在るときと、`014` より前の行では NULL |
+| `manifest_error` | 台帳が読める manifest が無い理由。書けなかったか、報告された場所が設定の bucket の外                                          |
 
 :::caution[`submitted_by` は認証の結果ではありません]
 この列を埋めているのは、API のリクエストが名乗った主体です

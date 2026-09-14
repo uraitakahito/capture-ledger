@@ -108,19 +108,6 @@ export const crawlKeyPrefix = (orgId: string, at: Date): string =>
   `org/${orgId}/${String(at.getUTCFullYear())}-${String(at.getUTCMonth() + 1).padStart(2, "0")}/`;
 
 /**
- * そのクロールの manifest を探すときの接頭辞。**置いた側と同じものを読む。**
- *
- * 記録が在ればそれ。無ければ (`013` より前に作られたクロール) 従来どおり、いまの
- * 設定から導く —— 過去の行の振る舞いを変えないため。undefined は「接頭辞なし」、
- * つまり BrowserHive が自前の保管庫へ平らに置いた場合。
- */
-export const keyPrefixFor = (
-  crawl: { orgId: string; artifactKeyPrefix: string | null },
-  sink: SinkConfig | undefined,
-): string | undefined =>
-  crawl.artifactKeyPrefix ?? (sink === undefined ? undefined : sinkObjectKey(crawl.orgId, ""));
-
-/**
  * 受け口の設定。**両方揃ったときだけ生きる。**
  *
  * 鍵だけでは口を出せない (誰でも書ける受け口になる)。宛先だけでも配れない
@@ -196,9 +183,9 @@ export const registerSinkRoutes = (app: FastifyInstance, deps: SinkDeps): void =
         return reply.code(400).send({ error: "empty body" });
       }
 
-      // **クロールを作ったときに決めた場所へ置く。** ここで組み直さない ——
-      // 探す側 (`admitLevel`) が読むのと同じ 1 か所から取ることが、接頭辞が
-      // ずれないことの担保。記録の無い行だけ従来の綴りに落ちる。
+      // **クロールを作ったときに決めた場所へ置く。** ここで組み直さない —— いまの時刻から
+      // 導くと、月をまたいだクロールの成果物が 2 つの接頭辞に分かれる。記録の無い行だけ
+      // 従来の綴りに落ちる。置いた場所は応答の `location` で返り、台帳はそれしか読まない。
       const key = (crawl.artifactKeyPrefix ?? sinkObjectKey(crawl.orgId, "")) + filename;
       await putObject(
         s3,

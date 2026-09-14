@@ -9,17 +9,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * 成果物は S3 に在る。ここで拾わないと、**まさに時間のかかった取り込みだけ**が
  * 台帳から落ち、しかもリンクが辿られずクロール木がそこで切れる。
  *
- * `getJsonObject` と `admitArchive` を偽物にしてある。この関数の仕事は「鍵を作り、
- * 無いものは飛ばし、入ったものを数えて名前を返す」という段取りのほうなので、
+ * `getJsonObject` と `admitArchive` を偽物にしてある。この関数の仕事は「報告された鍵で
+ * 読み、無いものは飛ばし、入ったものを数えて名前を返す」という段取りのほうなので、
  * S3 と DB の本物は要らない。
  */
 vi.mock("../src/archive/s3.js", () => ({ getJsonObject: vi.fn() }));
 vi.mock("../src/archive/admit.js", () => ({ admitArchive: vi.fn() }));
 // `readManifest` だけを偽物にする。**本物だと `undefined` を渡された時点で投げる**ので、
 // 「飛ばした」と「投げて catch された」が同じ結果に見えてしまう (反証で素通りした)。
-//
-// **`manifestKey` は本物のまま。** 鍵の綴りは BrowserHive の命名規則と 1 文字でも
-// ずれると静かに壊れる種類のもので、偽物に置き換えたら確かめる意味が無くなる。
 vi.mock("../src/archive/manifest.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/archive/manifest.js")>()),
   readManifest: vi.fn((raw: unknown) => raw),
@@ -29,6 +26,13 @@ const { getJsonObject } = await import("../src/archive/s3.js");
 const { admitArchive } = await import("../src/archive/admit.js");
 const { readManifest } = await import("../src/archive/manifest.js");
 const { admitLevel } = await import("../src/crawl/admit-level.js");
+
+/** 段の報告が運んできたページ。鍵は BrowserHive の答えを模した綴り。 */
+const page = (taskId: string, url: string) => ({
+  taskId,
+  url,
+  manifestKey: `${taskId}_c1.result.json`,
+});
 
 /** BrowserHive が bucket に書くとおりの `.result.json`。 */
 const manifest = (taskId: string) => ({
@@ -61,7 +65,7 @@ describe("台帳に載せる", () => {
     vi.mocked(getJsonObject).mockResolvedValue(manifest("t1"));
     vi.mocked(admitArchive).mockResolvedValue({ archiveId: 7 } as never);
 
-    const result = await admitLevel([{ taskId: "t1", url: "https://example.com/a" }], options);
+    const result = await admitLevel([page("t1", "https://example.com/a")], options);
 
     expect(result.registered).toBe(1);
     expect(result.admittedUrls).toEqual(["https://example.com/a"]);
@@ -80,7 +84,7 @@ describe("台帳に載せる", () => {
 
     // 呼ぶ側が `failed` と判断したページ。`CapturedPage` に状態の欄は無い ——
     // 状態で絞るのは呼ぶ側の仕事ではない、という形にしてある。
-    const result = await admitLevel([{ taskId: "t2", url: "https://example.com/b" }], options);
+    const result = await admitLevel([page("t2", "https://example.com/b")], options);
 
     expect(result.admittedUrls).toEqual(["https://example.com/b"]);
   });
@@ -90,7 +94,7 @@ describe("台帳に載せる", () => {
     // 段の報告ごと 500 になって、クロールの進行が止まる。
     vi.mocked(getJsonObject).mockResolvedValue(undefined);
 
-    const result = await admitLevel([{ taskId: "t3", url: "https://example.com/c" }], options);
+    const result = await admitLevel([page("t3", "https://example.com/c")], options);
 
     expect(result.registered).toBe(0);
     expect(result.admittedUrls).toEqual([]);
@@ -106,7 +110,7 @@ describe("台帳に載せる", () => {
     vi.mocked(getJsonObject).mockResolvedValue(manifest("t4"));
     vi.mocked(admitArchive).mockResolvedValue({ archiveId: undefined });
 
-    const result = await admitLevel([{ taskId: "t4", url: "https://example.com/d" }], options);
+    const result = await admitLevel([page("t4", "https://example.com/d")], options);
 
     expect(result.registered).toBe(0);
     expect(result.admittedUrls).toEqual([]);
@@ -120,24 +124,37 @@ describe("台帳に載せる", () => {
     vi.mocked(admitArchive).mockResolvedValue({ archiveId: 9 } as never);
 
     const result = await admitLevel(
-      [
-        { taskId: "t5", url: "https://example.com/e" },
-        { taskId: "t6", url: "https://example.com/f" },
-      ],
+      [page("t5", "https://example.com/e"), page("t6", "https://example.com/f")],
       options,
     );
 
     expect(result.admittedUrls).toEqual(["https://example.com/f"]);
   });
 
-  it("correlationId が無ければ crawlId を鍵に使う", async () => {
-    // クロールは `correlationId: <crawlId>` で投げている。報告に載っていなくても
-    // 同じ鍵になるようにしてある —— ここがずれると manifest が永久に見つからない。
+  /**
+   * **鍵は組み直さない。** 見本は BrowserHive の命名規則では作れない綴り (接頭辞が
+   * 違い、空白と `+` を含む) にしてある —— 規則どおりの名前だと、taskId と crawlId から
+   * 組み直す実装でも同じ綴りになって緑で通る。
+   */
+  it("報告された鍵をそのまま読む", async () => {
     vi.mocked(getJsonObject).mockResolvedValue(undefined);
-    await admitLevel([{ taskId: "t7", url: "https://example.com/g" }], options);
+    await admitLevel(
+      [{ taskId: "t7", url: "https://example.com/g", manifestKey: "elsewhere/x y+z.result.json" }],
+      options,
+    );
 
-    const key = vi.mocked(getJsonObject).mock.calls[0]?.[2];
-    expect(key).toContain("t7");
-    expect(key).toContain("c1");
+    expect(vi.mocked(getJsonObject).mock.calls[0]?.[2]).toBe("elsewhere/x y+z.result.json");
+  });
+
+  // manifest を書けなかった取り込み。読みに行く先が無いので、S3 に問い合わせもしない。
+  it("鍵が無ければ読みに行かない", async () => {
+    const result = await admitLevel(
+      [{ taskId: "t8", url: "https://example.com/h", manifestKey: null }],
+      options,
+    );
+
+    expect(getJsonObject).not.toHaveBeenCalled();
+    expect(result.registered).toBe(0);
+    expect(result.admittedUrls).toEqual([]);
   });
 });

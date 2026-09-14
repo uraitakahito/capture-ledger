@@ -12,49 +12,44 @@
  * `CaptureStatus` の enum と比べられる。
  */
 import { CaptureResultReport } from "../rpc/generated/browserhive/v1/capture.js";
+import { parseS3Uri, type S3Location } from "./s3-uri.js";
 
 export const readManifest = (raw: unknown): CaptureResultReport =>
   CaptureResultReport.fromJSON(raw);
 
+/** 台帳に書く manifest の結末。どちらか一方だけが値を持つ。 */
+export type ManifestOutcome = { key: string; error: null } | { key: null; error: string };
+
 /**
- * manifest は成果物の隣に、BrowserHive のファイル名規則で置かれる:
- * `{taskId}_{correlationId}[_{labels}].result.json`。
+ * 段の報告が運んだ manifest の結末を、台帳に書く形にする。
  *
- * **correlationId の枠は空でも出る** (`{taskId}__{labels}` のように下線が並ぶ)。
- * それが BrowserHive 側で名前を読み戻せるようにしている仕掛けで、こちらも
- * 合わせないと存在しない鍵を作ることになる。値の中の `_` `.` `/` 空白などは
- * `%XX` へ逃がす —— 逃がさないと区切りと衝突して、鍵が 1 文字ずれる。
+ * **鍵は組まない。** 書いた本人 (BrowserHive か受け口) が「ここに書いた」と答えた場所から
+ * bucket を外し、残りをそのまま鍵にする。以前はここで BrowserHive の命名規則を写して綴りを
+ * 組み直していたが、写しは間違えても静かに壊れ、bucket を一覧して拾う reconcile がその穴を
+ * 隠していた。答えを持っている相手に訊けば、写しは要らない。
  *
- * ledger が、server から渡された鍵を読むのではなく自分で組み立てる唯一の場所。
- * **間違えても静かに壊れる** —— 失うのはこの代替経路だけで、reconciler のほうは
- * listing でオブジェクトを見つけてしまうので、ログにも結果にも出ない。
- * だから test/manifest-key.test.ts は BrowserHive と同じケースを並べてある。
- *
- * `\p{Cc}` (制御文字) を逃がすのは、鍵が ListObjectsV2 の **XML** で返るため。
- * XML 1.0 は ASCII 0-8 などを表せないので、残すと「オブジェクトは在るのに
- * 一覧に出てこない」になる。`\s` は CR/LF/TAB しか覆わない。
- *
- * 本体は browserhive の src/capture/artifact-name.ts (generateFilename)。
+ * **読むのは設定の bucket だけ。** 報告に入っていた bucket を信じると、報告する側が
+ * 読み先を選べる (`.links.json` を読むときと同じ理由)。違う bucket や `s3://` でない
+ * 場所は、読めない理由として残す —— **段の報告は落とさない。** 台帳が遅れることより、
+ * クロールが止まることのほうが重い。
  */
-const ESCAPED = /[%_.<>:"/\\|?*\s\p{Cc}]/gu;
-
-/** 逃がすのは 1 回の走査で。順に replace を重ねると二重符号化する。 */
-const encodeField = (value: string): string =>
-  value.replace(ESCAPED, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")}`);
-
-export const manifestKey = (
-  taskId: string,
-  correlationId: string | undefined,
-  labels: string[],
-  /**
-   * 置き場所の接頭辞。**受け口が成果物を受け取る構成でだけ付く。**
-   *
-   * BrowserHive が自前の保管庫へ書くときは平らな名前空間なので空。受け口が受けると
-   * 組織で分ける (`org/<orgId>/`) ので、鍵の綴りもそれに従う —— ここがずれると
-   * **manifest が見つからず、台帳に 1 行も入らないまま静かに終わる。**
-   */
-  keyPrefix = "",
-): string =>
-  keyPrefix +
-  [taskId, encodeField(correlationId ?? ""), ...labels.map(encodeField)].join("_") +
-  ".result.json";
+export const manifestOutcome = (
+  report: { manifestLocation?: string; manifestError?: string },
+  bucket: string,
+): ManifestOutcome => {
+  if (report.manifestError !== undefined) return { key: null, error: report.manifestError };
+  const location = report.manifestLocation ?? "";
+  let parsed: S3Location;
+  try {
+    parsed = parseS3Uri(location);
+  } catch {
+    return { key: null, error: `not an s3:// location the ledger can read: ${location}` };
+  }
+  if (parsed.bucket !== bucket) {
+    return {
+      key: null,
+      error: `written to bucket ${parsed.bucket}, but the ledger reads ${bucket}: ${location}`,
+    };
+  }
+  return { key: parsed.key, error: null };
+};
