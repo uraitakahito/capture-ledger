@@ -313,6 +313,39 @@ BrowserHive は `no signing service is configured on this server` と言いま�
 署名は fail-closed です —— 署名を求めて得られなかった取り込みは、署名なしのアーカイブを
 出すのではなく失敗します。
 
+### 受け口を通す
+
+既定では、BrowserHive は成果物を自前の bucket へ書きます。受け口はもう 1 つの経路で、
+capture-ledger がクロールごとに 1 回きりの URL とトークンを配り、BrowserHive は成果物を
+capture-ledger へ `PUT` します（`src/api/sink.ts`）。BrowserHive が全テナントに書ける鍵を
+持たずに済むための口です。2 つの変数で立ち、**2 つ揃ったときだけ**です —— 片方だけだと
+API は起動しません。
+
+```sh
+CAPTURE_LEDGER_API_HOST=0.0.0.0 \
+CAPTURE_LEDGER_SINK_ORIGIN=http://192.168.66.1:7070 \
+CAPTURE_LEDGER_SINK_SECRET=$(openssl rand -hex 32) \
+  pnpm run api
+```
+
+コマンド行で渡せば `.env` を触らずに済みます —— Node の `--env-file-if-exists` は、shell が
+既に持っている変数を上書きしません。
+
+起点は **BrowserHive のコンテナから API に届くアドレス**で、手元から使うアドレスではありません。
+dev のスタックでは、コンテナのネットワークから見た host の `192.168.66.1` です。API は
+`0.0.0.0` で待ち受ける必要があります —— loopback に bind すると、コンテナからの接続を断ります。
+起点を誤ると、取り込みは受け口の URL で始まる誤り（`http://…/api/sink/…: …`）で落ちます。
+
+**そのうえで、成果物がどこに置かれたかを見てください。**この経路は、音も無く素通りされることも
+あります。受け口を立てて始めたクロールは `crawls.artifact_key_prefix`（`org/<orgId>/<YYYY-MM>/`）
+を記録し、そのアーカイブの `object_key` はこれで始まるはずです。平らな
+`<taskId>_<crawlId>.wacz` は BrowserHive が自前の bucket へ書いた印で、クロールは成功し、
+ほかに何も教えてくれません。受け口が足されてから一度も使われなかったのはこのためです ——
+`src/crawl/dispatch.ts` の webhook の本文は手で書き並べられていて、`artifact_sink` を一度も
+運んでいませんでした。いまは型が網羅を保つ対応表から組み立てます。capture-scheduler の e2e も、
+API に受け口の有無を訊き（トークン無しの `PUT` が、在れば 401、無ければ 404）、在ればその
+クロールのアーカイブが全部接頭辞の下にあることを求めます。
+
 ## リポジトリの約束
 
 - ソースは `src/`、テストは `test/`、1 モジュール 1 関心。
