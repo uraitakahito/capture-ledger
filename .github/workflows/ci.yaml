@@ -153,8 +153,8 @@ jobs:
       # ステップを並べる形なので、片方だけでは CI に入らない。
       #
       # 雛形が腐ると「これで全部だ」と信じて使われ、足りないときに疑う先が
-      # 残らない。setup.sh はこの雛形を写して .env を作るので、ずれはそのまま
-      # 「必須の変数が欠けた .env」になって配られる。
+      # 残らない。.env はこの雛形の写し (cp -n .env.example .env) なので、ずれは
+      # そのまま「必須の変数が欠けた .env」になって配られる。
       - name: Environment variable check
         run: pnpm run check-env
 

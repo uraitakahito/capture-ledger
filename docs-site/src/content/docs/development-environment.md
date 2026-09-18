@@ -27,24 +27,26 @@ cd capture-ledger
 nvm use
 pnpm install
 sudo container system dns create capture-ledger   # once per machine
-./setup.sh          # submodules + .env
+git submodule update --init --recursive           # upstream sources into .upstream/
+cp -n .env.example .env                           # the settings template, verbatim
 pnpm run check       # audit + typecheck + lint + format:check + env + tests
 ```
 
-`setup.sh` is mandatory before any `container-compose` invocation: it
-initialises the `.upstream/browserhive` submodule that every build context
-points at, and refuses to continue if the `capture-ledger` DNS domain is missing.
+Start the stack with `pnpm run stack:up`, never with `container-compose`
+directly: before starting anything it checks the toolchain, the
+`capture-ledger` DNS domain and the `.upstream/` submodules that every build
+context points at, and stops, naming whatever is missing.
 
 ### Environment variables
 
-The code reads **35** of them, through three different mechanisms:
+The code reads them through three different mechanisms:
 `required()`/`optional()` in `src/config/`, commander's `.env()` (so they also
 show up in `--help`), and plain `process.env[…]` — the last of which reaches
-into `scripts/` too. Seven are mandatory.
+into `scripts/` too. `pnpm run check-env` counts them. Seven are mandatory.
 
-`.env.example` is the single list. `setup.sh` copies it to `.env` and
-copies it verbatim, changing no values; nothing else generates
-`.env`, because a second list drifts from the first. The two OpenFGA ids stay
+`.env.example` is the single list, and `.env` is a verbatim copy of it
+(`cp -n .env.example .env`); nothing generates `.env`, because a second list
+drifts from the first. The two OpenFGA ids stay
 empty until `pnpm run fga:deploy` prints them — see
 [Archive ledger](/capture-ledger/archive-ledger/#setup).
 
@@ -115,7 +117,8 @@ until grpcurl -plaintext -import-path proto -proto browserhive/v1/capture.proto 
 `up`, `down`, `build`, `version` — so there is no `exec` to drop into. It does
 not need one: the platform DNS resolves `<service>.capture-ledger` from the host as well
 as between containers, so capture-ledger runs on the host against the containerised
-stack. `setup.sh` writes the connection string into `.env`:
+stack. The connection string comes with the template, so the copied `.env`
+already has it:
 
 ```sh
 DATABASE_URL=postgres://capture_ledger:capture_ledger@postgres.capture-ledger:5432/capture_ledger

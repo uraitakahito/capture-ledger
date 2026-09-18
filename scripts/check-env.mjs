@@ -175,7 +175,7 @@ if (problems.length > 0) {
   console.error(`環境変数の一覧が ${TEMPLATE} とずれています:\n`);
   for (const problem of problems) console.error(`  ${problem}`);
   console.error(
-    `\n${TEMPLATE} が .env の唯一の出どころです (setup.sh はこれを写すだけ)。` +
+    `\n${TEMPLATE} が .env の唯一の出どころです (.env は cp -n ${TEMPLATE} .env で写して作る)。` +
       "\n新しい変数を足したら、値の例と「なぜ要るか」も一緒に書くこと ——" +
       "\n名前だけでは何を入れるべきか分かりません。",
   );

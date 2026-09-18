@@ -35,7 +35,6 @@ on:
       # time, so a bump can break the build (an off-tag pin fails `git
       # describe`) while touching nothing else the filter lists.
       - ".upstream/browserhive"
-      - "setup.sh"
       - "docker-compose.yml"
       - "package.json"
       - ".github/workflows/site.yaml"
@@ -48,7 +47,6 @@ on:
       # time, so a bump can break the build (an off-tag pin fails `git
       # describe`) while touching nothing else the filter lists.
       - ".upstream/browserhive"
-      - "setup.sh"
       - "docker-compose.yml"
       - "package.json"
       - ".github/workflows/site.yaml"

@@ -503,7 +503,7 @@ curl -X POST http://localhost:7070/api/archives/<id>/url \
 
 **入口はいま API だけです。** 以前は CLI 用の経路がもう 1 本あり、ヘッダの代わりに
 `.env` の `CAPTURE_LEDGER_DEV_SUBJECT` と `CAPTURE_LEDGER_DEV_ORGANIZATIONS` を読んでいました。
-その 2 つは、読む側の CLI ごと畳んだときに `.env.example` と `setup.sh` からも
+その 2 つは、読む側の CLI ごと畳んだときに `.env.example` からも
 消えています。
 
 身元が**何のためにあるか**は変わりません。これが `capture_submissions.submitted_by` と
@@ -610,7 +610,8 @@ pnpm run fga:deploy  # モデルを投入し、固定すべき ID を出力
 ## セットアップ
 
 ```sh
-./setup.sh                    # .env.example から .env を作る（35 個）
+git submodule update --init --recursive
+cp -n .env.example .env       # 設定の雛形をそのまま写す
 pnpm run stack:up
 pnpm run fga:migrate          # OpenFGA のスキーマ（下記参照）
 pnpm run db:migrate
