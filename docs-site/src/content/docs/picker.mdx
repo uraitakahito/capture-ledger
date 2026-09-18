@@ -1,0 +1,124 @@
+---
+title: Browsing archives (the picker)
+description: How to use the screen at http://127.0.0.1:7070/ that lists captured pages and opens them in replay — what to type into its two fields, and what its messages mean
+---
+
+The API started by `pnpm run api` serves one screen at `/`. It lists the pages you have captured and
+opens the one you pick in [replay](https://github.com/uraitakahito/replay), the viewer that plays an
+archive back. These docs call it the picker. Picking is all it does: it captures nothing, and it has
+no button that starts a crawl.
+
+Each captured page is stored as one WACZ (Web Archive Collection Zipped) file. A row in the picker
+is one of those files.
+
+```
+http://127.0.0.1:7070/
+```
+
+The screen is in Japanese. Its labels are quoted below as they appear, with their meaning beside
+them.
+
+## Three steps
+
+1. **Say who you are in the two fields.** `subject` is your own name and `organizations` is the
+   organization you belong to. If you are following the [Quickstart](/capture-ledger/quickstart/),
+   type the same values its §7 curl sends — the output of `whoami`, and `acme`.
+2. **Press 読み込む (Load).** The Enter key does not load. Press the button again whenever you
+   change a field.
+3. **Click the row you want.** replay opens in a new tab — see
+   [After clicking a row](#after-clicking-a-row).
+
+:::note[Empty is normal before the first crawl]
+Until a crawl has run, the picker says 見えるアーカイブが無い ("no archives visible to you").
+Nothing is broken. Rows appear once a crawl (§7 of the Quickstart) has finished.
+:::
+
+## What is on the screen
+
+| Part                          | What it does                                                                                                                                                                                                                                    |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `subject`                     | Who you are viewing as. Type your own name. Loading with this empty gives `401`. The grey `alice` is only an example                                                                                                                            |
+| `organizations`               | The organizations you belong to, comma-separated (the grey `acme,beta` is an example). It may stay empty, but then you see only what your own crawls produced                                                                                   |
+| 読み込む (Load)               | Fetches the list again under the identity currently typed in                                                                                                                                                                                    |
+| 取り込んだ URL (Captured URL) | The URL of the captured page. One row is one capture, so a page captured three times is three rows — tell them apart by the time                                                                                                                |
+| いつ (When)                   | When the page was captured, shown in your browser's time zone. The API and the database hold UTC                                                                                                                                                |
+| ラベル (Labels)               | The labels that were put on the capture target (`capture_targets`)                                                                                                                                                                              |
+| 欠けあり (Incomplete)         | Shown in red in the fourth column when at least one response body could not be stored — see [When `wacz_complete` is `false`](/capture-ledger/databases/archives/#when-wacz_complete-is-false). It is shown here so you know before you open it |
+| さらに読む (Load more)        | Appends the next 50 rows. It appears once even when there is nothing more; if pressing it adds nothing, you have reached the end                                                                                                                |
+| The note at the bottom        | A reminder that the identity filters only what the list shows — see [Archive ledger](/capture-ledger/archive-ledger/#picking-an-archive-in-a-browser)                                                                                           |
+
+Rows are newest first, 50 to a page. There is no search or filter field; your browser's find-in-page
+works on the list.
+
+## What to type into the two fields
+
+The two fields are a **claim about who you are**. They are not a password, and they are not search
+terms. Whatever you type is sent as two request headers, `X-Capture-ledger-Subject` and
+`X-Capture-ledger-Organizations` — the same headers the curl that starts a crawl carries.
+
+What you claim decides which rows you see. An archive is visible when either of these holds:
+
+| Condition                        | Meaning                                                                                                                         |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| You started the crawl            | The `subject` that started the crawl is the `subject` you typed                                                                 |
+| You are in the same organization | A crawl belongs to the **first** organization its starter claimed. You see it when `organizations` names that same organization |
+
+The Quickstart's §7, for example, starts its crawl as the output of `whoami`, in `acme`. What it
+produces is visible when `subject` is that same name, or when `organizations` contains `acme`. Any
+other name on its own gives 見えるアーカイブが無い.
+
+The decision is OpenFGA's `can_view`. The whole model is in
+[The authorization model](/capture-ledger/archive-ledger/#the-authorization-model).
+
+:::caution[A claim is enough only because this is the development setup]
+While `CAPTURE_LEDGER_DEV_IDENTITY=1` is set in `.env`, the API believes the claim as it stands. That
+is what the yellow box on the screen means by "whoever can reach this port can be anyone".
+
+With `CAPTURE_LEDGER_OIDC_ISSUER` set, the API ignores the claim headers and accepts only a JWT (JSON
+Web Token — a signed proof of identity). The picker sends no JWT, so under that configuration it gets
+`401` — see [Identity](/capture-ledger/archive-ledger/#identity).
+:::
+
+## What the messages mean
+
+| Message                                                            | Meaning                                                                         | What to do                                                                                            |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| subject を入れて「読み込む」                                       | The page has just opened and has not asked for the list yet                     | Fill in the two fields and press 読み込む                                                             |
+| 見えるアーカイブが無い                                             | The API answered normally, with no rows visible under this identity             | Go through "When the list is empty" below                                                             |
+| 401 — subject が空か、CAPTURE_LEDGER_DEV_IDENTITY=1 になっていない | The API decided you are nobody                                                  | Type a `subject`. If it persists, check `CAPTURE_LEDGER_DEV_IDENTITY=1` in `.env` and restart the API |
+| A number such as 500 — 一覧を取れなかった                          | The API failed inside (it could not reach the database or OpenFGA, for example) | Read the log in the terminal running `pnpm run api`                                                   |
+
+### When the list is empty
+
+- **Nothing has been captured yet.** At §6 of the Quickstart this is the normal state.
+- **The identity differs from the one that started the crawl.** Check the spelling of the
+  organization. When in doubt, type the same two values the curl that started the crawl sent.
+- **The crawl is still running.** A page enters the ledger once the level it belonged to has been
+  reported — see [While it is still running](/capture-ledger/quickstart/#while-it-is-still-running).
+  From there it takes at most about five seconds to become visible: the API delivers authorization
+  data to OpenFGA every five seconds. Wait a moment and press 読み込む again.
+
+## After clicking a row
+
+Clicking a row opens replay in a new tab. The URL is built from where replay lives and the key of
+that WACZ (`objectKey`):
+
+```
+http://127.0.0.1:8899/?source=/wacz/<objectKey>
+```
+
+replay first shows the list of pages inside that WACZ. One picker row is the capture of one page, so
+there is normally one entry. **Click its title and playback starts.** The bar at the top shows the
+original URL and the capture time; below it is the page as it was captured.
+
+Where replay lives comes from `REPLAY_ORIGIN` in `.env` (default `http://127.0.0.1:8899`). The replay
+container is started along with the rest by `pnpm run stack:up`.
+
+## Good to know
+
+- **The browser remembers what you typed.** Next time the page opens it loads under the previous
+  identity on its own. After trying another identity, remember to change it back.
+- **The screen authenticates nobody.** It is a development screen. Do not expose it anywhere reachable
+  from outside.
+- **Only the list is filtered.** Anyone who knows the key of a WACZ can read it through replay — see
+  [Archive ledger](/capture-ledger/archive-ledger/#picking-an-archive-in-a-browser).

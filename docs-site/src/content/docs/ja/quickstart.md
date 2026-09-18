@@ -112,8 +112,14 @@ pnpm run api
 open http://127.0.0.1:7070/
 ```
 
-一覧が空なら `.env` の `CAPTURE_LEDGER_DEV_IDENTITY=1` を確かめてください。無いと
-resolver が誰も通さず、picker は `401` で空のままになります。
+開いたら、`subject` に自分の名前（`whoami` の出力）、
+`organizations` に `acme`（§7 でクロールを起こすときに名乗る組織）を入れて、「読み込む」を押します。
+**この時点では「見えるアーカイブが無い」と出るのが正常です** ——
+一覧に行が増えるのは §7 のクロールの後です。画面の部品と、出る文の意味は、
+[アーカイブを見る](/capture-ledger/ja/picker/)にあります。
+
+`401` と出るなら、`.env` の `CAPTURE_LEDGER_DEV_IDENTITY=1` を確かめてください。
+無いと resolver が誰も通しません。
 
 :::caution[スケジューラから叩くなら loopback では届きません]
 既定の待ち受けは `127.0.0.1` で、**コンテナから届きません**。capture-scheduler の Windmill に
@@ -158,8 +164,12 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 
 ## 8. 結果を見る
 
-§6 の picker を読み込み直します。行をクリックすると
-[replay](https://github.com/uraitakahito/replay) で開きます。
+§6 の picker で、§7 と同じ名乗り（`whoami` の出力と `acme`）のまま「読み込む」を押し直します。
+行をクリックすると、別のタブで [replay](https://github.com/uraitakahito/replay) が開きます。
+replay はまず、その WACZ に入っているページの一覧を出します
+（WACZ は Web Archive Collection Zipped —— 取り込んだ 1 ページをまとめたファイルです）。
+**題名をクリックすると、再生が始まります。**
+
 一覧は台帳（`archives` テーブル）から来ていて、**OpenFGA の `can_view` で
 絞ってあります**。API を直に叩くこともできます。
 

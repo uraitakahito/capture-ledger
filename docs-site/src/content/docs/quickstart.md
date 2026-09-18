@@ -114,8 +114,14 @@ pnpm run api
 open http://127.0.0.1:7070/
 ```
 
-An empty listing usually means `CAPTURE_LEDGER_DEV_IDENTITY=1` is missing from `.env` —
-without it the resolver admits nobody and the picker stays empty with `401`.
+Once it is open, type your own name (the output of `whoami`) into `subject` and `acme` — the
+organization you will claim when starting the crawl in §7 — into `organizations`, then press 読み込む
+(Load). **At this point the picker says 見えるアーカイブが無い ("no archives visible to you"), and
+that is normal**: rows appear after the crawl in §7. What each part of the screen does, and what its
+messages mean, is in [Browsing archives](/capture-ledger/picker/).
+
+If it says `401`, check that `CAPTURE_LEDGER_DEV_IDENTITY=1` is in `.env` — without it the resolver
+admits nobody.
 
 :::caution[A scheduler cannot reach a loopback bind]
 The default bind is `127.0.0.1`, and **a container cannot reach it**. To let
@@ -162,10 +168,14 @@ Also note `can_submit`: a caller without the grant gets `404` too. See
 
 ## 8. See what came out
 
-Reload the picker from §6. Clicking a row opens it in
-[replay](https://github.com/uraitakahito/replay). The listing comes from the
-ledger (the `archives` table) and is **filtered by OpenFGA's `can_view`**. You
-can also call the API directly:
+In the picker from §6, keep the identity you used in §7 (the output of `whoami`, and `acme`) and
+press 読み込む (Load) again. Clicking a row opens
+[replay](https://github.com/uraitakahito/replay) in a new tab. replay first lists the pages inside
+that WACZ (Web Archive Collection Zipped — the file one captured page is packed into). **Click the
+title and playback starts.**
+
+The listing comes from the ledger (the `archives` table) and is **filtered by OpenFGA's
+`can_view`**. You can also call the API directly:
 
 ```sh
 curl -s -H "X-Capture-ledger-Subject: $(whoami)" -H "X-Capture-ledger-Organizations: acme" \
