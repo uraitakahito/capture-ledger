@@ -4,10 +4,10 @@ packages:
   - "docs-site"
 
 # pnpm 11 は依存の lifecycle script を既定で実行しない。ここに挙がっているのは
-# 「実行してよいか」を pnpm に聞かれたパッケージで、**3 つとも false でよい**
+# 「実行してよいか」を pnpm に聞かれたパッケージで、**どれも false でよい**
 # ことを実測で確かめてある。
 #
-# 直感に反するが、この 3 つの postinstall はどれも必須ではない:
+# 直感に反するが、上の 3 つの postinstall はどれも必須ではない:
 #
 #   @bufbuild/buf — bin/buf は platform 別のパッケージ (ここでは
 #                   @bufbuild/buf-darwin-arm64) を **実行時に** 解決する Node の
@@ -18,6 +18,12 @@ packages:
 #   protobufjs    — @grpc/grpc-js 経由。postinstall は依存の版の書き方について
 #                   stderr に助言を書くだけで、ファイルを 1 つも作らない
 #                   (実物を読んで確認済み。副作用は process.stderr.write のみ)。
+#   puppeteer     — docs の画面の絵を撮る (scripts/docs-shots.mjs) ためだけに在る。
+#                   postinstall は Chromium (150MB) を取りに行くので、false にして
+#                   install のたびに DL させない (CI でも要らない)。撮る人は初回だけ
+#                   手で `./node_modules/.bin/puppeteer browsers install chrome`。
+#                   .npmrc の PUPPETEER_SKIP_DOWNLOAD も同じ意図の二重の保険。
+#                   capture-scheduler と同じ形。
 #
 # false でよいことの確かめ方 (このまま叩けば再現できる):
 #
@@ -38,6 +44,7 @@ allowBuilds:
   "@bufbuild/buf": false
   esbuild: false
   protobufjs: false
+  puppeteer: false
 
 # npm の `overrides` の移設先。pnpm 11 は package.json の `overrides` を読まず、
 # 書いても無視する (= 脆弱性修正が黙って失われる)。

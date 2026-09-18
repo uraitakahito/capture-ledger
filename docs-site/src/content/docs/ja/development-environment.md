@@ -96,6 +96,7 @@ NAME=value     # 値を渡す
 | `pnpm run proto:sync`                     | 固定した submodule から `.proto` を取り直す。                           |
 | `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                |
 | `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                    |
+| `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                  |
 
 ## スタックで作業する
 
@@ -346,6 +347,25 @@ dev のスタックでは、コンテナのネットワークから見た host �
 運んでいませんでした。いまは型が網羅を保つ対応表から組み立てます。capture-scheduler の e2e も、
 API に受け口の有無を訊き（トークン無しの `PUT` が、在れば 401、無ければ 404）、在ればその
 クロールのアーカイブが全部接頭辞の下にあることを求めます。
+
+## 画面の絵を撮り直す
+
+[アーカイブを見る](/capture-ledger/ja/picker/)の絵は、`scripts/docs-shots.mjs` が撮った生成物です。
+手で撮った絵は 1 枚もありません。絵は画面の書き写しで、書き写しは画面を直した日から古くなるためです。
+
+```sh
+./node_modules/.bin/puppeteer browsers install chrome   # 初回だけ (撮影用の Chrome を取得)
+pnpm run docs:shots
+```
+
+スタックは要りません。script が立てるのは、本物の画面（`src/api/picker.ts`）と、
+見本データを返す代役の API だけです。見た目（ライトモード）・言語・時間帯・見本データの日時を
+固定してあるので、誰が撮っても同じ絵になります。何も変えずに撮り直しても、差分は出ません。
+
+**`src/api/picker.ts` を変えたら、撮り直してください。** 撮ったときのソースの sha256 を
+`docs-site/src/assets/picker/shots-manifest.json` に控えてあり、いまのソースと違うと
+`pnpm run site:check` が落ちます。コメントだけの変更でも同じです。manifest は script が書くので、
+手では直さないでください。
 
 ## リポジトリの約束
 
