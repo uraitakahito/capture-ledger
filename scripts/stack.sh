@@ -27,6 +27,9 @@
 # 余分な引数はそのまま container-compose へ渡る。`fixtures` と `search` を包まないのは、
 # どちらも黙っては壊れないから —— fixtures は実行時に種として選ぶもので、search は
 # URL が空なら capture-ledger が口ごと出さない。
+#
+# `up` は起動の前に、道具・DNS ドメイン・submodule を確かめ、足りなければ名前を挙げて
+# 止まる (下の preflight と submodule-versions.sh)。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -40,6 +43,49 @@ signing_enabled() {
   [ -f .env ] || return 1
   grep -qE '^[[:space:]]*CAPTURE_LEDGER_CAPTURE_SIGNING[[:space:]]*=[[:space:]]*1[[:space:]]*$' .env
 }
+
+# 起動の前に、黙って壊れる前提を名指しして止める。以前は setup.sh が 1 度だけ見ていたが、
+# 起動のたびに見るほうが確か —— 後から DNS ドメインを消しても、次の up で捕まる。
+#
+#   - 道具: container が無いまま DNS の検査に進むと、「DNS ドメインが無い」と
+#     取り違えて報告してしまう。
+#   - DNS ドメイン: docker-compose.yml の project 名が、そのまま DNS ドメインになる。
+#     登録されていないと container-compose は、起動後に `container exec` で **各コンテナの
+#     中の** /etc/hosts へ相手の行を追記する方式に落ちる (ホスト側の /etc/hosts は触らない)。
+#     その追記は非 root のコンテナ (browserhive=uid 1000、chromium=uid 999) では書き込めずに
+#     失敗するが、container-compose は exec の終了状態を見ず stderr も捨てるので **何も
+#     言わない**。しかも root のコンテナ (postgres、seaweedfs、replay) では成功するため、
+#     「一部のサービスだけ名前が引けない」という追いにくい症状になる。
+#   - submodule: 空なら submodule-versions.sh が「初期化されていません」で止める。
+#
+# down には掛けない。DNS ドメインが無くても、止めることはできるべきだから。
+preflight() {
+  local cmd domains
+  for cmd in container container-compose; do
+    if ! command -v "${cmd}" >/dev/null 2>&1; then
+      echo "エラー: \`${cmd}\` が PATH に見つかりません。" >&2
+      echo "Apple Container と container-compose を (Homebrew で) 入れてから、もう一度起動してください。" >&2
+      exit 1
+    fi
+  done
+
+  # 一覧を変数に取ってから探す。`set -o pipefail` の下で `container … | grep -q` と
+  # 繋ぐと、grep が先に終わったときの SIGPIPE で左側が 141 を返し、「在るのに無い」と
+  # 判定しうる (以前の setup.sh は pipefail を持たなかったので、その形で済んでいた)。
+  domains="$(container system dns ls 2>/dev/null || true)"
+  if ! grep -qx "capture-ledger" <<<"${domains}"; then
+    echo "エラー: DNS ドメイン 'capture-ledger' が登録されていません (quickstart の 1)。" >&2
+    echo "" >&2
+    echo "    sudo container system dns create capture-ledger" >&2
+    echo "" >&2
+    echo "上のコマンドを一度だけ実行してから (sudo が要ります)、もう一度起動してください。" >&2
+    exit 1
+  fi
+}
+
+if [ "${SUBCOMMAND}" = "up" ]; then
+  preflight
+fi
 
 # **空配列の展開は `set -u` に当たる。** macOS の bash は 3.2 で、そこでは
 # `"${arr[@]}"` が「未定義の変数」として落ちる (実測)。`${arr[@]+...}` の形にすると
