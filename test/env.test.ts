@@ -141,6 +141,40 @@ describe("collectEnv", () => {
 });
 
 /**
+ * 足りない変数の案内。**値の出どころによって正しい手が逆になる** ので、出どころごとに
+ * 分けて案内する。`MissingEnvError` を直接つくるので、環境変数の退避や復元は要らない。
+ *
+ * 名前は実装の一覧 (`FGA_DEPLOY_ENV`) を使わずに書く。一覧のほうが間違っていたら、
+ * それを写した試験は一緒に間違える。
+ */
+describe("足りない変数の案内", () => {
+  const FGA = ["CAPTURE_LEDGER_FGA_STORE_ID", "CAPTURE_LEDGER_FGA_MODEL_ID"];
+
+  // 2026-09-19 に実際に起きた形。以前の案内は setup.sh を勧め、setup.sh は .env を雛形に
+  // 戻すだけなので、api → setup.sh → api の輪から出られなかった。
+  it("OpenFGA の id だけが欠けているときは fga:deploy を案内し、setup.sh は勧めない", () => {
+    const { message } = new MissingEnvError(FGA);
+    expect(message).toContain("CAPTURE_LEDGER_FGA_MODEL_ID");
+    expect(message).toContain("pnpm run fga:deploy");
+    expect(message).not.toContain("setup.sh");
+  });
+
+  it("雛形に在る変数だけが欠けているときは .env.example を案内し、fga:deploy には触れない", () => {
+    const { message } = new MissingEnvError(["CAPTURE_LEDGER_S3_BUCKET"]);
+    expect(message).toContain(".env.example");
+    expect(message).not.toContain("fga:deploy");
+  });
+
+  it("両方が欠けているときは、名前を出どころごとの案内の下に並べる", () => {
+    const { message } = new MissingEnvError(["CAPTURE_LEDGER_S3_BUCKET", ...FGA]);
+    const deployAt = message.indexOf("デプロイで決まるもの");
+    expect(deployAt).toBeGreaterThan(0);
+    expect(message.indexOf("CAPTURE_LEDGER_S3_BUCKET")).toBeLessThan(deployAt);
+    expect(message.indexOf("CAPTURE_LEDGER_FGA_STORE_ID")).toBeGreaterThan(deployAt);
+  });
+});
+
+/**
  * 「設定されているが空」の検査。
  *
  * `guardEnv()` は module body で `process.exit` するのでテストから直接は呼べない。
