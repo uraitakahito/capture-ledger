@@ -29,6 +29,47 @@ import type { CrawlDispatcher, DispatchedCrawl } from "../api/crawls.js";
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
+ * `DispatchedCrawl` の欄と flow の引数名の対応。**型で網羅させる** —— `-?` で省略可能な欄も
+ * 必須にしてあるので、`DispatchedCrawl` に欄を足してここに書き忘れると typecheck が落ちる。
+ *
+ * 以前は webhook の本文をその場で書き並べていて、受け口を足したとき `artifactSink` を型に
+ * 足したまま本文へ載せ忘れた。flow の schema で `artifact_sink` は省略可能なので、BrowserHive は
+ * 口を受け取らないまま黙って自前の保管庫へ書き続け、クロールは受け口を一度も使わなかった
+ * (2026-09-14 に見つけた)。本文を書き並べる形に戻さないこと。
+ *
+ * **snake_case で送る。** Windmill の script は引数名がそのまま入力の契約で、
+ * この repo の script は snake_case で書かれている。camelCase で送ると、
+ * 引数は既定値のまま静かに走り、`host_parallelism` が null になって
+ * 「u16 として読めない」で落ちる (実測)。
+ */
+const FLOW_ARGS: { readonly [K in keyof DispatchedCrawl]-?: string } = {
+  crawlId: "crawl_id",
+  depth: "depth",
+  frontier: "frontier",
+  perHostDelayMs: "per_host_delay_ms",
+  hostParallelism: "host_parallelism",
+  // **形式と署名は必ず送る。** flow の schema の既定値は webhook 起動では
+  // 埋まらないので、送らなければ `undefined` が届く。決めるのは ledger 側。
+  captureFormats: "capture_formats",
+  signing: "signing",
+  // 受け口を使わない配備では値が無く、鍵ごと送らない (`flowArgs`)。
+  artifactSink: "artifact_sink",
+};
+
+/**
+ * webhook の本文。**値の無い欄は鍵ごと送らない** —— `artifact_sink` を省けば、BrowserHive は
+ * 従来どおり自前の保管庫へ書く。
+ *
+ * export は試験のため。
+ */
+export const flowArgs = (crawl: DispatchedCrawl): Record<string, unknown> =>
+  Object.fromEntries(
+    (Object.keys(FLOW_ARGS) as (keyof DispatchedCrawl)[])
+      .filter((field) => crawl[field] !== undefined)
+      .map((field) => [FLOW_ARGS[field], crawl[field]]),
+  );
+
+/**
  * 設定を読んで dispatcher を作る。設定が無ければ `undefined`。
  *
  * **起動時に読む。** クロールを頼まれた瞬間に「設定がありません」と言うのでは遅い ——
@@ -50,28 +91,13 @@ export const createWindmillDispatcher = (): CrawlDispatcher | undefined => {
   );
 
   return async (crawl: DispatchedCrawl): Promise<void> => {
-    // **snake_case で送る。** Windmill の script は引数名がそのまま入力の契約で、
-    // この repo の script は snake_case で書かれている。camelCase で送ると、
-    // 引数は既定値のまま静かに走り、`host_parallelism` が null になって
-    // 「u16 として読めない」で落ちる (実測)。
-    //
     // `waggle_url` / `token` / `browserhive_target` は送らない —— flow の schema の
     // 既定値 (`$var:` 参照) が埋める。ledger は自分がコンテナからどう見えるかを
     // 知らないし、issuer の鍵も持っていないので、どちらもここでは決められない。
     const res = await fetch(url, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({
-        crawl_id: crawl.crawlId,
-        depth: crawl.depth,
-        frontier: crawl.frontier,
-        per_host_delay_ms: crawl.perHostDelayMs,
-        host_parallelism: crawl.hostParallelism,
-        // **形式と署名は必ず送る。** flow の schema の既定値は webhook 起動では
-        // 埋まらないので、送らなければ `undefined` が届く。決めるのは ledger 側。
-        capture_formats: crawl.captureFormats,
-        signing: crawl.signing,
-      }),
+      body: JSON.stringify(flowArgs(crawl)),
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {

@@ -28,8 +28,8 @@ HEALTH_TARGETS=("localhost:50051" "localhost:50052")
 HEALTH_TIMEOUT_S="${BROWSERHIVE_HEALTHCHECK_TIMEOUT_S:-180}"
 
 # The API reads the bucket itself: the level handler picks up each capture's
-# `.result.json` manifest and `.links.json`, reconcile lists what landed, and
-# the picker serves the archives. So the S3 settings belong to the API run and
+# `.result.json` manifest and `.links.json` at the keys the level report carries,
+# and the picker serves the archives. So the S3 settings belong to the API run and
 # not just to BrowserHive.
 # They match docker-compose.yml's seaweedfs service; path-style because the
 # bundled SeaweedFS has no wildcard DNS for the bucket subdomain.

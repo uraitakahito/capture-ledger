@@ -44,33 +44,35 @@ Outbox 行として記録します。両方入るか、どちらも入らない�
 Windmill の flow です。
 
 **クロール** ― クロールは、flow が段を報告した時点で自分が取り込んだぶんを
-登録します（`src/crawl/admit-level.ts`）。段の報告には成果物の在り処が
-載っていないので、`.result.json` を読み直してから登録します。こちらが速い経路で、
+登録します（`src/crawl/admit-level.ts`）。段の報告が運ぶのは各 capture の
+`.result.json` の置き場所で、結果そのものは載っていないので、報告された鍵のとおりに
+manifest を読み直してから登録します。こちらが速い経路で、
 取り込んだページは 1 往復のうちに台帳へ入ります。
 
-**Reconcile** ― `pnpm run fga:reconcile` は BrowserHive が各 capture の
-成果物の隣に書く `.result.json` マニフェストを走査し、台帳に無いものを
-登録します。**これが台帳を自己修復させます**: capture-ledger が何時間止まっていても、
-manifest が段の閉じた後に書かれても、次の reconcile で拾えます。
+**Reconcile** ― `pnpm run fga:reconcile` は、報告は届いたのに台帳に入らなかった
+取り込み（manifest の読み取りか、行の書き込みが落ちたもの）を登録します。
+`capture_submissions` のうち `manifest_key` を持ち、まだアーカイブの無い行を読み、
+**その鍵だけ**を取りに行きます。**bucket は歩きません。** 鍵を組み直すこともありません ——
+BrowserHive（または受け口）が `Capture` の応答で manifest を書いた場所を答え、Windmill の
+flow がそれを運び、段の報告が書き留めています。
 
-既定では bucket 全体を歩きます。`--since-days <n>` を渡すと、直近 `n` 日に始まった
-クロールが**実際に書いた**接頭辞だけに絞ります。その接頭辞は
-`crawls.artifact_key_prefix` に書き残してあります:
+`--since-days <n>` を渡すと、直近 `n` 日に報告された取り込みだけに絞ります:
 
 ```sh
 pnpm run fga:reconcile --since-days 30
 ```
 
-この旗にできることは 2 つの事情で決まります。S3 の list は **prefix でしか
-絞れない** ― 拡張子での絞り込みも「いつ以降」もありません ― ので、絞る手がかりは
-鍵そのものに無ければならず、受け口はそのために `org/<orgId>/<YYYY-MM>/` の下へ
-置きます。そして BrowserHive が自前の保管庫へ書く配備では成果物が平らな名前空間に
-並び、絞る手がかりがありません。**`--since-days` が効くのは受け口経路だけです。**
+結果は `pending`・`registered`・`skipped`（台帳が受け付けない manifest。成果物の無い
+cancelled など）・`missing`（報告された鍵に何も無い）で報告します。
 
-**誤って絞るくらいなら絞りません。** 窓の中に接頭辞を記録していないクロールが
-1 本でもあれば、この旗は全走査に落ち、そのことを log に出します。絞ったせいで
-飛ばされた穴は誰にも見つけられません ― そして気づかれない穴のある台帳は、
-台帳が無いより悪いからです。
+**拾えないもの**（仕組み上そうなっています）:
+
+- **段の報告が届かなかった取り込み** —— capture-ledger が止まっていた、または flow が
+  報告の前に落ちた。`capture_submissions` の行が無いので、組織も manifest の鍵も分かりません。
+  bucket を歩いていた頃も同じで、見つけた manifest は帰属が無く `unattributed` と数える
+  だけでした。
+- **`manifestError` で報告された取り込み。** 読みに行く鍵がありません。BrowserHive が待つのを
+  やめた後に書き込みが終わっていた場合、manifest は在ってもここからは届きません。
 
 :::note[クロールの経路は、以前は抜けていました]
 クロールの経路は `crawl_pages` と `capture_submissions` にしか書いておらず、
@@ -84,7 +86,7 @@ pnpm run fga:reconcile --since-days 30
 ― 穴はずっと後で「なぜこのアーカイブが見えないのか」として現れます。
 
 ```sh
-pnpm run fga:reconcile   # バケットから抜けを埋める
+pnpm run fga:reconcile   # 書き留めた manifest の鍵から抜けを埋める
 pnpm run fga:drain       # 溜まったタプルを配送（API も定期的に行う）
 ```
 

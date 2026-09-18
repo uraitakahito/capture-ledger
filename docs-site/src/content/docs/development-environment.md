@@ -327,6 +327,42 @@ service is configured on this server`.
 Signing is fail-closed: a capture that asked for a signature and could not get
 one fails rather than producing an unsigned archive.
 
+### Sending artifacts through the sink
+
+By default BrowserHive writes each artifact into its own bucket. The sink is the
+other path: capture-ledger hands every crawl a one-off URL and token, and BrowserHive
+`PUT`s each artifact to capture-ledger instead (`src/api/sink.ts`), so BrowserHive
+never holds a key that can write for every tenant. Two variables turn it on, **and
+only together** — with just one of them set, the API refuses to start:
+
+```sh
+CAPTURE_LEDGER_API_HOST=0.0.0.0 \
+CAPTURE_LEDGER_SINK_ORIGIN=http://192.168.66.1:7070 \
+CAPTURE_LEDGER_SINK_SECRET=$(openssl rand -hex 32) \
+  pnpm run api
+```
+
+Setting them on the command line leaves `.env` alone: Node's `--env-file-if-exists`
+does not override a variable the shell has already set.
+
+The origin is **the address BrowserHive's containers reach the API at**, not the one
+you use. On the dev stack that is the host as seen from the container network,
+`192.168.66.1`, and the API has to listen on `0.0.0.0` — bound to loopback, it
+refuses the containers. A wrong origin fails captures with an error that starts with
+the sink URL (`http://…/api/sink/…: …`).
+
+**Then check where the artifacts landed**, because this path can also be skipped
+without a sound. A crawl started with the sink on records
+`crawls.artifact_key_prefix` (`org/<orgId>/<YYYY-MM>/`), and the `object_key` of
+each of its archives must start with it. A flat `<taskId>_<crawlId>.wacz` means
+BrowserHive wrote into its own bucket: the crawl still succeeds, and nothing else
+says so. That is how the sink went unused from the day it was added — the webhook
+body in `src/crawl/dispatch.ts` was written out by hand and never carried
+`artifact_sink`. It is now built from a mapping the type checker keeps complete, and
+capture-scheduler's end-to-end test asks the API whether it serves the sink (an
+unauthenticated `PUT` answers 401 if it does, 404 if not) and, when it does, requires
+every archive of its crawl to sit under the prefix.
+
 ## Repo conventions
 
 - Source under `src/`, tests under `test/`, one concern per module.

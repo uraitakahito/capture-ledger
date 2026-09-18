@@ -1,7 +1,7 @@
 {
   "name": "capture-ledger",
   "version": "0.0.1",
-  "description": "Higher-level capture client and orchestrator built on top of BrowserHive (https://github.com/uraitakahito/browserhive).",
+  "description": "Capture orchestrator for BrowserHive (https://github.com/uraitakahito/browserhive): decides which URLs get captured and keeps the ledger of what came back.",
   "license": "Unlicense",
   "type": "module",
   "private": true,
@@ -48,12 +48,13 @@
     "db:seed": "pnpm run build && node --env-file-if-exists=.env dist/db/seed.js up",
     "db:seed:down": "pnpm run build && node --env-file-if-exists=.env dist/db/seed.js down",
     "audit": "pnpm audit --audit-level=low",
-    "check": "pnpm run audit && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm test && pnpm run build && pnpm run proto:check && pnpm run proto:check-deps && pnpm run proto:diff && pnpm run check-env && pnpm run check-comment-refs && pnpm run check:flag-style && pnpm run check:ci-parity && pnpm run fga:test && pnpm run site:check",
+    "check": "pnpm run audit && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm test && pnpm run build && pnpm run proto:check && pnpm run proto:check-deps && pnpm run proto:diff && pnpm run check:seaweedfs-pin && pnpm run check-env && pnpm run check-comment-refs && pnpm run check:flag-style && pnpm run check:ci-parity && pnpm run fga:test && pnpm run site:check",
     "oidc:issuer": "pnpm run build && node --env-file-if-exists=.env dist/dev/issuer-cli.js",
     "oidc:token": "pnpm run build && node --env-file-if-exists=.env dist/dev/token.js",
     "check:flag-style": "node scripts/check-flag-style.mjs",
     "clean": "rm -rf dist",
-    "check:ci-parity": "node scripts/check-ci-parity.mjs"
+    "check:ci-parity": "node scripts/check-ci-parity.mjs",
+    "check:seaweedfs-pin": "sh .upstream/seaweedfs/scripts/check-pin.sh docker-compose.yml"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1107.0",

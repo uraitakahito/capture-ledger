@@ -59,7 +59,8 @@ Consequences worth knowing:
   turn a late write into a 500 on the level report, stopping the crawl; the
   reconciler picks it up instead.
 - `capture_submissions` is written for **every** page that carried a `taskId`,
-  not only the successful ones — attribution is what the reconciler later needs.
+  not only the successful ones — attribution and the manifest key are what the
+  reconciler later needs.
 
 ## The ledger and authorization
 
@@ -73,12 +74,13 @@ flowchart LR
   subgraph W["capture-ledger"]
     direction TB
     REG["crawl/admit-level.ts<br/>admit what a level captured"]
-    RC["reconcile.ts<br/>sweep the bucket, fill the gaps"]
+    RC["reconcile.ts<br/>read recorded manifest keys"]
     OW["outbox-worker.ts<br/>deliver tuples"]
     API["api/routes.ts<br/>signing endpoint"]
   end
   S3 -.->|.result.json| REG
   S3 -.->|.result.json| RC
+  PG -.->|pending manifest keys| RC
   REG --> PG
   RC --> PG
   PG[("Postgres<br/>archives + fga_outbox")]
@@ -102,8 +104,8 @@ How to read it:
 - **Membership is not stored.** Which organizations a caller belongs to arrives
   from their token and is passed as a contextual tuple on every Check.
 - Two paths lead into the ledger: a **crawl** admitting what a level captured
-  (fast, `src/crawl/admit-level.ts`), and `reconcile` sweeping the bucket (picks
-  up whatever landed while capture-ledger was down). Both go through `admitArchive`, and
+  (fast, `src/crawl/admit-level.ts`), and `reconcile` reading the manifest keys the
+  level reports recorded (picks up what the fast path failed to admit). Both go through `admitArchive`, and
   `(bucket, object_key)` is unique, so reaching the same capture twice is a no-op.
 
 See [Archive ledger](/capture-ledger/archive-ledger/) for the details.

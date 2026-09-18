@@ -81,8 +81,8 @@ enum SessionMode {
   // 既定。使い捨ての BrowserContext で取り込む。cookie / HTTP キャッシュ /
   // localStorage / sessionStorage / IndexedDB / Service Worker がすべて空から始まる。
   SESSION_MODE_ISOLATED = 0;
-  // worker が持ち回る BrowserContext とタブを使う。ログイン後の連続取り込みなど、
-  // 持ち越すことが目的のときだけ選ぶ。同じ worker に載った **無関係なタスクにも
+  // server が持ち回る BrowserContext とタブを使う。ログイン後の連続取り込みなど、
+  // 持ち越すことが目的のときだけ選ぶ。同じ server で続けて走る **無関係な取り込みにも
   // 状態が漏れる** ことを承知の上で。後始末は一切しない。
   SESSION_MODE_SHARED = 1;
 }
@@ -374,6 +374,9 @@ message CaptureRequest {
   // 保管庫を持たない配備では**必須**で、無ければ受理の時点で断る ——
   // 撮ってから「置けません」は、この系でいちばん高くつく失敗。
   optional ArtifactSink artifact_sink = 25;
+  // 読み込み後の待ちの、取り込みごとの上書き。省いた欄はサーバ既定 (--load-wait-*)。
+  // 最長に当たるのは失敗ではなく、応答と archive の settle に deadline として残る。
+  optional LoadWait load_wait = 26;
 }
 
 message GetServerStatusRequest {}
@@ -465,6 +468,59 @@ message CaptureErrorDetails {
   optional string step = 6;
 }
 
+// 読み込み後の待ち (settle) の、取り込みごとの上書き。tail は上書きできない。
+message LoadWait {
+  // load の後、静止を見始める前に置く最短 (Lighthouse の pauseAfterLoad)。
+  optional int32 min_ms = 1;
+  // 合図が来なくても切り上げる最長。
+  optional int32 max_ms = 2;
+  // 網・CPU・DOM が「静か」とみなす窓。
+  optional int32 quiet_ms = 3;
+  // 静かでも許す同時接続数。0 なら全部届くまで (既定)。上げると long-polling / SSE を
+  // 吸収できるが、その数までの要求は待たずに撮ることになる。
+  optional int32 network_concurrency = 4;
+}
+
+// 合図 1 つの結末。quiet_at_ms が無ければ、最長までに満ちなかった (archive では null)。
+message SettleSignal {
+  optional int32 quiet_at_ms = 1;
+}
+
+// load の結末。at_ms が無ければ、最長までに load を見なかった (archive では null)。
+message SettleLoad {
+  optional int32 at_ms = 1;
+}
+
+// 効いていた最短・最長・窓・許す接続数。要求ではなく効いた値。
+message SettleLimits {
+  int32 min_ms = 1;
+  int32 max_ms = 2;
+  int32 quiet_ms = 3;
+  int32 network_concurrency = 4;
+}
+
+// 読み込み後の待ちがどう終わったか。archive の browserhive:capture.settle と同じ形。
+message Settle {
+  // 見ていた合図の組。この版では fully-loaded (load → 最短 → 網 ∧ CPU ∧ DOM → 尾)。
+  string strategy = 1;
+  // quiet (見ていた合図が全部、最長の前に満ちた) か deadline (満ちないまま最長に当たった)。
+  // deadline は失敗ではない —— ページがまだ動いていたという観測。
+  string ended_by = 2;
+  // goto が返ってから待ちを終えるまでの ms。差し込んだ間 (operation_delay_ms) は数えない。
+  int32 waited_ms = 3;
+  // 最後のパスの観測 (dismissal と同じ)。
+  int32 device_pixel_ratio = 4;
+  SettleLimits limits = 5;
+  // 網の静止。
+  SettleSignal network = 6;
+  // DOM の静止 (要素の出入りと文字の書き換え。属性の変化は数えない)。
+  SettleSignal dom = 7;
+  // load (document.readyState が complete)。
+  SettleLoad load = 8;
+  // CPU の静止 (50 ms 以上の long task が無い)。
+  SettleSignal cpu = 9;
+}
+
 message CaptureResultReport {
   string task_id = 1;
   optional string correlation_id = 2;
@@ -479,6 +535,8 @@ message CaptureResultReport {
   optional WaczCompleteness completeness = 13;
   optional WaczSignature signature = 14;
   optional CaptureErrorDetails error_details = 15;
+  // 読み込みまで進んだ取り込みには必ず入る。
+  optional Settle settle = 16;
 }
 
 // -- status ----------------------------------------------------------------

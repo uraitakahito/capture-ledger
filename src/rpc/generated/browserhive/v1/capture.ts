@@ -211,8 +211,8 @@ export enum SessionMode {
    */
   SESSION_MODE_ISOLATED = 0,
   /**
-   * SESSION_MODE_SHARED - worker が持ち回る BrowserContext とタブを使う。ログイン後の連続取り込みなど、
-   * 持ち越すことが目的のときだけ選ぶ。同じ worker に載った **無関係なタスクにも
+   * SESSION_MODE_SHARED - server が持ち回る BrowserContext とタブを使う。ログイン後の連続取り込みなど、
+   * 持ち越すことが目的のときだけ選ぶ。同じ server で続けて走る **無関係な取り込みにも
    * 状態が漏れる** ことを承知の上で。後始末は一切しない。
    */
   SESSION_MODE_SHARED = 1,
@@ -562,7 +562,14 @@ export interface CaptureRequest {
    * 保管庫を持たない配備では**必須**で、無ければ受理の時点で断る ——
    * 撮ってから「置けません」は、この系でいちばん高くつく失敗。
    */
-  artifactSink?: ArtifactSink | undefined;
+  artifactSink?:
+    | ArtifactSink
+    | undefined;
+  /**
+   * 読み込み後の待ちの、取り込みごとの上書き。省いた欄はサーバ既定 (--load-wait-*)。
+   * 最長に当たるのは失敗ではなく、応答と archive の settle に deadline として残る。
+   */
+  loadWait?: LoadWait | undefined;
 }
 
 export interface GetServerStatusRequest {
@@ -665,6 +672,77 @@ export interface CaptureErrorDetails {
   step?: string | undefined;
 }
 
+/** 読み込み後の待ち (settle) の、取り込みごとの上書き。tail は上書きできない。 */
+export interface LoadWait {
+  /** load の後、静止を見始める前に置く最短 (Lighthouse の pauseAfterLoad)。 */
+  minMs?:
+    | number
+    | undefined;
+  /** 合図が来なくても切り上げる最長。 */
+  maxMs?:
+    | number
+    | undefined;
+  /** 網・CPU・DOM が「静か」とみなす窓。 */
+  quietMs?:
+    | number
+    | undefined;
+  /**
+   * 静かでも許す同時接続数。0 なら全部届くまで (既定)。上げると long-polling / SSE を
+   * 吸収できるが、その数までの要求は待たずに撮ることになる。
+   */
+  networkConcurrency?: number | undefined;
+}
+
+/** 合図 1 つの結末。quiet_at_ms が無ければ、最長までに満ちなかった (archive では null)。 */
+export interface SettleSignal {
+  quietAtMs?: number | undefined;
+}
+
+/** load の結末。at_ms が無ければ、最長までに load を見なかった (archive では null)。 */
+export interface SettleLoad {
+  atMs?: number | undefined;
+}
+
+/** 効いていた最短・最長・窓・許す接続数。要求ではなく効いた値。 */
+export interface SettleLimits {
+  minMs: number;
+  maxMs: number;
+  quietMs: number;
+  networkConcurrency: number;
+}
+
+/** 読み込み後の待ちがどう終わったか。archive の browserhive:capture.settle と同じ形。 */
+export interface Settle {
+  /** 見ていた合図の組。この版では fully-loaded (load → 最短 → 網 ∧ CPU ∧ DOM → 尾)。 */
+  strategy: string;
+  /**
+   * quiet (見ていた合図が全部、最長の前に満ちた) か deadline (満ちないまま最長に当たった)。
+   * deadline は失敗ではない —— ページがまだ動いていたという観測。
+   */
+  endedBy: string;
+  /** goto が返ってから待ちを終えるまでの ms。差し込んだ間 (operation_delay_ms) は数えない。 */
+  waitedMs: number;
+  /** 最後のパスの観測 (dismissal と同じ)。 */
+  devicePixelRatio: number;
+  limits?:
+    | SettleLimits
+    | undefined;
+  /** 網の静止。 */
+  network?:
+    | SettleSignal
+    | undefined;
+  /** DOM の静止 (要素の出入りと文字の書き換え。属性の変化は数えない)。 */
+  dom?:
+    | SettleSignal
+    | undefined;
+  /** load (document.readyState が complete)。 */
+  load?:
+    | SettleLoad
+    | undefined;
+  /** CPU の静止 (50 ms 以上の long task が無い)。 */
+  cpu?: SettleSignal | undefined;
+}
+
 export interface CaptureResultReport {
   taskId: string;
   correlationId?: string | undefined;
@@ -678,7 +756,11 @@ export interface CaptureResultReport {
   waczStats?: WaczStats | undefined;
   completeness?: WaczCompleteness | undefined;
   signature?: WaczSignature | undefined;
-  errorDetails?: CaptureErrorDetails | undefined;
+  errorDetails?:
+    | CaptureErrorDetails
+    | undefined;
+  /** 読み込みまで進んだ取り込みには必ず入る。 */
+  settle?: Settle | undefined;
 }
 
 /** この台が抱えている browser。 */
@@ -2291,6 +2373,7 @@ function createBaseCaptureRequest(): CaptureRequest {
     contentTypePolicies: undefined,
     storageValues: undefined,
     artifactSink: undefined,
+    loadWait: undefined,
   };
 }
 
@@ -2357,6 +2440,9 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
     }
     if (message.artifactSink !== undefined) {
       ArtifactSink.encode(message.artifactSink, writer.uint32(202).fork()).join();
+    }
+    if (message.loadWait !== undefined) {
+      LoadWait.encode(message.loadWait, writer.uint32(210).fork()).join();
     }
     return writer;
   },
@@ -2544,6 +2630,14 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
             message.artifactSink = ArtifactSink.decode(reader, reader.uint32());
             continue;
           }
+          case 26: {
+            if (tag !== 210) {
+              break;
+            }
+
+            message.loadWait = LoadWait.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -2630,6 +2724,11 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
         : isSet(object.artifact_sink)
         ? ArtifactSink.fromJSON(object.artifact_sink)
         : undefined,
+      loadWait: isSet(object.loadWait)
+        ? LoadWait.fromJSON(object.loadWait)
+        : isSet(object.load_wait)
+        ? LoadWait.fromJSON(object.load_wait)
+        : undefined,
     };
   },
 
@@ -2695,6 +2794,9 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
     if (message.artifactSink !== undefined) {
       obj.artifactSink = ArtifactSink.toJSON(message.artifactSink);
     }
+    if (message.loadWait !== undefined) {
+      obj.loadWait = LoadWait.toJSON(message.loadWait);
+    }
     return obj;
   },
 
@@ -2736,6 +2838,9 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
     message.storageValues = object.storageValues ?? undefined;
     message.artifactSink = (object.artifactSink !== undefined && object.artifactSink !== null)
       ? ArtifactSink.fromPartial(object.artifactSink)
+      : undefined;
+    message.loadWait = (object.loadWait !== undefined && object.loadWait !== null)
+      ? LoadWait.fromPartial(object.loadWait)
       : undefined;
     return message;
   },
@@ -3892,6 +3997,643 @@ export const CaptureErrorDetails: MessageFns<CaptureErrorDetails> = {
   },
 };
 
+function createBaseLoadWait(): LoadWait {
+  return { minMs: undefined, maxMs: undefined, quietMs: undefined, networkConcurrency: undefined };
+}
+
+export const LoadWait: MessageFns<LoadWait> = {
+  encode(message: LoadWait, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.minMs !== undefined) {
+      writer.uint32(8).int32(message.minMs);
+    }
+    if (message.maxMs !== undefined) {
+      writer.uint32(16).int32(message.maxMs);
+    }
+    if (message.quietMs !== undefined) {
+      writer.uint32(24).int32(message.quietMs);
+    }
+    if (message.networkConcurrency !== undefined) {
+      writer.uint32(32).int32(message.networkConcurrency);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): LoadWait {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseLoadWait();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.minMs = reader.int32();
+            continue;
+          }
+          case 2: {
+            if (tag !== 16) {
+              break;
+            }
+
+            message.maxMs = reader.int32();
+            continue;
+          }
+          case 3: {
+            if (tag !== 24) {
+              break;
+            }
+
+            message.quietMs = reader.int32();
+            continue;
+          }
+          case 4: {
+            if (tag !== 32) {
+              break;
+            }
+
+            message.networkConcurrency = reader.int32();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): LoadWait {
+    return {
+      minMs: isSet(object.minMs)
+        ? globalThis.Number(object.minMs)
+        : isSet(object.min_ms)
+        ? globalThis.Number(object.min_ms)
+        : undefined,
+      maxMs: isSet(object.maxMs)
+        ? globalThis.Number(object.maxMs)
+        : isSet(object.max_ms)
+        ? globalThis.Number(object.max_ms)
+        : undefined,
+      quietMs: isSet(object.quietMs)
+        ? globalThis.Number(object.quietMs)
+        : isSet(object.quiet_ms)
+        ? globalThis.Number(object.quiet_ms)
+        : undefined,
+      networkConcurrency: isSet(object.networkConcurrency)
+        ? globalThis.Number(object.networkConcurrency)
+        : isSet(object.network_concurrency)
+        ? globalThis.Number(object.network_concurrency)
+        : undefined,
+    };
+  },
+
+  toJSON(message: LoadWait): unknown {
+    const obj: any = {};
+    if (message.minMs !== undefined) {
+      obj.minMs = Math.round(message.minMs);
+    }
+    if (message.maxMs !== undefined) {
+      obj.maxMs = Math.round(message.maxMs);
+    }
+    if (message.quietMs !== undefined) {
+      obj.quietMs = Math.round(message.quietMs);
+    }
+    if (message.networkConcurrency !== undefined) {
+      obj.networkConcurrency = Math.round(message.networkConcurrency);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<LoadWait>, I>>(base?: I): LoadWait {
+    return LoadWait.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<LoadWait>, I>>(object: I): LoadWait {
+    const message = createBaseLoadWait();
+    message.minMs = object.minMs ?? undefined;
+    message.maxMs = object.maxMs ?? undefined;
+    message.quietMs = object.quietMs ?? undefined;
+    message.networkConcurrency = object.networkConcurrency ?? undefined;
+    return message;
+  },
+};
+
+function createBaseSettleSignal(): SettleSignal {
+  return { quietAtMs: undefined };
+}
+
+export const SettleSignal: MessageFns<SettleSignal> = {
+  encode(message: SettleSignal, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.quietAtMs !== undefined) {
+      writer.uint32(8).int32(message.quietAtMs);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SettleSignal {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseSettleSignal();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.quietAtMs = reader.int32();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): SettleSignal {
+    return {
+      quietAtMs: isSet(object.quietAtMs)
+        ? globalThis.Number(object.quietAtMs)
+        : isSet(object.quiet_at_ms)
+        ? globalThis.Number(object.quiet_at_ms)
+        : undefined,
+    };
+  },
+
+  toJSON(message: SettleSignal): unknown {
+    const obj: any = {};
+    if (message.quietAtMs !== undefined) {
+      obj.quietAtMs = Math.round(message.quietAtMs);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SettleSignal>, I>>(base?: I): SettleSignal {
+    return SettleSignal.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SettleSignal>, I>>(object: I): SettleSignal {
+    const message = createBaseSettleSignal();
+    message.quietAtMs = object.quietAtMs ?? undefined;
+    return message;
+  },
+};
+
+function createBaseSettleLoad(): SettleLoad {
+  return { atMs: undefined };
+}
+
+export const SettleLoad: MessageFns<SettleLoad> = {
+  encode(message: SettleLoad, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.atMs !== undefined) {
+      writer.uint32(8).int32(message.atMs);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SettleLoad {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseSettleLoad();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.atMs = reader.int32();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): SettleLoad {
+    return {
+      atMs: isSet(object.atMs)
+        ? globalThis.Number(object.atMs)
+        : isSet(object.at_ms)
+        ? globalThis.Number(object.at_ms)
+        : undefined,
+    };
+  },
+
+  toJSON(message: SettleLoad): unknown {
+    const obj: any = {};
+    if (message.atMs !== undefined) {
+      obj.atMs = Math.round(message.atMs);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SettleLoad>, I>>(base?: I): SettleLoad {
+    return SettleLoad.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SettleLoad>, I>>(object: I): SettleLoad {
+    const message = createBaseSettleLoad();
+    message.atMs = object.atMs ?? undefined;
+    return message;
+  },
+};
+
+function createBaseSettleLimits(): SettleLimits {
+  return { minMs: 0, maxMs: 0, quietMs: 0, networkConcurrency: 0 };
+}
+
+export const SettleLimits: MessageFns<SettleLimits> = {
+  encode(message: SettleLimits, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.minMs !== 0) {
+      writer.uint32(8).int32(message.minMs);
+    }
+    if (message.maxMs !== 0) {
+      writer.uint32(16).int32(message.maxMs);
+    }
+    if (message.quietMs !== 0) {
+      writer.uint32(24).int32(message.quietMs);
+    }
+    if (message.networkConcurrency !== 0) {
+      writer.uint32(32).int32(message.networkConcurrency);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SettleLimits {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseSettleLimits();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 8) {
+              break;
+            }
+
+            message.minMs = reader.int32();
+            continue;
+          }
+          case 2: {
+            if (tag !== 16) {
+              break;
+            }
+
+            message.maxMs = reader.int32();
+            continue;
+          }
+          case 3: {
+            if (tag !== 24) {
+              break;
+            }
+
+            message.quietMs = reader.int32();
+            continue;
+          }
+          case 4: {
+            if (tag !== 32) {
+              break;
+            }
+
+            message.networkConcurrency = reader.int32();
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): SettleLimits {
+    return {
+      minMs: isSet(object.minMs)
+        ? globalThis.Number(object.minMs)
+        : isSet(object.min_ms)
+        ? globalThis.Number(object.min_ms)
+        : 0,
+      maxMs: isSet(object.maxMs)
+        ? globalThis.Number(object.maxMs)
+        : isSet(object.max_ms)
+        ? globalThis.Number(object.max_ms)
+        : 0,
+      quietMs: isSet(object.quietMs)
+        ? globalThis.Number(object.quietMs)
+        : isSet(object.quiet_ms)
+        ? globalThis.Number(object.quiet_ms)
+        : 0,
+      networkConcurrency: isSet(object.networkConcurrency)
+        ? globalThis.Number(object.networkConcurrency)
+        : isSet(object.network_concurrency)
+        ? globalThis.Number(object.network_concurrency)
+        : 0,
+    };
+  },
+
+  toJSON(message: SettleLimits): unknown {
+    const obj: any = {};
+    if (message.minMs !== 0) {
+      obj.minMs = Math.round(message.minMs);
+    }
+    if (message.maxMs !== 0) {
+      obj.maxMs = Math.round(message.maxMs);
+    }
+    if (message.quietMs !== 0) {
+      obj.quietMs = Math.round(message.quietMs);
+    }
+    if (message.networkConcurrency !== 0) {
+      obj.networkConcurrency = Math.round(message.networkConcurrency);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SettleLimits>, I>>(base?: I): SettleLimits {
+    return SettleLimits.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SettleLimits>, I>>(object: I): SettleLimits {
+    const message = createBaseSettleLimits();
+    message.minMs = object.minMs ?? 0;
+    message.maxMs = object.maxMs ?? 0;
+    message.quietMs = object.quietMs ?? 0;
+    message.networkConcurrency = object.networkConcurrency ?? 0;
+    return message;
+  },
+};
+
+function createBaseSettle(): Settle {
+  return {
+    strategy: "",
+    endedBy: "",
+    waitedMs: 0,
+    devicePixelRatio: 0,
+    limits: undefined,
+    network: undefined,
+    dom: undefined,
+    load: undefined,
+    cpu: undefined,
+  };
+}
+
+export const Settle: MessageFns<Settle> = {
+  encode(message: Settle, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.strategy !== "") {
+      writer.uint32(10).string(message.strategy);
+    }
+    if (message.endedBy !== "") {
+      writer.uint32(18).string(message.endedBy);
+    }
+    if (message.waitedMs !== 0) {
+      writer.uint32(24).int32(message.waitedMs);
+    }
+    if (message.devicePixelRatio !== 0) {
+      writer.uint32(32).int32(message.devicePixelRatio);
+    }
+    if (message.limits !== undefined) {
+      SettleLimits.encode(message.limits, writer.uint32(42).fork()).join();
+    }
+    if (message.network !== undefined) {
+      SettleSignal.encode(message.network, writer.uint32(50).fork()).join();
+    }
+    if (message.dom !== undefined) {
+      SettleSignal.encode(message.dom, writer.uint32(58).fork()).join();
+    }
+    if (message.load !== undefined) {
+      SettleLoad.encode(message.load, writer.uint32(66).fork()).join();
+    }
+    if (message.cpu !== undefined) {
+      SettleSignal.encode(message.cpu, writer.uint32(74).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): Settle {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
+    if (previousRecursionDepth >= 100) {
+      throw new globalThis.Error("protobuf decode recursion limit exceeded");
+    }
+    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
+    try {
+      const end = length === undefined ? reader.len : reader.pos + length;
+      const message = createBaseSettle();
+      while (reader.pos < end) {
+        const tag = reader.uint32();
+        switch (tag >>> 3) {
+          case 1: {
+            if (tag !== 10) {
+              break;
+            }
+
+            message.strategy = reader.string();
+            continue;
+          }
+          case 2: {
+            if (tag !== 18) {
+              break;
+            }
+
+            message.endedBy = reader.string();
+            continue;
+          }
+          case 3: {
+            if (tag !== 24) {
+              break;
+            }
+
+            message.waitedMs = reader.int32();
+            continue;
+          }
+          case 4: {
+            if (tag !== 32) {
+              break;
+            }
+
+            message.devicePixelRatio = reader.int32();
+            continue;
+          }
+          case 5: {
+            if (tag !== 42) {
+              break;
+            }
+
+            message.limits = SettleLimits.decode(reader, reader.uint32());
+            continue;
+          }
+          case 6: {
+            if (tag !== 50) {
+              break;
+            }
+
+            message.network = SettleSignal.decode(reader, reader.uint32());
+            continue;
+          }
+          case 7: {
+            if (tag !== 58) {
+              break;
+            }
+
+            message.dom = SettleSignal.decode(reader, reader.uint32());
+            continue;
+          }
+          case 8: {
+            if (tag !== 66) {
+              break;
+            }
+
+            message.load = SettleLoad.decode(reader, reader.uint32());
+            continue;
+          }
+          case 9: {
+            if (tag !== 74) {
+              break;
+            }
+
+            message.cpu = SettleSignal.decode(reader, reader.uint32());
+            continue;
+          }
+        }
+        if ((tag & 7) === 4 || tag === 0) {
+          break;
+        }
+        reader.skip(tag & 7);
+      }
+      return message;
+    } finally {
+      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
+    }
+  },
+
+  fromJSON(object: any): Settle {
+    return {
+      strategy: isSet(object.strategy) ? globalThis.String(object.strategy) : "",
+      endedBy: isSet(object.endedBy)
+        ? globalThis.String(object.endedBy)
+        : isSet(object.ended_by)
+        ? globalThis.String(object.ended_by)
+        : "",
+      waitedMs: isSet(object.waitedMs)
+        ? globalThis.Number(object.waitedMs)
+        : isSet(object.waited_ms)
+        ? globalThis.Number(object.waited_ms)
+        : 0,
+      devicePixelRatio: isSet(object.devicePixelRatio)
+        ? globalThis.Number(object.devicePixelRatio)
+        : isSet(object.device_pixel_ratio)
+        ? globalThis.Number(object.device_pixel_ratio)
+        : 0,
+      limits: isSet(object.limits) ? SettleLimits.fromJSON(object.limits) : undefined,
+      network: isSet(object.network) ? SettleSignal.fromJSON(object.network) : undefined,
+      dom: isSet(object.dom) ? SettleSignal.fromJSON(object.dom) : undefined,
+      load: isSet(object.load) ? SettleLoad.fromJSON(object.load) : undefined,
+      cpu: isSet(object.cpu) ? SettleSignal.fromJSON(object.cpu) : undefined,
+    };
+  },
+
+  toJSON(message: Settle): unknown {
+    const obj: any = {};
+    if (message.strategy !== "") {
+      obj.strategy = message.strategy;
+    }
+    if (message.endedBy !== "") {
+      obj.endedBy = message.endedBy;
+    }
+    if (message.waitedMs !== 0) {
+      obj.waitedMs = Math.round(message.waitedMs);
+    }
+    if (message.devicePixelRatio !== 0) {
+      obj.devicePixelRatio = Math.round(message.devicePixelRatio);
+    }
+    if (message.limits !== undefined) {
+      obj.limits = SettleLimits.toJSON(message.limits);
+    }
+    if (message.network !== undefined) {
+      obj.network = SettleSignal.toJSON(message.network);
+    }
+    if (message.dom !== undefined) {
+      obj.dom = SettleSignal.toJSON(message.dom);
+    }
+    if (message.load !== undefined) {
+      obj.load = SettleLoad.toJSON(message.load);
+    }
+    if (message.cpu !== undefined) {
+      obj.cpu = SettleSignal.toJSON(message.cpu);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<Settle>, I>>(base?: I): Settle {
+    return Settle.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<Settle>, I>>(object: I): Settle {
+    const message = createBaseSettle();
+    message.strategy = object.strategy ?? "";
+    message.endedBy = object.endedBy ?? "";
+    message.waitedMs = object.waitedMs ?? 0;
+    message.devicePixelRatio = object.devicePixelRatio ?? 0;
+    message.limits = (object.limits !== undefined && object.limits !== null)
+      ? SettleLimits.fromPartial(object.limits)
+      : undefined;
+    message.network = (object.network !== undefined && object.network !== null)
+      ? SettleSignal.fromPartial(object.network)
+      : undefined;
+    message.dom = (object.dom !== undefined && object.dom !== null) ? SettleSignal.fromPartial(object.dom) : undefined;
+    message.load = (object.load !== undefined && object.load !== null)
+      ? SettleLoad.fromPartial(object.load)
+      : undefined;
+    message.cpu = (object.cpu !== undefined && object.cpu !== null) ? SettleSignal.fromPartial(object.cpu) : undefined;
+    return message;
+  },
+};
+
 function createBaseCaptureResultReport(): CaptureResultReport {
   return {
     taskId: "",
@@ -3907,6 +4649,7 @@ function createBaseCaptureResultReport(): CaptureResultReport {
     completeness: undefined,
     signature: undefined,
     errorDetails: undefined,
+    settle: undefined,
   };
 }
 
@@ -3950,6 +4693,9 @@ export const CaptureResultReport: MessageFns<CaptureResultReport> = {
     }
     if (message.errorDetails !== undefined) {
       CaptureErrorDetails.encode(message.errorDetails, writer.uint32(122).fork()).join();
+    }
+    if (message.settle !== undefined) {
+      Settle.encode(message.settle, writer.uint32(130).fork()).join();
     }
     return writer;
   },
@@ -4071,6 +4817,14 @@ export const CaptureResultReport: MessageFns<CaptureResultReport> = {
             message.errorDetails = CaptureErrorDetails.decode(reader, reader.uint32());
             continue;
           }
+          case 16: {
+            if (tag !== 130) {
+              break;
+            }
+
+            message.settle = Settle.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -4122,6 +4876,7 @@ export const CaptureResultReport: MessageFns<CaptureResultReport> = {
         : isSet(object.error_details)
         ? CaptureErrorDetails.fromJSON(object.error_details)
         : undefined,
+      settle: isSet(object.settle) ? Settle.fromJSON(object.settle) : undefined,
     };
   },
 
@@ -4166,6 +4921,9 @@ export const CaptureResultReport: MessageFns<CaptureResultReport> = {
     if (message.errorDetails !== undefined) {
       obj.errorDetails = CaptureErrorDetails.toJSON(message.errorDetails);
     }
+    if (message.settle !== undefined) {
+      obj.settle = Settle.toJSON(message.settle);
+    }
     return obj;
   },
 
@@ -4196,6 +4954,9 @@ export const CaptureResultReport: MessageFns<CaptureResultReport> = {
       : undefined;
     message.errorDetails = (object.errorDetails !== undefined && object.errorDetails !== null)
       ? CaptureErrorDetails.fromPartial(object.errorDetails)
+      : undefined;
+    message.settle = (object.settle !== undefined && object.settle !== null)
+      ? Settle.fromPartial(object.settle)
       : undefined;
     return message;
   },

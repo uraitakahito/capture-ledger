@@ -9,6 +9,12 @@ description: Records who a capture was submitted for, at the moment it is submit
 
 ```
 
+Where each capture's result manifest is was added in `014`:
+
+```ts file="src/db/migrations/014-add-capture-submissions-manifest.ts#capture-submissions-manifest-columns"
+
+```
+
 ## Why it is needed
 
 **BrowserHive has no notion of an organization.** capture-ledger passes it a URL and some
@@ -32,40 +38,55 @@ Without this row the reconciler cannot say who an archive belongs to.
 
 ## How it is written
 
-`run.ts` writes once for all accepted submissions.
+The level report handler (`src/api/crawls.ts`) writes a row for every reported
+page that carries a `taskId` — failures included — together with where that
+capture's `.result.json` was written:
 
 ```ts
-await db
-  .insertInto("captureSubmissions")
-  .values(accepted.map((r) => ({ taskId: r.taskId, orgId: r.orgId, ... })))
-  .onConflict((oc) => oc.column("taskId").doNothing())
-  .execute();
+submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
+  taskId: r.taskId,
+  correlationId: r.correlationId ?? crawlId,
+  orgId: crawl.orgId,
+  submittedBy: crawl.requestedBy,
+  manifestKey: manifests.get(r.taskId)?.key ?? null,
+  manifestError: manifests.get(r.taskId)?.error ?? null,
+}));
 ```
 
-**It is written before waiting on the captures begins**, so attribution survives
-the process dying mid-wait.
+**capture-ledger never spells a manifest key.** BrowserHive (or the sink) answers
+`Capture` with the location it wrote the manifest to, and the Windmill flow relays
+it as `manifestLocation`. The handler keeps the key part when the location is in
+the configured bucket. A capture that could not write its manifest is reported with
+`manifestError` instead, and that reason lands here; so does a location in another
+bucket, or one that is not `s3://` — the reporter does not get to choose where the
+ledger reads.
 
-A `taskId` is never resubmitted (the server mints it), but **this function can be
-re-run**, hence `onConflict … doNothing()`.
+A report that carries a `taskId` without exactly one of the two is refused with
+400: accepting it would leave a capture with nothing to read.
+
+A `taskId` is minted by BrowserHive and never reused, but a level can be reported
+again, hence `onConflict … doNothing()`.
 
 ## How it is read
 
-`reconcile.ts` reads it while filling the ledger from bucket manifests.
+`reconcile.ts` reads the rows that carry a `manifest_key` and have no archive yet:
 
 ```
-read taskId from .result.json
-  → look up org_id and submitted_by in capture_submissions
+capture_submissions row with manifest_key, no archives row
+  → GetObject(manifest_key)
   → register in archives, and queue tuples with that org_id and submitted_by
 ```
 
 ## Column notes
 
-| Column         | Note                                                                                                                    |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `task_id`      | **Primary key.** BrowserHive's id, the join back to the result report                                                   |
-| `org_id`       | `not null`. **The reason this table exists**                                                                            |
-| `submitted_by` | The user who asked, when there was one. **NULL for scheduled runs that belong to an organization rather than a person** |
-| `submitted_at` | Default `now()`                                                                                                         |
+| Column           | Note                                                                                                                                               |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task_id`        | **Primary key.** BrowserHive's id, the join back to the result report                                                                              |
+| `org_id`         | `not null`. **The reason this table exists**                                                                                                       |
+| `submitted_by`   | The user who asked, when there was one. **NULL for scheduled runs that belong to an organization rather than a person**                            |
+| `submitted_at`   | Default `now()`                                                                                                                                    |
+| `manifest_key`   | Where the capture's `.result.json` is, minus the bucket, exactly as reported. NULL when there is a `manifest_error`, and for rows older than `014` |
+| `manifest_error` | Why there is no manifest the ledger can read: the write failed, or the reported location is not in the configured bucket                           |
 
 :::caution[`submitted_by` is not the result of authentication]
 What fills this column is whatever the API request claimed as its subject

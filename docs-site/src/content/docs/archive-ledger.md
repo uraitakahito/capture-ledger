@@ -47,35 +47,38 @@ for each capture it had submitted. Both the CLI and capture-ledger's gRPC client
 gone; the Windmill flow submits now.)
 
 **Crawling** — a crawl registers what it captured as soon as the flow reports a
-level (`src/crawl/admit-level.ts`). The level report does not carry artifact
-locations, so it re-reads `.result.json` before registering. This is the fast
+level (`src/crawl/admit-level.ts`). The level report carries where each capture's
+`.result.json` was written, not the result itself, so the handler reads that
+manifest back — at exactly the reported key — before registering. This is the fast
 path: a page is in the ledger within one round trip of being taken.
 
-**Reconciling** — `pnpm run fga:reconcile` walks the `.result.json` manifests
-BrowserHive writes next to every capture's artifacts and registers anything the
-ledger is missing. This is what makes the ledger self-healing: capture-ledger can be
-down for hours, or a manifest can be written after the level closed, and the
-next reconcile still picks it up.
+**Reconciling** — `pnpm run fga:reconcile` registers captures that were reported
+but did not make it into the ledger: reading the manifest failed, or writing the row
+did. It reads the `capture_submissions` rows that carry a `manifest_key` and have no
+archive yet, and fetches exactly those keys. **It does not walk the bucket.** No key
+is ever reconstructed: BrowserHive (or the sink) answers each `Capture` with the
+location it wrote the manifest to, the Windmill flow relays it, and the level report
+records it.
 
-By default it walks the whole bucket. `--since-days <n>` narrows it to the key
-prefixes that crawls started in the last `n` days actually wrote to, read from
-`crawls.artifact_key_prefix`:
+`--since-days <n>` limits it to captures reported in the last `n` days:
 
 ```sh
 pnpm run fga:reconcile --since-days 30
 ```
 
-Two things bound what that flag can do. S3's list can only be narrowed by
-prefix — there is no filter by extension and none by "since" — so the narrowing
-has to live in the key itself, and it does: the sink writes under
-`org/<orgId>/<YYYY-MM>/`. And a deployment where BrowserHive writes to its own
-store puts artifacts in a flat namespace with no prefix to narrow by, so
-`--since-days` only helps on the sink path.
+Each run reports `pending`, `registered`, `skipped` (a manifest the ledger does not
+admit, such as a cancelled capture with no archive) and `missing` (nothing at the
+reported key).
 
-**It refuses to narrow rather than narrow wrongly.** If any crawl in the window
-has no recorded prefix, the flag falls back to the full walk and says so. A hole
-that is skipped because the walk was narrowed is a hole nobody will ever find,
-and a ledger with holes nobody notices is worse than no ledger at all.
+**What it cannot pick up**, by construction:
+
+- **A capture whose level report never arrived** — capture-ledger was down, or the
+  flow failed before reporting. There is no `capture_submissions` row, so neither the
+  organization nor the manifest key is known. Walking the bucket did not help either:
+  such a manifest had no attribution and was only counted as `unattributed`.
+- **A capture reported with `manifestError`.** There is no key to read. If the write
+  finished after BrowserHive stopped waiting for it, the manifest exists but is not
+  reachable from here.
 
 :::note[The crawl path used to be missing]
 The crawl wrote only to `crawl_pages` and `capture_submissions`; it put
@@ -90,7 +93,7 @@ nobody notices is worse than no ledger, because the holes only surface much
 later as "why can't I see this archive?".
 
 ```sh
-pnpm run fga:reconcile   # fill gaps from the bucket
+pnpm run fga:reconcile   # fill gaps from the recorded manifest keys
 pnpm run fga:drain       # deliver queued tuples (the API also does this on a timer)
 ```
 

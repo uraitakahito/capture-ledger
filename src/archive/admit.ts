@@ -123,7 +123,7 @@ export const admitArchive = async (
     const inserted = await trx
       .insertInto("archives")
       .values(archiveRow(report, { bucket, key }))
-      // poller と reconciler の両方が同じ取り込みに辿り着けるし、どちらも
+      // 段の登録と reconciler の両方が同じ取り込みに辿り着けるし、どちらも
       // 再実行されうる。unique index があるので、それは重複ではなく無操作になる。
       .onConflict((oc) => oc.columns(["bucket", "objectKey"]).doNothing())
       .returning("id")

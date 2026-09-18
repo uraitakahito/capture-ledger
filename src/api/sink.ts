@@ -93,32 +93,15 @@ export const sinkObjectKey = (orgId: string, filename: string): string =>
  * そのクロールの成果物を置く場所。**クロールを作るときに 1 度だけ計算し、
  * `crawls.artifact_key_prefix` に書く。**
  *
- * 組織で分けたうえに、さらに月で分ける。月が要るのは reconcile のため ——
- * S3 の list は prefix でしか絞れず、組織だけでは効かない (掃除は全組織を対象に
- * するので、組織ごとに回れば歩く総量は同じ)。効くのは時間の軸で、そのためには
- * 鍵そのものに月が要る。
+ * 組織で分けたうえに、さらに月で分ける。月は、reconcile が bucket を一覧していた頃に
+ * 「直近の月だけを歩く」ために入れたもの。いまの reconcile は bucket を歩かず、報告が
+ * 書き留めた鍵だけを読むので、**月はもう何の判断にも使われていない** —— 置き場所の形を
+ * 変える理由も無いので、そのまま残している。
  *
- * **UTC で切る。** ローカル時刻で切ると、置いた側と探す側が別の TZ で動いた瞬間に
- * 1 か月ずれる —— この列がまさに塞ごうとしているずれを、別の形で作り直すことになる。
- *
- * 月ごとにしたのは粒度の選択。日ごとだと 30 日を掃くのに 30 回 list することになり、
- * クロールごとだとクロール本数ぶんの list になる。月なら直近 30 日が 1〜2 回で済む。
+ * **UTC で切る。** ローカル時刻で切ると、実行環境の TZ で月の境目がずれる。
  */
 export const crawlKeyPrefix = (orgId: string, at: Date): string =>
   `org/${orgId}/${String(at.getUTCFullYear())}-${String(at.getUTCMonth() + 1).padStart(2, "0")}/`;
-
-/**
- * そのクロールの manifest を探すときの接頭辞。**置いた側と同じものを読む。**
- *
- * 記録が在ればそれ。無ければ (`013` より前に作られたクロール) 従来どおり、いまの
- * 設定から導く —— 過去の行の振る舞いを変えないため。undefined は「接頭辞なし」、
- * つまり BrowserHive が自前の保管庫へ平らに置いた場合。
- */
-export const keyPrefixFor = (
-  crawl: { orgId: string; artifactKeyPrefix: string | null },
-  sink: SinkConfig | undefined,
-): string | undefined =>
-  crawl.artifactKeyPrefix ?? (sink === undefined ? undefined : sinkObjectKey(crawl.orgId, ""));
 
 /**
  * 受け口の設定。**両方揃ったときだけ生きる。**
@@ -153,67 +136,84 @@ export const sinkForCrawl = (
 export const registerSinkRoutes = (app: FastifyInstance, deps: SinkDeps): void => {
   const { db, s3, bucket, secret } = deps;
 
-  app.addContentTypeParser(
-    "*",
-    { parseAs: "buffer", bodyLimit: MAX_ARTIFACT_BYTES },
-    (_req, body, done) => {
-      done(null, body);
-    },
-  );
+  // **受け口だけを封じた plugin にする。** 成果物は本文そのものが中身で、`.links.json` と
+  // `.result.json` も解釈せずバイトのまま置く。
+  //
+  // 以前は root の app に `*` の解析器を足していた。Fastify は既定で `application/json` と
+  // `text/plain` の解析器を持ち、そちらが `*` より先に当たるので、BrowserHive が送る JSON の
+  // 成果物は本文がオブジェクトになり、下の検査で 400 になっていた —— クロールはリンクを
+  // 読むので、取り込みは `.links.json` の PUT で必ず落ちた (実測)。試験が
+  // `application/wacz+zip` しか送っていなかったので、誰も気づかなかった。
+  //
+  // root の解析器を差し替えると段の報告など JSON の API が壊れるので、この plugin の中でだけ
+  // 全部外す。**`*` を外に漏らさない** —— 漏れると、JSON の API に JSON でない本文が Buffer の
+  // まま届く (受け口を出していない配備では 415 なのに、出している配備でだけ通る)。
+  void app.register((scope, _options, done) => {
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser(
+      "*",
+      { parseAs: "buffer", bodyLimit: MAX_ARTIFACT_BYTES },
+      (_req, body, next) => {
+        next(null, body);
+      },
+    );
 
-  app.put<{ Params: { crawlId: string; filename: string } }>(
-    "/api/sink/:crawlId/:filename",
-    async (request, reply) => {
-      const { crawlId, filename } = request.params;
+    scope.put<{ Params: { crawlId: string; filename: string } }>(
+      "/api/sink/:crawlId/:filename",
+      async (request, reply) => {
+        const { crawlId, filename } = request.params;
 
-      const header = request.headers.authorization ?? "";
-      const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-      if (!verifySinkToken(secret, crawlId, token)) {
-        // **理由を分けない。** 期限切れも偽の署名も、外から見れば同じ「通らない」。
-        return reply.code(401).send({ error: "invalid or expired sink token" });
-      }
+        const header = request.headers.authorization ?? "";
+        const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+        if (!verifySinkToken(secret, crawlId, token)) {
+          // **理由を分けない。** 期限切れも偽の署名も、外から見れば同じ「通らない」。
+          return reply.code(401).send({ error: "invalid or expired sink token" });
+        }
 
-      // **形を先に見る。** `crawls.id` は uuid なので、UUID でない値をそのまま
-      // 問い合わせると Postgres が `invalid input syntax for type uuid` で落ち、
-      // 500 になる —— 実地の疎通確認で踏んだ。呼ぶ側から見れば「そんな crawl は無い」
-      // でしかないので、404 に畳む。
-      if (!UUID.test(crawlId)) {
-        return reply.code(404).send({ error: "no such crawl" });
-      }
+        // **形を先に見る。** `crawls.id` は uuid なので、UUID でない値をそのまま
+        // 問い合わせると Postgres が `invalid input syntax for type uuid` で落ち、
+        // 500 になる —— 実地の疎通確認で踏んだ。呼ぶ側から見れば「そんな crawl は無い」
+        // でしかないので、404 に畳む。
+        if (!UUID.test(crawlId)) {
+          return reply.code(404).send({ error: "no such crawl" });
+        }
 
-      const crawl = await db
-        .selectFrom("crawls")
-        .select(["orgId", "artifactKeyPrefix"])
-        .where("id", "=", crawlId)
-        .executeTakeFirst();
-      if (!crawl) {
-        // トークンは通ったのに行が無い。**推測しない** —— 置き場所は組織で決まる。
-        return reply.code(404).send({ error: "no such crawl" });
-      }
+        const crawl = await db
+          .selectFrom("crawls")
+          .select(["orgId", "artifactKeyPrefix"])
+          .where("id", "=", crawlId)
+          .executeTakeFirst();
+        if (!crawl) {
+          // トークンは通ったのに行が無い。**推測しない** —— 置き場所は組織で決まる。
+          return reply.code(404).send({ error: "no such crawl" });
+        }
 
-      const body = request.body;
-      if (!Buffer.isBuffer(body) || body.length === 0) {
-        return reply.code(400).send({ error: "empty body" });
-      }
+        const body = request.body;
+        if (!Buffer.isBuffer(body) || body.length === 0) {
+          return reply.code(400).send({ error: "empty body" });
+        }
 
-      // **クロールを作ったときに決めた場所へ置く。** ここで組み直さない ——
-      // 探す側 (`admitLevel`) が読むのと同じ 1 か所から取ることが、接頭辞が
-      // ずれないことの担保。記録の無い行だけ従来の綴りに落ちる。
-      const key = (crawl.artifactKeyPrefix ?? sinkObjectKey(crawl.orgId, "")) + filename;
-      await putObject(
-        s3,
-        bucket,
-        key,
-        body,
-        request.headers["content-type"] ?? "application/octet-stream",
-      );
+        // **クロールを作ったときに決めた場所へ置く。** ここで組み直さない —— いまの時刻から
+        // 導くと、月をまたいだクロールの成果物が 2 つの接頭辞に分かれる。記録の無い行だけ
+        // 従来の綴りに落ちる。置いた場所は応答の `location` で返り、台帳はそれしか読まない。
+        const key = (crawl.artifactKeyPrefix ?? sinkObjectKey(crawl.orgId, "")) + filename;
+        await putObject(
+          s3,
+          bucket,
+          key,
+          body,
+          request.headers["content-type"] ?? "application/octet-stream",
+        );
 
-      const location = `s3://${bucket}/${key}`;
-      log.debug({ crawlId, filename, location, bytes: body.length }, "Stored artifact from sink");
+        const location = `s3://${bucket}/${key}`;
+        log.debug({ crawlId, filename, location, bytes: body.length }, "Stored artifact from sink");
 
-      // **location を返すことが契約の要。** BrowserHive はこれをそのまま報告に載せるので、
-      // 台帳の `parseS3Uri` は今までどおり動く。
-      return reply.code(200).send({ location });
-    },
-  );
+        // **location を返すことが契約の要。** BrowserHive はこれをそのまま報告に載せるので、
+        // 台帳の `parseS3Uri` は今までどおり動く。
+        return reply.code(200).send({ location });
+      },
+    );
+
+    done();
+  });
 };
