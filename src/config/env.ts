@@ -30,6 +30,20 @@ export const REQUIRED_ENV = [
   "CAPTURE_LEDGER_FGA_MODEL_ID",
 ] as const;
 
+/**
+ * 必須の変数のうち、**雛形 (.env.example) に値を書けないもの**。OpenFGA に model を
+ * デプロイして初めて決まる id で、`pnpm run fga:deploy` の印字を人が .env へ書き写す。
+ *
+ * 足りないときの案内はこれで分ける (`MissingEnvError`)。この 2 つに setup.sh を勧めては
+ * いけない —— setup.sh は雛形を写すだけで id を持たず、しかも .env を上書きして、書き写した
+ * id を消す。以前の案内は勧めていて、api → setup.sh → api の輪から出られなくなった
+ * (2026-09-19)。
+ */
+export const FGA_DEPLOY_ENV = [
+  "CAPTURE_LEDGER_FGA_STORE_ID",
+  "CAPTURE_LEDGER_FGA_MODEL_ID",
+] as const satisfies readonly (typeof REQUIRED_ENV)[number][];
+
 export const OPTIONAL_ENV = [
   "CAPTURE_LEDGER_S3_REGION",
   "CAPTURE_LEDGER_S3_FORCE_PATH_STYLE",
@@ -113,19 +127,48 @@ export const optional = (name: string, fallback: string): string => {
 };
 
 /**
+ * 足りない変数を、**値の出どころ** ごとに分けて案内する。
+ *
+ * 名前を並べるだけでは何を入れればよいか分からない。しかも出どころによって正しい手が
+ * 逆になる: 雛形に在るものは写せば埋まるが、`FGA_DEPLOY_ENV` は写しても空のまま。
+ * 雛形の段にも setup.sh の上書きを添えるのは、S3 の変数を直そうとして、書き写した
+ * id を消さないため。
+ */
+const explainMissing = (names: string[]): string => {
+  const fromDeploy = names.filter((name) => (FGA_DEPLOY_ENV as readonly string[]).includes(name));
+  const fromTemplate = names.filter((name) => !fromDeploy.includes(name));
+  const list = (group: string[]): string => group.map((name) => `    - ${name}`).join("\n");
+  const sections: string[] = [];
+  if (fromTemplate.length > 0) {
+    sections.push(
+      `  .env.example に値があるもの:\n${list(fromTemplate)}\n` +
+        "    .env が無ければ ./setup.sh で作る。在るなら .env.example から該当の行を写すこと\n" +
+        "    (./setup.sh は .env を上書きし、書き写した OpenFGA の id も消す)。",
+    );
+  }
+  if (fromDeploy.length > 0) {
+    sections.push(
+      `  OpenFGA へのデプロイで決まるもの:\n${list(fromDeploy)}\n` +
+        "    pnpm run fga:deploy が印字する 2 行を .env に書き写すこと\n" +
+        "    (OpenFGA が初めてなら、先に pnpm run fga:migrate)。.env.example には無い。",
+    );
+  }
+  return `環境変数が足りない:\n\n${sections.join("\n\n")}`;
+};
+
+/**
  * 足りない環境変数を **まとめて** 報告するための、`required` の収集版。
  *
  * `required` は最初の 1 個で throw するので、4 つ欠けていれば 4 回起動し直す
  * ことになる。1 往復は 1 秒なので遅さは問題ではない —— 問題は **あと何個
  * あるのかが最後まで分からない** こと。3 個目を直したとき、それが最後なのかを
  * 判断する材料が無い。
+ *
+ * 文は `explainMissing` が出どころごとに組む。`names` は集めた順のまま持つ。
  */
 export class MissingEnvError extends Error {
   constructor(readonly names: string[]) {
-    super(
-      `環境変数が足りない:\n${names.map((name) => `  - ${name}`).join("\n")}\n\n` +
-        "  cp .env.example .env  して埋めること (./setup.sh がこれをやる)。",
-    );
+    super(explainMissing(names));
     this.name = "MissingEnvError";
   }
 }

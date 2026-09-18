@@ -2,10 +2,13 @@
 /**
  * `fga/model.fga` を動いている OpenFGA へ送り、固定すべき id を印字する。
  *
- * shell にそのまま貼れる代入を 2 行出す:
+ * stdout には .env の行の形で 2 行だけを出す。**.env は書き換えない** —— 書き写すのは人:
  *
  *   CAPTURE_LEDGER_FGA_STORE_ID=01K...
  *   CAPTURE_LEDGER_FGA_MODEL_ID=01K...
+ *
+ * 端末に貼っても効かない。export されないシェル変数になるだけで、pnpm から起動する
+ * node には届かない。書き写す先は .env で、stderr にその旨を添える。
  *
  * モデルの id を固定することには意味がある。認可モデルは不変で、書き込むたびに
  * 新しい id が生まれる。id を省いた client は **そのとき最も新しいもの** に対して
@@ -54,3 +57,10 @@ if (!modelId) throw new Error(`could not determine model id from: ${JSON.stringi
 
 process.stdout.write(`CAPTURE_LEDGER_FGA_STORE_ID=${storeId}\n`);
 process.stdout.write(`CAPTURE_LEDGER_FGA_MODEL_ID=${modelId}\n`);
+// 印字の形が `名前=値` なので「設定された」と読み違えやすい。2026-09-19 に実際にそう
+// 読んで、書き写さないまま API を起動して止まった。添え書きを stderr に出すのは、stdout を
+// 2 行のまま保つため (機械で拾う使い方を汚さない)。
+process.stderr.write(
+  "\n↑ 印字しただけで、.env は書き換えていない。\n" +
+    "  この 2 行を .env に書き写してから pnpm run api を起動すること (起動中なら起動し直す)。\n",
+);
