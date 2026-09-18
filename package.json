@@ -1,7 +1,7 @@
 {
   "name": "capture-ledger",
   "version": "0.0.1",
-  "description": "Higher-level capture client and orchestrator built on top of BrowserHive (https://github.com/uraitakahito/browserhive).",
+  "description": "Capture orchestrator for BrowserHive (https://github.com/uraitakahito/browserhive): decides which URLs get captured and keeps the ledger of what came back.",
   "license": "Unlicense",
   "type": "module",
   "private": true,
