@@ -23,21 +23,28 @@ container-compose は `container exec` で **各コンテナの中の** `/etc/ho
 終了状態を見ず何も出力しないため、**一部のサービスだけ名前が引けない**という
 追いにくい症状になります。
 
-## 2. ローカルファイルを生成する
+## 2. 上流のソースを取ってきて、設定の雛形を写す
 
 ```sh
-./setup.sh
+git submodule update --init --recursive   # 上流のソースを .upstream/ に取ってくる
+cp -n .env.example .env                   # 設定の雛形を写す (既にあれば上書きしない)
 ```
 
-ツールチェーンを確認し、`.upstream/browserhive` submodule を初期化し（上流の
-ソースはすべてここから来ます）、`.env` を書き出します。`container-compose` を
-叩く前に必ず実行してください。
+`.upstream/` の submodule に、BrowserHive をはじめ上流のソースがすべて入っています。
+build context はどれもここを指すので、空のままでは何もビルドできません。
+
+`.env` は `.env.example` の写しです。何も調べず、値も変えません。開発用の値は雛形に
+最初から入っていて、書き足すのは OpenFGA の 2 つの ID だけです（§5）。`-n` は既にある
+`.env` を上書きしないための印で、書き写した ID を守ります。
 
 ## 3. スタックを起動する
 
 ```sh
 pnpm run stack:up
 ```
+
+起動の前に、道具と DNS ドメイン（§1）と submodule（§2）を確かめ、足りなければ
+名前を挙げて止まります。
 
 初回は BrowserHive と Chromium イメージをソースからビルドするため、数分かかります。
 状態を確認します (まだ起動していなければ grpcurl がそのまま失敗を報告します):

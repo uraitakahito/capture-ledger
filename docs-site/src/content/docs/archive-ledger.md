@@ -542,7 +542,7 @@ switched on explicitly, and the server warns loudly at startup.
 **The API is now the only route in.** There used to be a second one for the CLI,
 which read `CAPTURE_LEDGER_DEV_SUBJECT` and `CAPTURE_LEDGER_DEV_ORGANIZATIONS` from `.env`
 instead of headers. Both variables went with it — they are no longer declared in
-`.env.example`, and `setup.sh` no longer writes them.
+`.env.example`.
 
 What the identity is _for_ has not changed: it becomes
 `capture_submissions.submitted_by` and the `owner` tuple on the `capture_job`,
@@ -654,7 +654,8 @@ that switch deliberate.
 ## Setup
 
 ```sh
-./setup.sh                    # writes .env from .env.example (35 variables)
+git submodule update --init --recursive
+cp -n .env.example .env       # the settings template, verbatim
 pnpm run stack:up
 pnpm run fga:migrate          # OpenFGA's schema (see below)
 pnpm run db:migrate

@@ -24,21 +24,29 @@ fails for the non-root containers here, and container-compose neither checks
 the exit status nor prints anything — so only some services lose name
 resolution, which is a hard symptom to trace back.
 
-## 2. Generate the local files
+## 2. Fetch the upstream sources and copy the settings template
 
 ```sh
-./setup.sh
+git submodule update --init --recursive   # upstream sources into .upstream/
+cp -n .env.example .env                   # copy the settings template; never overwrites
 ```
 
-It checks the toolchain, initialises the `.upstream/browserhive` submodule (all
-upstream source arrives that way), and writes `.env`. Mandatory before any
-`container-compose` invocation.
+The `.upstream/` submodules hold every upstream source, BrowserHive included.
+Every build context points into them, so nothing builds while they are empty.
+
+`.env` is a copy of `.env.example`: nothing is detected and no value is
+changed. The template already carries the development values; the only ones
+you add are the two OpenFGA ids (§5). `-n` refuses to overwrite an existing
+`.env`, so the ids you pasted survive a second run.
 
 ## 3. Start the stack
 
 ```sh
 pnpm run stack:up
 ```
+
+Before starting anything it checks the toolchain, the DNS domain (§1) and the
+submodules (§2), and stops, naming whatever is missing.
 
 The first build compiles BrowserHive and the Chromium image from source, so
 expect several minutes. Check the state — until the stack is up, grpcurl reports
