@@ -25,23 +25,24 @@ cd capture-ledger
 nvm use
 pnpm install
 sudo container system dns create capture-ledger   # マシンごとに 1 回
-./setup.sh          # submodule 初期化 + .env
+git submodule update --init --recursive           # 上流のソースを .upstream/ に
+cp -n .env.example .env                           # 設定の雛形をそのまま写す
 pnpm run check       # audit + typecheck + lint + format:check + env + テスト
 ```
 
-`setup.sh` は `container-compose` を叩く前に必須です。すべての build context が
-指す `.upstream/browserhive` submodule を初期化し、`capture-ledger` DNS ドメインが
-未登録なら止まります。
+スタックは `container-compose` を直接叩かず、`pnpm run stack:up` で起動してください。
+起動の前に、道具と `capture-ledger` DNS ドメイン、すべての build context が指す
+`.upstream/` の submodule を確かめ、足りなければ名前を挙げて止まります。
 
 ### 環境変数
 
-コードが読む環境変数は **35 個**あり、読み取りの仕組みは 3 つに分かれています。
+コードが読む環境変数は、読み取りの仕組みが 3 つに分かれています。
 `src/config/` の `required()`/`optional()`、commander の `.env()`（こちらは
 `--help` にも出ます）、そして素の `process.env[…]`（これは `scripts/` にもあります）。
-必須は 7 個です。
+数は `pnpm run check-env` が数えて出します。必須は 7 個です。
 
-一覧は `.env.example` の 1 か所だけです。`setup.sh` はこれを `.env` に写すだけで、
-値には手を入れません。`.env` を作るものは他にありません
+一覧は `.env.example` の 1 か所だけで、`.env` はその写しです（`cp -n .env.example .env`）。
+値を調べて `.env` を作るものはありません
 —— 一覧が 2 つあれば必ずずれるからです。OpenFGA の 2 つの ID は
 `pnpm run fga:deploy` が出力するまで空のままです
 （[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#セットアップ)を参照）。
@@ -110,7 +111,7 @@ until grpcurl -plaintext -import-path proto -proto browserhive/v1/capture.proto 
 `up` / `down` / `build` / `version` の 4 つだけで、入り込むための `exec` が
 そもそもありません。必要もありません — platform DNS は `<service>.capture-ledger` を
 コンテナ間からもホストからも解決するので、capture-ledger はホストで動かしたまま
-コンテナ側のスタックに繋がります。接続文字列は `setup.sh` が `.env` に書きます。
+コンテナ側のスタックに繋がります。接続文字列は雛形に入っているので、写した `.env` にそのまま在ります。
 
 ```sh
 DATABASE_URL=postgres://capture_ledger:capture_ledger@postgres.capture-ledger:5432/capture_ledger

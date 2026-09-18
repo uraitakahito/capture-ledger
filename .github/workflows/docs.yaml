@@ -24,7 +24,6 @@ on:
       # bump changes a published page while touching nothing else. Without this
       # line the docs keep serving the previous version indefinitely.
       - ".upstream/browserhive"
-      - "setup.sh"
       - "docker-compose.yml"
       - "package.json"
       - ".github/workflows/docs.yaml"

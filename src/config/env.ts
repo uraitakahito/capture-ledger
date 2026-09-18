@@ -34,9 +34,9 @@ export const REQUIRED_ENV = [
  * 必須の変数のうち、**雛形 (.env.example) に値を書けないもの**。OpenFGA に model を
  * デプロイして初めて決まる id で、`pnpm run fga:deploy` の印字を人が .env へ書き写す。
  *
- * 足りないときの案内はこれで分ける (`MissingEnvError`)。この 2 つに setup.sh を勧めては
- * いけない —— setup.sh は雛形を写すだけで id を持たず、しかも .env を上書きして、書き写した
- * id を消す。以前の案内は勧めていて、api → setup.sh → api の輪から出られなくなった
+ * 足りないときの案内はこれで分ける (`MissingEnvError`)。この 2 つに雛形の写し直しを
+ * 勧めてはいけない —— 雛形は id を持たず、写し直せば書き写した id も消える。以前の案内は
+ * 写し直し (当時の setup.sh) を勧めていて、api → 写し直し → api の輪から出られなくなった
  * (2026-09-19)。
  */
 export const FGA_DEPLOY_ENV = [
@@ -131,7 +131,7 @@ export const optional = (name: string, fallback: string): string => {
  *
  * 名前を並べるだけでは何を入れればよいか分からない。しかも出どころによって正しい手が
  * 逆になる: 雛形に在るものは写せば埋まるが、`FGA_DEPLOY_ENV` は写しても空のまま。
- * 雛形の段にも setup.sh の上書きを添えるのは、S3 の変数を直そうとして、書き写した
+ * 雛形の段に写し直しの危うさを添えるのは、S3 の変数を直そうとして、書き写した
  * id を消さないため。
  */
 const explainMissing = (names: string[]): string => {
@@ -142,8 +142,8 @@ const explainMissing = (names: string[]): string => {
   if (fromTemplate.length > 0) {
     sections.push(
       `  .env.example に値があるもの:\n${list(fromTemplate)}\n` +
-        "    .env が無ければ ./setup.sh で作る。在るなら .env.example から該当の行を写すこと\n" +
-        "    (./setup.sh は .env を上書きし、書き写した OpenFGA の id も消す)。",
+        "    .env が無ければ cp -n .env.example .env で作る。在るなら .env.example から\n" +
+        "    該当の行を写すこと (丸ごと写し直すと、書き写した OpenFGA の id も消える)。",
     );
   }
   if (fromDeploy.length > 0) {

@@ -150,18 +150,18 @@ describe("collectEnv", () => {
 describe("足りない変数の案内", () => {
   const FGA = ["CAPTURE_LEDGER_FGA_STORE_ID", "CAPTURE_LEDGER_FGA_MODEL_ID"];
 
-  // 2026-09-19 に実際に起きた形。以前の案内は setup.sh を勧め、setup.sh は .env を雛形に
-  // 戻すだけなので、api → setup.sh → api の輪から出られなかった。
-  it("OpenFGA の id だけが欠けているときは fga:deploy を案内し、setup.sh は勧めない", () => {
+  // 2026-09-19 に実際に起きた形。以前の案内は雛形の写し直し (当時の setup.sh) を勧め、
+  // 写し直しは .env を雛形に戻すだけなので、api → 写し直し → api の輪から出られなかった。
+  it("OpenFGA の id だけが欠けているときは fga:deploy を案内し、雛形の写しは勧めない", () => {
     const { message } = new MissingEnvError(FGA);
     expect(message).toContain("CAPTURE_LEDGER_FGA_MODEL_ID");
     expect(message).toContain("pnpm run fga:deploy");
-    expect(message).not.toContain("setup.sh");
+    expect(message).not.toContain("cp -n");
   });
 
   it("雛形に在る変数だけが欠けているときは .env.example を案内し、fga:deploy には触れない", () => {
     const { message } = new MissingEnvError(["CAPTURE_LEDGER_S3_BUCKET"]);
-    expect(message).toContain(".env.example");
+    expect(message).toContain("cp -n .env.example .env");
     expect(message).not.toContain("fga:deploy");
   });
 
