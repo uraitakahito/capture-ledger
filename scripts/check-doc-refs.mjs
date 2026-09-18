@@ -25,6 +25,9 @@
  *      直した日から腐る。あわせて、ページが import する PNG が在ること、どこからも
  *      使われない PNG が無いことも見る (撮ったが使われない絵は腐る)。
  *      capture-scheduler が「compose の pin と manifest の版」でやっているのと同じ考え方。
+ *   5. 画面から docs へのリンク —— picker のヘッダの「使い方」(`src/api/picker.ts` の
+ *      PICKER_DOCS_URL) が、在るページを指しているか。ページの名前を変えても画面は普通に
+ *      開くので、ここで見ないとリンクは黙って 404 になる。
  *
  * 訳について見るのはページの **存在** だけで、構造は一切見ない。両方の言語に同じ
  * 見出しを強いると日本語が悪くなる。ページの歩調を合わせるのは人の仕事で、
@@ -173,6 +176,23 @@ if (!existsSync(manifestPath)) {
     if (!onDisk.includes(name)) {
       problems.push(`shots-manifest.json lists ${name} but the file does not exist`);
     }
+  }
+}
+
+// ─── 4. 画面から docs へのリンク ───────────────────────────────────────────
+const PUBLISHED = "https://uraitakahito.github.io/capture-ledger/";
+const pickerSource = readFileSync(resolve(ROOT, "src/api/picker.ts"), "utf8");
+const docsUrl = /PICKER_DOCS_URL\s*=\s*"([^"]+)"/.exec(pickerSource)?.[1];
+if (docsUrl === undefined) {
+  problems.push("src/api/picker.ts: PICKER_DOCS_URL not found (renamed? update this check)");
+} else if (!docsUrl.startsWith(PUBLISHED) || !docsUrl.endsWith("/")) {
+  problems.push(`src/api/picker.ts: PICKER_DOCS_URL (${docsUrl}) is not a page under ${PUBLISHED}`);
+} else {
+  const slug = docsUrl.slice(PUBLISHED.length, -1);
+  if (!["md", "mdx"].some((ext) => existsSync(join(DOCS, `${slug}.${ext}`)))) {
+    problems.push(
+      `src/api/picker.ts: PICKER_DOCS_URL points at "${slug}", but there is no such docs page`,
+    );
   }
 }
 

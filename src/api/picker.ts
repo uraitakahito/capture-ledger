@@ -34,6 +34,18 @@ import { optional } from "../config/env.js";
  */
 export const replayOriginFromEnv = (): string => optional("REPLAY_ORIGIN", "http://127.0.0.1:8899");
 
+/**
+ * この画面の使い方のページ (公開中の docs)。
+ *
+ * 画面に置くのは、**迷う人が居るのは docs の上ではなく、この画面の上だから**。2 つの入力欄に
+ * 何を入れるかは画面を見ても分からず、docs に書いても、ここから行く道が無ければ同じ所で止まる
+ * (2026-09-19 に実際に止まった)。
+ *
+ * 宛先のページが在ることは `scripts/check-doc-refs.mjs` が見ている —— ページの名前を変えたら、
+ * ここも直さないと CI が落ちる。
+ */
+export const PICKER_DOCS_URL = "https://uraitakahito.github.io/capture-ledger/ja/picker/";
+
 const html = (replayOrigin: string): string => `<!doctype html>
 <html lang="ja">
 <head>
@@ -47,6 +59,7 @@ const html = (replayOrigin: string): string => `<!doctype html>
   header { background: #1aa179; color: #fff; padding: 18px 24px; }
   header h1 { margin: 0; font-size: 18px; }
   header p { margin: 6px 0 0; font-size: 12.5px; opacity: .95; }
+  header a { color: #fff; margin-left: 10px; }
   main { max-width: 1000px; margin: 0 auto; padding: 20px; }
   .who { background: #fffdf6; border: 1px solid #e8ce8f; border-radius: 10px;
          padding: 12px 16px; margin-bottom: 18px; font-size: 13.5px; }
@@ -72,7 +85,7 @@ const html = (replayOrigin: string): string => `<!doctype html>
 <body>
 <header>
   <h1>アーカイブ</h1>
-  <p>行をクリックすると replay で開く。新しい順・1 ページ 50 件。</p>
+  <p>行をクリックすると replay で開く。新しい順・1 ページ 50 件。<a href="${PICKER_DOCS_URL}" target="_blank" rel="noopener">使い方</a></p>
 </header>
 
 <main>
