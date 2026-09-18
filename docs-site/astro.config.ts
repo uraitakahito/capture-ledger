@@ -58,6 +58,12 @@ export default defineConfig({
               translations: { ja: "キャプチャオプション" },
               slug: "capture-options",
             },
+            // 何を撮るか → どう撮るか → **撮れたものを見る** → 台帳と API の詳細、の順。
+            {
+              label: "Browsing archives",
+              translations: { ja: "アーカイブを見る" },
+              slug: "picker",
+            },
             {
               label: "Archive ledger",
               translations: { ja: "アーカイブ台帳" },

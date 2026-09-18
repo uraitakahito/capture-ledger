@@ -487,16 +487,9 @@ need it, then rebuild with the statement above.
 ## Picking an archive in a browser
 
 `capture-api` also serves a picker at `/` — the list above, rendered, with each
-row opening the archive in [replay](https://github.com/uraitakahito/replay).
-
-```sh
-pnpm run api                  # host-side; the stack has no capture-api service
-open http://127.0.0.1:7070/
-```
-
-This needs a filled-in `.env` — see [Setup](#setup). Without
-`CAPTURE_LEDGER_DEV_IDENTITY=1` the API still starts, but the resolver denies everyone
-and the picker stays empty on a `401`.
+row opening the archive in [replay](https://github.com/uraitakahito/replay). **How to use the
+screen — what to type into its two fields, and what its messages mean — is in
+[Browsing archives](/capture-ledger/picker/).** This section covers only the design behind it.
 
 The picker hands replay the `objectKey` and nothing else:
 

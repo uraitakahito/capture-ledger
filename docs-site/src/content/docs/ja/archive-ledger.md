@@ -453,15 +453,9 @@ UPDATE archives SET indexed_at = NULL;
 
 `capture-api` は `/` に picker も出す —— 上の一覧を画面にしたもので、行をクリックすると
 [replay](https://github.com/uraitakahito/replay) で開く。
-
-```sh
-pnpm run api                  # host 側。スタックに capture-api のサービスは無い
-open http://127.0.0.1:7070/
-```
-
-これには中身の入った `.env` が要ります（[セットアップ](#セットアップ)を参照）。
-`CAPTURE_LEDGER_DEV_IDENTITY=1` が無くても API は起動しますが、resolver が誰も通さないので
-picker は `401` で空のままになります。
+**画面の使い方（2 つの入力欄に何を入れるか、画面に出る文の意味）は、
+[アーカイブを見る](/capture-ledger/ja/picker/)にあります。**
+ここに書くのは、その裏の設計だけです。
 
 picker が replay に渡すのは `objectKey` だけ:
 
