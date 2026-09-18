@@ -6,7 +6,7 @@
 #   1. Apple Container の道具が入っているかを見る。
 #   2. `capture-ledger` の DNS ドメインが登録されていなければ、続けずに止まる。
 #   3. submodule を初期化する。
-#   4. .env.example を写して .env を作る (subject は実行者の名前にする)。
+#   4. .env.example を写して .env を作る。
 #
 
 set -e
@@ -28,16 +28,16 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 fi
 
 if [[ $# -gt 0 ]]; then
-  echo "ERROR: unexpected argument: $1" >&2
-  echo "Run '$0 --help' for usage." >&2
+  echo "エラー: 知らない引数です: $1" >&2
+  echo "使い方は '$0 --help' で見られます。" >&2
   exit 1
 fi
 
 # --- 道具立て -------------------------------------------------------------
 for cmd in container container-compose git; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "ERROR: \`$cmd\` is required but not on PATH." >&2
-    echo "Install Apple Container and container-compose (Homebrew), then re-run." >&2
+    echo "エラー: \`$cmd\` が要りますが、PATH に見つかりません。" >&2
+    echo "Apple Container と container-compose を (Homebrew で) 入れてから、もう一度実行してください。" >&2
     exit 1
   fi
 done
@@ -53,16 +53,16 @@ done
 # replay) では成功するため、「一部のサービスだけ名前が引けない」という追いにくい
 # 症状になる。だからここで大きな音を立てて止める。
 if ! container system dns ls 2>/dev/null | grep -qx "capture-ledger"; then
-  echo "ERROR: the 'capture-ledger' DNS domain is not registered." >&2
+  echo "エラー: DNS ドメイン 'capture-ledger' が登録されていません。" >&2
   echo "" >&2
   echo "    sudo container system dns create capture-ledger" >&2
   echo "" >&2
-  echo "Run that once (it needs sudo), then re-run this script." >&2
+  echo "上のコマンドを一度だけ実行してから (sudo が要ります)、このスクリプトをもう一度実行してください。" >&2
   exit 1
 fi
 
 # --- 上流の submodule -----------------------------------------------------
-echo "Initialising upstream submodule..."
+echo "上流の submodule を初期化しています..."
 git submodule update --init --recursive
 git submodule status --recursive | sed 's/^/  /'
 
@@ -78,26 +78,32 @@ git submodule status --recursive | sed 's/^/  /'
 # 検証は一切されない —— .env を書き換えれば誰にでも成りすませる。本物の
 # identity provider が決まるまでの繋ぎなので、そのつもりで扱うこと。
 cp .env.example .env
-echo "Created .env (from .env.example)"
+echo ".env を作りました (.env.example を写しました)"
 
+# 最後の案内は、quickstart (docs-site の ja/quickstart.md) の手順の入口だけを書く。
+# 手順そのものを写すと腐る —— 以前ここに書いていた待ち合わせの grpcurl は、RPC が
+# GetServerStatus に改名された後も GetStatus を叩き続けて **永遠に待つ** 形になり、
+# 案内の `pnpm run capture` は CLI ごと消えていた。確かめ方と細部は docs が持つ。
 cat <<'EOF'
 
-Setup complete.
+準備ができました。
 
-  pnpm run stack:up                           # build and start the stack
-  until grpcurl -plaintext -import-path proto -proto browserhive/v1/capture.proto \
-    localhost:50051 browserhive.v1.CaptureService/GetStatus >/dev/null 2>&1; do sleep 1; done
+  pnpm run stack:up                             # スタックをビルドして起動する (初回は数分)
 
-Then work on the host — there is no dev container; the stack is reachable by
-name:
+起動したかの確かめ方は、quickstart の「3. スタックを起動する」にあります。
+dev コンテナはありません。ここから先はホストで作業し、スタックには名前で届きます:
 
   pnpm install
   pnpm run db:migrate && pnpm run db:seed
-  pnpm run capture --webp --limit 3
 
-The archive API additionally needs the two OpenFGA ids, which do not exist
-until the model has been deployed. Paste them into .env:
+API は OpenFGA の ID を 2 つ要ります。ID は model をデプロイして初めて決まるので、
+fga:deploy が印字する 2 行を .env の CAPTURE_LEDGER_FGA_STORE_ID と
+CAPTURE_LEDGER_FGA_MODEL_ID に書き写してから、API を起動してください:
 
-  pnpm run fga:migrate && pnpm run fga:deploy   # prints store id and model id
-  pnpm run api                                  # then http://127.0.0.1:7070/
+  pnpm run fga:migrate && pnpm run fga:deploy   # store id と model id を印字する
+  pnpm run api                                  # その後 http://127.0.0.1:7070/ を開く
+
+クロールの起こし方を含む続きは quickstart にあります:
+
+  https://uraitakahito.github.io/capture-ledger/ja/quickstart/
 EOF
