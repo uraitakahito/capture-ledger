@@ -18,6 +18,13 @@
  *      `#region` を参照しているページはどれも .md。
  *   3. 死んだソースのパス —— コードスパンに書かれた `src/….ts` のうち、その後
  *      名前が変わったか消えたもの。
+ *   4. 古い画面の絵 —— docs-site/src/assets/picker/ の PNG は `scripts/docs-shots.mjs` の
+ *      生成物で、撮ったときの画面のソース (`src/api/picker.ts`) の sha256 を
+ *      shots-manifest.json に控えてある。**いまのソースと控えが違えば落とす** ——
+ *      「画面を変えたら撮り直せ」を機械で言う。絵は画面の書き写しで、書き写しは
+ *      直した日から腐る。あわせて、ページが import する PNG が在ること、どこからも
+ *      使われない PNG が無いことも見る (撮ったが使われない絵は腐る)。
+ *      capture-scheduler が「compose の pin と manifest の版」でやっているのと同じ考え方。
  *
  * 訳について見るのはページの **存在** だけで、構造は一切見ない。両方の言語に同じ
  * 見出しを強いると日本語が悪くなる。ページの歩調を合わせるのは人の仕事で、
@@ -26,6 +33,7 @@
  * `pnpm run site:check` (ビルド + このスクリプト) から走る。問題の一覧を出して 1 で
  * 終わるので、CI が PR を落とす。
  */
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -117,6 +125,57 @@ for (const file of walk(DOCS).filter((f) => isPage(f))) {
   }
 }
 
+// ─── 3. 画面の絵 (picker) ──────────────────────────────────────────────────
+const SHOTS_DIR = resolve(ROOT, "docs-site/src/assets/picker");
+const manifestPath = join(SHOTS_DIR, "shots-manifest.json");
+
+if (!existsSync(manifestPath)) {
+  problems.push(
+    "docs-site/src/assets/picker/shots-manifest.json is missing (run `pnpm run docs:shots`)",
+  );
+} else {
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const sourceNow = createHash("sha256")
+    .update(readFileSync(resolve(ROOT, manifest.source)))
+    .digest("hex");
+  // sha256 は script が書く。手で直して緑にしないこと —— 絵は古いままになる。
+  if (manifest.sourceSha256 !== sourceNow) {
+    problems.push(
+      `screenshots are stale: ${manifest.source} has changed since they were taken — ` +
+        "run `pnpm run docs:shots` and commit the result",
+    );
+  }
+
+  const onDisk = readdirSync(SHOTS_DIR).filter((name) => name.endsWith(".png"));
+  const listed = new Set(manifest.shots);
+  // ページが import している PNG。`../../assets/picker/x.png` (英語) と
+  // `../../../assets/picker/x.png` (日本語) の両方を拾う。
+  const imported = new Map();
+  for (const file of walk(DOCS).filter((f) => isPage(f))) {
+    const text = readFileSync(file, "utf8");
+    for (const [, name] of text.matchAll(/from\s+"(?:\.\.\/)+assets\/picker\/([^"]+\.png)"/g)) {
+      imported.set(name, relative(ROOT, file));
+    }
+  }
+  for (const [name, page] of imported) {
+    if (!onDisk.includes(name)) {
+      problems.push(`${page}: assets/picker/${name} does not exist (run \`pnpm run docs:shots\`)`);
+    }
+  }
+  for (const name of onDisk) {
+    if (!listed.has(name)) {
+      problems.push(`assets/picker/${name} is not in shots-manifest.json (hand-made image?)`);
+    } else if (!imported.has(name)) {
+      problems.push(`assets/picker/${name} is not used by any page (unused images rot)`);
+    }
+  }
+  for (const name of listed) {
+    if (!onDisk.includes(name)) {
+      problems.push(`shots-manifest.json lists ${name} but the file does not exist`);
+    }
+  }
+}
+
 // ─── 報告 ──────────────────────────────────────────────────────────────────
 if (problems.length > 0) {
   console.error(`✗ doc-ref check failed (${problems.length} problem(s)):`);
@@ -129,5 +188,5 @@ if (problems.length > 0) {
 }
 
 console.log(
-  `✓ doc-ref check passed: ${String(en.length)} pages in English and Japanese, all source paths resolve`,
+  `✓ doc-ref check passed: ${String(en.length)} pages in English and Japanese, all source paths and screenshots resolve`,
 );

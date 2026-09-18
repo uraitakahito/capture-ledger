@@ -1,0 +1,20 @@
+{
+  "source": "src/api/picker.ts",
+  "sourceSha256": "a71b379ab856bba626dc5673d26909bc0741017741e2b20addc82bfd540f45e6",
+  "viewport": {
+    "width": 800,
+    "height": 700,
+    "deviceScaleFactor": 2
+  },
+  "emulation": {
+    "lang": "ja-JP",
+    "timezone": "Asia/Tokyo",
+    "colorScheme": "light"
+  },
+  "shots": [
+    "01-list.png",
+    "02-initial.png",
+    "03-empty.png",
+    "04-unauthenticated.png"
+  ]
+}
