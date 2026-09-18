@@ -3,13 +3,33 @@ title: capture-ledger
 description: A capture orchestrator that decides which URLs get captured, and keeps the ledger of what came back.
 template: splash
 hero:
-  tagline: Decides what the hive captures, and keeps the record of what came back.
+  tagline: Decides which URLs get captured, and keeps the ledger of what came back. capture-scheduler submits; BrowserHive captures.
   actions:
     - text: Quickstart
       link: /capture-ledger/quickstart/
       icon: right-arrow
       variant: primary
 ---
+
+## Three roles
+
+A crawl is three jobs, and each one belongs to something different.
+
+| Role                  | Owner                                                                                    | What it does                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Decide and record** | capture-ledger (this repo)                                                               | decides which URLs get captured, and keeps the ledger of what came back          |
+| **Submit and report** | [capture-scheduler](https://github.com/uraitakahito/capture-scheduler) (a Windmill flow) | picks a free BrowserHive, asks it to capture, and reports each level back        |
+| **Capture and store** | BrowserHive                                                                              | opens the page in a browser, captures it, and writes the artifacts to the bucket |
+
+```mermaid
+flowchart LR
+  U((Caller)) -->|asks for a crawl| L["capture-ledger<br/>decide · record"]
+  L -->|one level at a time| S["capture-scheduler<br/>submit · report"]
+  S -->|Capture| B["BrowserHive<br/>capture · store"]
+  B -->|artifacts| O[(bucket)]
+  S -->|level report| L
+  O -.->|result manifests| L
+```
 
 ## What capture-ledger is
 
