@@ -302,7 +302,8 @@ Two things a caller has to get right, and capture-scheduler's script exists to e
 - **202 is not the end.** A crawl that fails still answered 202. Anything that
   stops at the 202 reports success for failed captures.
 
-Running with a scheduler means running with a JWT, and that has a cost worth
+Running a crawl means running with a JWT — the flow reports each level back with a
+Bearer token, so this holds for a crawl you start by hand too — and that has a cost worth
 knowing: setting `CAPTURE_LEDGER_OIDC_ISSUER` makes the JWT resolver take over, so the
 **browser picker starts returning 401**. JWT beating the dev header is the point
 (a deployment with both configured must not fall to the weaker one), so the two
