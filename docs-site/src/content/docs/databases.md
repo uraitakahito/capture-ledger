@@ -106,7 +106,7 @@ migrations** is one more sign that they are separate things.
 
 ```sh
 # capture-ledger's — the host psql also works (5432 is published)
-container exec postgres.capture-ledger psql -U capture-ledger -d capture-ledger -c "\dt"
+container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger -c "\dt"
 
 # OpenFGA's — no published port, so container exec
 container exec openfga-db.capture-ledger psql -U openfga -d openfga -c "\d tuple"
