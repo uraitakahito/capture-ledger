@@ -5,7 +5,7 @@ import {
   denyAllResolver,
   devIdentityResolver,
   jwtIdentityResolver,
-  resolveIdentityResolver,
+  selectIdentity,
 } from "../src/api/identity.js";
 
 const request = (headers: Record<string, string>): FastifyRequest =>
@@ -53,7 +53,7 @@ describe("devIdentityResolver", () => {
   });
 });
 
-describe("resolveIdentityResolver", () => {
+describe("selectIdentity", () => {
   const original = process.env["CAPTURE_LEDGER_DEV_IDENTITY"];
   beforeEach(() => {
     delete process.env["CAPTURE_LEDGER_DEV_IDENTITY"];
@@ -66,17 +66,18 @@ describe("resolveIdentityResolver", () => {
   // header の resolver は言われたことを何でも信じるので、設定していない配備が
   // 事故でそれを手にしてはならない。
   it("denies everyone by default", async () => {
-    expect(resolveIdentityResolver()).toBe(denyAllResolver);
+    const identity = selectIdentity();
+    expect(identity).toMatchObject({ mode: "deny", resolve: denyAllResolver });
     await expect(
-      resolveIdentityResolver()(request({ "x-capture-ledger-subject": "mallory" })),
+      identity.resolve(request({ "x-capture-ledger-subject": "mallory" })),
     ).resolves.toBeUndefined();
   });
 
   it("only enables the dev resolver on an exact opt-in", () => {
     process.env["CAPTURE_LEDGER_DEV_IDENTITY"] = "true";
-    expect(resolveIdentityResolver()).toBe(denyAllResolver);
+    expect(selectIdentity()).toMatchObject({ mode: "deny", resolve: denyAllResolver });
     process.env["CAPTURE_LEDGER_DEV_IDENTITY"] = "1";
-    expect(resolveIdentityResolver()).toBe(devIdentityResolver);
+    expect(selectIdentity()).toMatchObject({ mode: "header", resolve: devIdentityResolver });
   });
 
   /**
@@ -89,11 +90,17 @@ describe("resolveIdentityResolver", () => {
     process.env["CAPTURE_LEDGER_DEV_IDENTITY"] = "1";
     process.env["CAPTURE_LEDGER_OIDC_ISSUER"] = "http://127.0.0.1:9099";
     try {
-      const resolve = resolveIdentityResolver();
-      expect(resolve).not.toBe(devIdentityResolver);
+      const identity = selectIdentity();
+      // どれを選んだかも返す —— 起動ログがこれを言う (`startup-notes.ts`)。
+      expect(identity).toMatchObject({
+        mode: "jwt",
+        issuer: "http://127.0.0.1:9099",
+        audience: "capture-ledger",
+      });
+      expect(identity.resolve).not.toBe(devIdentityResolver);
       // ヘッダだけを渡しても、もう通らない。
       await expect(
-        resolve(request({ "x-capture-ledger-subject": "mallory" })),
+        identity.resolve(request({ "x-capture-ledger-subject": "mallory" })),
       ).resolves.toBeUndefined();
     } finally {
       if (originalIssuer === undefined) delete process.env["CAPTURE_LEDGER_OIDC_ISSUER"];

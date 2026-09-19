@@ -259,6 +259,27 @@ The spelling of the organizations claim differs per IdP (`groups` / `roles` / so
 custom). There is one place to change: `ORGANIZATIONS_CLAIM` in `src/config/identity.ts`,
 which the API reads through `identityFromClaims`.
 
+### Check the startup log
+
+When the API starts, its **last line** says where it listens, how callers identify themselves, and
+whether crawl level reports can get through (`src/api/startup-notes.ts`).
+
+```text
+Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:9099); crawl level reports: ready
+```
+
+| `crawl level reports` | Meaning                                                                                                                                                     |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ready`               | Level reports get through — the API listens where containers can reach it, and accepts JWTs                                                                 |
+| `blocked`             | They do not. The warnings above it name the missing lines (`CAPTURE_LEDGER_API_HOST=0.0.0.0` and `CAPTURE_LEDGER_OIDC_ISSUER`); crawls would stay `running` |
+| `off`                 | There is no crawl route (the two webhook lines are missing)                                                                                                 |
+
+Three more warnings exist: no identity is configured at all (every request is `401`), the API
+trusts the dev header while listening beyond `127.0.0.1` (anyone who can reach the port can act as
+anyone), and a sink is configured while the API listens on `127.0.0.1` (BrowserHive's containers
+cannot `PUT`). The `CAPTURE_LEDGER_DEV_IDENTITY=1` warning appears only when the header is actually
+in effect — with a JWT setup it says, at info level, that the variable is ignored.
+
 ## Troubleshooting
 
 - **A container will not come up** — `container ls` shows what is running and
@@ -274,6 +295,9 @@ which the API reads through `identityFromClaims`.
   `can_submit`, or the route was never registered because
   `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` is unset. The startup log says which
   (`… is not set — /api/crawls is not served`).
+- **Crawls stay `running` (level reports do not arrive, or get `401`)** — if the last line of
+  the API's startup log says `crawl level reports: blocked`, the warnings above it name the
+  missing lines ([Check the startup log](#check-the-startup-log)).
 - **The docs build cannot read the BrowserHive pin** — run
   `git submodule update --init --recursive`.
 

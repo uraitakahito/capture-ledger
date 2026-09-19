@@ -101,6 +101,12 @@ export const jwtIdentityResolver =
 /** 全員を拒む。これが既定なので、設定していない配備から漏れることはない。 */
 export const denyAllResolver: IdentityResolver = () => Promise.resolve(undefined);
 
+/** 選んだ名乗り方。resolver と一緒に、どれを選んだかを持つ。 */
+export type IdentitySetup =
+  | { mode: "jwt"; issuer: string; audience: string; resolve: IdentityResolver }
+  | { mode: "header"; resolve: IdentityResolver }
+  | { mode: "deny"; resolve: IdentityResolver };
+
 /**
  * 3 つのうちどれを使うか。**既定は拒否**。
  *
@@ -110,15 +116,27 @@ export const denyAllResolver: IdentityResolver = () => Promise.resolve(undefined
  *
  * JWT が開発用ヘッダより優先されるのは、**両方設定されている環境で弱いほうへ
  * 落ちない**ようにするため。
+ *
+ * resolver だけでなく、どれを選んだかも返す。起動ログ (`startup-notes.ts`) がそれを言うため ——
+ * 以前は resolver (関数) だけを返していて、どの名乗り方で起きたかはプロセスの外から訊くしか
+ * なかった。`.env` の `CAPTURE_LEDGER_OIDC_ISSUER` が効いていないまま起こした API に気づけたのは、
+ * capture-scheduler の doctor だけだった (2026-09-19 と 20)。
  */
-export const resolveIdentityResolver = (): IdentityResolver => {
+export const selectIdentity = (): IdentitySetup => {
   const issuer = optional("CAPTURE_LEDGER_OIDC_ISSUER", "");
   if (issuer !== "") {
     const audience = optional("CAPTURE_LEDGER_OIDC_AUDIENCE", "capture-ledger");
-    return jwtIdentityResolver(createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)), {
+    return {
+      mode: "jwt",
       issuer,
       audience,
-    });
+      resolve: jwtIdentityResolver(createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)), {
+        issuer,
+        audience,
+      }),
+    };
   }
-  return process.env["CAPTURE_LEDGER_DEV_IDENTITY"] === "1" ? devIdentityResolver : denyAllResolver;
+  return process.env["CAPTURE_LEDGER_DEV_IDENTITY"] === "1"
+    ? { mode: "header", resolve: devIdentityResolver }
+    : { mode: "deny", resolve: denyAllResolver };
 };
