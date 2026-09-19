@@ -49,17 +49,20 @@ allowBuilds:
 # npm の `overrides` の移設先。pnpm 11 は package.json の `overrides` を読まず、
 # 書いても無視する (= 脆弱性修正が黙って失われる)。
 #
-# **脆弱性対応の下限は「修正版そのもの」に置くこと。** override は範囲を狭める
-# だけで lockfile を進める力は無いので、下限が脆弱な版を許していると、override が
-# あるのに古い版が居座り続ける。brace-expansion の勧告の修正版は >=5.0.9 で、
-# 移行前の指定 (^5.0.8) は脆弱な版そのものを許していた。
+# **override が要るのは、要求元の宣言した範囲が修正版と交わらないときだけ。** 交わるなら
+# lockfile の更新で足り、後戻りは audit が止める。役目を終えた override は黙って版を縛り
+# 続けるので、`pnpm run check:overrides` (scripts/check-overrides.mjs) が見張っている ——
+# 要らなくなったものは CI が名指しする。
 #
-# js-yaml (旧 ^4.3.0) は移していない。移した時点では依存グラフに 1 箇所も無く、
-# 何もしていなかったため。いまは astro 経由で入っているが、修正版 (4.3.2) へは
-# lockfile の更新で上がる —— override は要らない。
+# **下限は「修正版そのもの」に置くこと。** override は範囲を狭めるだけで lockfile を進める
+# 力は無いので、下限が脆弱な版を許していると、override があるのに古い版が居座り続ける
+# (以前の brace-expansion がそうだった: 修正版は >=5.0.9 なのに、指定は ^5.0.8)。
+#
+# 2026-09 に外したもの (どちらも上の検査が「もう要らない」と判定した):
+#   brace-expansion "^5.0.9" —— 要求元 minimatch 10.2.6 の範囲は ^5.0.8 で、lockfile は 5.0.9
+#   axios "^1.18.1"          —— 要求元 @openfga/sdk 0.9.7 が 1.19.0 を完全一致で指定している
+# js-yaml (旧 ^4.3.0) は、もともと移していない。修正版へは lockfile の更新で上がる。
 overrides:
-  brace-expansion: "^5.0.9"
-  axios: "^1.18.1"
   # mermaid 12 が連れてくる chevrotain 11.1.2 (と @chevrotain/gast ほか) が、lodash-es を
   # "4.17.23" と **完全一致で** 指定している。4.17.23 は GHSA-r5fr-rjxr-66jc (high) と
   # GHSA-f23m-r3pf-42rh (moderate) の対象で、実在する修正版は 4.18.0 と 4.18.1 (勧告の言う

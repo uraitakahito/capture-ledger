@@ -5,8 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  brace-expansion: ^5.0.9
-  axios: ^1.18.1
   lodash-es: ^4.18.1
 
 importers:
@@ -80,6 +78,9 @@ importers:
       puppeteer:
         specifier: 25.11.0
         version: 25.11.0
+      semver:
+        specifier: ^7.8.5
+        version: 7.8.5
       ts-proto:
         specifier: ^2.12.4
         version: 2.12.4
@@ -5769,9 +5770,9 @@ snapshots:
     dependencies:
       reusify: 1.1.0
 
-  fdir@6.5.0(picomatch@4.0.5):
+  fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
-      picomatch: 4.0.5
+      picomatch: 4.0.7
 
   file-entry-cache@11.1.5:
     dependencies:
@@ -6986,8 +6987,8 @@ snapshots:
 
   tinyglobby@0.2.17:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.5)
-      picomatch: 4.0.5
+      fdir: 6.5.0(picomatch@4.0.7)
+      picomatch: 4.0.7
 
   toad-cache@3.7.4: {}
 
@@ -7129,7 +7130,7 @@ snapshots:
   vite@8.2.2(@types/node@26.6.1)(esbuild@0.28.2):
     dependencies:
       lightningcss: 1.33.0
-      picomatch: 4.0.5
+      picomatch: 4.0.7
       postcss: 8.5.26
       rolldown: 1.2.5
       tinyglobby: 0.2.17

@@ -152,6 +152,15 @@ jobs:
       - name: Generated dependency check
         run: pnpm run proto:check-deps
 
+      # pnpm-workspace.yaml の overrides が、まだ要るか。
+      #
+      # override は、入れた理由が消えた後も黙って効き続け、将来の版上げを曲げる。
+      # 「○○ が上がったら外す」という条件は、人の記憶に置いた時点で忘れられる ——
+      # 2026-09 に調べたら、axios の override はすでに何もしていなかった。
+      # 要・不要の線引きは scripts/check-overrides.mjs の冒頭に書いてある。
+      - name: Overrides are still needed
+        run: pnpm run check:overrides
+
       # `.env.example` が、コードが実際に読む環境変数とずれていないか。
       #
       # `pnpm run check` にも入れてあるが、この job は `check` を呼ばず個別の
