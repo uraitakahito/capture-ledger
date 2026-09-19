@@ -48,9 +48,22 @@ updates:
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
     groups:
-      # dependency-type のグループより **先** に置くこと。dependabot は最初に
-      # 一致したグループへ入れるので、後ろに置くと docs-site の依存が
-      # production-dependencies に紛れる (astro は capture-ledger の production ではない)。
+      # docs-site/package.json に書いてある依存は、全部このグループへ。
+      #
+      # **順番には頼らない。** 文書には「最初に一致したグループへ入る」とあり、以前はここに
+      # 「dependency-type のグループより先に置けば紛れない」と書いていたが、2026-09 に実際は
+      # そうならなかった —— docs の依存が dependency-type の側にも入り、割れ方は
+      # docs-site/package.json の dependencies / devDependencies の線と一致した:
+      #
+      #   #267 (production)  に @astrojs/starlight と mermaid
+      #   #287 (development) に @astrojs/markdown-satteri と satteri
+      #
+      # starlight 0.42 は markdown-satteri 0.4 以上が要るので、別々の PR に分かれると
+      # 片方だけでは docs のビルドが落ちる。原因は特定できていない (Dependabot の実行ログは
+      # GitHub の画面にしか無い)。だから原因に依らない形にしてある —— 下の 2 つのグループから
+      # `exclude-patterns` で同じ依存を除き、どの順で評価されても混ざらないようにする。
+      #
+      # **3 か所の並びは同じにすること。** 依存を docs-site/package.json に足したら、3 か所とも足す。
       docs-site:
         patterns:
           - "astro"
@@ -58,10 +71,25 @@ updates:
           - "@astrojs/*"
           - "mermaid"
           - "satteri"
+          - "sharp"
       production-dependencies:
         dependency-type: production
+        exclude-patterns:
+          - "astro"
+          - "astro-*"
+          - "@astrojs/*"
+          - "mermaid"
+          - "satteri"
+          - "sharp"
       development-dependencies:
         dependency-type: development
+        exclude-patterns:
+          - "astro"
+          - "astro-*"
+          - "@astrojs/*"
+          - "mermaid"
+          - "satteri"
+          - "sharp"
 
   # ── GitHub Actions ──
   - package-ecosystem: github-actions
