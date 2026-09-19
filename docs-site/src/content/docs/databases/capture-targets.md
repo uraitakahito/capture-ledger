@@ -44,10 +44,11 @@ Indexing disabled rows would only waste space.
 ## Adding rows
 
 ```sh
-container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger -c \
-  "INSERT INTO capture_targets (url, org_id, labels) VALUES ('https://example.com/', 'acme', ARRAY['example'])"
+pnpm run targets add https://example.com/ --org acme
 ```
 
-Inserting the same URL twice for one organization is rejected by
+A development CLI that writes straight to this table. In the database, a second row
+with the same URL for one organization is rejected by
 `capture_targets_org_url_hash_key`; another organization may target the same URL.
-See [URL source](/capture-ledger/url-source/) for more.
+The rest of the CLI, and the SQL to do it by hand, are in
+[URL source](/capture-ledger/url-source/#adding-urls).

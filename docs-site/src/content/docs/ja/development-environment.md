@@ -79,24 +79,25 @@ NAME=value     # 値を渡す
 
 ## 日々のコマンド
 
-| コマンド                                  | 内容                                                                    |
-| ----------------------------------------- | ----------------------------------------------------------------------- |
-| `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。         |
-| `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                    |
-| `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                         |
-| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked)。         |
-| `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。 |
-| `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                  |
-| `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                    |
-| `pnpm run check`                          | audit + typecheck + lint + format:check + test。push 前に実行。         |
-| `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                       |
-| `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                               |
-| `pnpm run proto:generate`                 | vendored の `.proto` から `src/rpc/generated/` を再生成 (buf)。         |
-| `pnpm run proto:check`                    | 生成して `git diff --exit-code` (CI のドリフト検査)。                   |
-| `pnpm run proto:sync`                     | 固定した submodule から `.proto` を取り直す。                           |
-| `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                |
-| `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                    |
-| `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                  |
+| コマンド                                  | 内容                                                                               |
+| ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                    |
+| `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                               |
+| `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                    |
+| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked)。                    |
+| `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。            |
+| `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                             |
+| `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                               |
+| `pnpm run check`                          | audit + typecheck + lint + format:check + test。push 前に実行。                    |
+| `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                  |
+| `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                                          |
+| `pnpm run targets`                        | 撮る対象（`capture_targets`）を足す・見る・外す・消す。DB に直接書く開発用の道具。 |
+| `pnpm run proto:generate`                 | vendored の `.proto` から `src/rpc/generated/` を再生成 (buf)。                    |
+| `pnpm run proto:check`                    | 生成して `git diff --exit-code` (CI のドリフト検査)。                              |
+| `pnpm run proto:sync`                     | 固定した submodule から `.proto` を取り直す。                                      |
+| `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                           |
+| `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                               |
+| `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                             |
 
 ## スタックで作業する
 

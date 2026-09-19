@@ -85,24 +85,25 @@ that rule too.
 
 ## Daily commands
 
-| Command                                   | What it does                                                        |
-| ----------------------------------------- | ------------------------------------------------------------------- |
-| `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).     |
-| `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                  |
-| `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                  |
-| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked).      |
-| `pnpm run format` / `format:check`        | Prettier. `.prettierignore` skips `dist/` and `src/rpc/generated/`. |
-| `pnpm test` / `test:watch`                | Vitest unit tests under `test/`.                                    |
-| `pnpm run audit`                          | Known vulnerabilities in `pnpm-lock.yaml`. CI also runs it daily.   |
-| `pnpm run check`                          | audit + typecheck + lint + format:check + test. Run before pushing. |
-| `pnpm run db:migrate` / `db:migrate:down` | Kysely migrations against `DATABASE_URL`.                           |
-| `pnpm run db:seed` / `db:seed:down`       | Kysely seeds from `src/db/seeds/`.                                  |
-| `pnpm run proto:generate`                 | Regenerate `src/rpc/generated/` from the vendored `.proto` (buf).   |
-| `pnpm run proto:check`                    | Generate, then `git diff --exit-code` (CI drift gate).              |
-| `pnpm run proto:sync`                     | Re-copy the `.proto` from the pinned submodule.                     |
-| `pnpm run site:dev` / `site:build`        | This documentation site.                                            |
-| `pnpm run site:check`                     | Build the site and verify its references.                           |
-| `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).            |
+| Command                                   | What it does                                                                                                       |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                    |
+| `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                                                                 |
+| `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                                                                 |
+| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked).                                                     |
+| `pnpm run format` / `format:check`        | Prettier. `.prettierignore` skips `dist/` and `src/rpc/generated/`.                                                |
+| `pnpm test` / `test:watch`                | Vitest unit tests under `test/`.                                                                                   |
+| `pnpm run audit`                          | Known vulnerabilities in `pnpm-lock.yaml`. CI also runs it daily.                                                  |
+| `pnpm run check`                          | audit + typecheck + lint + format:check + test. Run before pushing.                                                |
+| `pnpm run db:migrate` / `db:migrate:down` | Kysely migrations against `DATABASE_URL`.                                                                          |
+| `pnpm run db:seed` / `db:seed:down`       | Kysely seeds from `src/db/seeds/`.                                                                                 |
+| `pnpm run targets`                        | Add, list, disable or remove capture targets (`capture_targets`). A dev tool that writes to the database directly. |
+| `pnpm run proto:generate`                 | Regenerate `src/rpc/generated/` from the vendored `.proto` (buf).                                                  |
+| `pnpm run proto:check`                    | Generate, then `git diff --exit-code` (CI drift gate).                                                             |
+| `pnpm run proto:sync`                     | Re-copy the `.proto` from the pinned submodule.                                                                    |
+| `pnpm run site:dev` / `site:build`        | This documentation site.                                                                                           |
+| `pnpm run site:check`                     | Build the site and verify its references.                                                                          |
+| `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).                                                           |
 
 ## Working against the stack
 

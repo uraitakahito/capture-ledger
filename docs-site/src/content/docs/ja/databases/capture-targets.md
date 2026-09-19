@@ -42,10 +42,10 @@ capture_targets_enabled_id_idx    (id) WHERE enabled         -- 部分索引
 ## 行を足す
 
 ```sh
-container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger -c \
-  "INSERT INTO capture_targets (url, org_id, labels) VALUES ('https://example.com/', 'acme', ARRAY['example'])"
+pnpm run targets add https://example.com/ --org acme
 ```
 
-同じ組織に同じ URL を 2 度入れようとすると、`capture_targets_org_url_hash_key` で弾かれます。
+この表に直接書く、開発用の CLI です。
+DB の側では、同じ組織に同じ URL の行を 2 本目に入れようとすると、`capture_targets_org_url_hash_key` で弾かれます。
 別の組織なら、同じ URL を入れられます。
-詳しくは[URL ソース](/capture-ledger/ja/url-source/)を参照してください。
+CLI のほかの使い方と、手で足す SQL は、[URL ソース](/capture-ledger/ja/url-source/#url-を追加する)にあります。

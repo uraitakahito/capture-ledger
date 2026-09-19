@@ -84,6 +84,16 @@ pnpm run db:migrate  # create the capture_targets table
 pnpm run db:seed     # load the five sample URLs
 ```
 
+To capture pages of your own, add them the same way. `--org acme` is the organization
+the crawl in §7 claims, so the rows are visible to it:
+
+```sh
+pnpm run targets add https://example.com/ --org acme
+```
+
+The rest of the CLI (reading a file, listing, disabling) is in
+[URL source](/capture-ledger/url-source/#adding-urls).
+
 ## 5. Prepare authorization
 
 The archive API and the picker go through OpenFGA. **The store and model ids do
@@ -153,6 +163,11 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 
 `fromTargets` seeds the crawl from the rows §4 loaded, and defaults to depth 0 —
 take them, follow nothing. That is what the old `POST /api/runs` did.
+
+The rows are taken in insertion order, so `"limit": 1` is always the first sample
+row. To capture only the URL you added in §4, name it as a seed instead:
+`-d '{"seeds":["https://example.com/"],"maxDepth":0}'`. Seeds follow links two levels
+deep by default; `maxDepth: 0` takes the page alone.
 
 :::caution[This needs the scheduler stack]
 `/api/crawls` is **only served when `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` and

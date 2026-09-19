@@ -82,6 +82,16 @@ pnpm run db:migrate  # capture_targets テーブルを作成
 pnpm run db:seed     # サンプル 5 件を投入
 ```
 
+自分のページを撮りたいときは、同じように足します。
+`--org acme` は、§7 のクロールが名乗る組織です。こうすると、そのクロールから見えます。
+
+```sh
+pnpm run targets add https://example.com/ --org acme
+```
+
+CLI のほかの使い方（ファイルから読む、一覧、無効にする）は、
+[URL ソース](/capture-ledger/ja/url-source/#url-を追加する)にあります。
+
 ## 5. 認可を準備する
 
 アーカイブ API と picker は OpenFGA を通します。**store と model の ID は
@@ -150,6 +160,11 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 
 `fromTargets` は §4 で入れた行を種にします。既定は深さ 0 —— 取るだけで辿りません。
 以前の `POST /api/runs` がしていたのはこれです。
+
+行は足した順に種になるので、`"limit": 1` はいつもサンプルの 1 行目です。
+§4 で足した URL だけを撮るなら、種として名指しします：
+`-d '{"seeds":["https://example.com/"],"maxDepth":0}'`。
+`seeds` の既定は、リンクを 2 段まで辿ることです。`maxDepth: 0` で、そのページだけを取ります。
 
 :::caution[この段にはスケジューラ側のスタックが要ります]
 `/api/crawls` は **`CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` と `CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` の
