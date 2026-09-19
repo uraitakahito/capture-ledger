@@ -113,6 +113,17 @@ interface FakeCrawl {
   pagesDiscovered: number;
   pagesCaptured: number;
   error: string | null;
+  lastJobId?: string | null;
+  lastJobDepth?: number | null;
+}
+
+/** `crawl_pages` の 1 行。`GET /api/crawls/:id` の `failures` を見るのに要る欄だけ。 */
+interface FakePage {
+  crawlId: string;
+  url: string;
+  depth: number;
+  state: string;
+  skipReason: string | null;
 }
 
 /**
@@ -129,7 +140,13 @@ interface FakeTarget {
   orgId: string;
 }
 
-const fakeDb = (crawls: FakeCrawl[], targets: FakeTarget[] = []) => ({
+const fakeDb = (
+  crawls: FakeCrawl[],
+  targets: FakeTarget[] = [],
+  pages: FakePage[] = [],
+  /** `updateTable(...).set(値)` の値を、呼ばれた順に積む。 */
+  updates: Record<string, unknown>[] = [],
+) => ({
   insertInto: (table: string) => ({
     values: (row: Record<string, unknown> | Record<string, unknown>[]) => ({
       /**
@@ -172,7 +189,8 @@ const fakeDb = (crawls: FakeCrawl[], targets: FakeTarget[] = []) => ({
     }),
   }),
   updateTable: () => ({
-    set: () => {
+    set: (values: Record<string, unknown>) => {
+      updates.push(values);
       /**
        * `where` は何度でも続き、`returning(...).execute()` で「実際に当たった行」を返す。
        *
@@ -180,7 +198,9 @@ const fakeDb = (crawls: FakeCrawl[], targets: FakeTarget[] = []) => ({
        * 後から `failed` を被せる誤りが試験で見えなくなる。
        */
       const build = (conds: [string, unknown][]) => ({
-        where: (column: string, _op: unknown, value: unknown) => build([...conds, [column, value]]),
+        // 式で書いた条件 (`where((eb) => …)`) は写さない。見ているのは id と state だけ。
+        where: (column: string | ((eb: unknown) => unknown), _op?: unknown, value?: unknown) =>
+          typeof column === "function" ? build(conds) : build([...conds, [column, value]]),
         execute: async (): Promise<void> => Promise.resolve(),
         returning: () => ({
           execute: async (): Promise<{ id: string }[]> => {
@@ -212,6 +232,37 @@ const fakeDb = (crawls: FakeCrawl[], targets: FakeTarget[] = []) => ({
      * なる (反証で素通りした)。偽物が制約を持っていると、消したことに気づけない。
      */
     select: () => {
+      if (table === "crawls") {
+        // 409 のときに「走っている 1 本」を引く。
+        return {
+          where: (_c: unknown, _o: unknown, state: string) => ({
+            executeTakeFirst: async () =>
+              Promise.resolve(
+                crawls
+                  .filter((c) => c.state === state)
+                  .map((c) => ({ id: c.id, startedAt: c.startedAt }))[0],
+              ),
+          }),
+        };
+      }
+      if (table === "crawlPages") {
+        // `GET /api/crawls/:id` の `failures`。**指定された条件だけを当てる**（下と同じ理由）。
+        const pageQuery = (where: [string, unknown][], limit: number | undefined) => ({
+          where: (column: string, _op: unknown, value: unknown) =>
+            pageQuery([...where, [column, value]], limit),
+          orderBy: () => pageQuery(where, limit),
+          limit: (n: number) => pageQuery(where, n),
+          execute: async () => {
+            const matched = pages.filter((p) =>
+              where.every(
+                ([column, value]) => (p as unknown as Record<string, unknown>)[column] === value,
+              ),
+            );
+            return Promise.resolve(limit === undefined ? matched : matched.slice(0, limit));
+          },
+        });
+        return pageQuery([], undefined);
+      }
       const build = (where: [string, unknown][], limit: number | undefined) => ({
         where: (column: string, _op: unknown, value: unknown) =>
           build([...where, [column, value]], limit),
@@ -239,9 +290,11 @@ const depsWith = (opts: {
   allowed: boolean;
   dispatch?: CrawlRouteDeps["dispatch"];
   targets?: FakeTarget[];
+  pages?: FakePage[];
+  updates?: Record<string, unknown>[];
 }): CrawlRouteDeps =>
   ({
-    db: fakeDb(opts.crawls, opts.targets),
+    db: fakeDb(opts.crawls, opts.targets, opts.pages, opts.updates),
     fga: { check: async () => Promise.resolve({ allowed: opts.allowed }) },
     resolveIdentity: () => Promise.resolve({ subject: "alice", organizations: ["acme"] }),
     dispatch: opts.dispatch ?? (() => Promise.resolve()),
@@ -298,7 +351,7 @@ describe("クロール route の認可と単一実行", () => {
         allowed: true,
         dispatch: (crawl) => {
           sent.push(crawl.frontier);
-          return Promise.resolve();
+          return Promise.resolve(undefined);
         },
       }),
     );
@@ -324,7 +377,7 @@ describe("クロール route の認可と単一実行", () => {
         allowed: true,
         dispatch: (crawl) => {
           sent.push(crawl.frontier);
-          return Promise.resolve();
+          return Promise.resolve(undefined);
         },
       }),
     );
@@ -415,6 +468,128 @@ describe("クロール route の認可と単一実行", () => {
     expect(res.statusCode).toBe(404);
     await app.close();
   });
+
+  it("409 は、塞いでいる 1 本の id と開始時刻を返す", async () => {
+    const crawls: FakeCrawl[] = [];
+    const app = await buildApp(depsWith({ crawls, allowed: true }));
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      payload: { seeds: [SEED] },
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      payload: { seeds: [SEED] },
+    });
+    expect(second.statusCode).toBe(409);
+    expect(second.json()).toEqual({
+      error: "a crawl is already in progress",
+      crawlId: first.json<{ crawlId: string }>().crawlId,
+      startedAt: crawls[0]?.startedAt.toISOString(),
+    });
+    await app.close();
+  });
+
+  it("投げた段の job の id を、その深さと一緒に残す", async () => {
+    const updates: Record<string, unknown>[] = [];
+    const JOB = "0193b6a1-3c1d-7a2e-9f00-1234567890ab";
+    const app = await buildApp(
+      depsWith({ crawls: [], allowed: true, updates, dispatch: () => Promise.resolve(JOB) }),
+    );
+    await app.inject({ method: "POST", url: "/api/crawls", payload: { seeds: [SEED] } });
+    // 投げるのは待たない (応答が先に返る) ので、残すのは次の tick。
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(updates).toContainEqual({ lastJobId: JOB, lastJobDepth: 0 });
+    await app.close();
+  });
+
+  it("job の id が返らなければ、何も書かない", async () => {
+    const updates: Record<string, unknown>[] = [];
+    const app = await buildApp(
+      depsWith({ crawls: [], allowed: true, updates, dispatch: () => Promise.resolve(undefined) }),
+    );
+    await app.inject({ method: "POST", url: "/api/crawls", payload: { seeds: [SEED] } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(updates.filter((u) => "lastJobId" in u)).toEqual([]);
+    await app.close();
+  });
+
+  it("GET は最後の段の job と、取れなかったページとその理由を返す", async () => {
+    const crawl: FakeCrawl = {
+      id: UUID,
+      seeds: [SEED],
+      scope: "same-origin",
+      state: "succeeded",
+      maxDepth: 0,
+      maxPages: 30,
+      perHostDelayMs: 2000,
+      hostParallelism: 4,
+      orgId: "acme",
+      requestedBy: "alice",
+      stopReason: "completed",
+      startedAt: new Date("2026-09-19T00:00:00Z"),
+      finishedAt: new Date("2026-09-19T00:00:10Z"),
+      pagesDiscovered: 2,
+      pagesCaptured: 1,
+      error: null,
+      lastJobId: "0193b6a1-3c1d-7a2e-9f00-1234567890ab",
+      lastJobDepth: 0,
+    };
+    const pages: FakePage[] = [
+      {
+        crawlId: UUID,
+        url: "https://example.com/ok",
+        depth: 0,
+        state: "captured",
+        skipReason: null,
+      },
+      {
+        crawlId: UUID,
+        url: "https://nonexistent.invalid/",
+        depth: 0,
+        state: "failed",
+        skipReason: "net::ERR_NAME_NOT_RESOLVED",
+      },
+    ];
+    const app = await buildApp(depsWith({ crawls: [crawl], allowed: true, pages }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      lastJob: { id: "0193b6a1-3c1d-7a2e-9f00-1234567890ab", depth: 0 },
+      failures: [
+        { url: "https://nonexistent.invalid/", depth: 0, reason: "net::ERR_NAME_NOT_RESOLVED" },
+      ],
+    });
+    await app.close();
+  });
+
+  it("GET は、job の記録が無ければ lastJob を null にする", async () => {
+    const crawl = {
+      id: UUID,
+      seeds: [SEED],
+      scope: "same-origin",
+      state: "running",
+      maxDepth: 0,
+      maxPages: 30,
+      perHostDelayMs: 2000,
+      hostParallelism: 4,
+      orgId: "acme",
+      requestedBy: "alice",
+      stopReason: null,
+      startedAt: new Date(),
+      finishedAt: null,
+      pagesDiscovered: 1,
+      pagesCaptured: 0,
+      error: null,
+      lastJobId: null,
+      lastJobDepth: null,
+    } satisfies FakeCrawl;
+    const app = await buildApp(depsWith({ crawls: [crawl], allowed: true }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    expect(res.json()).toMatchObject({ lastJob: null, failures: [] });
+    await app.close();
+  });
 });
 
 describe("対象一覧から起こす", () => {
@@ -434,7 +609,7 @@ describe("対象一覧から起こす", () => {
         targets,
         dispatch: (crawl) => {
           sent.push(crawl.frontier);
-          return Promise.resolve();
+          return Promise.resolve(undefined);
         },
       }),
     );

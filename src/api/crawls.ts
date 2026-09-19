@@ -62,9 +62,14 @@ const DEFAULT_MAX_DEPTH = 2;
 const DEFAULT_MAX_PAGES = 30;
 const DEFAULT_PER_HOST_DELAY_MS = 2000;
 const DEFAULT_HOST_PARALLELISM = 4;
+/** `GET /api/crawls/:id` が返す、取れなかったページの数の上限。理由を読むには数本で足りる。 */
+const FAILURES_SHOWN = 5;
 
-/** Windmill に投げる関数。既定は webhook を叩くもので、試験だけが差し替える。 */
-export type CrawlDispatcher = (crawl: DispatchedCrawl) => Promise<void>;
+/**
+ * Windmill に投げる関数。既定は webhook を叩くもので、試験だけが差し替える。
+ * 起こした job の id を返す (Windmill が返さなければ undefined)。
+ */
+export type CrawlDispatcher = (crawl: DispatchedCrawl) => Promise<string | undefined>;
 
 /**
  * Windmill の flow に渡す 1 段ぶんの仕事。
@@ -169,6 +174,49 @@ interface LevelBody {
 
 export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps): void => {
   const { db, fga, resolveIdentity, dispatch, capture, sink } = deps;
+
+  /**
+   * 段を 1 つ Windmill へ投げる。**待たない** —— この Promise の行き先は `crawls` の行で、
+   * 応答ではない。
+   *
+   * 起こした job の id を `last_job_*` に残す (`016`)。失敗したクロールから、その run へ
+   * 1 回で辿れるように。**深さが戻る書き込みはしない** —— 段の報告は速いので、前の段の
+   * id が次の段の id の後に届くことがありうる。
+   *
+   * 投げられなければクロールを締める。黙って `running` のまま置くと、部分 unique index が
+   * 以後のクロールを全部塞ぐ。以前はこの 2 つを、最初の段と次の段の 2 か所に写していた。
+   */
+  const dispatchLevel = (level: DispatchedCrawl): void => {
+    const { crawlId, depth } = level;
+    void dispatch(level)
+      .then(
+        async (jobId) => {
+          if (jobId === undefined) return;
+          await db
+            .updateTable("crawls")
+            .set({ lastJobId: jobId, lastJobDepth: depth })
+            .where("id", "=", crawlId)
+            .where((eb) => eb.or([eb("lastJobDepth", "is", null), eb("lastJobDepth", "<=", depth)]))
+            .execute();
+        },
+        async (err: unknown) => {
+          log.error({ err, crawlId, depth }, "Could not dispatch a level");
+          await db
+            .updateTable("crawls")
+            .set({
+              state: "failed",
+              stopReason: "failed",
+              finishedAt: new Date().toISOString(),
+              error: err instanceof Error ? err.message : String(err),
+            })
+            .where("id", "=", crawlId)
+            .execute();
+        },
+      )
+      .catch((updateErr: unknown) => {
+        log.error({ err: updateErr, crawlId, depth }, "Could not record the dispatch");
+      });
+  };
 
   /**
    * クロールを 1 本起こす。
@@ -293,7 +341,19 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       } catch (err) {
         if (isUniqueViolation(err, "crawls_single_active")) {
           log.info({ subject: identity.subject }, "Crawl already in progress");
-          return reply.code(409).send({ error: "a crawl is already in progress" });
+          // 塞いでいる 1 本を名指しする (走行中は全体で 1 本 —— `007` の部分 unique index)。
+          // 止まっているなら、呼び手はこの id で `POST /api/crawls/:id/failed` を叩ける。
+          // 呼び手は `can_submit` を通った後で、その許可は組織を跨いで効く (`maySubmit`) ので、
+          // 他の組織のクロールの id を見せても新しく漏れるものは無い。
+          const running = await db
+            .selectFrom("crawls")
+            .select(["id", "startedAt"])
+            .where("state", "=", "running")
+            .executeTakeFirst();
+          return reply.code(409).send({
+            error: "a crawl is already in progress",
+            ...(running && { crawlId: running.id, startedAt: running.startedAt }),
+          });
         }
         throw err;
       }
@@ -318,8 +378,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         .returning(["url", "host"])
         .execute();
 
-      // 待たない。この Promise の行き先は `crawls` の行であって、この応答ではない。
-      void dispatch({
+      dispatchLevel({
         crawlId,
         depth: 0,
         // 最初の段には「前」が無い。
@@ -330,21 +389,6 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         captureFormats: withLinks(capture.formats, crawl.maxDepth > 0),
         signing: capture.signing,
         ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
-      }).catch(async (err: unknown) => {
-        log.error({ err, crawlId }, "Could not dispatch the crawl");
-        await db
-          .updateTable("crawls")
-          .set({
-            state: "failed",
-            stopReason: "failed",
-            finishedAt: new Date().toISOString(),
-            error: err instanceof Error ? err.message : String(err),
-          })
-          .where("id", "=", crawlId)
-          .execute()
-          .catch((updateErr: unknown) => {
-            log.error({ err: updateErr, crawlId }, "Could not record the dispatch failure");
-          });
       });
 
       log.info({ subject: identity.subject, crawlId }, "Crawl started");
@@ -378,6 +422,17 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         .executeTakeFirst();
       if (!crawl) return reply.code(404).send({ error: "not found" });
 
+      // 取れなかったページと、その理由。0 ページで「成功」したクロールは、これが無いと
+      // 理由が台帳の中に眠ったままになる (`skip_reason` には失敗の理由も入る)。
+      const failures = await db
+        .selectFrom("crawlPages")
+        .select(["url", "depth", "skipReason"])
+        .where("crawlId", "=", crawl.id)
+        .where("state", "=", "failed")
+        .orderBy("id", "desc")
+        .limit(FAILURES_SHOWN)
+        .execute();
+
       return reply.code(200).send({
         crawlId: crawl.id,
         seeds: crawl.seeds,
@@ -393,6 +448,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         pagesDiscovered: crawl.pagesDiscovered,
         pagesCaptured: crawl.pagesCaptured,
         error: crawl.error,
+        lastJob:
+          crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
+        failures: failures.map((page) => ({
+          url: page.url,
+          depth: page.depth,
+          reason: page.skipReason,
+        })),
       });
     },
   );
@@ -694,7 +756,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           if (row.last !== null) lastByHost.set(row.host, new Date(row.last).toISOString());
         }
 
-        void dispatch({
+        dispatchLevel({
           crawlId,
           depth: nextDepth,
           frontier: inserted.map((row) => ({
@@ -707,19 +769,6 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           captureFormats: withLinks(capture.formats, crawl.maxDepth > nextDepth),
           signing: capture.signing,
           ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
-        }).catch(async (err: unknown) => {
-          log.error({ err, crawlId, depth: nextDepth }, "Could not dispatch the next level");
-          await db
-            .updateTable("crawls")
-            .set({
-              state: "failed",
-              stopReason: "failed",
-              finishedAt: new Date().toISOString(),
-              error: err instanceof Error ? err.message : String(err),
-            })
-            .where("id", "=", crawlId)
-            .execute()
-            .catch(() => undefined);
         });
       }
 
