@@ -3,9 +3,10 @@ title: URL source
 description: The capture_targets table capture-ledger reads, and how to manage it.
 ---
 
-capture-ledger's entire input is one Postgres table. **capture-ledger never inserts into it** —
+capture-ledger's entire input is one Postgres table. **The API never inserts into it** —
 populating `capture_targets` is the caller's job, whether that is a manual `INSERT`, an
-external pipeline, or the bundled seed.
+external pipeline, or the bundled seed. For development there is also a small CLI,
+`pnpm run targets`, that adds rows for you (see [Adding URLs](#adding-urls)).
 
 ## The query
 
@@ -27,16 +28,19 @@ attribution unanswerable.
 
 ```
 
-| Column                      | Notes                                                                                                                       |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `id`                        | `BIGSERIAL` primary key. Insertion order, preserved by the loader's `ORDER BY`.                                             |
-| `url`                       | `CHECK (url <> '' AND url = btrim(url))` — the database rejects empty and untrimmed values, so no caller has to.            |
-| `url_hash`                  | Generated `digest(url, 'sha256')` (pgcrypto), stored. Backs the unique index; nothing reads it directly.                    |
-| `labels`                    | `TEXT[]`. **Nothing reads them any more** — see below.                                                                      |
-| `enabled`                   | The hot path is `WHERE enabled`, covered by the partial index `capture_targets_enabled_id_idx`. Disabled rows cost nothing. |
-| `created_at` / `updated_at` | `now()` defaults. No auto-update trigger today.                                                                             |
+| Column                      | Notes                                                                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                        | `BIGSERIAL` primary key. Insertion order, preserved by the loader's `ORDER BY`.                                                                                 |
+| `url`                       | `CHECK (url <> '' AND url = btrim(url))` and `CHECK (url ~* '^https?://')` — the database rejects empty, untrimmed and non-http(s) values, so no caller has to. |
+| `url_hash`                  | Generated `digest(url, 'sha256')` (pgcrypto), stored. Backs the unique index; nothing reads it directly.                                                        |
+| `labels`                    | `TEXT[]`. **Nothing reads them any more** — see below.                                                                                                          |
+| `enabled`                   | The hot path is `WHERE enabled`, covered by the partial index `capture_targets_enabled_id_idx`. Disabled rows cost nothing.                                     |
+| `org_id`                    | Which organization's target this is. **No default** — every `INSERT` names it, or `NOT NULL` rejects the row. `fromTargets` filters on it.                      |
+| `created_at` / `updated_at` | `now()` defaults. No auto-update trigger today.                                                                                                                 |
 
-`capture_targets_url_hash_key` is unique, so the same URL cannot be enqueued twice.
+`capture_targets_org_url_hash_key` is unique on `(org_id, url_hash)`: within one
+organization the same URL cannot be enqueued twice, while two organizations can each
+target the same URL.
 
 ## Labels
 
@@ -60,15 +64,39 @@ The bundled fixture still uses a securities code alongside a company name:
 
 ## Adding URLs
 
-```sql
-INSERT INTO capture_targets (url, labels) VALUES
-  ('https://example.com/', ARRAY['example']),
-  ('https://example.org/', ARRAY['example', 'org'])
-ON CONFLICT (url_hash) DO NOTHING;
+In development, use the CLI. It writes straight to the database — there is no API
+call and no authorization — and it always asks which organization the rows belong to:
+
+```sh
+pnpm run targets add https://example.com/ --org acme
+pnpm run targets add https://example.com/ https://example.org/docs --org acme --label demo
+pnpm run targets add - --org acme < my-urls.txt   # one URL per line; blank and # lines are skipped
+pnpm run targets list --org acme                  # add --json for machine-readable output
+pnpm run targets disable 6                        # out of rotation, history kept (enable 6 undoes it)
+pnpm run targets rm 6
 ```
 
-To take a URL out of rotation without losing its history, set `enabled = false`
-rather than deleting the row.
+It reads URLs with the same parser the crawl uses for its seeds, and stores them
+the same way (without the fragment), so anything it accepts will also be readable at
+capture time. **If even one URL is unreadable, it adds nothing** and names it.
+Adding a URL that is already there but disabled re-enables it. Pass labels one at a
+time (`--label a --label b`): in `--label a b`, `b` is read as a URL, and since it is
+not one, nothing is added.
+
+From SQL, name the organization yourself:
+
+```sql
+INSERT INTO capture_targets (url, org_id, labels) VALUES
+  ('https://example.com/', 'acme', ARRAY['example']),
+  ('https://example.org/', 'acme', ARRAY['example', 'org'])
+ON CONFLICT (org_id, url_hash) DO NOTHING;
+```
+
+Always name `org_id`. It has no default, so a row without it is rejected by
+`NOT NULL` — and a crawl only seeds from the caller's own organization.
+
+To take a URL out of rotation without losing its history, disable it
+(`pnpm run targets disable <id>`, or `enabled = false`) rather than deleting the row.
 
 ## Migrations
 

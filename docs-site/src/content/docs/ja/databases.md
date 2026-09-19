@@ -103,7 +103,7 @@ OpenFGA 自身のスキーマ移行の記録です。capture-ledger 側の `kyse
 
 ```sh
 # capture-ledger 側 — ホストの psql でも繋がる (5432 を公開している)
-container exec postgres.capture-ledger psql -U capture-ledger -d capture-ledger -c "\dt"
+container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger -c "\dt"
 
 # OpenFGA 側 — ポート非公開なので container exec から
 container exec openfga-db.capture-ledger psql -U openfga -d openfga -c "\d tuple"

@@ -29,7 +29,16 @@ export default defineConfig({
   },
   integrations: [
     // ```mermaid をクライアントサイドで描画。starlight より前に置く。
-    mermaid({ theme: "neutral" }),
+    //
+    // wrappingWidth は mermaid 11 の既定値 (200) を明示している。mermaid 12 は既定を 120 に
+    // 狭めたので、書かないと「決める・記録する」のような短い行が語の途中で折れる (実際に
+    // トップページの図がそうなった)。図のソースは改行を <br/> で書いてあり、自動の折り返し
+    // には頼っていない。
+    //
+    // 配置は mermaid 12 の既定 (ELK) に任せている。mermaid 11 の配置に戻すなら
+    // mermaidConfig に layout: "dagre" を足す —— 2026-09 に両方を撮って比べ、architecture の
+    // 2 枚目が読める大きさになる ELK を採った。
+    mermaid({ theme: "neutral", mermaidConfig: { flowchart: { wrappingWidth: 200 } } }),
     starlight({
       title: "capture-ledger Docs",
       customCss: ["./src/styles/tables.css"],

@@ -3,9 +3,10 @@ title: URL ソース
 description: capture-ledger が読む capture_targets テーブルと、その運用方法。
 ---
 
-capture-ledger の入力は Postgres のテーブル 1 つだけです。**capture-ledger 自身は INSERT しません** —
+capture-ledger の入力は Postgres のテーブル 1 つだけです。**API は INSERT しません** —
 `capture_targets` への投入は呼び出し側の責務で、手動 `INSERT` でも、外部パイプラインでも、
 同梱の seed でもかまいません。
+開発用には、行を足す小さな CLI（`pnpm run targets`）も同梱しています（[URL を追加する](#url-を追加する)）。
 
 ## クエリ
 
@@ -26,16 +27,19 @@ SELECT url FROM capture_targets WHERE enabled AND org_id = $1 ORDER BY id ASC [L
 
 ```
 
-| カラム                      | 補足                                                                                                                  |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `id`                        | `BIGSERIAL` 主キー。投入順で、ローダの `ORDER BY` がそれを保つ。                                                      |
-| `url`                       | `CHECK (url <> '' AND url = btrim(url))` — 空文字と前後空白をデータベースが拒否するので、呼ぶ側で検査する必要がない。 |
-| `url_hash`                  | 生成列 `digest(url, 'sha256')` (pgcrypto) を stored 保存。ユニークインデックスの土台で、直接読むことはない。          |
-| `labels`                    | `TEXT[]`。**もう誰も読みません** —— 下記を参照。                                                                      |
-| `enabled`                   | ホットパスは `WHERE enabled` で、部分インデックス `capture_targets_enabled_id_idx` が覆う。無効行はコストにならない。 |
-| `created_at` / `updated_at` | `now()` 既定。自動更新トリガは今のところ無い。                                                                        |
+| カラム                      | 補足                                                                                                                                                                        |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                        | `BIGSERIAL` 主キー。投入順で、ローダの `ORDER BY` がそれを保つ。                                                                                                            |
+| `url`                       | `CHECK (url <> '' AND url = btrim(url))` と `CHECK (url ~* '^https?://')` —— 空文字・前後の空白・http(s) でない値をデータベースが拒否するので、呼ぶ側で検査する必要がない。 |
+| `url_hash`                  | 生成列 `digest(url, 'sha256')` (pgcrypto) を stored 保存。ユニークインデックスの土台で、直接読むことはない。                                                                |
+| `labels`                    | `TEXT[]`。**もう誰も読みません** —— 下記を参照。                                                                                                                            |
+| `enabled`                   | ホットパスは `WHERE enabled` で、部分インデックス `capture_targets_enabled_id_idx` が覆う。無効行はコストにならない。                                                       |
+| `org_id`                    | どの組織の対象か。**既定値は無い** —— `INSERT` では必ず書く（書かなければ `NOT NULL` で落ちる）。`fromTargets` はこれで絞る。                                               |
+| `created_at` / `updated_at` | `now()` 既定。自動更新トリガは今のところ無い。                                                                                                                              |
 
-`capture_targets_url_hash_key` はユニークなので、同じ URL を二重に登録できません。
+`capture_targets_org_url_hash_key` は `(org_id, url_hash)` のユニーク索引です。
+1 つの組織の中では、同じ URL を二重に登録できません。
+別々の組織なら、同じ URL をそれぞれの対象にできます。
 
 ## labels の使い方
 
@@ -58,14 +62,39 @@ BrowserHive が逃がすため、非 ASCII も含めてそのまま往復し、�
 
 ## URL を追加する
 
-```sql
-INSERT INTO capture_targets (url, labels) VALUES
-  ('https://example.com/', ARRAY['example']),
-  ('https://example.org/', ARRAY['example', 'org'])
-ON CONFLICT (url_hash) DO NOTHING;
+開発中は CLI を使います。DB に直接書く道具で、API は通らず、認可もありません。
+どの組織の対象かは、必ず訊かれます。
+
+```sh
+pnpm run targets add https://example.com/ --org acme
+pnpm run targets add https://example.com/ https://example.org/docs --org acme --label demo
+pnpm run targets add - --org acme < my-urls.txt   # 1 行 1 URL。空行と # の行は読み飛ばす
+pnpm run targets list --org acme                  # --json で機械向け
+pnpm run targets disable 6                        # 履歴を残したまま外す（enable 6 で戻す）
+pnpm run targets rm 6
 ```
 
-履歴を残したまま対象から外したいときは、行を削除せず `enabled = false` にします。
+URL は、クロールが種を読むのと同じ関数で読み、同じ形（フラグメントを落とした形）で保存します。
+ここで足せた URL は、撮るときにも読めます。
+**読めない URL が 1 本でもあれば、何も足さずに**名指しします。
+無効にしてあった URL を足すと、有効に戻ります。
+札は `--label a --label b` のように 1 つずつ渡します。
+`--label a b` と書くと、`b` は URL として読まれ、読めないので何も足さずに止まります。
+
+SQL で足すときは、組織を自分で書きます。
+
+```sql
+INSERT INTO capture_targets (url, org_id, labels) VALUES
+  ('https://example.com/', 'acme', ARRAY['example']),
+  ('https://example.org/', 'acme', ARRAY['example', 'org'])
+ON CONFLICT (org_id, url_hash) DO NOTHING;
+```
+
+`org_id` は必ず書きます。既定値が無いので、書かなければ `NOT NULL` で断られます。
+クロールは、呼んだ人の組織の行だけを種にします。
+
+履歴を残したまま対象から外したいときは、行を削除せずに無効にします
+（`pnpm run targets disable <id>`、または `enabled = false`）。
 
 ## マイグレーション
 

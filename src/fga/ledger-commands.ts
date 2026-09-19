@@ -12,6 +12,7 @@
  *   capture-ledger revoke     それを取り消す
  */
 import { Command, InvalidArgumentError, Option } from "commander";
+import { databaseUrlOption } from "../cli/database-url-option.js";
 import { fgaConfig, storageConfig } from "../config/env.js";
 import { createKyselyClient } from "../db/kysely.js";
 import { createFgaClient } from "./client.js";
@@ -32,10 +33,6 @@ const positiveInt = (raw: string): number => {
   }
   return n;
 };
-
-const databaseUrlOption = new Option("--database-url <url>", "Postgres connection string")
-  .env("DATABASE_URL")
-  .makeOptionMandatory(true);
 
 const runDrain = async (databaseUrl: string): Promise<void> => {
   const db = createKyselyClient(databaseUrl);
