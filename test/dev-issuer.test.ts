@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import type { FastifyRequest } from "fastify";
 import { createRemoteJWKSet } from "jose";
 
@@ -41,6 +41,23 @@ describe("開発用の issuer", () => {
     return json.access_token ?? "";
   };
 
+  const bearer = (token: string): FastifyRequest =>
+    ({ headers: { authorization: `Bearer ${token}` } }) as unknown as FastifyRequest;
+
+  /**
+   * 鍵を覚えている API を作る: resolver を作り、1 本検証させて JWKS を取らせる。
+   * 本番の API と同じく `createRemoteJWKSet` は既定のまま (覚えは 10 分、cooldown は 30 秒)。
+   */
+  const rememberingResolver = (issuer: string) =>
+    jwtIdentityResolver(createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)), {
+      issuer,
+      audience: AUDIENCE,
+    });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("刷ったトークンを、JWKS 越しに本番の resolver が受け取る", async () => {
     await withIssuer(async (issuer) => {
       const token = await mint(issuer, { subject: "alice", organizations: ["acme"] });
@@ -78,26 +95,74 @@ describe("開発用の issuer", () => {
   });
 
   /**
-   * 鍵は issuer の起動ごとに作り直される。**それが正しい** ——
-   * 鍵の更新をローカルで再現できるということ。古いトークンは通らなくなる。
+   * 鍵は issuer の起動ごとに作り直される。**それが正しい** —— 鍵の更新をローカルで再現できる
+   * ということ。
+   *
+   * **鍵を覚えている API で確かめる。** resolver を立て直しの「前」に作り、1 本検証させて鍵を
+   * 覚えさせてから issuer を立て直す —— 動き続ける API と同じ状態。以前は立て直しの後に
+   * resolver を作っていて、覚えが空のまま新しい鍵を取るので、kid が固定 (`dev-key-1`) でも
+   * 緑だった。実際の API は覚えている古い鍵で照合し続け、最長 10 分、新しいトークンが
+   * 401・古いトークンが通っていた。
+   *
+   * 時計は Date だけを進める (通信は本物)。jose は直前の取り直しから 30 秒 (cooldown) の間、
+   * 知らない kid でも取り直さない。動いている API の直前の取り直しは、ふつうそれより前。
+   * 2 本のトークンは 1 つの expect で見る —— 間違えるときは両方が逆さまになるので、
+   * 片方だけでは何が起きたかが読めない。
    */
-  it("issuer を立て直すと、前の鍵で刷ったトークンは通らない", async () => {
+  it("issuer を立て直すと、鍵を覚えている API でも新しいトークンが通り、古いトークンは通らない", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const first = await buildDevIssuer(AUDIENCE);
     const address = await first.listen({ port: 0, host: "127.0.0.1" });
-    const token = await mint(address, { subject: "alice" });
-    await first.close();
+    const resolve = rememberingResolver(address);
+    const old = await mint(address, { subject: "alice" });
+    try {
+      await expect(resolve(bearer(old))).resolves.toMatchObject({ subject: "alice" });
+    } finally {
+      await first.close();
+    }
 
     // 同じ port で立て直す = URL は同じで、鍵だけが変わる。
     const second = await buildDevIssuer(AUDIENCE, address);
     await second.listen({ port: Number(new URL(address).port), host: "127.0.0.1" });
     try {
-      const resolve = jwtIdentityResolver(
-        createRemoteJWKSet(new URL(`${address}/.well-known/jwks.json`)),
-        { issuer: address, audience: AUDIENCE },
-      );
+      vi.setSystemTime(Date.now() + 31_000);
+      const fresh = await mint(address, { subject: "bob" });
+      const answers = {
+        fresh: (await resolve(bearer(fresh)))?.subject,
+        old: (await resolve(bearer(old)))?.subject,
+      };
+      expect(answers).toEqual({ fresh: "bob", old: undefined });
+    } finally {
+      await second.close();
+    }
+  });
+
+  /**
+   * jose の cooldown をここで固定する。直前の取り直しから 30 秒の間は、知らない kid でも
+   * 取り直さない —— だから issuer を立て直した直後は、新しいトークンもしばらく 401 になる。
+   * capture-scheduler の `check:connection` が「30 秒待つ」と言う根拠。
+   */
+  it("直前の取り直しから 30 秒の間は、知らない kid でも取り直さない", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const first = await buildDevIssuer(AUDIENCE);
+    const address = await first.listen({ port: 0, host: "127.0.0.1" });
+    const resolve = rememberingResolver(address);
+    try {
       await expect(
-        resolve({ headers: { authorization: `Bearer ${token}` } } as unknown as FastifyRequest),
-      ).resolves.toBeUndefined();
+        resolve(bearer(await mint(address, { subject: "alice" }))),
+      ).resolves.toBeDefined();
+    } finally {
+      await first.close();
+    }
+
+    const second = await buildDevIssuer(AUDIENCE, address);
+    await second.listen({ port: Number(new URL(address).port), host: "127.0.0.1" });
+    try {
+      const fresh = await mint(address, { subject: "bob" });
+      const within = (await resolve(bearer(fresh)))?.subject;
+      vi.setSystemTime(Date.now() + 31_000);
+      const after = (await resolve(bearer(fresh)))?.subject;
+      expect({ within, after }).toEqual({ within: undefined, after: "bob" });
     } finally {
       await second.close();
     }
