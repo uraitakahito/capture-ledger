@@ -9,6 +9,7 @@
  * 存在しないオブジェクトに対して URL を署名することになる。どちらも、起動時に失敗する
  * よりはるかに悪い。
  */
+import { ExplainedError } from "../errors.js";
 
 /**
  * この repo が読む環境変数の全体。**`guardEnv` の検査対象そのもの** なので、
@@ -166,7 +167,7 @@ const explainMissing = (names: string[]): string => {
  *
  * 文は `explainMissing` が出どころごとに組む。`names` は集めた順のまま持つ。
  */
-export class MissingEnvError extends Error {
+export class MissingEnvError extends ExplainedError {
   constructor(readonly names: string[]) {
     super(explainMissing(names));
     this.name = "MissingEnvError";
