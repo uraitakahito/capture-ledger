@@ -15,7 +15,7 @@ import { createFgaClient } from "../fga/client.js";
 import { drainOutbox } from "../fga/outbox-worker.js";
 import { createS3Client } from "../archive/s3.js";
 import { selectIdentity } from "./identity.js";
-import { startupNotes } from "./startup-notes.js";
+import { startupNotes, type StartupFacts } from "./startup-notes.js";
 import { registerRoutes } from "./routes.js";
 import { registerMeRoute } from "./me.js";
 import { registerPicker, replayOriginFromEnv } from "./picker.js";
@@ -69,6 +69,12 @@ const start = async (options: ServerOptions): Promise<void> => {
   const s3 = createS3Client(storage);
   const identity = selectIdentity();
   const resolveIdentity = identity.resolve;
+  // どの名乗り方で起きたか。起動ログと picker が同じものを言う —— resolver は渡さない
+  // (どちらも言うだけで、検めはしない)。
+  const identityMode: StartupFacts["identity"] =
+    identity.mode === "jwt" ? { mode: "jwt", issuer: identity.issuer } : { mode: identity.mode };
+  // 待ち受け。listen の直前ではなくここで決めるのは、picker が「外に出ている」を画面で言うため。
+  const listen = { host: optional("CAPTURE_LEDGER_API_HOST", DEFAULT_HOST), port: options.port };
 
   const app = Fastify({
     logger: false,
@@ -120,7 +126,7 @@ const start = async (options: ServerOptions): Promise<void> => {
         "(one without the other cannot hand out a sink)",
     );
   }
-  registerPicker(app, replayOriginFromEnv());
+  registerPicker(app, { replayOrigin: replayOriginFromEnv(), identity: identityMode, listen });
 
   // **形式は起動時に 1 回だけ解釈する。** 綴りの誤りをここで落とすため
   // (`config/capture-formats.ts` を見ること)。実行のたびに解釈すると、`waxz` のような
@@ -192,15 +198,12 @@ const start = async (options: ServerOptions): Promise<void> => {
   process.on("SIGINT", () => void shutdown().then(() => process.exit(0)));
   process.on("SIGTERM", () => void shutdown().then(() => process.exit(0)));
 
-  const host = optional("CAPTURE_LEDGER_API_HOST", DEFAULT_HOST);
-  await app.listen({ port: options.port, host });
+  await app.listen(listen);
   // 最後に、待ち受け・名乗り方と、段の報告を受けられるかを言う (`startup-notes.ts`)。
   // 開発用ヘッダの警告もここから出る —— ヘッダが実際に効いているときだけ。
   const notes = startupNotes({
-    host,
-    port: options.port,
-    identity:
-      identity.mode === "jwt" ? { mode: "jwt", issuer: identity.issuer } : { mode: identity.mode },
+    ...listen,
+    identity: identityMode,
     devIdentity: process.env["CAPTURE_LEDGER_DEV_IDENTITY"] === "1",
     crawls: dispatch !== undefined,
     sink: sink !== undefined,

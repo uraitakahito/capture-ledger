@@ -39,11 +39,16 @@ export interface Note {
   fields?: Record<string, unknown>;
 }
 
-/**
- * この Mac の中からしか届かないアドレス。コンテナからは届かない —— コンテナから host の
- * ポートを叩くと、127.0.0.1 で待つプロセスには refused になる (実測)。
- */
 const LOOPBACK = new Set(["127.0.0.1", "localhost", "::1"]);
+
+/**
+ * この Mac の中からしか届かないアドレスか。コンテナからは届かない —— コンテナから host の
+ * ポートを叩くと、127.0.0.1 で待つプロセスには refused になる (実測)。
+ *
+ * picker (`picker.ts`) も、この判定で「外に出ている」を画面に出す。起動ログと画面で判定が
+ * 割れないように、ここ 1 か所に置く。
+ */
+export const isLoopback = (host: string): boolean => LOOPBACK.has(host);
 
 const DEV_HEADER_TRUSTED =
   "CAPTURE_LEDGER_DEV_IDENTITY=1 — callers are trusted on the X-Capture-ledger-Subject header. " +
@@ -56,7 +61,7 @@ const identityLabel = (identity: StartupFacts["identity"]): string => {
 
 export const startupNotes = (facts: StartupFacts): Note[] => {
   const { host, port, identity } = facts;
-  const loopback = LOOPBACK.has(host);
+  const loopback = isLoopback(host);
   const notes: Note[] = [];
 
   // ① 名乗り方。ヘッダの警告は、ヘッダが実際に効いているときだけ出す。
@@ -76,14 +81,16 @@ export const startupNotes = (facts: StartupFacts): Note[] => {
     });
   }
 
-  // ② ヘッダを信じる API を、外に出していないか。picker のためにヘッダへ切り替えても、
-  //    クロール用の CAPTURE_LEDGER_API_HOST=0.0.0.0 は残る。
+  // ② ヘッダを信じる API を、外に出していないか。OIDC の行だけを外してヘッダに切り替えると、
+  //    クロール用の CAPTURE_LEDGER_API_HOST=0.0.0.0 が残る。picker はトークンを受けるので、
+  //    picker のために切り替える必要は無い。
   if (identity.mode === "header" && !loopback) {
     notes.push({
       level: "warn",
       msg:
         `The dev header is trusted on ${host}:${String(port)} — anyone who can reach this port ` +
-        "can act as any user. For the picker, start with CAPTURE_LEDGER_API_HOST=127.0.0.1",
+        "can act as any user. Set CAPTURE_LEDGER_API_HOST=127.0.0.1, or keep " +
+        "CAPTURE_LEDGER_OIDC_ISSUER (the picker takes a token)",
     });
   }
 
