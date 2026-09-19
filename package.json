@@ -121,9 +121,9 @@
     "@openfga/sdk": "^0.9.6",
     "@opensearch-project/opensearch": "^3.6.0",
     "commander": "^15.0.0",
-    "fastify": "^5.12.4",
+    "fastify": "^5.12.5",
     "jose": "^6.2.12",
-    "kysely": "^0.29.5",
+    "kysely": "^0.29.6",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
     "yauzl-promise": "^4.0.0"
