@@ -173,10 +173,16 @@ DATABASE_URL=postgres://user:pass@db.host:5432/capture_ledger \
   pnpm run db:migrate
 
 DATABASE_URL=postgres://user:pass@db.host:5432/capture_ledger \
-CAPTURE_LEDGER_CRAWL_WEBHOOK_URL=https://windmill.example/api/w/…/jobs/run/f/f/crawl \
+CAPTURE_LEDGER_CRAWL_WEBHOOK_URL=https://windmill.example/api/w/…/jobs/run/f/f/waggle/crawl_level \
 CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN=… \
   pnpm run api
 ```
+
+webhook の URL の `…` は Windmill の workspace の id です（同梱の構成なら `crawler`）。
+末尾の `f/waggle/crawl_level` は flow のパスで、決めているのは capture-scheduler です。
+**名前が違っていても API は起動し、`POST /api/crawls` も `202` を返します。**
+分かるのはその後で、クロールが `failed` になり、
+API のログに `crawl webhook → 404 Not found: flow not found` が出ます。
 
 Postgres の TLS は `DATABASE_URL` にパラメータを書きます (例: `?sslmode=require`)。
 

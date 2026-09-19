@@ -181,10 +181,17 @@ DATABASE_URL=postgres://user:pass@db.host:5432/capture_ledger \
   pnpm run db:migrate
 
 DATABASE_URL=postgres://user:pass@db.host:5432/capture_ledger \
-CAPTURE_LEDGER_CRAWL_WEBHOOK_URL=https://windmill.example/api/w/…/jobs/run/f/f/crawl \
+CAPTURE_LEDGER_CRAWL_WEBHOOK_URL=https://windmill.example/api/w/…/jobs/run/f/f/waggle/crawl_level \
 CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN=… \
   pnpm run api
 ```
+
+The `…` in the webhook URL is the Windmill workspace id (`crawler` in the
+bundled setup). The tail, `f/waggle/crawl_level`, is the path of the flow, and
+capture-scheduler is what decides it. **A wrong name does not stop the API from
+starting, and `POST /api/crawls` still answers `202`.** It only shows afterwards:
+the crawl ends as `failed`, and the API log carries
+`crawl webhook → 404 Not found: flow not found`.
 
 For Postgres TLS, encode the parameters in `DATABASE_URL` (e.g.
 `?sslmode=require`).
