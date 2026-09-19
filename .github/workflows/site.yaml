@@ -21,12 +21,21 @@ name: site
 # below needs it; docker-compose.yml stays in the paths filter because it is the
 # build definition the docs describe.
 #
-# Security: read-only check. It never deploys and references no secrets, so
-# running on pull_request (including from forks) is safe — unlike docs.yaml.
+# Security: read-only check — it never deploys. It does reference one secret:
+# SUBMODULE_APP_KEY, to mint a read-only token for the private BrowserHive
+# submodule (see the job below). A pull request from a fork is not handed that
+# secret, so the token step fails there and the job cannot run. That is a
+# closed door, not a leak. (This comment used to say "references no secrets";
+# that stopped being true when BrowserHive went private.)
 
 on:
   push:
-    branches: [main]
+    # develop is here for the Dependabot pull requests. This job is skipped on
+    # them (see the `if:` below), so the push right after the merge is the
+    # first time anything builds the docs with the bumped dependencies. It ran
+    # on main only until 2026-09, which left that build to the next unrelated
+    # pull request or to the release.
+    branches: [main, develop]
     paths:
       - "src/**"
       - "docs-site/**"
@@ -37,6 +46,10 @@ on:
       - ".upstream/browserhive"
       - "docker-compose.yml"
       - "package.json"
+      # What the docs build installs is decided by the lockfile, so a change
+      # that moves only the lockfile or an override has to run this too.
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/site.yaml"
   pull_request:
     paths:
@@ -49,6 +62,10 @@ on:
       - ".upstream/browserhive"
       - "docker-compose.yml"
       - "package.json"
+      # What the docs build installs is decided by the lockfile, so a change
+      # that moves only the lockfile or an override has to run this too.
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - ".github/workflows/site.yaml"
   workflow_dispatch:
 
@@ -68,9 +85,18 @@ jobs:
     # **Dependabot の PR は Actions secrets を読めない** ので、下の
     # create-github-app-token が private-key 空で必ず落ちる。変更の中身とは無関係に。
     #
-    # 飛ばして失うものは無い。この job が見るのは docs とコードの一致で、
-    # Dependabot の PR は lockfile しか触らない。develop に入った直後の push で
-    # 同じ job が secrets 付きで走るので、検査自体は消えない。
+    # **飛ばすと、マージの前には docs のビルドを誰も見ない。** Dependabot の PR は
+    # package.json と lockfile を書き換えるので、docs のビルドを壊せる —— 2026-09 の #267 は
+    # starlight 0.42 だけを上げ (相方の @astrojs/markdown-satteri 0.4 は別の PR)、単独では
+    # build が落ちる形だったが、CI は緑のままだった。以前ここには「飛ばして失うものは無い。
+    # Dependabot の PR は lockfile しか触らない」と書いてあり、どちらも誤りだった。
+    #
+    # 代わりに、develop に入った直後の push でこの job が secrets 付きで走る (上の
+    # `push.branches` に develop が入っているのはそのため)。検査は消えず、前倒しで
+    # なくなるだけ。マージの前に見たいなら、repo の **Dependabot secrets** に
+    # SUBMODULE_APP_KEY を置けばこの if は外せる —— 要るのはその 1 つだけで、client-id の
+    # 変数 (vars) は Dependabot の run にも届いている (2026-08-31 の run のログで確認)。
+    # 順番は鍵が先。逆にすると Dependabot の PR が全部赤くなる。
     if: github.actor != 'dependabot[bot]'
     steps:
       # BrowserHive is a private repository, so the default GITHUB_TOKEN cannot
