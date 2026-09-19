@@ -1,8 +1,11 @@
-# Mirror of upstream BrowserHive's buf.gen.yaml, with one deliberate
-# difference: `outputServices=grpc-js` emits *both* the server interface and
-# the client stub, and capture-ledger only ever calls. Keeping the option identical to
-# upstream's is still the right trade — a divergent generator config is how the
-# two ends drift apart, and the unused server half costs nothing but bytes.
+# Mirror of upstream BrowserHive's buf.gen.yaml. Every option that shapes the
+# generated *code* is identical to upstream's — a divergent generator config is
+# how the two ends drift apart. That includes `outputServices=grpc-js`, which
+# emits *both* the server interface and the client stub although capture-ledger
+# only ever calls: the unused server half costs nothing but bytes.
+#
+# One option is ours alone, and it touches only the header comment of the
+# generated file: `annotateFilesWithVersion=false` (see below).
 version: v2
 clean: true
 plugins:
@@ -18,6 +21,12 @@ plugins:
       # upstream と揃えてある —— 揃えないと、同じ契約から出た型の名前が
       # 両端で違うことになる。
       - snakeToCamel=true
+      # 生成コードの先頭に、ts-proto の版を書かせない。書かせると、ts-proto を上げるだけの PR が
+      # 「生成コードが古い」で必ず赤くなる —— 出力が 1 文字も変わらなくても (2026-09 の #287 は
+      # 2.12.1 → 2.12.4 で、変わったのは版の表記の 1 行だけだった)。版は lockfile が持っている。
+      # 出力が本当に変わる版上げは、これまでどおり `proto:check` が赤で止める。
+      # upstream には無い設定だが、変わるのはコメントの 3 行だけで、生成されるコードは同じ。
+      - annotateFilesWithVersion=false
     strategy: all
 inputs:
   - directory: proto
