@@ -23,8 +23,27 @@ import type { FastifyRequest } from "fastify";
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { optional } from "../config/env.js";
 import { identityFromClaims, organizationsFromList, type Identity } from "../config/identity.js";
+import { createChildLogger } from "../logger.js";
 
 export type { Identity };
+
+const log = createChildLogger({ module: "identity" });
+
+/**
+ * 拒んだ理由のうち、ログに書いてよいもの: jose のエラーの `code` と、クレームの検査で
+ * 落ちたならその名前 (`iss`・`aud`・`exp` …)。
+ *
+ * **エラーをそのまま渡さないこと。** jose のクレームのエラーは `payload` (トークンの中身)
+ * を抱えている。書いてよいのは、どの検査で落ちたかだけ。
+ */
+const rejection = (err: unknown): { code?: string; claim?: string } => {
+  if (typeof err !== "object" || err === null) return {};
+  const { code, claim } = err as { code?: unknown; claim?: unknown };
+  return {
+    ...(typeof code === "string" && { code }),
+    ...(typeof claim === "string" && { claim }),
+  };
+};
 
 export type IdentityResolver = (request: FastifyRequest) => Promise<Identity | undefined>;
 
@@ -70,8 +89,11 @@ export const jwtIdentityResolver =
       // クレームの読み方は CLI と共有する (config/identity.ts)。IdP ごとに違う
       // クレーム名を差し替えるのは、そこ 1 か所。
       return identityFromClaims(payload);
-    } catch {
+    } catch (err) {
       // 失敗の理由は呼び手に返さない。どこで落ちたかは総当たりの手がかりになる。
+      // API のログには残す —— 開発で「なぜ 401 か」を辿れるのはここだけ。dev issuer の kid が
+      // 固定だった頃は、署名の照合で落ちていることがどこにも出ず、原因を取り違えた。
+      log.info(rejection(err), "JWT rejected");
       return undefined;
     }
   };
