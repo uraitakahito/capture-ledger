@@ -12,10 +12,13 @@
  *   capture-ledger revoke     それを取り消す
  */
 import { Command, InvalidArgumentError, Option } from "commander";
+import type { OpenFgaClient } from "@openfga/sdk";
 import { databaseUrlOption } from "../cli/database-url-option.js";
 import { fgaConfig, storageConfig } from "../config/env.js";
 import { createKyselyClient } from "../db/kysely.js";
 import { createFgaClient, FgaUnreachableError, isUnreachable } from "./client.js";
+import { describeGrant } from "./grant-report.js";
+import { maySubmit } from "../api/authorization.js";
 import { drainOutbox } from "./outbox-worker.js";
 import { createS3Client } from "../archive/s3.js";
 import { reconcile } from "../archive/reconcile.js";
@@ -80,11 +83,30 @@ const isGrantable = (value: string): value is Grantable =>
   (GRANTABLE as readonly string[]).includes(value);
 
 /**
+ * 書く / 消す。既にその状態なら false —— 頼まれたことは達成されている。
+ */
+const writeUnlessAlready = async (
+  fga: OpenFgaClient,
+  body: Parameters<OpenFgaClient["write"]>[0],
+): Promise<boolean> => {
+  try {
+    await fga.write(body);
+    return true;
+  } catch (caught) {
+    if (isAlreadyInDesiredState(caught)) return false;
+    throw caught;
+  }
+};
+
+/**
  * 組織への権限を 1 つ書く / 消す。
  *
  * outbox を通さず直に書く。outbox が在るのは、tuple の書き込みをアプリの
  * トランザクションに載せられないから —— 運用者が手で叩くこの経路にはその
  * トランザクションが無い。直に書けば、通ったかどうかがその場で分かる。
+ *
+ * **書いた後に、API と同じ問いで訊き直す。** 出すのは「いま、クロールを起こせるか」で、
+ * 書いた内容から推した答えではない (`grant-report.ts` の注記)。
  */
 const runGrant = async (
   relation: string,
@@ -99,15 +121,18 @@ const runGrant = async (
   const config = fgaConfig();
   const fga = createFgaClient(config);
   try {
-    await fga.write(remove ? { deletes: [tuple] } : { writes: [tuple] });
+    const changed = await writeUnlessAlready(
+      fga,
+      remove ? { deletes: [tuple] } : { writes: [tuple] },
+    );
+    const canSubmit = await maySubmit(fga, { subject: user, organizations: [org] });
+    process.stdout.write(`${describeGrant({ user, relation, org, remove, changed, canSubmit })}\n`);
+    // 書いたのに通らないなら、頼まれたことは果たせていない。
+    if (!remove && !canSubmit) process.exitCode = 1;
   } catch (caught) {
     if (isUnreachable(caught)) throw new FgaUnreachableError(config.apiUrl, caught.message);
-    // 既にその状態なら、頼まれたことは達成されている。
-    if (!isAlreadyInDesiredState(caught)) throw caught;
-    logger.info(tuple, remove ? "Already revoked" : "Already granted");
-    return;
+    throw caught;
   }
-  logger.info(tuple, remove ? "Revoked" : "Granted");
 };
 
 const program = new Command()

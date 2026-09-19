@@ -181,6 +181,7 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 :::caution[404 は 2 通りあります]
 本文が `Route POST:/api/crawls not found` なら route が無い（webhook の 2 行が無い）、
 `{"error":"not found"}` なら呼び出し元に `can_submit` が無い（`fga:grant submitter` が無い）です。
+同じトークンで `GET /api/me` を訊くと、`canSubmit` がその答えです。
 [アーカイブ台帳](/capture-ledger/ja/archive-ledger/#誰が起こしてよいか)を参照。
 :::
 

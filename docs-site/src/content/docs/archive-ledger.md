@@ -319,8 +319,28 @@ The grant is **stored**, and that is the whole point:
 
 ```sh
 pnpm run fga:grant submitter alice acme
+# alice は acme のクロールを起こせます (書いた: user:alice submitter organization:acme)
 pnpm run fga:revoke submitter alice acme
+# alice は acme のクロールを起こせません (消した: user:alice submitter organization:acme)
 ```
+
+The last line says whether that user may now start crawls for that organization (起こせます, yes;
+起こせません, no). It is the answer to the same question the API asks (`can_submit`), asked again
+after the write — not inferred from what was written. Revoking `submitter` from someone who also
+holds `admin` still says 起こせます, and adds ほかの関係で許されています ("another relation allows it")
+in the parentheses, which otherwise say what was written (書いた) or deleted (消した).
+
+To check from the caller's side, ask `GET /api/me`. It answers only about the caller: the name and
+organizations as resolved from the token (or headers), and `canSubmit`, the answer to the same
+question the crawl routes ask:
+
+```sh
+curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/me
+# → {"subject":"alice","organizations":["acme"],"canSubmit":true}
+```
+
+A crawl route's 404 cannot tell "not allowed" from "no such route". This one answers
+`canSubmit: false` instead of 404.
 
 Membership cannot stand in for it. Organizations arrive as contextual tuples
 built from the caller's own token, so a rule like `can_submit: member` reduces to

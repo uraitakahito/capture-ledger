@@ -16,6 +16,7 @@ import { drainOutbox } from "../fga/outbox-worker.js";
 import { createS3Client } from "../archive/s3.js";
 import { resolveIdentityResolver } from "./identity.js";
 import { registerRoutes } from "./routes.js";
+import { registerMeRoute } from "./me.js";
 import { registerPicker, replayOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
@@ -101,6 +102,7 @@ const start = async (options: ServerOptions): Promise<void> => {
   });
 
   registerRoutes(app, { db, fga, s3, resolveIdentity });
+  registerMeRoute(app, { fga, resolveIdentity });
 
   // 成果物の受け口。**BrowserHive が保管庫を持たずに済むための口。**
   //

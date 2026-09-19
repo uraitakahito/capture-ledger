@@ -297,8 +297,25 @@ body が取り込む形式を受けないのも、`fromTargets` の対象が呼�
 
 ```sh
 pnpm run fga:grant submitter alice acme
+# alice は acme のクロールを起こせます (書いた: user:alice submitter organization:acme)
 pnpm run fga:revoke submitter alice acme
+# alice は acme のクロールを起こせません (消した: user:alice submitter organization:acme)
 ```
+
+最後の 1 文は、書いた・消した後に API と同じ問い（`can_submit`）で訊き直した答え。書いた内容から
+推した答えではない —— `submitter` を消しても `admin` が残っていれば「起こせます」と言い、括弧の中に
+「ほかの関係で許されています」と添える。
+
+呼び出し元の側から確かめるには `GET /api/me` を訊く。答えるのは呼び出し元自身のことだけで、名前と
+組織はトークン（かヘッダ）から解いたもの、`canSubmit` はクロールの口が訊くのと同じ問いの答え:
+
+```sh
+curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/me
+# → {"subject":"alice","organizations":["acme"],"canSubmit":true}
+```
+
+クロールの口の 404 からは「許可が無い」のか「口が無い」のかが読めない。こちらは許可が無くても
+404 にせず、`canSubmit: false` と答える。
 
 所属で代用してはならない。組織は呼び出し元自身のトークンから組んだ contextual tuple として
 届くので、`can_submit: member` のような規則は「member だと言った者に member か訊く」形に

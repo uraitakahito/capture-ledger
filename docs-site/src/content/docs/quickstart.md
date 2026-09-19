@@ -184,6 +184,7 @@ Ask `GET /api/crawls/<crawlId>`, with the same header, how the crawl ended.
 :::caution[There are two 404s]
 A body of `Route POST:/api/crawls not found` means the route does not exist (the two webhook lines
 are missing); `{"error":"not found"}` means the caller lacks `can_submit` (no `fga:grant submitter`).
+Ask `GET /api/me` with the same token: its `canSubmit` is that answer.
 See [Archive ledger](/capture-ledger/archive-ledger/#who-may-start-one).
 :::
 
