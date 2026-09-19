@@ -13,7 +13,7 @@
 import { sql, type Kysely } from "kysely";
 import type { OpenFgaClient } from "@openfga/sdk";
 import type { Database } from "../db/database.js";
-import { isAlreadyInDesiredState } from "./client.js";
+import { isAlreadyInDesiredState, isUnreachable } from "./client.js";
 import { createChildLogger } from "../logger.js";
 
 const log = createChildLogger({ module: "fga-outbox" });
@@ -24,6 +24,14 @@ const DEFAULT_BATCH_SIZE = 100;
 export interface DrainResult {
   delivered: number;
   failed: number;
+  /**
+   * OpenFGA に届かずに途中で止めたときの、その誤りの文。届いていれば無い。
+   *
+   * 届かない間は、残りの行を試しても同じ誤りが並ぶだけなので、最初の 1 行で止める ——
+   * 以前は batch の全行 (最大 100) が、それぞれ stack trace つきで失敗を記録していた。
+   * 止めた後ろの行は attempts を増やさず、次の掃き出しでそのまま拾われる。
+   */
+  unreachable?: string;
 }
 
 interface TupleKey {
@@ -122,6 +130,7 @@ export const drainOutbox = async (
 ): Promise<DrainResult> => {
   let delivered = 0;
   let failed = 0;
+  let unreachable: string | undefined;
 
   // batch 全体を 1 つのトランザクションの中で走らせる。SKIP LOCKED が取った行の
   // ロックを、その行を扱っている間ずっと保つため。
@@ -149,11 +158,19 @@ export const drainOutbox = async (
           })
           .where("id", "=", row.id)
           .execute();
+        // processedAt は null のままにする: その行は次の掃き出しでまた拾われる。
+        if (isUnreachable(cause)) {
+          unreachable = cause.message;
+          log.error(
+            { outboxId: row.id, attempts: row.attempts + 1, reason: cause.message },
+            "OpenFGA unreachable; stopping this drain",
+          );
+          break;
+        }
         log.error(
           { outboxId: row.id, attempts: row.attempts + 1, err: cause },
           "Outbox delivery failed; will retry",
         );
-        // processedAt は null のままにする: その行は次の掃き出しでまた拾われる。
         continue;
       }
 
@@ -169,5 +186,5 @@ export const drainOutbox = async (
   if (delivered > 0 || failed > 0) {
     log.info({ delivered, failed }, "Outbox drained");
   }
-  return { delivered, failed };
+  return { delivered, failed, ...(unreachable !== undefined && { unreachable }) };
 };

@@ -5,7 +5,8 @@
  * 上流の BrowserHive `src/logger.ts` からの移植。
  */
 import pino from "pino";
-import { MissingEnvError, optional } from "./config/env.js";
+import { optional } from "./config/env.js";
+import { ExplainedError } from "./errors.js";
 
 export type Logger = pino.Logger;
 export type LoggerBindings = pino.Bindings;
@@ -42,7 +43,7 @@ export const createChildLogger = (bindings: LoggerBindings): Logger => {
  * 役に立つ。
  */
 export const fatal = (error: unknown): never => {
-  if (error instanceof MissingEnvError) {
+  if (error instanceof ExplainedError) {
     process.stderr.write(`${error.message}\n`);
   } else {
     logger.fatal({ err: error }, "Fatal error");
