@@ -14,7 +14,8 @@ import { createKyselyClient } from "../db/kysely.js";
 import { createFgaClient } from "../fga/client.js";
 import { drainOutbox } from "../fga/outbox-worker.js";
 import { createS3Client } from "../archive/s3.js";
-import { resolveIdentityResolver } from "./identity.js";
+import { selectIdentity } from "./identity.js";
+import { startupNotes } from "./startup-notes.js";
 import { registerRoutes } from "./routes.js";
 import { registerMeRoute } from "./me.js";
 import { registerPicker, replayOriginFromEnv } from "./picker.js";
@@ -66,13 +67,8 @@ const start = async (options: ServerOptions): Promise<void> => {
   const db = createKyselyClient(options.databaseUrl);
   const fga = createFgaClient(fgaSettings);
   const s3 = createS3Client(storage);
-  const resolveIdentity = resolveIdentityResolver();
-
-  if (process.env["CAPTURE_LEDGER_DEV_IDENTITY"] === "1") {
-    logger.warn(
-      "CAPTURE_LEDGER_DEV_IDENTITY=1 — callers are trusted on the X-Capture-ledger-Subject header. Never enable this outside local development.",
-    );
-  }
+  const identity = selectIdentity();
+  const resolveIdentity = identity.resolve;
 
   const app = Fastify({
     logger: false,
@@ -198,7 +194,19 @@ const start = async (options: ServerOptions): Promise<void> => {
 
   const host = optional("CAPTURE_LEDGER_API_HOST", DEFAULT_HOST);
   await app.listen({ port: options.port, host });
-  logger.info({ port: options.port }, "Archive API listening");
+  // 最後に、待ち受け・名乗り方と、段の報告を受けられるかを言う (`startup-notes.ts`)。
+  // 開発用ヘッダの警告もここから出る —— ヘッダが実際に効いているときだけ。
+  const notes = startupNotes({
+    host,
+    port: options.port,
+    identity:
+      identity.mode === "jwt" ? { mode: "jwt", issuer: identity.issuer } : { mode: identity.mode },
+    devIdentity: process.env["CAPTURE_LEDGER_DEV_IDENTITY"] === "1",
+    crawls: dispatch !== undefined,
+    sink: sink !== undefined,
+    search: searchSettings !== undefined,
+  });
+  for (const note of notes) logger[note.level](note.fields ?? {}, note.msg);
 };
 
 const program = new Command()

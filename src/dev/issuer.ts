@@ -43,7 +43,7 @@ const ALG = "RS256";
 /** 既定の待受。`CAPTURE_LEDGER_DEV_ISSUER_PORT` で変えられる。 */
 export const DEFAULT_ISSUER_PORT = 9099;
 
-/** 既定の `aud`。検証する側 (`resolveIdentityResolver`) と同じ値でなければならない。 */
+/** 既定の `aud`。検証する側 (`selectIdentity`) と同じ値でなければならない。 */
 export const DEFAULT_AUDIENCE = "capture-ledger";
 
 interface TokenRequest {
