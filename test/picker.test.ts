@@ -53,6 +53,7 @@ describe("名乗り方ごとの picker", () => {
     const body = await open({ identity: HEADER });
     expect(body).toContain('id="subject"');
     expect(body).toContain('id="orgs"');
+    expect(body).toContain('const MODE = "names";');
     expect(body).toContain(
       'const UNAUTHORIZED = "401 — subject が空（この API は開発用ヘッダで名乗る設定）";',
     );
@@ -80,6 +81,24 @@ describe("名乗り方ごとの picker", () => {
     expect(body).toContain("この API は JWT で名乗る設定（http://127.0.0.1:9099）");
     // JWT の設定で 0.0.0.0 は正しい形 (クロールの 4 行)。ヘッダの注意は出さない。
     expect(body).not.toContain("誰にでもなれる");
+  });
+
+  it("JWT の設定ではトークンの欄と、その取り方のコマンドを出し、トークンで名乗る", async () => {
+    const body = await open({ identity: JWT, listen: LAN });
+    expect(body).toContain('id="token"');
+    expect(body).toContain(
+      'pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy',
+    );
+    // script が送るのは Bearer だけ。名乗りの 2 欄は無いので、ヘッダの経路に落ちてはいけない。
+    expect(body).toContain('const MODE = "token";');
+  });
+
+  it("JWT の設定の 401 は「このトークンは通らない」と言い、「subject が空」とは言わない", async () => {
+    const body = await open({ identity: JWT, listen: LAN });
+    expect(body).toContain(
+      'const UNAUTHORIZED = "401 — このトークンは通らない（期限切れ・issuer を起こし直した後・別の issuer のもの）。取り直して貼る";',
+    );
+    expect(body).not.toContain("subject が空");
   });
 
   it("名乗りの設定が無ければ全員 401 だと言い、欄も「読み込む」も出さない", async () => {

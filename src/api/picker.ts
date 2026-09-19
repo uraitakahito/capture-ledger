@@ -95,9 +95,10 @@ export const pickerView = (
       form: "token",
       notice: {
         level: "info",
-        text: `この API は JWT で名乗る設定（${identity.issuer}）。この画面の名乗り（開発用ヘッダ）は効かない`,
+        text: `この API は JWT で名乗る設定（${identity.issuer}）。その issuer が刷ったトークンを貼る`,
       },
-      unauthorized: "401 — この API は JWT で名乗る設定",
+      unauthorized:
+        "401 — このトークンは通らない（期限切れ・issuer を起こし直した後・別の issuer のもの）。取り直して貼る",
     };
   }
   return {
@@ -127,10 +128,16 @@ const noticeHtml = (notice: PickerView["notice"]): string =>
     ? ""
     : `<p class="notice ${notice.level}" id="notice">${escapeHtml(notice.text)}</p>`;
 
-/** 名乗りの欄。欄を出さない画面は、一覧の置き場も script も持たない。 */
-const formHtml = (view: PickerView): string => {
-  if (view.form !== "names") return "";
-  return `<div class="who">
+/**
+ * 名乗りの欄。開発用ヘッダの設定は 2 欄 (そのまま信じられる名前)、JWT の設定はトークン 1 欄。
+ *
+ * トークンの取り方を画面に出すのは、ここで止まる人が docs を開いていないから。コマンドは
+ * 開発用の issuer (`pnpm run oidc:issuer`) のもの —— 本物の IdP なら、そのアクセストークンを貼る。
+ * **picker 自身はトークンを刷らない。** issuer は頼まれれば誰の名前でも刷るので 127.0.0.1 に
+ * しか居ない。0.0.0.0 で開ける画面が刷れば、同じネットワークの誰もが刷れてしまう。
+ */
+const WHO: Record<Exclude<PickerView["form"], "none">, string> = {
+  names: `<div class="who">
     <label>subject <input id="subject" size="16" placeholder="alice"></label>
     <label>organizations <input id="orgs" size="20" placeholder="acme,beta"></label>
     <button id="reload" type="button">読み込む</button>
@@ -139,30 +146,71 @@ const formHtml = (view: PickerView): string => {
       そのまま信じるので、ここに入れた名前で見えるものが変わる ——
       <b>そのポートに届く者は、誰にでもなれる</b>。
     </p>
+  </div>`,
+  token: `<div class="who">
+    <label>トークン <input id="token" size="44" placeholder="eyJhbGciOi…" autocomplete="off" spellcheck="false"></label>
+    <button id="reload" type="button">読み込む</button>
+    <p class="how">
+      取り方（capture-ledger で。開発用の issuer のとき）:
+      <code>pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy</code>
+      —— 1 時間で切れる。貼ったトークンは、このタブを閉じると消える。
+    </p>
   </div>
+  <p class="whoami" id="whoami" hidden></p>`,
+};
 
-  <div id="out"><p class="empty">subject を入れて「読み込む」</p></div>
+/** 一覧の置き場に最初に出す文。 */
+const PROMPT: Record<Exclude<PickerView["form"], "none">, string> = {
+  names: "subject を入れて「読み込む」",
+  token: "トークンを貼って「読み込む」",
+};
+
+/** 欄を出さない画面 (`none`) は、一覧の置き場も script も持たない。 */
+const formHtml = (view: PickerView): string => {
+  if (view.form === "none") return "";
+  return `${WHO[view.form]}
+
+  <div id="out"><p class="empty">${PROMPT[view.form]}</p></div>
   <p style="text-align:center"><button id="more" type="button" hidden>さらに読む</button></p>`;
 };
 
 const script = (replayOrigin: string, view: PickerView): string => {
-  if (view.form !== "names") return "";
+  if (view.form === "none") return "";
   return `<script>
+const MODE = ${JSON.stringify(view.form)};
 const REPLAY_ORIGIN = ${JSON.stringify(replayOrigin)};
 const UNAUTHORIZED = ${JSON.stringify(view.unauthorized)};
+const PROMPT = ${JSON.stringify(PROMPT[view.form])};
 const $ = (id) => document.getElementById(id);
 let cursor = null;
 
-// 誰として見るかは覚えておく。毎回打ち直させると、使う気が失せる。
-for (const key of ["subject", "orgs"]) {
-  $(key).value = localStorage.getItem("capture-ui." + key) ?? "";
-  $(key).addEventListener("change", () => localStorage.setItem("capture-ui." + key, $(key).value));
+// 誰として見るかは覚えておく。毎回打ち直させると、使う気が失せる。ただしトークンはそれ自体が
+// 鍵なので、タブを閉じれば消える sessionStorage に置く (localStorage は閉じても残る)。
+const FIELDS = MODE === "token" ? ["token"] : ["subject", "orgs"];
+const store = MODE === "token" ? sessionStorage : localStorage;
+for (const key of FIELDS) {
+  $(key).value = store.getItem("capture-ui." + key) ?? "";
+  $(key).addEventListener("change", () => store.setItem("capture-ui." + key, $(key).value));
 }
 
-const headers = () => ({
-  "X-Capture-ledger-Subject": $("subject").value.trim(),
-  "X-Capture-ledger-Organizations": $("orgs").value.trim(),
-});
+const headers = () =>
+  MODE === "token"
+    ? { Authorization: "Bearer " + $("token").value.trim() }
+    : {
+        "X-Capture-ledger-Subject": $("subject").value.trim(),
+        "X-Capture-ledger-Organizations": $("orgs").value.trim(),
+      };
+
+// 誰として見ているかは API に訊く。ブラウザで JWT を解かない —— 名前を検めたのは API で、
+// 解いただけの名前は、署名の通らないトークンでも出てしまう。
+const showWho = async () => {
+  const res = await fetch("/api/me", { headers: headers() });
+  if (!res.ok) return;
+  const me = await res.json();
+  const orgs = me.organizations.length > 0 ? me.organizations.join(", ") : "組織なし";
+  $("whoami").textContent = me.subject + "（" + orgs + "）として見ている";
+  $("whoami").hidden = false;
+};
 
 /** 一覧の代わりに 1 行の文を出す。文は textContent で入れる。 */
 const say = (className, text) => {
@@ -211,12 +259,17 @@ const render = (archives, append) => {
 };
 
 const load = async (append) => {
+  if (MODE === "token" && $("token").value.trim() === "") {
+    say("empty", PROMPT);
+    return;
+  }
   const query = append && cursor ? "?before=" + encodeURIComponent(cursor) : "";
   const res = await fetch("/api/archives" + query, { headers: headers() });
   if (res.status === 401) {
     // 何が足りないかは、API の名乗り方で決まる。文はサーバが決めて埋め込んである。
     say("error", UNAUTHORIZED);
     $("more").hidden = true;
+    if (MODE === "token") $("whoami").hidden = true;
     return;
   }
   if (!res.ok) {
@@ -225,6 +278,7 @@ const load = async (append) => {
   }
   const { archives } = await res.json();
   render(archives, append);
+  if (MODE === "token" && !append) void showWho();
   // 次のページの手掛かりは、いま出した最後の行の時刻。API の契約に合わせている。
   cursor = archives.length > 0 ? archives[archives.length - 1].capturedAt : null;
   $("more").hidden = archives.length === 0;
@@ -232,7 +286,7 @@ const load = async (append) => {
 
 $("reload").onclick = () => { cursor = null; void load(false); };
 $("more").onclick = () => void load(true);
-if ($("subject").value !== "") void load(false);
+if ($(FIELDS[0]).value !== "") void load(false);
 </script>`;
 };
 
@@ -259,6 +313,8 @@ const html = (replayOrigin: string, view: PickerView): string => `<!doctype html
   .who label { display: inline-block; margin-right: 14px; }
   .who input { font: inherit; padding: 3px 7px; border: 1px solid #d6d9e4; border-radius: 5px; }
   .who .why { margin: 8px 0 0; color: #8a6d1f; }
+  .who .how { margin: 8px 0 0; color: #5b6172; }
+  .whoami { margin: -6px 0 14px; color: #137a5c; font-size: 13.5px; font-weight: 600; }
   table { width: 100%; border-collapse: collapse; background: #fff; font-size: 14px; }
   th, td { border: 1px solid #e3e6ef; padding: 8px 11px; text-align: left; vertical-align: top; }
   th { background: #f0f2f9; font-weight: 600; }
