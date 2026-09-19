@@ -151,8 +151,8 @@ open http://127.0.0.1:7070/
 | `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | flow は JWT で名乗ります。API が受けるのは JWT か開発用ヘッダの**どちらか一方**で、この行を書くと JWT になります —— **§6 の picker は `401` になります**（§8 で戻し方を書いています） |
 
 足したら、issuer（`pnpm run oidc:issuer`）を起こし、API を起こし直します。設定は起動のときに
-1 度だけ読みます。capture-scheduler のクイックスタートの最後にある `pnpm run check:connection` が
-全部 ✓ なら、つながっています。
+1 度だけ読みます。capture-scheduler のクイックスタートの最後にある `pnpm run doctor` が
+全部 ✓ なら、つながっています。続く `pnpm run smoke` が 1 本撮って確かめます。
 
 つないだ後は、毎日 04:00（日本時間）にも Windmill が `acme` の有効な行を全部撮ります
 （[いつ走るか](https://uraitakahito.github.io/capture-scheduler/ja/schedule/)）。
@@ -176,7 +176,14 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 以前の `POST /api/runs` がしていたのはこれです。行は足した順（`id` 順）に種になるので、
 `{"fromTargets":{"limit":1}}` はいつもサンプルの 1 行目で、§4 で足した URL ではありません。
 
-クロールがどう終わったかは、同じヘッダで `GET /api/crawls/<crawlId>` に訊きます。
+クロールがどう終わったかは、同じヘッダで `GET /api/crawls/<crawlId>` に訊きます。落ちたなら `error` に
+「[段] 文」が、取れなかったページは `failures` に理由つきで、最後に投げた段の Windmill の run は
+`lastJob` に出ます（`http://127.0.0.1:8000/run/<lastJob.id>?workspace=crawler` で開けます）。
+
+```sh
+curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<crawlId> \
+  | jq '{state, pagesCaptured, error, lastJob, failures}'
+```
 
 :::caution[404 は 2 通りあります]
 本文が `Route POST:/api/crawls not found` なら route が無い（webhook の 2 行が無い）、
@@ -231,19 +238,19 @@ WACZ の中身は BrowserHive のストレージのページにあります。
 
 走行中のクロールは 1 本だけで、2 本目は `409` です。**段の報告が API に届かなかったクロールは
 `running` のまま残り、以後の起動を全部 `409` で塞ぎます** —— API が `127.0.0.1` で待っていた、
-宛先の IP が古かった、走っている間に JWT の設定を外した、などです。見つけて、締めます。
+宛先の IP が古かった、走っている間に JWT の設定を外した、などです。塞いでいる 1 本は `409` の
+本文が名指しするので、その id で締めます。
 
 ```sh
-container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger \
-  -c "SELECT id, started_at FROM crawls WHERE state = 'running'"
-curl -X POST http://127.0.0.1:7070/api/crawls/<id>/failed \
+# 409 の本文: {"error":"a crawl is already in progress","crawlId":"9072b625-…","startedAt":"…"}
+curl -X POST http://127.0.0.1:7070/api/crawls/<crawlId>/failed \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"reason":"報告が届かなかったので手で締めた"}'
 # → { "closed": true }
 ```
 
 締めるのは走行中の行だけで、flow が落ちたときに締めに来る route と同じものです。
-何が欠けていたかは、capture-scheduler の `pnpm run check:connection` が名指しします。
+何が欠けていたかは、capture-scheduler の `pnpm run doctor` が名指しします。
 
 ## 次に読むもの
 

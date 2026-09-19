@@ -140,7 +140,7 @@ describe("開発用の issuer", () => {
   /**
    * jose の cooldown をここで固定する。直前の取り直しから 30 秒の間は、知らない kid でも
    * 取り直さない —— だから issuer を立て直した直後は、新しいトークンもしばらく 401 になる。
-   * capture-scheduler の `check:connection` が「30 秒待つ」と言う根拠。
+   * capture-scheduler の `doctor` が「30 秒待つ」と言う根拠。
    */
   it("直前の取り直しから 30 秒の間は、知らない kid でも取り直さない", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });

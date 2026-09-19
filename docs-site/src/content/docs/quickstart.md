@@ -153,8 +153,8 @@ lines to this repo's `.env`. **Miss any one and no crawl runs to the end.**
 | `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | The flow identifies itself with a JWT. The API accepts **either** a JWT **or** the development headers, and this line makes it JWT — **the picker from §6 then answers `401`** (§8 says how to switch) |
 
 Then start the issuer (`pnpm run oidc:issuer`) and restart the API — it reads its settings once, at
-startup. When `pnpm run check:connection`, the last step of capture-scheduler's quickstart, shows ✓
-on every line, the two are connected.
+startup. When `pnpm run doctor`, near the end of capture-scheduler's quickstart, shows ✓ on every
+line, the two are connected; the `pnpm run smoke` after it captures one page to prove it.
 
 Once connected, Windmill also captures every enabled `acme` row daily at 04:00 (Asia/Tokyo) —
 [When it runs](https://uraitakahito.github.io/capture-scheduler/schedule/).
@@ -179,7 +179,15 @@ To seed from the rows §4 loaded, send `-d '{"fromTargets":{}}'`. It defaults to
 follow nothing. That is what the old `POST /api/runs` did. The rows are taken in insertion (`id`)
 order, so `{"fromTargets":{"limit":1}}` is always the first sample row, not the URL you added in §4.
 
-Ask `GET /api/crawls/<crawlId>`, with the same header, how the crawl ended.
+Ask `GET /api/crawls/<crawlId>`, with the same header, how the crawl ended. A failed crawl carries
+`error` as `[step] message`, pages that could not be captured are in `failures` with their reasons,
+and `lastJob` names the Windmill run of the last level dispatched (open it at
+`http://127.0.0.1:8000/run/<lastJob.id>?workspace=crawler`).
+
+```sh
+curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<crawlId> \
+  | jq '{state, pagesCaptured, error, lastJob, failures}'
+```
 
 :::caution[There are two 404s]
 A body of `Route POST:/api/crawls not found` means the route does not exist (the two webhook lines
@@ -235,20 +243,19 @@ contents are on BrowserHive's storage page.
 
 Only one crawl runs at a time; a second one gets `409`. **A crawl whose level report never reached
 the API stays `running` and blocks every later start with `409`** — the API was bound to
-`127.0.0.1`, the address had gone stale, the JWT setting was switched off mid-crawl. Find it and
-close it:
+`127.0.0.1`, the address had gone stale, the JWT setting was switched off mid-crawl. The `409` body
+names the crawl that is blocking; close it by that id:
 
 ```sh
-container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger \
-  -c "SELECT id, started_at FROM crawls WHERE state = 'running'"
-curl -X POST http://127.0.0.1:7070/api/crawls/<id>/failed \
+# the 409 body: {"error":"a crawl is already in progress","crawlId":"9072b625-…","startedAt":"…"}
+curl -X POST http://127.0.0.1:7070/api/crawls/<crawlId>/failed \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"reason":"the level report never arrived; closed by hand"}'
 # → { "closed": true }
 ```
 
 It closes running rows only, and it is the same route the flow uses to close a crawl when it
-fails. What was missing, capture-scheduler's `pnpm run check:connection` names.
+fails. What was missing, capture-scheduler's `pnpm run doctor` names.
 
 ## Next
 
