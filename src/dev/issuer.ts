@@ -16,6 +16,8 @@
  * 起動のたびにメモリ上で作る。ファイルにも repo にも置かない —— 置き場が無ければ
  * 消し忘れる対象も無い。再起動で鍵が変わるのは欠点ではなく、**鍵の更新をそのまま
  * 再現できる**という意味になる (古いトークンが 401 になることを確かめられる)。
+ * 鍵の名前 (`kid`) も一緒に替わるので、API は知らない kid を見た時点で JWKS を取り直す
+ * —— API を起こし直さなくてよい。
  *
  * ## なぜ script は `oidc:` なのにディレクトリは `dev/` なのか
  *
@@ -31,7 +33,7 @@
  * このファイルごと消える。
  */
 import Fastify from "fastify";
-import { SignJWT, exportJWK, generateKeyPair } from "jose";
+import { SignJWT, calculateJwkThumbprint, exportJWK, generateKeyPair } from "jose";
 
 import { optional } from "../config/env.js";
 import { logger } from "../logger.js";
@@ -67,9 +69,11 @@ const asStringArray = (value: unknown): string[] =>
 export const buildDevIssuer = async (audience: string, issuer?: string) => {
   const { publicKey, privateKey } = await generateKeyPair(ALG, { extractable: true });
   const jwk = await exportJWK(publicKey);
-  // `kid` を付けるのは本物に合わせるため。鍵が 1 本しか無くても、
-  // 検証する側が複数鍵を扱う経路を通る。
-  const kid = "dev-key-1";
+  // `kid` は鍵ごとに変える (RFC 7638 の thumbprint: 同じ鍵なら同じ値)。本物の IdP は鍵を
+  // 替えるとき kid も替え、検証する側 (jose) は **知らない kid を見て初めて** JWKS を取り
+  // 直す。以前は "dev-key-1" で固定していて、issuer を立て直しても API は覚えている古い鍵で
+  // 照合し続け、最長 10 分、新しいトークンが 401・古いトークンが通った。
+  const kid = await calculateJwkThumbprint(jwk);
 
   const app = Fastify({ logger: false });
 

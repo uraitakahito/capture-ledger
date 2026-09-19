@@ -240,8 +240,10 @@ authorization gap here, before real authentication exists.
 
 :::caution[Development only]
 `POST /token` mints a token for anyone who asks, which is why it warns on startup. The
-key lives only inside the issuer process and **is regenerated on every start** — restart it
-and previously minted tokens stop verifying. That is key rotation, reproduced.
+key lives only inside the issuer process and **is regenerated on every start**, and its name
+(`kid`) changes with it, so the API refetches the keys as soon as it sees a new token and
+previously minted tokens stop verifying. That is key rotation, reproduced — no need to restart
+the API.
 :::
 
 ### Moving to a real IdP
