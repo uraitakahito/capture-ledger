@@ -20,7 +20,10 @@ export interface CaptureTargetsTable {
   enabled: ColumnType<boolean, boolean | undefined, boolean>;
   // この URL がどの組織のために撮られるか。OpenFGA の tuple で使う
   // `organization:<id>` という識別子と一致する。`004` を見ること。
-  orgId: ColumnType<string, string | undefined, string>;
+  //
+  // **既定値は無い** (`015` で外した)。INSERT では必ず書く —— 型でも省けないようにしてある。
+  // 既定値があった頃は、書き忘れた行が誰の `fromTargets` からも見えないまま黙って残った。
+  orgId: ColumnType<string, string, string>;
   createdAt: ColumnType<Date, string | undefined, never>;
   updatedAt: ColumnType<Date, string | undefined, string>;
 }

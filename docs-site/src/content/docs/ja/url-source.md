@@ -26,16 +26,19 @@ SELECT url FROM capture_targets WHERE enabled AND org_id = $1 ORDER BY id ASC [L
 
 ```
 
-| カラム                      | 補足                                                                                                                  |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `id`                        | `BIGSERIAL` 主キー。投入順で、ローダの `ORDER BY` がそれを保つ。                                                      |
-| `url`                       | `CHECK (url <> '' AND url = btrim(url))` — 空文字と前後空白をデータベースが拒否するので、呼ぶ側で検査する必要がない。 |
-| `url_hash`                  | 生成列 `digest(url, 'sha256')` (pgcrypto) を stored 保存。ユニークインデックスの土台で、直接読むことはない。          |
-| `labels`                    | `TEXT[]`。**もう誰も読みません** —— 下記を参照。                                                                      |
-| `enabled`                   | ホットパスは `WHERE enabled` で、部分インデックス `capture_targets_enabled_id_idx` が覆う。無効行はコストにならない。 |
-| `created_at` / `updated_at` | `now()` 既定。自動更新トリガは今のところ無い。                                                                        |
+| カラム                      | 補足                                                                                                                                                                        |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                        | `BIGSERIAL` 主キー。投入順で、ローダの `ORDER BY` がそれを保つ。                                                                                                            |
+| `url`                       | `CHECK (url <> '' AND url = btrim(url))` と `CHECK (url ~* '^https?://')` —— 空文字・前後の空白・http(s) でない値をデータベースが拒否するので、呼ぶ側で検査する必要がない。 |
+| `url_hash`                  | 生成列 `digest(url, 'sha256')` (pgcrypto) を stored 保存。ユニークインデックスの土台で、直接読むことはない。                                                                |
+| `labels`                    | `TEXT[]`。**もう誰も読みません** —— 下記を参照。                                                                                                                            |
+| `enabled`                   | ホットパスは `WHERE enabled` で、部分インデックス `capture_targets_enabled_id_idx` が覆う。無効行はコストにならない。                                                       |
+| `org_id`                    | どの組織の対象か。**既定値は無い** —— `INSERT` では必ず書く（書かなければ `NOT NULL` で落ちる）。`fromTargets` はこれで絞る。                                               |
+| `created_at` / `updated_at` | `now()` 既定。自動更新トリガは今のところ無い。                                                                                                                              |
 
-`capture_targets_url_hash_key` はユニークなので、同じ URL を二重に登録できません。
+`capture_targets_org_url_hash_key` は `(org_id, url_hash)` のユニーク索引です。
+1 つの組織の中では、同じ URL を二重に登録できません。
+別々の組織なら、同じ URL をそれぞれの対象にできます。
 
 ## labels の使い方
 
@@ -59,11 +62,14 @@ BrowserHive が逃がすため、非 ASCII も含めてそのまま往復し、�
 ## URL を追加する
 
 ```sql
-INSERT INTO capture_targets (url, labels) VALUES
-  ('https://example.com/', ARRAY['example']),
-  ('https://example.org/', ARRAY['example', 'org'])
-ON CONFLICT (url_hash) DO NOTHING;
+INSERT INTO capture_targets (url, org_id, labels) VALUES
+  ('https://example.com/', 'acme', ARRAY['example']),
+  ('https://example.org/', 'acme', ARRAY['example', 'org'])
+ON CONFLICT (org_id, url_hash) DO NOTHING;
 ```
+
+`org_id` は必ず書きます。既定値が無いので、書かなければ `NOT NULL` で断られます。
+クロールは、呼んだ人の組織の行だけを種にします。
 
 履歴を残したまま対象から外したいときは、行を削除せず `enabled = false` にします。
 

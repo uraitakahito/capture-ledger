@@ -27,16 +27,19 @@ attribution unanswerable.
 
 ```
 
-| Column                      | Notes                                                                                                                       |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `id`                        | `BIGSERIAL` primary key. Insertion order, preserved by the loader's `ORDER BY`.                                             |
-| `url`                       | `CHECK (url <> '' AND url = btrim(url))` — the database rejects empty and untrimmed values, so no caller has to.            |
-| `url_hash`                  | Generated `digest(url, 'sha256')` (pgcrypto), stored. Backs the unique index; nothing reads it directly.                    |
-| `labels`                    | `TEXT[]`. **Nothing reads them any more** — see below.                                                                      |
-| `enabled`                   | The hot path is `WHERE enabled`, covered by the partial index `capture_targets_enabled_id_idx`. Disabled rows cost nothing. |
-| `created_at` / `updated_at` | `now()` defaults. No auto-update trigger today.                                                                             |
+| Column                      | Notes                                                                                                                                                           |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                        | `BIGSERIAL` primary key. Insertion order, preserved by the loader's `ORDER BY`.                                                                                 |
+| `url`                       | `CHECK (url <> '' AND url = btrim(url))` and `CHECK (url ~* '^https?://')` — the database rejects empty, untrimmed and non-http(s) values, so no caller has to. |
+| `url_hash`                  | Generated `digest(url, 'sha256')` (pgcrypto), stored. Backs the unique index; nothing reads it directly.                                                        |
+| `labels`                    | `TEXT[]`. **Nothing reads them any more** — see below.                                                                                                          |
+| `enabled`                   | The hot path is `WHERE enabled`, covered by the partial index `capture_targets_enabled_id_idx`. Disabled rows cost nothing.                                     |
+| `org_id`                    | Which organization's target this is. **No default** — every `INSERT` names it, or `NOT NULL` rejects the row. `fromTargets` filters on it.                      |
+| `created_at` / `updated_at` | `now()` defaults. No auto-update trigger today.                                                                                                                 |
 
-`capture_targets_url_hash_key` is unique, so the same URL cannot be enqueued twice.
+`capture_targets_org_url_hash_key` is unique on `(org_id, url_hash)`: within one
+organization the same URL cannot be enqueued twice, while two organizations can each
+target the same URL.
 
 ## Labels
 
@@ -61,11 +64,14 @@ The bundled fixture still uses a securities code alongside a company name:
 ## Adding URLs
 
 ```sql
-INSERT INTO capture_targets (url, labels) VALUES
-  ('https://example.com/', ARRAY['example']),
-  ('https://example.org/', ARRAY['example', 'org'])
-ON CONFLICT (url_hash) DO NOTHING;
+INSERT INTO capture_targets (url, org_id, labels) VALUES
+  ('https://example.com/', 'acme', ARRAY['example']),
+  ('https://example.org/', 'acme', ARRAY['example', 'org'])
+ON CONFLICT (org_id, url_hash) DO NOTHING;
 ```
+
+Always name `org_id`. It has no default, so a row without it is rejected by
+`NOT NULL` — and a crawl only seeds from the caller's own organization.
 
 To take a URL out of rotation without losing its history, set `enabled = false`
 rather than deleting the row.
