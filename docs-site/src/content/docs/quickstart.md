@@ -36,8 +36,8 @@ Every build context points into them, so nothing builds while they are empty.
 
 `.env` is a copy of `.env.example`: nothing is detected and no value is
 changed. The template already carries the development values; the only ones
-you add are the two OpenFGA ids (§5). `-n` refuses to overwrite an existing
-`.env`, so the ids you pasted survive a second run.
+you add are the two OpenFGA ids (§5) and, to crawl, four lines (§7). `-n` refuses
+to overwrite an existing `.env`, so the values you pasted survive a second run.
 
 ## 3. Start the stack
 
@@ -133,72 +133,81 @@ messages mean, is in [Browsing archives](/capture-ledger/picker/).
 If it says `401`, check that `CAPTURE_LEDGER_DEV_IDENTITY=1` is in `.env` — without it the resolver
 admits nobody.
 
-:::caution[A scheduler cannot reach a loopback bind]
-The default bind is `127.0.0.1`, and **a container cannot reach it**. To let
-capture-scheduler's Windmill run the daily crawl, start the API on all interfaces:
-
-```sh
-CAPTURE_LEDGER_API_HOST=0.0.0.0 pnpm run api
-```
-
-The container then points at bridge100 — `http://192.168.64.1:7070`. **A host
-name will not resolve there.** That address is already capture-scheduler's default for
-`CAPTURE_LEDGER_API_URL`, so `pnpm run windmill:capture-ledger-token` wires it up with nothing
-to configure. Opening the API beyond loopback puts it in front of whatever
-authentication you have configured — check that first.
-:::
-
 ## 7. Start a crawl
 
-Capturing is a crawl now: capture-ledger plans it, and a Windmill flow does the
-submitting.
+Capturing is a crawl: capture-ledger plans it, and a Windmill flow in
+[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) does the capturing.
+**From here on you need capture-scheduler** — everything above this step works without it;
+capturing does not.
+
+### Once: connect capture-scheduler
+
+The steps live in one place, [capture-scheduler's quickstart](https://uraitakahito.github.io/capture-scheduler/quickstart/)
+(bring up Windmill, load the flow and the proto, hand over a token). Along the way you add four
+lines to this repo's `.env`. **Miss any one and no crawl runs to the end.**
+
+| Line                                                                       | Why                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | Where crawls are dispatched. **Paste the two lines `windmill:bootstrap` prints.** Without them `/api/crawls` does not exist at all and answers `404`                                                   |
+| `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | The flow reports each level back to the API, and the report comes **from a container**. A `127.0.0.1` bind never receives it                                                                           |
+| `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | The flow identifies itself with a JWT. The API accepts **either** a JWT **or** the development headers, and this line makes it JWT — **the picker from §6 then answers `401`** (§8 says how to switch) |
+
+Then start the issuer (`pnpm run oidc:issuer`) and restart the API — it reads its settings once, at
+startup. When `pnpm run check:connection`, the last step of capture-scheduler's quickstart, shows ✓
+on every line, the two are connected.
+
+Once connected, Windmill also captures every enabled `acme` row daily at 04:00 (Asia/Tokyo) —
+[When it runs](https://uraitakahito.github.io/capture-scheduler/schedule/).
+
+### Start one
+
+Identify with a JWT. The headers from §6 do nothing on an API set up for JWTs.
 
 ```sh
+pnpm run fga:grant submitter "$(whoami)" acme   # once; without it you get 404
+TOKEN=$(pnpm run --silent oidc:token --subject "$(whoami)" --org acme)
 curl -X POST http://127.0.0.1:7070/api/crawls \
-  -H 'content-type: application/json' \
-  -H "X-Capture-ledger-Subject: $(whoami)" -H "X-Capture-ledger-Organizations: acme" \
-  -d '{"fromTargets":{"limit":1}}'
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"seeds":["https://example.com/"],"maxDepth":0}'
 # → 202 { "crawlId": "9072b625-…" }
 ```
 
-`fromTargets` seeds the crawl from the rows §4 loaded, and defaults to depth 0 —
-take them, follow nothing. That is what the old `POST /api/runs` did.
+`seeds` names the starting pages. Seeds follow links two levels deep by default; `maxDepth: 0` takes
+the page alone.
 
-The rows are taken in insertion order, so `"limit": 1` is always the first sample
-row. To capture only the URL you added in §4, name it as a seed instead:
-`-d '{"seeds":["https://example.com/"],"maxDepth":0}'`. Seeds follow links two levels
-deep by default; `maxDepth: 0` takes the page alone.
+To seed from the rows §4 loaded, send `-d '{"fromTargets":{}}'`. It defaults to depth 0 — take them,
+follow nothing. That is what the old `POST /api/runs` did. The rows are taken in insertion (`id`)
+order, so `{"fromTargets":{"limit":1}}` is always the first sample row, not the URL you added in §4.
 
-:::caution[This needs the scheduler stack]
-`/api/crawls` is **only served when `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` and
-`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` are both set** — capture-ledger no longer talks to
-BrowserHive itself, so without somewhere to dispatch to there is nothing to
-serve, and the route answers `404`. The flow lives in
-[capture-scheduler](https://github.com/uraitakahito/capture-scheduler). Everything above this step
-works without it; capturing does not.
+Ask `GET /api/crawls/<crawlId>`, with the same header, how the crawl ended.
 
-Also note `can_submit`: a caller without the grant gets `404` too. See
-[Archive ledger](/capture-ledger/archive-ledger/#who-may-start-one).
+:::caution[There are two 404s]
+A body of `Route POST:/api/crawls not found` means the route does not exist (the two webhook lines
+are missing); `{"error":"not found"}` means the caller lacks `can_submit` (no `fga:grant submitter`).
+See [Archive ledger](/capture-ledger/archive-ledger/#who-may-start-one).
 :::
 
 ## 8. See what came out
 
-In the picker from §6, keep the identity you used in §7 (the output of `whoami`, and `acme`) and
-press 読み込む (Load) again. Clicking a row opens
-[replay](https://github.com/uraitakahito/replay) in a new tab. replay first lists the pages inside
-that WACZ (Web Archive Collection Zipped — the file one captured page is packed into). **Click the
-title and playback starts.**
-
 The listing comes from the ledger (the `archives` table) and is **filtered by OpenFGA's
-`can_view`**. You can also call the API directly:
+`can_view`**. Call the API directly with the token from §7:
 
 ```sh
-curl -s -H "X-Capture-ledger-Subject: $(whoami)" -H "X-Capture-ledger-Organizations: acme" \
-  http://127.0.0.1:7070/api/archives | jq '.archives[0]'
+curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/archives | jq '.archives[0]'
 ```
 
-See [Archive ledger](/capture-ledger/archive-ledger/) for the whole surface, and
-`GET /api/crawls/<crawlId>` for how the crawl itself ended.
+To use the picker, **wait until the crawl has finished**, comment out the
+`CAPTURE_LEDGER_OIDC_ISSUER` line in `.env`, restart the API, and press 読み込む (Load) with the
+identity from §6 (the output of `whoami`, and `acme`). The picker sends the development headers, and
+an API set up for JWTs does not accept them — the two cannot be used at once. **Do not switch while
+a crawl is running**: its level reports would get `401` and the crawl would stay `running` (see
+"When every crawl gets 409" below). Put the line back and restart the API before the next crawl.
+
+Clicking a row opens [replay](https://github.com/uraitakahito/replay) in a new tab. replay first
+lists the pages inside that WACZ (Web Archive Collection Zipped — the file one captured page is
+packed into). **Click the title and playback starts.**
+
+See [Archive ledger](/capture-ledger/archive-ledger/) for the whole API.
 
 ### While it is still running
 
@@ -220,6 +229,25 @@ is the other one.
 
 Artifacts land in the bundled SeaweedFS bucket (`browserhive`). Naming and WACZ
 contents are on BrowserHive's storage page.
+
+### When every crawl gets 409
+
+Only one crawl runs at a time; a second one gets `409`. **A crawl whose level report never reached
+the API stays `running` and blocks every later start with `409`** — the API was bound to
+`127.0.0.1`, the address had gone stale, the JWT setting was switched off mid-crawl. Find it and
+close it:
+
+```sh
+container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger \
+  -c "SELECT id, started_at FROM crawls WHERE state = 'running'"
+curl -X POST http://127.0.0.1:7070/api/crawls/<id>/failed \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"reason":"the level report never arrived; closed by hand"}'
+# → { "closed": true }
+```
+
+It closes running rows only, and it is the same route the flow uses to close a crawl when it
+fails. What was missing, capture-scheduler's `pnpm run check:connection` names.
 
 ## Next
 
