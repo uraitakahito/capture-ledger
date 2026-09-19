@@ -39,6 +39,8 @@
     "(空の値でも勝つ)。.env を書き換えずに 1 回だけ値を変えたいときに使える。",
     "stack:up: スタックの唯一の起動口。container-compose を直接叩かない (理由は scripts/stack.sh の冒頭)。",
     "docs:shots: CI では走らない。`src/api/picker.ts` を変えたら撮り直す (しないと site:check が落ちる)。",
+    "targets: 撮る対象 (capture_targets) を足す・見る・外す・消す開発用の道具 (`src/targets/cli.ts`)。",
+    "DB に直接書き、認可は通らない。組織 (--org) は必須。CI では `scripts/targets-smoke.mjs` が本物の DB に当てる。",
     ".upstream/ (submodule) が空だと、proto:sync・proto:diff・check:seaweedfs-pin・site:build・stack:up が",
     "落ちる。先に `git submodule update --init --recursive`。",
     "",

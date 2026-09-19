@@ -3,9 +3,10 @@ title: URL ソース
 description: capture-ledger が読む capture_targets テーブルと、その運用方法。
 ---
 
-capture-ledger の入力は Postgres のテーブル 1 つだけです。**capture-ledger 自身は INSERT しません** —
+capture-ledger の入力は Postgres のテーブル 1 つだけです。**API は INSERT しません** —
 `capture_targets` への投入は呼び出し側の責務で、手動 `INSERT` でも、外部パイプラインでも、
 同梱の seed でもかまいません。
+開発用には、行を足す小さな CLI（`pnpm run targets`）も同梱しています（[URL を追加する](#url-を追加する)）。
 
 ## クエリ
 
@@ -61,6 +62,27 @@ BrowserHive が逃がすため、非 ASCII も含めてそのまま往復し、�
 
 ## URL を追加する
 
+開発中は CLI を使います。DB に直接書く道具で、API は通らず、認可もありません。
+どの組織の対象かは、必ず訊かれます。
+
+```sh
+pnpm run targets add https://example.com/ --org acme
+pnpm run targets add https://example.com/ https://example.org/docs --org acme --label demo
+pnpm run targets add - --org acme < my-urls.txt   # 1 行 1 URL。空行と # の行は読み飛ばす
+pnpm run targets list --org acme                  # --json で機械向け
+pnpm run targets disable 6                        # 履歴を残したまま外す（enable 6 で戻す）
+pnpm run targets rm 6
+```
+
+URL は、クロールが種を読むのと同じ関数で読み、同じ形（フラグメントを落とした形）で保存します。
+ここで足せた URL は、撮るときにも読めます。
+**読めない URL が 1 本でもあれば、何も足さずに**名指しします。
+無効にしてあった URL を足すと、有効に戻ります。
+札は `--label a --label b` のように 1 つずつ渡します。
+`--label a b` と書くと、`b` は URL として読まれ、読めないので何も足さずに止まります。
+
+SQL で足すときは、組織を自分で書きます。
+
 ```sql
 INSERT INTO capture_targets (url, org_id, labels) VALUES
   ('https://example.com/', 'acme', ARRAY['example']),
@@ -71,7 +93,8 @@ ON CONFLICT (org_id, url_hash) DO NOTHING;
 `org_id` は必ず書きます。既定値が無いので、書かなければ `NOT NULL` で断られます。
 クロールは、呼んだ人の組織の行だけを種にします。
 
-履歴を残したまま対象から外したいときは、行を削除せず `enabled = false` にします。
+履歴を残したまま対象から外したいときは、行を削除せずに無効にします
+（`pnpm run targets disable <id>`、または `enabled = false`）。
 
 ## マイグレーション
 

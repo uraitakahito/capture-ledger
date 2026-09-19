@@ -43,7 +43,12 @@ const nonEmpty = (raw: string): string => {
   return value;
 };
 
-/** 札。`--label a --label b` のように何度でも渡せる (まとめ書きにすると、後ろの URL を札として飲み込むため)。 */
+/**
+ * 札。`--label a --label b` のように 1 つずつ、何度でも受ける。
+ *
+ * まとめて受ける形 (`--label a b`) にはしない —— そうすると、後ろに続く URL まで札として
+ * 飲み込む。この形なら `--label a b` の `b` は URL として読まれ、読めないので何も足さずに止まる。
+ */
 const collectLabel = (raw: string, previous: string[] | undefined): string[] => [
   ...(previous ?? []),
   nonEmpty(raw),
