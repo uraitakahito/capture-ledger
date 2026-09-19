@@ -40,9 +40,14 @@ jobs:
     #
     # 飛ばして失うものは無い。この job が見るのは「vendor した proto が submodule と
     # 一致するか」と「compose の SeaweedFS の版が submodule の原本と同じか」で、
-    # Dependabot の PR は lockfile しか触らないので、どれも動かない。
+    # Dependabot の PR が書き換えるのは package.json と lockfile (docker の entry なら
+    # Dockerfile、github-actions の entry なら workflow) で、proto/ にも
+    # docker-compose.yml にも触らないので、どれも動かない。
     # しかも develop に入った直後の push で同じ job が (secrets 付きで) 走るため、
     # 検査そのものは消えない —— 前倒しでなくなるだけ。
+    #
+    # **site.yaml の同じ if は事情が違う** —— あちらが見る docs のビルドは、依存の版上げで
+    # 壊れうる。飛ばして失うものが在るので、向こうのコメントを読むこと。
     #
     # 前倒しのまま保ちたいなら、repo の **Dependabot secrets** に
     # SUBMODULE_APP_KEY を置けばこの if は外せる。
