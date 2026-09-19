@@ -143,18 +143,24 @@ capturing does not.
 ### Once: connect capture-scheduler
 
 The steps live in one place, [capture-scheduler's quickstart](https://uraitakahito.github.io/capture-scheduler/quickstart/)
-(bring up Windmill, load the flow and the proto, hand over a token). Along the way you add four
-lines to this repo's `.env`. **Miss any one and no crawl runs to the end.**
+(bring up Windmill, load the flow and the proto, hand over a token). Along the way,
+capture-scheduler's `pnpm run windmill:bootstrap` prints **four lines for this repo's `.env`.
+Paste all four at the end of `.env`** (a later line wins over an earlier one with the same name —
+an `.env` copied from `.env.example` already has commented sample lines further up). **Miss any
+one and no crawl runs to the end.**
 
 | Line                                                                       | Why                                                                                                                                                                                                    |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | Where crawls are dispatched. **Paste the two lines `windmill:bootstrap` prints.** Without them `/api/crawls` does not exist at all and answers `404`                                                   |
+| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | Where crawls are dispatched. Without them `/api/crawls` does not exist at all and answers `404`                                                                                                        |
 | `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | The flow reports each level back to the API, and the report comes **from a container**. A `127.0.0.1` bind never receives it                                                                           |
 | `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | The flow identifies itself with a JWT. The API accepts **either** a JWT **or** the development headers, and this line makes it JWT — **the picker from §6 then answers `401`** (§8 says how to switch) |
 
 Then start the issuer (`pnpm run oidc:issuer`) and restart the API — it reads its settings once, at
-startup. When `pnpm run doctor`, near the end of capture-scheduler's quickstart, shows ✓ on every
-line, the two are connected; the `pnpm run smoke` after it captures one page to prove it.
+startup. When the last line of its startup log says `crawl level reports: ready`, the four lines
+are in effect; `blocked` means the warnings above it name the missing lines
+([Check the startup log](/capture-ledger/development-environment/#check-the-startup-log)). When
+`pnpm run doctor`, near the end of capture-scheduler's quickstart, shows ✓ on every line, the two
+are connected; the `pnpm run smoke` after it captures one page to prove it.
 
 Once connected, Windmill also captures every enabled `acme` row daily at 04:00 (Asia/Tokyo) —
 [When it runs](https://uraitakahito.github.io/capture-scheduler/schedule/).
@@ -206,11 +212,23 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/archives | j
 ```
 
 To use the picker, **wait until the crawl has finished**, comment out the
-`CAPTURE_LEDGER_OIDC_ISSUER` line in `.env`, restart the API, and press 読み込む (Load) with the
-identity from §6 (the output of `whoami`, and `acme`). The picker sends the development headers, and
-an API set up for JWTs does not accept them — the two cannot be used at once. **Do not switch while
-a crawl is running**: its level reports would get `401` and the crawl would stay `running` (see
-"When every crawl gets 409" below). Put the line back and restart the API before the next crawl.
+`CAPTURE_LEDGER_OIDC_ISSUER` line in `.env` with `#`, and restart the API **listening on
+`127.0.0.1` again**:
+
+```sh
+CAPTURE_LEDGER_API_HOST=127.0.0.1 pnpm run api
+```
+
+Then press 読み込む (Load) with the identity from §6 (the output of `whoami`, and `acme`). The
+picker sends the development headers, and an API set up for JWTs does not accept them — the two
+cannot be used at once. The listening address goes back too because the `.env` line
+`CAPTURE_LEDGER_API_HOST=0.0.0.0` would otherwise stay in effect, and an API that trusts the headers
+would let anyone on the same network act as anyone (a value on the command line wins over `.env`).
+
+**Do not switch while a crawl is running**: its level reports would get `401` and the crawl would
+stay `running` (see "When every crawl gets 409" below). Before the next crawl, remove the `#` and
+restart with `pnpm run api`. If you forget, the startup log says so with warnings and
+`crawl level reports: blocked`.
 
 Clicking a row opens [replay](https://github.com/uraitakahito/replay) in a new tab. replay first
 lists the pages inside that WACZ (Web Archive Collection Zipped — the file one captured page is

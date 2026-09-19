@@ -142,17 +142,23 @@ open http://127.0.0.1:7070/
 
 つなぐ手順は [capture-scheduler のクイックスタート](https://uraitakahito.github.io/capture-scheduler/ja/quickstart/)に
 まとめてあります（Windmill を立て、flow と proto を入れ、トークンを渡す）。その途中で、
-この repo の `.env` に次の 4 行を足します。**どれが欠けても、クロールは最後まで走りません。**
+capture-scheduler の `pnpm run windmill:bootstrap` が、この repo の `.env` に貼る **4 行をまとめて
+出します。4 行とも `.env` の末尾に貼ります**（同じ名前の行が前にあっても、後ろの行が効きます ——
+`.env.example` を写した `.env` には、`#` 付きの見本の行が前に在ります）。**どれが欠けても、
+クロールは最後まで走りません。**
 
 | 行                                                                         | なぜ要るか                                                                                                                                                                            |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | クロールを投げる先。**`windmill:bootstrap` が出す 2 行をそのまま貼ります。** 無いと `/api/crawls` そのものが無く、`404` になります                                                    |
+| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | クロールを投げる先。無いと `/api/crawls` そのものが無く、`404` になります                                                                                                             |
 | `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | flow は段ごとの結果を API に報告し、その報告は**コンテナから**来ます。`127.0.0.1` のままでは届きません                                                                                |
 | `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | flow は JWT で名乗ります。API が受けるのは JWT か開発用ヘッダの**どちらか一方**で、この行を書くと JWT になります —— **§6 の picker は `401` になります**（§8 で戻し方を書いています） |
 
-足したら、issuer（`pnpm run oidc:issuer`）を起こし、API を起こし直します。設定は起動のときに
-1 度だけ読みます。capture-scheduler のクイックスタートの最後にある `pnpm run doctor` が
-全部 ✓ なら、つながっています。続く `pnpm run smoke` が 1 本撮って確かめます。
+貼ったら、issuer（`pnpm run oidc:issuer`）を起こし、API を起こし直します。設定は起動のときに
+1 度だけ読みます。API の起動ログの最後の行が `crawl level reports: ready` なら、4 行は効いています。
+`blocked` なら、その上の warn が足りない行を名指しします
+（[起動ログで確かめる](/capture-ledger/ja/development-environment/#起動ログで確かめる)）。
+capture-scheduler のクイックスタートの最後にある `pnpm run doctor` が全部 ✓ なら、つながっています。
+続く `pnpm run smoke` が 1 本撮って確かめます。
 
 つないだ後は、毎日 04:00（日本時間）にも Windmill が `acme` の有効な行を全部撮ります
 （[いつ走るか](https://uraitakahito.github.io/capture-scheduler/ja/schedule/)）。
@@ -202,11 +208,21 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/archives | j
 ```
 
 picker で見るには、**クロールが終わってから** `.env` の `CAPTURE_LEDGER_OIDC_ISSUER` の行を
-コメントにして API を起こし直し、§6 と同じ名乗り（`whoami` の出力と `acme`）で「読み込む」を
-押します。picker が送るのは開発用ヘッダで、JWT の設定の API はそれを受けないためです ——
-JWT と開発用ヘッダは同時には使えません。**走っている間に外さないでください。**段の報告が
-`401` になり、そのクロールは `running` のまま残ります（下の「409 が続くとき」）。次に
-クロールを起こす前に、行を戻して API を起こし直します。
+`#` でコメントにし、**待ち受けを `127.0.0.1` に戻して** API を起こし直します:
+
+```sh
+CAPTURE_LEDGER_API_HOST=127.0.0.1 pnpm run api
+```
+
+そのうえで §6 と同じ名乗り（`whoami` の出力と `acme`）で「読み込む」を押します。picker が送るのは
+開発用ヘッダで、JWT の設定の API はそれを受けないためです —— JWT と開発用ヘッダは同時には
+使えません。待ち受けも戻すのは、`.env` の `CAPTURE_LEDGER_API_HOST=0.0.0.0` が残ったままだと、
+ヘッダを信じる API に同じネットワークの誰もが届き、誰にでもなれるからです（コマンド行の値は
+`.env` より勝ちます）。
+
+**走っている間に外さないでください。**段の報告が `401` になり、そのクロールは `running` のまま
+残ります（下の「409 が続くとき」）。次にクロールを起こす前に `#` を外し、`pnpm run api` で
+起こし直します。戻し忘れていれば、起動ログが warn と `crawl level reports: blocked` で言います。
 
 行をクリックすると、別のタブで [replay](https://github.com/uraitakahito/replay) が開きます。
 replay はまず、その WACZ に入っているページの一覧を出します
