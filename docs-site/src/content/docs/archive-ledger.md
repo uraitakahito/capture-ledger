@@ -303,11 +303,11 @@ Two things a caller has to get right, and capture-scheduler's script exists to e
   stops at the 202 reports success for failed captures.
 
 Running a crawl means running with a JWT — the flow reports each level back with a
-Bearer token, so this holds for a crawl you start by hand too — and that has a cost worth
-knowing: setting `CAPTURE_LEDGER_OIDC_ISSUER` makes the JWT resolver take over, so the
-**browser picker starts returning 401**. JWT beating the dev header is the point
-(a deployment with both configured must not fall to the weaker one), so the two
-are used in turn, not together.
+Bearer token, so this holds for a crawl you start by hand too. Setting
+`CAPTURE_LEDGER_OIDC_ISSUER` makes the JWT resolver take over, and the dev header stops working.
+JWT beating the dev header is the point (a deployment with both configured must not fall to the
+weaker one). The browser picker follows suit: under a JWT setup it asks for a token to paste
+([Browsing archives](/capture-ledger/picker/)).
 
 ### Who may start one
 
@@ -509,8 +509,16 @@ need it, then rebuild with the statement above.
 
 `capture-api` also serves a picker at `/` — the list above, rendered, with each
 row opening the archive in [replay](https://github.com/uraitakahito/replay). **How to use the
-screen — what to type into its two fields, and what its messages mean — is in
+screen — what to enter under each way the API identifies callers, and what its messages mean — is in
 [Browsing archives](/capture-ledger/picker/).** This section covers only the design behind it.
+
+The screen is built for the way the API identifies callers at startup (`selectIdentity`): two name
+fields under the dev header, a token field under JWT, and only a notice when neither is configured.
+The browser cannot tell "no name given" from "this API wants a JWT" — both are a `401` with
+`{"error":"unauthenticated"}` — so the API, which knows, decides when it renders the HTML
+(`pickerView` in `src/api/picker.ts`). The picker mints no tokens. The issuer mints a token in
+anyone's name on request, so it lives only on `127.0.0.1`; a screen reachable on `0.0.0.0` that
+could mint would let anyone on the network do it.
 
 The picker hands replay the `objectKey` and nothing else:
 

@@ -11,12 +11,18 @@
  *
  * ## スタックは要らない
  *
- * 立てるのは 2 つだけ: **本物の画面** (ビルド済みの registerPicker) と、**見本データを返す
- * 代役の `/api/archives`**。DB も OpenFGA も replay も要らない。見本データなので、実データには
- * なかなか現れない状態 (「欠けあり」) も写せる。
+ * 立てるのは **本物の画面** (ビルド済みの registerPicker) と、**見本データを返す代役の
+ * `/api/archives` と `/api/me`** だけ。DB も OpenFGA も replay も issuer も要らない。見本データ
+ * なので、実データにはなかなか現れない状態 (「欠けあり」) も写せる。
  *
- * 代役が真似るのは「起こした本人か、同じ組織の一員か」だけ。本物は OpenFGA の can_view に訊く。
- * 応答の形は本物 (`src/api/routes.ts` の GET /api/archives) に合わせてある。形が変われば、それを
+ * 画面は API の名乗り方で変わるので、名乗り方ごとに 1 組ずつ立てる (開発用ヘッダ・127.0.0.1／
+ * JWT／名乗りの設定なし／開発用ヘッダ・0.0.0.0)。画面に渡す待ち受けは画面に出す値で、代役が
+ * 実際に待つのは 127.0.0.1 の空きポート。
+ *
+ * 代役が真似るのは「誰か」と「起こした本人か、同じ組織の一員か」だけ。本物は issuer の署名を
+ * 検め、OpenFGA の can_view に訊く。ヘッダの設定はヘッダだけ、JWT の設定は Bearer だけを見る
+ * ところは本物と同じ (トークンは見本の 1 本だけが alice・acme として通る)。応答の形は本物
+ * (`src/api/routes.ts` の GET /api/archives、`src/api/me.ts`) に合わせてある。形が変われば、それを
  * 描く `src/api/picker.ts` も変わるので、上の sha256 の検査が撮り直しを求める。
  *
  * ## 誰が撮っても同じ絵にする
@@ -98,24 +104,62 @@ const FIXTURES = [
   ...row,
 }));
 
-const app = Fastify();
-registerPicker(app, "http://127.0.0.1:8899");
-app.get("/api/archives", (request, reply) => {
-  const subject = String(request.headers["x-capture-ledger-subject"] ?? "");
-  if (subject === "") return reply.code(401).send({ error: "unauthenticated" });
-  // 2 ページ目は無い。「さらに読む」を押しても何も増えない、を本物と同じ形で返す。
-  if (request.query.before !== undefined) return reply.send({ archives: [] });
-  const organizations = String(request.headers["x-capture-ledger-organizations"] ?? "")
-    .split(",")
-    .map((name) => name.trim())
-    .filter((name) => name !== "");
-  const archives = FIXTURES.filter((a) => a.owner === subject || organizations.includes(a.org)).map(
-    ({ owner: _owner, org: _org, ...archive }) => archive,
-  );
-  return reply.send({ archives });
-});
-await app.listen({ host: "127.0.0.1", port: 0 });
-const origin = `http://127.0.0.1:${String(app.server.address().port)}`;
+const REPLAY_ORIGIN = "http://127.0.0.1:8899";
+/** 見本のトークン。代役だけが知っていて、alice・acme として通す。 */
+const SAMPLE_TOKEN = "sample-token-alice-acme";
+/** 画面に出すだけ。取りには行かない。 */
+const ISSUER = "http://127.0.0.1:9099";
+const LOOPBACK = { host: "127.0.0.1", port: 7070 };
+const LAN = { host: "0.0.0.0", port: 7070 };
+
+/** 名乗り方ごとの「誰か」。通らなければ undefined (本物は 401)。 */
+const IDENTIFY = {
+  header: (request) => {
+    const subject = String(request.headers["x-capture-ledger-subject"] ?? "");
+    if (subject === "") return undefined;
+    const organizations = String(request.headers["x-capture-ledger-organizations"] ?? "")
+      .split(",")
+      .map((name) => name.trim())
+      .filter((name) => name !== "");
+    return { subject, organizations };
+  },
+  jwt: (request) =>
+    request.headers.authorization === `Bearer ${SAMPLE_TOKEN}`
+      ? { subject: "alice", organizations: ["acme"] }
+      : undefined,
+  deny: () => undefined,
+};
+
+/** 本物の画面と代役の API を 1 組立てる。 */
+const stand = async (identity, listen) => {
+  const app = Fastify();
+  registerPicker(app, { replayOrigin: REPLAY_ORIGIN, identity, listen });
+  const identify = IDENTIFY[identity.mode];
+  app.get("/api/archives", (request, reply) => {
+    const me = identify(request);
+    if (me === undefined) return reply.code(401).send({ error: "unauthenticated" });
+    // 2 ページ目は無い。「さらに読む」を押しても何も増えない、を本物と同じ形で返す。
+    if (request.query.before !== undefined) return reply.send({ archives: [] });
+    const archives = FIXTURES.filter(
+      (a) => a.owner === me.subject || me.organizations.includes(a.org),
+    ).map(({ owner: _owner, org: _org, ...archive }) => archive);
+    return reply.send({ archives });
+  });
+  app.get("/api/me", (request, reply) => {
+    const me = identify(request);
+    if (me === undefined) return reply.code(401).send({ error: "unauthenticated" });
+    return reply.send({ ...me, canSubmit: true });
+  });
+  await app.listen({ host: "127.0.0.1", port: 0 });
+  return { app, origin: `http://127.0.0.1:${String(app.server.address().port)}` };
+};
+
+const stands = {
+  header: await stand({ mode: "header" }, LOOPBACK),
+  jwt: await stand({ mode: "jwt", issuer: ISSUER }, LAN),
+  deny: await stand({ mode: "deny" }, LOOPBACK),
+  exposed: await stand({ mode: "header" }, LAN),
+};
 
 const browser = await puppeteer.launch({ args: [`--lang=${EMULATION.lang}`] });
 const shots = [];
@@ -124,8 +168,12 @@ try {
   await page.setViewport(VIEWPORT);
   await page.emulateTimezone(EMULATION.timezone);
   await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: EMULATION.colorScheme }]);
-  await page.goto(`${origin}/`, { waitUntil: "networkidle0" });
+  await page.goto(`${stands.header.origin}/`, { waitUntil: "networkidle0" });
   mkdirSync(OUT, { recursive: true });
+
+  /** その状態でしか出ない文字を待つ。無ければ撮らずに落ちる。 */
+  const expectText = (text) =>
+    page.waitForFunction((t) => document.body.innerText.includes(t), { timeout: 10_000 }, text);
 
   const bottomOf = (selector) =>
     page.evaluate((s) => {
@@ -150,6 +198,13 @@ try {
       { timeout: 10_000 },
       expected,
     );
+  };
+
+  /** 見本の 3 行 (alice か acme に当たる) が出ていること。 */
+  const expectRows = async () => {
+    const rows = await page.$$eval("tr.row", (trs) => trs.length);
+    if (rows !== 3)
+      throw new Error(`一覧は 3 行のはず (alice か acme に当たる見本) だが ${String(rows)} 行`);
   };
 
   /** 枠と番号を画面に足す。説明の文は足さない (英日で同じ絵を使うため)。 */
@@ -210,9 +265,7 @@ try {
 
   // 01: 一覧。番号はページの表 (画面の部品) の行と同じ順。
   await load("alice", "acme", "欠けあり");
-  const rows = await page.$$eval("tr.row", (trs) => trs.length);
-  if (rows !== 3)
-    throw new Error(`一覧は 3 行のはず (alice か acme に当たる見本) だが ${String(rows)} 行`);
+  await expectRows();
   await annotate([
     { selector: "#subject", n: 1 },
     { selector: "#orgs", n: 2 },
@@ -226,9 +279,29 @@ try {
     { selector: "footer", n: 9, inset: { left: 12, right: 12, top: -6, bottom: 34 }, badgeDx: 14 },
   ]);
   await shoot("01-list.png", 0, (await bottomOf("footer")) - 18);
+
+  // 05: JWT の設定。見本のトークンを貼って読み込み、誰として見ているかが出た一覧。
+  await page.goto(`${stands.jwt.origin}/`, { waitUntil: "networkidle0" });
+  await expectText("トークンを貼って「読み込む」");
+  await page.type("#token", SAMPLE_TOKEN);
+  await page.click("#reload");
+  await expectText("alice（acme）として見ている");
+  await expectRows();
+  // 下の「さらに読む」は写さない (01 と違い、番号を付けないので要らない)。
+  await shoot("05-jwt.png", 0, (await bottomOf("#out")) + 10);
+
+  // 06: 名乗りの設定が無い。注意だけで、欄も「読み込む」も無い。
+  await page.goto(`${stands.deny.origin}/`, { waitUntil: "networkidle0" });
+  await expectText("全員 401");
+  await shoot("06-no-identity.png", 0, (await bottomOf("#notice")) + 16);
+
+  // 07: 開発用ヘッダの設定を 0.0.0.0 で待たせている。画面の上の注意。
+  await page.goto(`${stands.exposed.origin}/`, { waitUntil: "networkidle0" });
+  await expectText("同じネットワークの誰もが、誰にでもなれる");
+  await shoot("07-header-exposed.png", 0, (await bottomOf(".who")) + 16);
 } finally {
   await browser.close();
-  await app.close();
+  for (const { app } of Object.values(stands)) await app.close();
 }
 
 // manifest は撮った条件の控え。**手で書かない** —— sha256 を手で写すと、検査が嘘になる。

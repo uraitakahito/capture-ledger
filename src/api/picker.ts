@@ -150,11 +150,9 @@ const WHO: Record<Exclude<PickerView["form"], "none">, string> = {
   token: `<div class="who">
     <label>トークン <input id="token" size="44" placeholder="eyJhbGciOi…" autocomplete="off" spellcheck="false"></label>
     <button id="reload" type="button">読み込む</button>
-    <p class="how">
-      取り方（capture-ledger で。開発用の issuer のとき）:
-      <code>pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy</code>
-      —— 1 時間で切れる。貼ったトークンは、このタブを閉じると消える。
-    </p>
+    <p class="how">取り方（capture-ledger で。開発用の issuer のとき）:</p>
+    <pre class="cmd">pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy</pre>
+    <p class="how">1 時間で切れる。貼ったトークンは、このタブを閉じると消える。</p>
   </div>
   <p class="whoami" id="whoami" hidden></p>`,
 };
@@ -314,6 +312,9 @@ const html = (replayOrigin: string, view: PickerView): string => `<!doctype html
   .who input { font: inherit; padding: 3px 7px; border: 1px solid #d6d9e4; border-radius: 5px; }
   .who .why { margin: 8px 0 0; color: #8a6d1f; }
   .who .how { margin: 8px 0 0; color: #5b6172; }
+  .who .cmd { margin: 4px 0 0; padding: 6px 10px; background: #fff; border: 1px solid #e3e6ef;
+              border-radius: 6px; font: 12.5px/1.6 ui-monospace, Menlo, monospace; overflow-x: auto;
+              user-select: all; }
   .whoami { margin: -6px 0 14px; color: #137a5c; font-size: 13.5px; font-weight: 600; }
   table { width: 100%; border-collapse: collapse; background: #fff; font-size: 14px; }
   th, td { border: 1px solid #e3e6ef; padding: 8px 11px; text-align: left; vertical-align: top; }
