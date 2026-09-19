@@ -247,6 +247,26 @@ curl -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls
 差し替えるのは `src/config/identity.ts` の `ORGANIZATIONS_CLAIM` 1 か所だけです ——
 API は `identityFromClaims` を通してそこを読みます。
 
+### 起動ログで確かめる
+
+API は起動したときに、**最後の 1 行**で待ち受けのアドレス・名乗り方・クロールの段の報告を
+受けられるかを言います（`src/api/startup-notes.ts`）。
+
+```text
+Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:9099); crawl level reports: ready
+```
+
+| `crawl level reports` | 意味                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ready`               | 段の報告を受けられる —— コンテナから届くアドレスで待ち、JWT を受ける                                                                                         |
+| `blocked`             | 受けられない。その上の warn が、足りない行を名指しする（`CAPTURE_LEDGER_API_HOST=0.0.0.0` と `CAPTURE_LEDGER_OIDC_ISSUER`）。クロールは `running` のまま残る |
+| `off`                 | クロールの口が無い（webhook の 2 行が無い）                                                                                                                  |
+
+warn はほかに 3 つあります。名乗りの設定がどちらも無い（全員 `401`）、開発用ヘッダを信じる API を
+`127.0.0.1` 以外で待たせている（そのポートに届く誰もが、誰にでもなれる）、受け口が在るのに
+`127.0.0.1` で待っている（BrowserHive のコンテナから `PUT` が届かない）。`CAPTURE_LEDGER_DEV_IDENTITY=1`
+の警告は、ヘッダが実際に効いているときだけ出ます —— JWT の設定では「無視される」と info で言います。
+
 ## トラブルシュート
 
 - **コンテナが上がらない** — `container ls` で起動状況、
@@ -262,6 +282,9 @@ API は `identityFromClaims` を通してそこを読みます。
   無いか、`CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` が未設定で route がそもそも登録されて
   いないかのどちらかです。どちらかは起動時のログが言います
   （`… is not set — /api/crawls is not served`）。
+- **クロールが `running` のまま残る（段の報告が届かない・`401`）** — API の起動ログの最後の行が
+  `crawl level reports: blocked` なら、その上の warn が足りない行を名指しします
+  （[起動ログで確かめる](#起動ログで確かめる)）。
 - **docs のビルドが BrowserHive のピンを読めない** —
   `git submodule update --init --recursive` を実行。
 
