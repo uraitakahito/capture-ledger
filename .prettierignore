@@ -5,3 +5,7 @@ src/rpc/generated
 .upstream
 docs-site/.astro
 docs-site/dist
+
+# docs の画面の絵の manifest。scripts/docs-shots.mjs の生成物で、手でも prettier でも直さない ——
+# 直すと、何も変えずに撮り直したときに差分が出るようになる。
+docs-site/src/assets/picker/shots-manifest.json

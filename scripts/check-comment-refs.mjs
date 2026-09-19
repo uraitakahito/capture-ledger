@@ -50,6 +50,14 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /** 走査するのはこの 3 つ。生成物と依存は入っていない。 */
 const ROOTS = ["src", "test", "scripts"];
 
+/**
+ * package.json のコメントも見る。JSON にはコメントの構文が無いので、この repo は先頭の `//` という
+ * 鍵に、文字列の配列で書いている (npm は `//` を使わないと決めている)。そこで名指ししたファイルも、
+ * ソースのコメントと同じ規則で見張る —— 依存や script の理由を書いた行は、相手のファイルが
+ * 改名されても誰も開かないので、ソースのコメントより腐りやすい。
+ */
+const MANIFESTS = ["package.json", "docs-site/package.json"];
+
 const walk = (dir) =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const p = join(dir, entry.name);
@@ -91,6 +99,18 @@ for (const root of ROOTS) {
         if (resolves(ref)) continue;
         problems.push(`${rel}:${String(i + 1)}: \`${ref}\` はこの repo に無い`);
       }
+    }
+  }
+}
+
+for (const rel of MANIFESTS) {
+  const notes = JSON.parse(readFileSync(resolve(ROOT, rel), "utf8"))["//"];
+  if (!Array.isArray(notes)) continue;
+  for (const [i, line] of notes.entries()) {
+    for (const [, ref] of String(line).matchAll(REF)) {
+      if (ref.startsWith(".")) continue;
+      if (resolves(ref)) continue;
+      problems.push(`${rel} の "//" の ${String(i + 1)} 行目: \`${ref}\` はこの repo に無い`);
     }
   }
 }
