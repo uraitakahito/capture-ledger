@@ -121,9 +121,9 @@
     "@openfga/sdk": "^0.9.6",
     "@opensearch-project/opensearch": "^3.6.0",
     "commander": "^15.0.0",
-    "fastify": "^5.12.4",
+    "fastify": "^5.12.5",
     "jose": "^6.2.12",
-    "kysely": "^0.29.5",
+    "kysely": "^0.29.6",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
     "yauzl-promise": "^4.0.0"
@@ -136,12 +136,12 @@
     "@types/yauzl-promise": "^4.0.1",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.7",
     "puppeteer": "25.11.0",
     "semver": "^7.8.5",
     "ts-proto": "^2.12.4",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.70.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }

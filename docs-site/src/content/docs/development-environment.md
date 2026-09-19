@@ -349,7 +349,7 @@ only together** — with just one of them set, the API refuses to start:
 
 ```sh
 CAPTURE_LEDGER_API_HOST=0.0.0.0 \
-CAPTURE_LEDGER_SINK_ORIGIN=http://192.168.66.1:7070 \
+CAPTURE_LEDGER_SINK_ORIGIN=http://$(container network inspect default | jq -r '.[0].status.ipv4Gateway'):7070 \
 CAPTURE_LEDGER_SINK_SECRET=$(openssl rand -hex 32) \
   pnpm run api
 ```
@@ -358,9 +358,11 @@ Setting them on the command line leaves `.env` alone: Node's `--env-file-if-exis
 does not override a variable the shell has already set.
 
 The origin is **the address BrowserHive's containers reach the API at**, not the one
-you use. On the dev stack that is the host as seen from the container network,
-`192.168.66.1`, and the API has to listen on `0.0.0.0` — bound to loopback, it
-refuses the containers. A wrong origin fails captures with an error that starts with
+you use. On the dev stack that is the host as seen from the container network — the
+gateway of the `default` network, which the command above reads (`192.168.66.1` on the
+machine this was written on; it changes when the network is recreated, so do not copy
+it) — and the API has to listen on `0.0.0.0`: bound to loopback, it refuses the
+containers. A wrong origin fails captures with an error that starts with
 the sink URL (`http://…/api/sink/…: …`).
 
 **Then check where the artifacts landed**, because this path can also be skipped

@@ -34,8 +34,8 @@ cp -n .env.example .env                   # 設定の雛形を写す (既にあ�
 build context はどれもここを指すので、空のままでは何もビルドできません。
 
 `.env` は `.env.example` の写しです。何も調べず、値も変えません。開発用の値は雛形に
-最初から入っていて、書き足すのは OpenFGA の 2 つの ID だけです（§5）。`-n` は既にある
-`.env` を上書きしないための印で、書き写した ID を守ります。
+最初から入っていて、書き足すのは OpenFGA の 2 つの ID（§5）と、クロールを起こすときの
+4 行（§7）だけです。`-n` は既にある `.env` を上書きしないための印で、書き写した値を守ります。
 
 ## 3. スタックを起動する
 
@@ -131,70 +131,81 @@ open http://127.0.0.1:7070/
 `401` と出るなら、`.env` の `CAPTURE_LEDGER_DEV_IDENTITY=1` を確かめてください。
 無いと resolver が誰も通しません。
 
-:::caution[スケジューラから叩くなら loopback では届きません]
-既定の待ち受けは `127.0.0.1` で、**コンテナから届きません**。capture-scheduler の Windmill に
-日次を任せるなら 0.0.0.0 で起こしてください:
-
-```sh
-CAPTURE_LEDGER_API_HOST=0.0.0.0 pnpm run api
-```
-
-コンテナ側が指す先は bridge100 の `http://192.168.64.1:7070` です ―― **ホスト名では
-引けません**。capture-scheduler の `CAPTURE_LEDGER_API_URL` の既定がその値なので、通常は何も設定せずに
-`pnpm run windmill:capture-ledger-token` を走らせるだけで揃います。外に出す以上、
-前段の認証を確かめてから開けてください。
-:::
-
 ## 7. クロールを起こす
 
-取り込みはクロールとして起こします。段取りを決めるのは capture-ledger で、実際に投げるのは
-Windmill の flow です。
+取り込みはクロールとして起こします。段取りを決めるのは capture-ledger で、実際に撮るのは
+[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) の Windmill の flow です。
+**ここから先は capture-scheduler が要ります** —— ここより前の段はそれ無しで動きますが、
+取り込みだけは動きません。
+
+### 1 度だけ: capture-scheduler とつなぐ
+
+つなぐ手順は [capture-scheduler のクイックスタート](https://uraitakahito.github.io/capture-scheduler/ja/quickstart/)に
+まとめてあります（Windmill を立て、flow と proto を入れ、トークンを渡す）。その途中で、
+この repo の `.env` に次の 4 行を足します。**どれが欠けても、クロールは最後まで走りません。**
+
+| 行                                                                         | なぜ要るか                                                                                                                                                                            |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | クロールを投げる先。**`windmill:bootstrap` が出す 2 行をそのまま貼ります。** 無いと `/api/crawls` そのものが無く、`404` になります                                                    |
+| `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | flow は段ごとの結果を API に報告し、その報告は**コンテナから**来ます。`127.0.0.1` のままでは届きません                                                                                |
+| `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | flow は JWT で名乗ります。API が受けるのは JWT か開発用ヘッダの**どちらか一方**で、この行を書くと JWT になります —— **§6 の picker は `401` になります**（§8 で戻し方を書いています） |
+
+足したら、issuer（`pnpm run oidc:issuer`）を起こし、API を起こし直します。設定は起動のときに
+1 度だけ読みます。capture-scheduler のクイックスタートの最後にある `pnpm run check:connection` が
+全部 ✓ なら、つながっています。
+
+つないだ後は、毎日 04:00（日本時間）にも Windmill が `acme` の有効な行を全部撮ります
+（[いつ走るか](https://uraitakahito.github.io/capture-scheduler/ja/schedule/)）。
+
+### 起こす
+
+JWT で名乗ります。§6 のヘッダは、JWT の設定の API には効きません。
 
 ```sh
+pnpm run fga:grant submitter "$(whoami)" acme   # 1 度だけ。無いと 404
+TOKEN=$(pnpm run --silent oidc:token --subject "$(whoami)" --org acme)
 curl -X POST http://127.0.0.1:7070/api/crawls \
-  -H 'content-type: application/json' \
-  -H "X-Capture-ledger-Subject: $(whoami)" -H "X-Capture-ledger-Organizations: acme" \
-  -d '{"fromTargets":{"limit":1}}'
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"seeds":["https://example.com/"],"maxDepth":0}'
 # → 202 { "crawlId": "9072b625-…" }
 ```
 
-`fromTargets` は §4 で入れた行を種にします。既定は深さ 0 —— 取るだけで辿りません。
-以前の `POST /api/runs` がしていたのはこれです。
+`seeds` は種を名指しします。既定はリンクを 2 段まで辿ることで、`maxDepth: 0` でそのページだけを取ります。
 
-行は足した順に種になるので、`"limit": 1` はいつもサンプルの 1 行目です。
-§4 で足した URL だけを撮るなら、種として名指しします：
-`-d '{"seeds":["https://example.com/"],"maxDepth":0}'`。
-`seeds` の既定は、リンクを 2 段まで辿ることです。`maxDepth: 0` で、そのページだけを取ります。
+§4 で入れた行を種にするなら `-d '{"fromTargets":{}}'` です。既定は深さ 0 —— 取るだけで辿りません。
+以前の `POST /api/runs` がしていたのはこれです。行は足した順（`id` 順）に種になるので、
+`{"fromTargets":{"limit":1}}` はいつもサンプルの 1 行目で、§4 で足した URL ではありません。
 
-:::caution[この段にはスケジューラ側のスタックが要ります]
-`/api/crawls` は **`CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` と `CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` の
-両方が設定されているときにしか出ません**。capture-ledger はもう BrowserHive と直接
-話さないので、投げる先が無ければ出す口も無く、route は `404` を返します。flow は
-[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) に居ます。ここより前の段は
-それ無しで動きますが、取り込みだけは動きません。
+クロールがどう終わったかは、同じヘッダで `GET /api/crawls/<crawlId>` に訊きます。
 
-`can_submit` にも注意してください。許可の無い呼び出し元にも `404` が返ります。
+:::caution[404 は 2 通りあります]
+本文が `Route POST:/api/crawls not found` なら route が無い（webhook の 2 行が無い）、
+`{"error":"not found"}` なら呼び出し元に `can_submit` が無い（`fga:grant submitter` が無い）です。
 [アーカイブ台帳](/capture-ledger/ja/archive-ledger/#誰が起こしてよいか)を参照。
 :::
 
 ## 8. 結果を見る
 
-§6 の picker で、§7 と同じ名乗り（`whoami` の出力と `acme`）のまま「読み込む」を押し直します。
+一覧は台帳（`archives` テーブル）から来ていて、**OpenFGA の `can_view` で
+絞ってあります**。§7 と同じ token で API を直に叩けます。
+
+```sh
+curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/archives | jq '.archives[0]'
+```
+
+picker で見るには、**クロールが終わってから** `.env` の `CAPTURE_LEDGER_OIDC_ISSUER` の行を
+コメントにして API を起こし直し、§6 と同じ名乗り（`whoami` の出力と `acme`）で「読み込む」を
+押します。picker が送るのは開発用ヘッダで、JWT の設定の API はそれを受けないためです ——
+JWT と開発用ヘッダは同時には使えません。**走っている間に外さないでください。**段の報告が
+`401` になり、そのクロールは `running` のまま残ります（下の「409 が続くとき」）。次に
+クロールを起こす前に、行を戻して API を起こし直します。
+
 行をクリックすると、別のタブで [replay](https://github.com/uraitakahito/replay) が開きます。
 replay はまず、その WACZ に入っているページの一覧を出します
 （WACZ は Web Archive Collection Zipped —— 取り込んだ 1 ページをまとめたファイルです）。
 **題名をクリックすると、再生が始まります。**
 
-一覧は台帳（`archives` テーブル）から来ていて、**OpenFGA の `can_view` で
-絞ってあります**。API を直に叩くこともできます。
-
-```sh
-curl -s -H "X-Capture-ledger-Subject: $(whoami)" -H "X-Capture-ledger-Organizations: acme" \
-  http://127.0.0.1:7070/api/archives | jq '.archives[0]'
-```
-
-API の全体は[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)に、クロール自体の
-終わり方は `GET /api/crawls/<crawlId>` にあります。
+API の全体は[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)にあります。
 
 ### まだ終わっていないとき
 
@@ -214,6 +225,24 @@ grpcurl -plaintext -emit-defaults -import-path proto -proto browserhive/v1/captu
 
 成果物は同梱の SeaweedFS バケット (`browserhive`) に置かれます。命名規則や
 WACZ の中身は BrowserHive のストレージのページにあります。
+
+### 409 が続くとき
+
+走行中のクロールは 1 本だけで、2 本目は `409` です。**段の報告が API に届かなかったクロールは
+`running` のまま残り、以後の起動を全部 `409` で塞ぎます** —— API が `127.0.0.1` で待っていた、
+宛先の IP が古かった、走っている間に JWT の設定を外した、などです。見つけて、締めます。
+
+```sh
+container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger \
+  -c "SELECT id, started_at FROM crawls WHERE state = 'running'"
+curl -X POST http://127.0.0.1:7070/api/crawls/<id>/failed \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"reason":"報告が届かなかったので手で締めた"}'
+# → { "closed": true }
+```
+
+締めるのは走行中の行だけで、flow が落ちたときに締めに来る route と同じものです。
+何が欠けていたかは、capture-scheduler の `pnpm run check:connection` が名指しします。
 
 ## 次に読むもの
 
