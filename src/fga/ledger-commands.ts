@@ -15,7 +15,7 @@ import { Command, InvalidArgumentError, Option } from "commander";
 import { databaseUrlOption } from "../cli/database-url-option.js";
 import { fgaConfig, storageConfig } from "../config/env.js";
 import { createKyselyClient } from "../db/kysely.js";
-import { createFgaClient } from "./client.js";
+import { createFgaClient, FgaUnreachableError, isUnreachable } from "./client.js";
 import { drainOutbox } from "./outbox-worker.js";
 import { createS3Client } from "../archive/s3.js";
 import { reconcile } from "../archive/reconcile.js";
@@ -35,9 +35,13 @@ const positiveInt = (raw: string): number => {
 };
 
 const runDrain = async (databaseUrl: string): Promise<void> => {
+  const config = fgaConfig();
   const db = createKyselyClient(databaseUrl);
   try {
-    const result = await drainOutbox(db, createFgaClient(fgaConfig()));
+    const result = await drainOutbox(db, createFgaClient(config));
+    if (result.unreachable !== undefined) {
+      throw new FgaUnreachableError(config.apiUrl, result.unreachable);
+    }
     logger.info(result, "Drain finished");
   } finally {
     await db.destroy();
@@ -92,10 +96,12 @@ const runGrant = async (
     throw new Error(`relation must be one of: ${GRANTABLE.join(", ")} (got ${relation})`);
   }
   const tuple = { user: `user:${user}`, relation, object: `organization:${org}` };
-  const fga = createFgaClient(fgaConfig());
+  const config = fgaConfig();
+  const fga = createFgaClient(config);
   try {
     await fga.write(remove ? { deletes: [tuple] } : { writes: [tuple] });
   } catch (caught) {
+    if (isUnreachable(caught)) throw new FgaUnreachableError(config.apiUrl, caught.message);
     // 既にその状態なら、頼まれたことは達成されている。
     if (!isAlreadyInDesiredState(caught)) throw caught;
     logger.info(tuple, remove ? "Already revoked" : "Already granted");
