@@ -60,6 +60,8 @@ const ONLY_IN_CI = {
   "Install dependencies": "依存の導入。検査ではない",
   "Apply migrations": "postgres の service と DATABASE_URL が要る",
   "Migration round-trip (down then up)": "同上。手元の `check` が DB を要求しないため",
+  "Targets CLI against Postgres":
+    "同上。撮る対象の CLI を本物の DB に当てる (scripts/targets-smoke.mjs)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

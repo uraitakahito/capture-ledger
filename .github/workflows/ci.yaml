@@ -141,6 +141,14 @@ jobs:
           node dist/db/migrate.js down
           node dist/db/migrate.js up
 
+      # 撮る対象の CLI (pnpm run targets) を、本物の Postgres に当てる。
+      #
+      # 試験は DB を立てないので、CLI の SQL が Postgres で本当に通るか、`015` の制約
+      # (組織の既定値なし・URL の CHECK・組織ごとのユニーク) が本当に効くかを見るのは、
+      # ここだけ。自分の組織 (smoke-<pid>) の行だけを足して、最後に消す。
+      - name: Targets CLI against Postgres
+        run: node scripts/targets-smoke.mjs
+
       - name: Proto drift check
         run: pnpm run proto:check
 
