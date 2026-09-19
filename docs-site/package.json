@@ -5,7 +5,7 @@
     "",
     "sharp: astro:assets の <Image> (画像の最適化) が使う。astro 自身は「入れば入る」任意の依存として",
     "持っているだけなので、CI で黙って欠けると、画像のあるページのビルドが落ちる。だから明示の依存に",
-    "して、版も固定した (capture-scheduler と同じ版)。いま画像を持つのは picker のページ。",
+    "して、版も固定した。いま画像を持つのは picker のページ。",
     "@astrojs/markdown-satteri と satteri: Astro 7.2 からの既定の Markdown 処理系。astro.config.ts が",
     "src/plugins/ の 2 つの plugin を差し込むために、直接 import している。"
   ],
