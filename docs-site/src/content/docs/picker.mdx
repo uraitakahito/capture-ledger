@@ -1,6 +1,6 @@
 ---
 title: Browsing archives (the picker)
-description: How to use the screen at http://127.0.0.1:7070/ that lists captured pages and opens them in replay — what to type into its two fields, and what its messages mean
+description: How to use the screen at http://127.0.0.1:7070/ that lists captured pages and opens them in replay — what to enter under each way the API identifies callers (two name fields or a token), and what its messages mean
 ---
 
 import { Image } from "astro:assets";
@@ -8,6 +8,9 @@ import list from "../../assets/picker/01-list.png";
 import initial from "../../assets/picker/02-initial.png";
 import empty from "../../assets/picker/03-empty.png";
 import unauthenticated from "../../assets/picker/04-unauthenticated.png";
+import jwt from "../../assets/picker/05-jwt.png";
+import noIdentity from "../../assets/picker/06-no-identity.png";
+import headerExposed from "../../assets/picker/07-header-exposed.png";
 
 The API started by `pnpm run api` serves one screen at `/`. It lists the pages you have captured and
 opens the one you pick in [replay](https://github.com/uraitakahito/replay), the viewer that plays an
@@ -24,15 +27,58 @@ http://127.0.0.1:7070/
 The screen is in Japanese. Its labels are quoted below as they appear, with their meaning beside
 them.
 
-## Three steps
+## The screen follows how the API identifies callers
+
+At startup the API settles on one way for callers to say who they are — a JWT (JSON Web Token — a
+signed proof of identity), the development headers, or nothing at all. The picker changes its
+fields to match.
+
+| The API's `.env`                     | Identity        | Fields in the picker               |
+| ------------------------------------ | --------------- | ---------------------------------- |
+| `CAPTURE_LEDGER_OIDC_ISSUER` is set  | JWT             | One token                          |
+| Only `CAPTURE_LEDGER_DEV_IDENTITY=1` | Dev headers     | Two: `subject` and `organizations` |
+| Neither                              | None configured | No fields — only a notice          |
+
+With both set it is JWT. The API never accepts both at once, so a setup with both cannot fall to
+the weaker one. If you are following the [Quickstart](/capture-ledger/quickstart/), it is the dev
+headers at §6 and JWT once you paste the four lines in §7. The last line of the API's startup log
+says which one is in effect (`identity: …`) — see
+[Check the startup log](/capture-ledger/development-environment/#check-the-startup-log).
+
+## Three steps (dev headers)
 
 1. **Say who you are in the two fields.** `subject` is your own name and `organizations` is the
-   organization you belong to. If you are following the [Quickstart](/capture-ledger/quickstart/),
-   type the same values its §7 curl sends — the output of `whoami`, and `acme`.
+   organization you belong to. If you are following the Quickstart, type the output of `whoami`
+   and `acme` (the organization you claim when starting the crawl in §7).
 2. **Press 読み込む (Load).** The Enter key does not load. Press the button again whenever you
    change a field.
 3. **Click the row you want.** replay opens in a new tab — see
    [After clicking a row](#after-clicking-a-row).
+
+## Three steps (JWT)
+
+1. **Get a token.** In the capture-ledger directory, run the line below. The development issuer
+   (`pnpm run oidc:issuer`) mints a token valid for one hour and it lands on your clipboard. The
+   same command is shown inside the box on the screen.
+
+   ```sh
+   pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy
+   ```
+
+2. **Paste it into the トークン (Token) field and press 読み込む (Load).**
+3. **Click the row you want.**
+
+<Image
+  src={jwt}
+  alt="The picker under a JWT setup: a blue notice at the top saying the API identifies callers with JWTs from http://127.0.0.1:9099, the token field with the command that gets one, the line saying it is viewing as alice (acme), and a list of three rows"
+/>
+
+Once loaded, the line above the list says 名前（組織）として見ている ("viewing as name
+(organization)"). That is the API's verdict on the token (`GET /api/me`); the browser never reads
+what is inside the token. The `--subject` and `--org` you mint the token with play the part of the
+two fields under the dev headers — see [What your identity lets you see](#what-your-identity-lets-you-see).
+In a deployment with a real IdP (Identity Provider — the outside service that vouches for who you
+are), paste the access token that IdP issued.
 
 :::note[Empty is normal before the first crawl]
 Until a crawl has run, the picker says 見えるアーカイブが無い ("no archives visible to you").
@@ -46,8 +92,9 @@ Nothing is broken. Rows appear once a crawl (§7 of the Quickstart) has finished
   alt="The picker after loading as subject alice in organization acme: a list of three rows, with the parts of the screen numbered 1 to 9"
 />
 
-The picture was taken with sample data (`subject` is `alice`, `organizations` is `acme`). The numbers
-match the rows of the table below. Every picture on this page is generated by `pnpm run docs:shots`;
+The picture was taken under the dev headers with sample data (`subject` is `alice`,
+`organizations` is `acme`). Under a JWT setup, one token field takes the place of 1 and 2. The
+numbers match the rows of the table below. Every picture on this page is generated by `pnpm run docs:shots`;
 none was taken by hand — see
 [Retaking the screenshots](/capture-ledger/development-environment/#retaking-the-screenshots).
 
@@ -68,11 +115,13 @@ The 使い方 (How to use) link in the green header opens the Japanese version o
 Rows are newest first, 50 to a page. There is no search or filter field; your browser's find-in-page
 works on the list.
 
-## What to type into the two fields
+## What your identity lets you see
 
-The two fields are a **claim about who you are**. They are not a password, and they are not search
-terms. Whatever you type is sent as two request headers, `X-Capture-ledger-Subject` and
-`X-Capture-ledger-Organizations` — the same headers the curl that starts a crawl carries.
+Your identity is a **claim about who you are**. It is not a password, and it is not a search term.
+Under the dev headers, whatever you type into the two fields is sent as two request headers,
+`X-Capture-ledger-Subject` and `X-Capture-ledger-Organizations`. Under a JWT setup, the picker sends
+the pasted token as `Authorization: Bearer`, and the name and organizations inside it are the claim —
+the same shape as the curl that starts a crawl.
 
 What you claim decides which rows you see. An archive is visible when either of these holds:
 
@@ -82,24 +131,26 @@ What you claim decides which rows you see. An archive is visible when either of 
 | You are in the same organization | A crawl belongs to the **first** organization its starter claimed. You see it when `organizations` names that same organization |
 
 The Quickstart's §7, for example, starts its crawl as the output of `whoami`, in `acme`. What it
-produces is visible when `subject` is that same name, or when `organizations` contains `acme`. Any
-other name on its own gives 見えるアーカイブが無い.
+produces is visible to that same name, or to anyone claiming membership of `acme`. Any other name on
+its own gives 見えるアーカイブが無い.
 
 The decision is OpenFGA's `can_view`. The whole model is in
 [The authorization model](/capture-ledger/archive-ledger/#the-authorization-model).
 
-:::caution[A claim is enough only because this is the development setup]
-While `CAPTURE_LEDGER_DEV_IDENTITY=1` is set in `.env`, the API believes the claim as it stands. That
-is what the yellow box on the screen means by "whoever can reach this port can be anyone".
+:::caution[A claim is enough only under the dev headers]
+Under the dev headers, the API believes the claim as it stands. That is what the yellow box on the
+screen means by "whoever can reach this port can be anyone". If the API listens anywhere other than
+`127.0.0.1`, a red notice appears at the top of the screen (pictured in "What the messages mean"
+below). Listen on `127.0.0.1` (`CAPTURE_LEDGER_API_HOST=127.0.0.1`) or go back to the JWT setup.
 
-With `CAPTURE_LEDGER_OIDC_ISSUER` set, the API ignores the claim headers and accepts only a JWT (JSON
-Web Token — a signed proof of identity). The picker sends no JWT, so under that configuration it gets
-`401` — see [Identity](/capture-ledger/archive-ledger/#identity).
+Under a JWT setup the API accepts only a JWT. The development issuer that mints tokens listens only
+on `127.0.0.1`, so nobody else on the network can claim to be anyone — see
+[Identity](/capture-ledger/archive-ledger/#identity).
 :::
 
 ## What the messages mean
 
-Just after opening, before anything has been asked for, the screen looks like this:
+Just after opening, before anything has been asked for, the screen looks like this (dev headers):
 
 <Image
   src={initial}
@@ -118,18 +169,38 @@ Loading under an identity that can see nothing (top), and loading with `subject`
   alt="The picker loaded with an empty subject, showing the 401 message in red"
 />
 
-| Message                                                            | Meaning                                                                         | What to do                                                                                            |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| subject を入れて「読み込む」                                       | The page has just opened and has not asked for the list yet                     | Fill in the two fields and press 読み込む                                                             |
-| 見えるアーカイブが無い                                             | The API answered normally, with no rows visible under this identity             | Go through "When the list is empty" below                                                             |
-| 401 — subject が空か、CAPTURE_LEDGER_DEV_IDENTITY=1 になっていない | The API decided you are nobody                                                  | Type a `subject`. If it persists, check `CAPTURE_LEDGER_DEV_IDENTITY=1` in `.env` and restart the API |
-| A number such as 500 — 一覧を取れなかった                          | The API failed inside (it could not reach the database or OpenFGA, for example) | Read the log in the terminal running `pnpm run api`                                                   |
+An API with no identity configured shows only a notice — no fields and no 読み込む, since pressing
+it could only ever give `401`:
+
+<Image
+  src={noIdentity}
+  alt="The picker of an API with no identity configured: a red notice saying nobody's list can be shown (everyone gets 401), and no fields"
+/>
+
+An API under the dev headers that listens on `0.0.0.0` shows a red notice at the top:
+
+<Image
+  src={headerExposed}
+  alt="The picker of a dev-header API listening on 0.0.0.0: a red notice at the top saying that anyone on the same network can be anyone"
+/>
+
+| Message                                                                                               | Identity    | Meaning                                                                                         | What to do                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| subject を入れて「読み込む」                                                                          | Dev headers | The page has just opened and has not asked for the list yet                                     | Fill in the two fields and press 読み込む                                                                                                                                                   |
+| トークンを貼って「読み込む」                                                                          | JWT         | The page has just opened, or the token field is empty                                           | Get a token, paste it and press 読み込む                                                                                                                                                    |
+| 見えるアーカイブが無い                                                                                | Either      | The API answered normally, with no rows visible under this identity                             | Go through "When the list is empty" below                                                                                                                                                   |
+| 401 — subject が空（この API は開発用ヘッダで名乗る設定）                                             | Dev headers | `subject` was left empty                                                                        | Type a `subject`                                                                                                                                                                            |
+| 401 — このトークンは通らない（期限切れ・issuer を起こし直した後・別の issuer のもの）。取り直して貼る | JWT         | The API refused the token (expired, minted before the issuer restarted, or from another issuer) | Get a new token and paste it. If the issuer is down, start it with `pnpm run oidc:issuer` first. The check that failed (`exp`, for example) is in the API's log, on the `JWT rejected` line |
+| この API には名乗りの設定が無く、誰の一覧も出せない（全員 401）                                       | None        | `.env` configures no identity                                                                   | Put `CAPTURE_LEDGER_OIDC_ISSUER` or `CAPTURE_LEDGER_DEV_IDENTITY=1` in `.env` and restart the API                                                                                           |
+| この API は 0.0.0.0:7070 で待ちながら、名乗りをそのまま信じる                                         | Dev headers | Anyone on the same network can be anyone                                                        | Restart with `CAPTURE_LEDGER_API_HOST=127.0.0.1`, or go back to the JWT setup                                                                                                               |
+| A number such as 500 — 一覧を取れなかった                                                             | Either      | The API failed inside (it could not reach the database or OpenFGA, for example)                 | Read the log in the terminal running `pnpm run api`                                                                                                                                         |
 
 ### When the list is empty
 
 - **Nothing has been captured yet.** At §6 of the Quickstart this is the normal state.
 - **The identity differs from the one that started the crawl.** Check the spelling of the
-  organization. When in doubt, type the same two values the curl that started the crawl sent.
+  organization. When in doubt, claim the same name and organization that started the crawl (under a
+  JWT setup, the `--subject` and `--org` you mint the token with).
 - **The crawl is still running.** A page enters the ledger once the level it belonged to has been
   reported — see [While it is still running](/capture-ledger/quickstart/#while-it-is-still-running).
   From there it takes at most about five seconds to become visible: the API delivers authorization
@@ -153,9 +224,12 @@ container is started along with the rest by `pnpm run stack:up`.
 
 ## Good to know
 
-- **The browser remembers what you typed.** Next time the page opens it loads under the previous
+- **The browser remembers the two name fields.** Next time the page opens it loads under the previous
   identity on its own. After trying another identity, remember to change it back.
-- **The screen authenticates nobody.** It is a development screen. Do not expose it anywhere reachable
-  from outside.
+- **A token is gone when you close the tab.** A token is itself a key, so the picker keeps it only for
+  the tab (`sessionStorage`). Paste it again after reopening — and after it expires in an hour.
+- **The picker mints no tokens.** The development issuer does, and it listens only on `127.0.0.1`.
+- **Under the dev headers the screen authenticates nobody.** It is a development screen. Do not expose
+  it anywhere reachable from outside.
 - **Only the list is filtered.** Anyone who knows the key of a WACZ can read it through replay — see
   [Archive ledger](/capture-ledger/archive-ledger/#picking-an-archive-in-a-browser).

@@ -93,11 +93,11 @@ describe("startupNotes", () => {
     expect(lastLine(nobody)?.msg).toMatch(/identity: none; crawl level reports: blocked$/);
   });
 
-  it("ヘッダを信じる API を 0.0.0.0 で待たせると、誰にでもなれると言う（picker を使うのに OIDC だけ外した形）", () => {
-    const pickerOnLan: StartupFacts = { ...FOUR_LINES, identity: { mode: "header" } };
-    expect(warnings(pickerOnLan)).toContainEqual(
+  it("ヘッダを信じる API を 0.0.0.0 で待たせると、誰にでもなれると言う（OIDC の行だけを外した形）", () => {
+    const headerOnLan: StartupFacts = { ...FOUR_LINES, identity: { mode: "header" } };
+    expect(warnings(headerOnLan)).toContainEqual(
       "The dev header is trusted on 0.0.0.0:7070 — anyone who can reach this port can act as any user. " +
-        "For the picker, start with CAPTURE_LEDGER_API_HOST=127.0.0.1",
+        "Set CAPTURE_LEDGER_API_HOST=127.0.0.1, or keep CAPTURE_LEDGER_OIDC_ISSUER (the picker takes a token)",
     );
   });
 

@@ -130,8 +130,9 @@ organization you will claim when starting the crawl in §7 — into `organizatio
 that is normal**: rows appear after the crawl in §7. What each part of the screen does, and what its
 messages mean, is in [Browsing archives](/capture-ledger/picker/).
 
-If it says `401`, check that `CAPTURE_LEDGER_DEV_IDENTITY=1` is in `.env` — without it the resolver
-admits nobody.
+If there are no fields and it only says この API には名乗りの設定が無く…（全員 401） ("this API has no
+identity configured — everyone gets 401"), check that `CAPTURE_LEDGER_DEV_IDENTITY=1` is in `.env` —
+without it the resolver admits nobody.
 
 ## 7. Start a crawl
 
@@ -149,11 +150,11 @@ Paste all four at the end of `.env`** (a later line wins over an earlier one wit
 an `.env` copied from `.env.example` already has commented sample lines further up). **Miss any
 one and no crawl runs to the end.**
 
-| Line                                                                       | Why                                                                                                                                                                                                    |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | Where crawls are dispatched. Without them `/api/crawls` does not exist at all and answers `404`                                                                                                        |
-| `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | The flow reports each level back to the API, and the report comes **from a container**. A `127.0.0.1` bind never receives it                                                                           |
-| `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | The flow identifies itself with a JWT. The API accepts **either** a JWT **or** the development headers, and this line makes it JWT — **the picker from §6 then answers `401`** (§8 says how to switch) |
+| Line                                                                       | Why                                                                                                                                                                                                           |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | Where crawls are dispatched. Without them `/api/crawls` does not exist at all and answers `404`                                                                                                               |
+| `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | The flow reports each level back to the API, and the report comes **from a container**. A `127.0.0.1` bind never receives it                                                                                  |
+| `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | The flow identifies itself with a JWT. The API accepts **either** a JWT **or** the development headers, and this line makes it JWT — the picker then shows a token field in place of the two name fields (§8) |
 
 Then start the issuer (`pnpm run oidc:issuer`) and restart the API — it reads its settings once, at
 startup. When the last line of its startup log says `crawl level reports: ready`, the four lines
@@ -211,24 +212,20 @@ The listing comes from the ledger (the `archives` table) and is **filtered by Op
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/archives | jq '.archives[0]'
 ```
 
-To use the picker, **wait until the crawl has finished**, comment out the
-`CAPTURE_LEDGER_OIDC_ISSUER` line in `.env` with `#`, and restart the API **listening on
-`127.0.0.1` again**:
+To use the picker, paste a token for the same identity as §7 into the screen. The API's settings
+stay as they are.
 
 ```sh
-CAPTURE_LEDGER_API_HOST=127.0.0.1 pnpm run api
+pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy
+open http://127.0.0.1:7070/
 ```
 
-Then press 読み込む (Load) with the identity from §6 (the output of `whoami`, and `acme`). The
-picker sends the development headers, and an API set up for JWTs does not accept them — the two
-cannot be used at once. The listening address goes back too because the `.env` line
-`CAPTURE_LEDGER_API_HOST=0.0.0.0` would otherwise stay in effect, and an API that trusts the headers
-would let anyone on the same network act as anyone (a value on the command line wins over `.env`).
-
-**Do not switch while a crawl is running**: its level reports would get `401` and the crawl would
-stay `running` (see "When every crawl gets 409" below). Before the next crawl, remove the `#` and
-restart with `pnpm run api`. If you forget, the startup log says so with warnings and
-`crawl level reports: blocked`.
+The API you gave the four lines in §7 is set up for JWTs, so the picker shows a トークン (Token) field
+in place of the two fields from §6. Paste the token and press 読み込む (Load): the line above the list
+says you are viewing as the output of `whoami` in `acme`, and the pages from the §7 crawl are listed.
+The token lasts one hour. When the picker says 401 — このトークンは通らない… ("this token does not get
+through"), get a new one with the same command and paste it — see
+[Browsing archives](/capture-ledger/picker/#three-steps-jwt).
 
 Clicking a row opens [replay](https://github.com/uraitakahito/replay) in a new tab. replay first
 lists the pages inside that WACZ (Web Archive Collection Zipped — the file one captured page is
