@@ -113,6 +113,13 @@ export interface CrawlsTable {
    * 詳しくは `013`。
    */
   artifactKeyPrefix: ColumnType<string | null, string | null | undefined, never>;
+  /**
+   * 最後に投げた段の Windmill の job と、その段の深さ。段は 1 つずつ別の run として投げられ、
+   * 失敗はいつも最後に投げた段で起きるので、辿る先はこの 1 つで足りる (`016`)。
+   * Windmill が id を返さなかったら NULL。
+   */
+  lastJobId: ColumnType<string | null, string | null | undefined, string | null>;
+  lastJobDepth: ColumnType<number | null, number | null | undefined, number | null>;
 }
 
 export type CrawlState = "running" | "succeeded" | "failed";
@@ -136,7 +143,8 @@ export interface CrawlPagesTable {
   depth: number;
   host: string;
   state: CrawlPageState;
-  // 取らなかった理由。`skipped` のときだけ入る。
+  // 取らなかった・取れなかった理由。`skipped` と `failed` のときに入る —— `crawl_host` は
+  // 取り込みの失敗の理由もここへ入れる (名前は `skip` だが、失敗の理由の置き場でもある)。
   skipReason: ColumnType<string | null, string | null | undefined, string | null>;
   taskId: ColumnType<string | null, string | null | undefined, string | null>;
   correlationId: ColumnType<string | null, string | null | undefined, string | null>;

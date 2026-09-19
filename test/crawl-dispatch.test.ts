@@ -15,7 +15,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DispatchedCrawl } from "../src/api/crawls.js";
-import { createWindmillDispatcher, flowArgs } from "../src/crawl/dispatch.js";
+import { createWindmillDispatcher, flowArgs, jobIdFrom } from "../src/crawl/dispatch.js";
 
 const CRAWL: DispatchedCrawl = {
   crawlId: "456a75bf-7082-49a7-86ce-e2fb24e879da",
@@ -84,5 +84,32 @@ describe("webhook の本文", () => {
     const body: unknown = JSON.parse(bodies[0]!);
     expect(body).toEqual(flowArgs({ ...CRAWL, artifactSink: SINK }));
     expect(body).toHaveProperty("artifact_sink", SINK);
+  });
+});
+
+describe("起こした job の id", () => {
+  const JOB = "0193b6a1-3c1d-7a2e-9f00-1234567890ab";
+
+  const dispatchAnswering = async (body: string) => {
+    vi.stubEnv(
+      "CAPTURE_LEDGER_CRAWL_WEBHOOK_URL",
+      "http://windmill.test/api/w/crawl/jobs/run/f/crawl",
+    );
+    vi.stubEnv("CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN", "webhook-token");
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(body, { status: 201 })));
+    return createWindmillDispatcher()!(CRAWL);
+  };
+
+  it("Windmill が本文で返した id を返す", async () => {
+    await expect(dispatchAnswering(JOB)).resolves.toBe(JOB);
+  });
+
+  it("JSON の文字列で来ても、前後の空白があっても読む", async () => {
+    await expect(dispatchAnswering(`"${JOB}"\n`)).resolves.toBe(JOB);
+  });
+
+  it("id の形でなければ残さない（誤ったリンクを作らない）", async () => {
+    await expect(dispatchAnswering("job-id")).resolves.toBeUndefined();
+    expect(jobIdFrom("")).toBeUndefined();
   });
 });

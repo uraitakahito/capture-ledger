@@ -29,6 +29,21 @@ import type { CrawlDispatcher, DispatchedCrawl } from "../api/crawls.js";
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 /**
+ * Windmill が起こした job の id の形。本文がこれでなければ残さない —— 誤った値で run への
+ * リンクを作るより、無いほうがよい。
+ */
+const JOB_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * 応答の本文から job の id を取り出す。Windmill は起こした job の id をそのまま本文で返す
+ * (windmill-client の `runFlowByPath` の答えは `string`)。JSON の文字列で来ても読む。
+ */
+export const jobIdFrom = (body: string): string | undefined => {
+  const candidate = body.trim().replace(/^"(.*)"$/, "$1");
+  return JOB_ID.test(candidate) ? candidate : undefined;
+};
+
+/**
  * `DispatchedCrawl` の欄と flow の引数名の対応。**型で網羅させる** —— `-?` で省略可能な欄も
  * 必須にしてあるので、`DispatchedCrawl` に欄を足してここに書き忘れると typecheck が落ちる。
  *
@@ -90,7 +105,7 @@ export const createWindmillDispatcher = (): CrawlDispatcher | undefined => {
     optional("CAPTURE_LEDGER_CRAWL_WEBHOOK_TIMEOUT_MS", String(DEFAULT_TIMEOUT_MS)),
   );
 
-  return async (crawl: DispatchedCrawl): Promise<void> => {
+  return async (crawl: DispatchedCrawl): Promise<string | undefined> => {
     // `waggle_url` / `token` / `browserhive_target` は送らない —— flow の schema の
     // 既定値 (`$var:` 参照) が埋める。ledger は自分がコンテナからどう見えるかを
     // 知らないし、issuer の鍵も持っていないので、どちらもここでは決められない。
@@ -106,5 +121,8 @@ export const createWindmillDispatcher = (): CrawlDispatcher | undefined => {
       const body = await res.text();
       throw new Error(`crawl webhook → ${String(res.status)} ${body.slice(0, 200)}`);
     }
+    // 起こした job の id を返す。呼ぶ側は `crawls.last_job_id` に残し、失敗したクロールから
+    // その run へ 1 回で辿れるようにする (`016`)。
+    return jobIdFrom(await res.text());
   };
 };
