@@ -215,7 +215,9 @@ There used to be a second row for the CLI, reading `CAPTURE_LEDGER_DEV_SUBJECT` 
 declared in `.env.example` — **claiming a subject is the caller's job now.**
 
 **The JWT path wins over the dev header.** When both are set, an environment must not
-fall back to the weaker one, where anyone who reaches the port can be anyone.
+fall back to the weaker one, where anyone who reaches the port can be anyone. The picker
+changes its fields to match whichever one the API started with — two name fields under the dev
+header, a token field under JWT ([Browsing archives](/capture-ledger/picker/)).
 
 ### The dev issuer
 
@@ -276,7 +278,7 @@ Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:9099);
 
 Three more warnings exist: no identity is configured at all (every request is `401`), the API
 trusts the dev header while listening beyond `127.0.0.1` (anyone who can reach the port can act as
-anyone), and a sink is configured while the API listens on `127.0.0.1` (BrowserHive's containers
+anyone; the picker makes the same call and shows a red notice at the top), and a sink is configured while the API listens on `127.0.0.1` (BrowserHive's containers
 cannot `PUT`). The `CAPTURE_LEDGER_DEV_IDENTITY=1` warning appears only when the header is actually
 in effect — with a JWT setup it says, at info level, that the variable is ignored.
 
@@ -415,7 +417,9 @@ pnpm run docs:shots
 ```
 
 No stack is needed. The script starts only the real screen (`src/api/picker.ts`) and a stand-in API
-that returns sample data. The colour scheme (light), language, time zone and the sample timestamps
+that returns sample data (`/api/archives` and `/api/me`). The screen changes with the way the API
+identifies callers, so it starts one pair per way — dev header, JWT, none configured, and the dev
+header listening on `0.0.0.0`. The colour scheme (light), language, time zone and the sample timestamps
 are fixed, so the pictures come out the same on any machine, and retaking them without changing
 anything produces no diff.
 

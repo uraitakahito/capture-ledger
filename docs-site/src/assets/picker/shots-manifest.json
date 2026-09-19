@@ -1,6 +1,6 @@
 {
   "source": "src/api/picker.ts",
-  "sourceSha256": "cfe4cff561a421726df365d96b1b08aa0a8bfebac2f42380440dff0fb6c64205",
+  "sourceSha256": "b0593a465866bf364e36c36d2d7d6af68edb33814f4bd0fe43a71680d867c580",
   "viewport": {
     "width": 800,
     "height": 700,
@@ -15,6 +15,9 @@
     "01-list.png",
     "02-initial.png",
     "03-empty.png",
-    "04-unauthenticated.png"
+    "04-unauthenticated.png",
+    "05-jwt.png",
+    "06-no-identity.png",
+    "07-header-exposed.png"
   ]
 }
