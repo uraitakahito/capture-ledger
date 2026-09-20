@@ -54,9 +54,12 @@ Chromium は自動的に追随します。submodule の submodule なので、
 :::danger[その版がビルドできるか先に確認する]
 スタックは submodule から BrowserHive の `Dockerfile.prod` をビルドするので、
 Dockerfile が壊れているコミットを掴むとスタックごと立ちません。実際に一度
-起きています: `8a66b72` から `b772480` の間は BrowserHive の whitelist
-dockerignore に COPY 対象が 1 つ足りず、その区間はすべて
-`"/tsconfig.behaviors.json": not found` で失敗します。
+起きています。**2 度とも同じファイル**です: `8a66b72` から `b772480` の間は
+BrowserHive の whitelist dockerignore に COPY 対象が 1 つ足りず、BrowserHive の
+`8c899dd` から `a218e94` の間は、消したはずの `tsconfig.behaviors.json` を COPY が
+名指ししたままでした。どちらの区間も
+`"/tsconfig.behaviors.json": not found` で失敗します。**v11.0.0 はビルドできます**が、
+2 つ目の区間を指したまま固定すると立ちません。
 
 submodule の更新をコミットする前に確かめてください。
 

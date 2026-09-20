@@ -67,6 +67,10 @@ const FLOW_ARGS: { readonly [K in keyof DispatchedCrawl]-?: string } = {
   // 埋まらないので、送らなければ `undefined` が届く。決めるのは ledger 側。
   captureFormats: "capture_formats",
   signing: "signing",
+  // **走らせるものも必ず送る。** BrowserHive は顔ぶれを持たないので、これを
+  // 落とすとページの中で何も走らない —— それでも取り込みは成功し、archive も出る。
+  // 送り忘れが静かな劣化になる欄は、他にこれだけ。
+  scripts: "scripts",
   // 受け口を使わない配備では値が無く、鍵ごと送らない (`flowArgs`)。
   artifactSink: "artifact_sink",
 };

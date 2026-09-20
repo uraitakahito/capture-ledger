@@ -32,7 +32,14 @@ import type { OpenFgaClient } from "@openfga/sdk";
 import type { Insertable, Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
-import type { CaptureSubmissionsTable, CrawlsTable, Database, CrawlScope } from "../db/database.js";
+import type {
+  CaptureSubmissionsTable,
+  CrawlScope,
+  CrawlScript,
+  CrawlsTable,
+  Database,
+} from "../db/database.js";
+import { resolveScripts } from "../scripts/store.js";
 import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
 import { acceptLinks, parseHttpUrl, type DiscoveredLink, type ParsedUrl } from "../crawl/scope.js";
@@ -110,6 +117,16 @@ export interface DispatchedCrawl {
    */
   artifactSink?: { url: string; token: string };
   signing: boolean;
+  /**
+   * ページの中で走らせるもの。**クロールを始めた時点で解決して固定したもの**を、
+   * 段ごとにそのまま配る (`crawls.scripts`)。
+   *
+   * **必ず載せる。** BrowserHive は顔ぶれを持たないので、送らなければページでは
+   * 何も走らない —— そしてそれは、成功した取り込みと archive を見分けられない形の
+   * 劣化になる。空配列を送ることと、鍵ごと送らないことを区別する必要も無い
+   * (どちらも「何も走らない」) ので、常に載せて形を 1 つに保つ。
+   */
+  scripts: CrawlScript[];
 }
 
 export interface CrawlRouteDeps {
@@ -145,6 +162,13 @@ interface CrawlBody {
   maxPages?: number;
   perHostDelayMs?: number;
   hostParallelism?: number;
+  /**
+   * ページの中で走らせるものを名指しする。**並びがそのまま実行順**。
+   *
+   * 省くと目録の**有効な各 id の最新版**が走る (`017`)。空配列を渡せば何も走らない ——
+   * 「既定でよい」と「何も走らせない」は別の意思なので、書き分けられるようにしてある。
+   */
+  scriptIds?: string[];
 }
 
 /** 段の報告 1 件。flow が 1 ページ処理するたびに 1 つ積む。 */
@@ -255,6 +279,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             // 0 を許すのは、試験で意図的に間隔を外せるようにするため。
             perHostDelayMs: { type: "integer", minimum: 0, maximum: 600000 },
             hostParallelism: { type: "integer", minimum: 1, maximum: 32 },
+            // **空配列を許す。** 「既定でよい」(省く) と「何も走らせない」([]) を
+            // 書き分けられるようにするため。
+            scriptIds: { type: "array", items: { type: "string", minLength: 1 } },
           },
         },
       },
@@ -312,6 +339,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       }
       const parsedSeeds = seeds as ParsedUrl[];
 
+      // 走らせるものを **いま 1 度だけ** 決める。目録は後から変わりうるが、
+      // このクロールが走らせるものは変わらない (`018`)。
+      const resolved = await resolveScripts(db, body.scriptIds);
+      if (resolved.kind === "missing") {
+        return reply.code(400).send({ error: "unknown scriptIds", scriptIds: resolved.ids });
+      }
+
       const crawlId = randomUUID();
       // **型注釈を付けること。** 注釈の無い変数に入れてから `.values()` へ渡すと
       // 余剰プロパティの検査が効かず、存在しない列名を書いても typecheck が緑で通る。
@@ -328,6 +362,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         hostParallelism: body.hostParallelism ?? DEFAULT_HOST_PARALLELISM,
         orgId,
         requestedBy: identity.subject,
+        // 解決済みの写し。並びが実行順。
+        scripts: JSON.stringify(resolved.scripts),
         state: "running" as const,
         // **置く場所を、いま 1 度だけ決めて書き残す。** 以後は置く側 (受け口) も
         // 探す側 (`admitLevel`) もこの列を読む —— 両側が別々に計算すると、
@@ -388,10 +424,21 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // 辿るつもりが無いなら `links` は要らない。取り出させても相手と S3 に無駄が出る。
         captureFormats: withLinks(capture.formats, crawl.maxDepth > 0),
         signing: capture.signing,
+        scripts: resolved.scripts,
         ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
       });
 
-      log.info({ subject: identity.subject, crawlId }, "Crawl started");
+      log.info(
+        {
+          subject: identity.subject,
+          crawlId,
+          // **何を走らせるかは、起こしたときにしか見えない。** 版まで出す ——
+          // id だけだと、後から目録を書き換えたときに「何が走ったのか」を
+          // このログから言えなくなる。
+          scripts: resolved.scripts.map((script) => `${script.id}@${String(script.version)}`),
+        },
+        "Crawl started",
+      );
       return reply.code(202).send({ crawlId });
     },
   );
@@ -448,6 +495,14 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         pagesDiscovered: crawl.pagesDiscovered,
         pagesCaptured: crawl.pagesCaptured,
         error: crawl.error,
+        // **身元だけ出す。** source は出さない —— 何が走っているかを知るのに要るのは
+        // 「どれの何版か」で、中身は目録 (`pnpm run scripts show`) と archive に在る。
+        scripts: crawl.scripts.map((script) => ({
+          id: script.id,
+          version: script.version,
+          phase: script.phase,
+          sha256: script.sha256,
+        })),
         lastJob:
           crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
         failures: failures.map((page) => ({
@@ -768,6 +823,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           hostParallelism: crawl.hostParallelism,
           captureFormats: withLinks(capture.formats, crawl.maxDepth > nextDepth),
           signing: capture.signing,
+          // 目録は引き直さない —— 行に固定したものをそのまま配る。
+          scripts: crawl.scripts,
           ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
         });
       }

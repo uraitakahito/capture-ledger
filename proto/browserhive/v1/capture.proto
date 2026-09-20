@@ -160,88 +160,51 @@ message Viewport {
   int32 height = 2;
 }
 
-// 走らせるもの 1 つぶん。どれを走らせるかと、どう設定するかを 1 つにする。
+// 走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは注入の口だけ ——
+// 形まで分ける理由が無い (どちらも「評価できる JS」しか要求しない)。
 //
-// oneof にしているので、存在しない behavior は **綴れない**。かつては id が
-// ただの文字列で、`autoscrol` と打ち間違えても黙って通り、何も走らないまま
-// 取り込みが成功していた。
-message Behavior {
-  oneof kind {
-    AutoScroll autoscroll = 1;
-    AutoFetch autofetch = 2;
-    AutoPlay autoplay = 3;
-    Custom custom = 4;
-  }
-}
-
-// 省いた値はサーバ既定へ落ちる (optional なので presence がある)。既定値は
-// src/config/defaults.ts に在り、両者の一致は lint:behavior-roster が見る。
-
-// ページの全高までスクロールして、遅延読み込みを発火させる。
-message AutoScroll {
-  // 既定 40。
-  optional int32 max_steps = 1;
-  // 既定 250。
-  optional int32 step_delay_ms = 2;
-  // 既定 1000。
-  optional int32 idle_time_ms = 3;
-}
-
-// srcset の全候補と data-* の遅延属性を能動的に取りに行く。
-message AutoFetch {
-  // 既定 2000。
-  optional int32 max_urls = 1;
-}
-
-// <video> / <audio> をミュート再生して、その資源を取りに行く。
-message AutoPlay {
-  // 既定 1000。
-  optional int32 settle_ms = 1;
-}
-
-// client が持ち込む behavior。サーバが --allow-custom-behaviors で起動している
-// ときだけ効き、そうでなければ黙って無視される。
-message Custom {
-  // behavior report に出る識別子。
+// かつてここは oneof で、組み込み 1 つにつき 1 枝を持っていた —— 存在しない
+// behavior を **綴れない** ようにするため。組み込みをサーバから出したいま、
+// 守るべき顔ぶれがサーバ側に無いので oneof は成り立たない。綴りの検査は
+// **目録を持っている側** (capture-ledger の scripts 表への外部キー) へ移した。
+message Script {
+  // report と provenance に出る名前。サーバは中身を検査しない。
   string id = 1;
-  // { static id, static isMatch, run(ctx) } を実装した JS のクラス式。
+  // そのまま評価される JS。behavior は読み込み後に、preload は遷移の前に走る。
   string source = 2;
-  // この behavior に渡す値。中身が任意の JS である以上、その設定も型では守れない
+  // source の SHA-256 (hex、接頭辞なし)。**サーバが照合して、違えば拒む。**
+  // 中身は検査できないが、運ぶ途中で入れ替わっていないことだけは言える。
+  string sha256 = 3;
+  // そのスクリプトに渡す値。中身が任意の JS である以上、その設定も型では守れない
   // —— JSON の逃げ道はここだけに閉じてある。
-  optional string options_json = 3;
+  optional string options_json = 4;
 }
 
 // 走らせるものの列。message で包んでいるのは `optional` を付けるため: proto3 の
 // repeated には presence が無く、空と未指定を区別できない。
-message BehaviorList {
-  repeated Behavior items = 1;
+message ScriptList {
+  repeated Script items = 1;
 }
 
-// capture ごとの behavior の指定。
+// capture ごとの behavior (読み込み後に走るスクリプト) の指定。
 message BehaviorSpec {
-  // 1 から 4 は builtins (repeated string) / options / site_behaviors /
-  // custom が使っていた。番号を再利用しない —— 旧 client が送る
-  // `builtins = ["autoscroll"]` は 1 番の length-delimited で、そのまま
-  // 別の型として読むと沈黙して化ける。予約しておけば未知として捨てられ、
-  // サーバ既定に落ちる。
-  reserved 1, 4;
-  reserved "builtins", "custom";
+  // 1〜4 は builtins (repeated string) / options / site_behaviors / custom が
+  // 使っていた。番号を再利用しない —— 旧 client が送る `builtins = ["autoscroll"]`
+  // は 1 番の length-delimited で、そのまま別の型として読むと沈黙して化ける。
+  // 予約しておけば未知として捨てられる。
+  reserved 1, 2, 3, 4;
+  reserved "builtins", "options", "site_behaviors", "custom";
 
   // 走らせるものを、走らせる順に。
   //
-  //   省略 → サーバ既定 (--behaviors) をそのまま走らせる
+  //   省略 → **1 つも走らせない**
   //   items が空 → 1 つも走らせない
-  //   並び → 走らせるものを **書き切ったもの**
+  //   並び → 走らせるものを書き切ったもの
   //
-  // 最後の 1 行が肝で、「既定の集合はそのままで設定だけ差し替える」はできない。
-  // かつては有効集合と設定が別々に届いたのでそれができ、同時に「集合を空に
-  // したつもりが既定に戻っていた」も起きていた。
-  optional BehaviorList behaviors = 5;
-
-  // 同梱の site behavior を対象にするか。省略するとサーバ既定 (出荷時は on)。
-  // `behaviors` と別なのは性質が違うから —— site behavior は host を見る
-  // isMatch() が門番で、client が並べるものではない。
-  optional bool site_behaviors = 3;
+  // かつては「省略 → サーバ既定」だった。サーバが既定を持たなくなったので、
+  // 省略と空リストは同じ意味になる —— **送らなければ、ページには 1 バイトも
+  // 入らない** (受け皿すら注入しない)。
+  optional ScriptList behaviors = 5;
 }
 
 // 成果物の送り先。**呼ぶ側が 1 回きりの口を渡し、こちらはそこへ押し出す。**
@@ -377,6 +340,20 @@ message CaptureRequest {
   // 読み込み後の待ちの、取り込みごとの上書き。省いた欄はサーバ既定 (--load-wait-*)。
   // 最長に当たるのは失敗ではなく、応答と archive の settle に deadline として残る。
   optional LoadWait load_wait = 26;
+
+  // 遷移の**前**に、書かれた順で注入するスクリプト。behaviors とは約束が違う:
+  //
+  //   いつ   document が出来た直後、そのページの script より前
+  //   どこ   **iframe を含む全フレーム** (behaviors は主フレームだけ)
+  //   何回   タブに 1 回登録し、遷移のたびに自動で再実行 (behaviors は DPR のパスごと)
+  //   結果   **報告の手段を持たない**。戻り値は捨てられる
+  //
+  // この 4 つが違うので、同じ列には入れない —— 1 本のリストにすると「並びが実行順」
+  // という約束が嘘になる (preload は behaviors より前に、何度も走る)。
+  //
+  // 省略と空リストはどちらも「1 つも入れない」。区別を残すのは、archive が
+  // 「送らなかった」と「空を送った」を言い分けられるようにするため。
+  optional ScriptList preload = 27;
 }
 
 message GetServerStatusRequest {}

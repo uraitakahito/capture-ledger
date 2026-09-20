@@ -54,9 +54,12 @@ moved its development Dockerfile into `attic/` and every build stopped working.
 :::danger[Check that the version can build]
 The stack builds BrowserHive's `Dockerfile.prod` from the submodule, so a commit
 whose Dockerfile is broken takes the whole stack down with it. This has already
-happened once: between `8a66b72` and `b772480` a COPY source was missing from
-BrowserHive's whitelist dockerignore, and everything in that range fails with
-`"/tsconfig.behaviors.json": not found`.
+happened twice, both times with the same file. Between `8a66b72` and `b772480` a
+COPY source was missing from BrowserHive's whitelist dockerignore; from BrowserHive
+`8c899dd` until `a218e94` the COPY kept naming `tsconfig.behaviors.json` after the
+file itself was deleted. Everything in either range fails with
+`"/tsconfig.behaviors.json": not found`. **v11.0.0 builds**; anything pinned inside
+the second range does not.
 
 Verify before committing the submodule bump:
 

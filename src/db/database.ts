@@ -91,6 +91,14 @@ export interface CrawlsTable {
   hostParallelism: number;
   orgId: string;
   requestedBy: string;
+  /**
+   * このクロールがページの中で走らせるもの。**解決済み・並びが実行順**で、
+   * 目録 (`scripts`) を引き直すことはしない —— 途中で版が足されても、同じクロールの
+   * 前半と後半で違うコードが走ることは無い (`018` を見ること)。
+   *
+   * 書くときは JSON の文字列 (`fgaOutbox.payload` と同じ扱い)。
+   */
+  scripts: ColumnType<CrawlScript[], string | undefined, string>;
   state: CrawlState;
   // 走行中は NULL。なぜ終わったかが入る。
   stopReason: ColumnType<
@@ -120,6 +128,47 @@ export interface CrawlsTable {
    */
   lastJobId: ColumnType<string | null, string | null | undefined, string | null>;
   lastJobDepth: ColumnType<number | null, number | null | undefined, number | null>;
+}
+
+/**
+ * 走らせるもの 1 本。**目録の行から解決した写し**で、`crawls.scripts` と、そこから
+ * flow へ渡す本文に、同じ形で出る。
+ *
+ * `sha256` は目録の生成列をそのまま運ぶ。BrowserHive が `source` と照合して、
+ * 食い違えば `INVALID_ARGUMENT` で拒む —— 運ぶ途中で入れ替わっていないか、だけを見る。
+ */
+export interface CrawlScript {
+  id: string;
+  version: number;
+  phase: ScriptPhase;
+  source: string;
+  sha256: string;
+  options: Record<string, unknown>;
+}
+
+/**
+ * どちらの口から入れるか。BrowserHive の 2 つの注入口にそのまま対応する。
+ *
+ * `behavior` は読み込みの後・主フレーム・1 回で、受け皿を通して報告できる。
+ * `preload` は遷移の**前**・iframe を含む全フレーム・遷移のたびに走り、報告できない。
+ */
+export type ScriptPhase = "preload" | "behavior";
+
+/**
+ * ページの中で走らせる JavaScript の目録。`017` を見ること。
+ *
+ * BrowserHive は顔ぶれを持たないので、**ここが「何を走らせるか」の唯一の出どころ**。
+ */
+export interface ScriptsTable {
+  id: string;
+  version: number;
+  phase: ScriptPhase;
+  source: string;
+  // GENERATED ALWAYS AS (encode(digest(source, 'sha256'), 'hex')) STORED —— 書くことはない。
+  sha256: GeneratedAlways<string>;
+  options: ColumnType<Record<string, unknown>, string | undefined, string>;
+  enabled: ColumnType<boolean, boolean | undefined, boolean>;
+  createdAt: ColumnType<Date, string | undefined, never>;
 }
 
 export type CrawlState = "running" | "succeeded" | "failed";
@@ -164,4 +213,5 @@ export interface Database {
   captureSubmissions: CaptureSubmissionsTable;
   crawls: CrawlsTable;
   crawlPages: CrawlPagesTable;
+  scripts: ScriptsTable;
 }
