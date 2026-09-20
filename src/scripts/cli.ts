@@ -3,6 +3,7 @@
  * ページの中で走らせる JavaScript の目録 (`scripts`) を足す・見る・切り替える・消す、
  * 開発用の CLI。
  *
+ *   pnpm run scripts import .upstream/capture-scripts               # catalog.json ごと
  *   pnpm run scripts add autoscroll --file ./autoscroll.js
  *   pnpm run scripts add autoscroll --file - < ./autoscroll.js      # 標準入力から
  *   pnpm run scripts add hide-webdriver --file ./x.js --phase preload
@@ -27,6 +28,7 @@
  * 結果は標準出力、誤りは標準エラー。誤りのときは終了コード 1 で、DB は何も変えていない。
  */
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { Command, InvalidArgumentError, Option } from "commander";
 import type { Kysely } from "kysely";
 import { databaseUrlOption } from "../cli/database-url-option.js";
@@ -137,6 +139,100 @@ program
       });
     },
   );
+
+/**
+ * `catalog.json` を読んで、書かれているものを全部足す。
+ *
+ * **`phase` を手で打たないためのもの。** phase はそのスクリプトの性質 (遷移の前か、
+ * 読み込みの後か) であって、打つ人の選択ではない。`--phase` を打ち間違えると、
+ * 遷移の前に入れるはずのコードが読み込みの後に 1 回だけ走り、**しかも成功する**。
+ *
+ * 中身が同じものは版が増えない (`addScript`) ので、**何度流しても構わない**。
+ * 置き場所を移したあとの流し直しも、目録から見れば何も起きない。
+ */
+interface CatalogEntry {
+  id: string;
+  phase: ScriptPhase;
+  file: string;
+  summary: string;
+}
+
+const CATALOG_PROFILE = "capture-scripts/1";
+
+/** 読めた catalog か、読めなかった理由。**黙って一部だけ足さない。** */
+const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
+  const path = join(dir, "catalog.json");
+  const raw = await readFile(path, "utf-8").catch(() => undefined);
+  if (raw === undefined) return `読めない: ${path}`;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return `JSON として読めない: ${path}`;
+  }
+  if (typeof parsed !== "object" || parsed === null) return `形が違う: ${path}`;
+
+  const record = parsed as Record<string, unknown>;
+  // profile を見るのは、別の形の catalog.json を黙って読まないため。
+  if (record["profile"] !== CATALOG_PROFILE) {
+    return `${path} の profile が ${CATALOG_PROFILE} ではない (${String(record["profile"])})`;
+  }
+  const entries = record["scripts"];
+  if (!Array.isArray(entries)) return `${path} に scripts の配列が無い`;
+
+  const out: CatalogEntry[] = [];
+  for (const entry of entries as Record<string, unknown>[]) {
+    const id = entry["id"];
+    const phase = entry["phase"];
+    const file = entry["file"];
+    if (typeof id !== "string" || id === "") return `${path}: id が空の項目がある`;
+    if (phase !== "behavior" && phase !== "preload") {
+      return `${path}: ${id} の phase が behavior でも preload でもない (${String(phase)})`;
+    }
+    if (typeof file !== "string" || file === "") return `${path}: ${id} に file が無い`;
+    const summary = entry["summary"];
+    out.push({ id, phase, file, summary: typeof summary === "string" ? summary : "" });
+  }
+  return out;
+};
+
+program
+  .command("import")
+  .description("catalog.json を読んで、書かれているスクリプトを全部足す")
+  .argument("<dir>", "capture-scripts の置き場所 (例: .upstream/capture-scripts)")
+  .addOption(databaseUrlOption)
+  .action(async (dir: string, opts: { databaseUrl: string }) => {
+    const catalog = await readCatalog(dir);
+    if (typeof catalog === "string") return fail(catalog);
+    if (catalog.length === 0) return fail(`${dir}/catalog.json に 1 本も書かれていない`);
+
+    // **先に全部読む。** 1 本でも読めなければ、1 本も足さない ——
+    // 途中まで入った目録は、入れた人から見ると「入った」と区別が付かない。
+    const sources: { entry: CatalogEntry; source: string }[] = [];
+    for (const entry of catalog) {
+      const source = await readFile(join(dir, entry.file), "utf-8").catch(() => undefined);
+      if (source === undefined) return fail(`読めない: ${join(dir, entry.file)}`);
+      if (source.trim() === "") return fail(`中身が空: ${join(dir, entry.file)}`);
+      sources.push({ entry, source });
+    }
+
+    await withDb(opts.databaseUrl, async (db) => {
+      let added = 0;
+      for (const { entry, source } of sources) {
+        const result = await addScript(db, { id: entry.id, phase: entry.phase, source });
+        if (!result.reused) added += 1;
+        process.stdout.write(
+          `${result.reused ? "=" : "✓"} ${entry.id} v${String(result.version)}  ` +
+            `${entry.phase.padEnd(8)}  sha256:${result.sha256.slice(0, 12)}…  ` +
+            `${result.reused ? "中身が同じなので、版は増やしていない" : "足した"}\n`,
+        );
+      }
+      process.stdout.write(
+        `${dir}: ${String(catalog.length)} 本を読み、${String(added)} 本が新しい版になった\n`,
+      );
+    });
+  });
 
 const describeRow = (row: ScriptRow): string =>
   `${row.id} v${String(row.version)}  ${row.phase.padEnd(8)}  ${row.enabled ? "有効" : "無効"}  ` +

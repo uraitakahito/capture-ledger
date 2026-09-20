@@ -50,8 +50,13 @@ export type ResolveResult =
  * 同じ番号の取り合いを扱うことになる。
  *
  * 同じ `id` の最新版と `source` が同一なら、新しい版を作らずにその版を返す
- * (`reused: true`)。`options` の違いは別物として扱う —— 走る中身が同じでも、
- * 渡す値が違えばページで起きることは違う。
+ * (`reused: true`)。
+ *
+ * **`options` を渡したときだけ、その違いを見る。** 走る中身が同じでも渡す値が違えば
+ * ページで起きることは違うので、`options` を明示した呼び出しは版を分ける。一方
+ * `options` を省いた呼び出しは「渡す値について意見が無い」であって「`{}` にしろ」では
+ * ない —— 区別しないと、`import` が運用側で付けた設定を**黙って捨てた新しい版**を作り、
+ * それが既定になる (目録は id ごとに最新版を選ぶため)。
  */
 export const addScript = async (
   db: Kysely<Database>,
@@ -63,6 +68,8 @@ export const addScript = async (
   },
 ): Promise<AddResult> => {
   const options = input.options ?? {};
+  // 渡されなかったのか、`{}` と明示されたのか。前者は「意見が無い」。
+  const opinionated = input.options !== undefined;
   return db.transaction().execute(async (trx) => {
     const latest = await trx
       .selectFrom("scripts")
@@ -74,7 +81,7 @@ export const addScript = async (
 
     if (
       latest?.source === input.source &&
-      JSON.stringify(latest.options) === JSON.stringify(options)
+      (!opinionated || JSON.stringify(latest.options) === JSON.stringify(options))
     ) {
       return {
         kind: "ok" as const,
@@ -115,16 +122,17 @@ export const listScripts = async (
   db: Kysely<Database>,
   input: { allVersions?: boolean } = {},
 ): Promise<ScriptRow[]> => {
-  let query = db
-    .selectFrom("scripts")
-    .select([
-      "id",
-      "version",
-      "phase",
-      "sha256",
-      "enabled",
-      sql<number>`length(source)`.as("bytes"),
-    ]);
+  let query = db.selectFrom("scripts").select([
+    "id",
+    "version",
+    "phase",
+    "sha256",
+    "enabled",
+    // **`length` ではなく `octet_length`。** `length` は文字数を数えるので、
+    // 日本語のコメントを持つスクリプトでは「B」と書いた列が実際のバイト数より
+    // 小さく出る (autofetch は 3949 B なのに 3093 と出ていた)。
+    sql<number>`octet_length(source)`.as("bytes"),
+  ]);
   if (input.allVersions !== true) {
     query = query.distinctOn("id");
   }
