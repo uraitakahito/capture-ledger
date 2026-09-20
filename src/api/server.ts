@@ -18,6 +18,7 @@ import { selectIdentity } from "./identity.js";
 import { startupNotes, type StartupFacts } from "./startup-notes.js";
 import { registerRoutes } from "./routes.js";
 import { registerMeRoute } from "./me.js";
+import { registerScriptsRoute } from "./scripts.js";
 import { registerPicker, replayOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
@@ -105,6 +106,9 @@ const start = async (options: ServerOptions): Promise<void> => {
 
   registerRoutes(app, { db, fga, s3, resolveIdentity });
   registerMeRoute(app, { fga, resolveIdentity });
+  // 何が走るかを、**頼む前に**訊ける口。webhook の設定が無い配備でも出す ——
+  // 目録が空であることは、クロールを起こせるかどうかとは別の問いなので。
+  registerScriptsRoute(app, { db, fga, resolveIdentity });
 
   // 成果物の受け口。**BrowserHive が保管庫を持たずに済むための口。**
   //
