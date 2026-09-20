@@ -616,10 +616,11 @@ condition non_expired_grant(current_time: timestamp, grant_time: timestamp, gran
 
 ```sh
 pnpm run fga:test    # サーバ不要でモデルを検証
-pnpm run fga:deploy  # モデルを投入し、固定すべき ID を出力
+pnpm run fga:deploy  # モデルを投入し、固定すべき ID を .env.local に書く
 ```
 
-`fga:deploy` は `CAPTURE_LEDGER_FGA_STORE_ID` と `CAPTURE_LEDGER_FGA_MODEL_ID` を出力します。
+`fga:deploy` は `CAPTURE_LEDGER_FGA_STORE_ID` と `CAPTURE_LEDGER_FGA_MODEL_ID` を出力し、
+あわせて `.env.local` に書き込みます（`.env` は触りません）。
 **モデル ID は固定してください。** モデルはイミュータブルで書き込むたびに
 新しい ID が発行されるため、ID を省略すると常に最新で評価され、
 **モデルを書き換えた瞬間にすべての判断が一斉に変わります**。
@@ -633,12 +634,12 @@ cp -n .env.example .env       # 設定の雛形をそのまま写す
 pnpm run stack:up
 pnpm run fga:migrate          # OpenFGA のスキーマ（下記参照）
 pnpm run db:migrate
-pnpm run fga:deploy           # → 出力された 2 つの ID を .env に貼る
+pnpm run fga:deploy           # → 2 つの ID を .env.local に書く（貼る作業は無い）
 pnpm run api
 ```
 
-どれも `.env` を読みます（`pnpm run` の各スクリプトが
-`--env-file-if-exists=.env` を渡しています）。必須は 7 個で、うち 2 個
+どれも `.env` と `.env.local` をこの順で読みます（`pnpm run` の各スクリプトが
+`--env-file-if-exists` を 2 つ渡しています。**後が勝ちます**）。必須は 7 個で、うち 2 個
 （`CAPTURE_LEDGER_FGA_STORE_ID` と `CAPTURE_LEDGER_FGA_MODEL_ID`）は `fga:deploy` を走らせるまで
 存在しません。この手順が `api` より前にあるのはそのためです。`.env.example` が
 実際の読み取りとずれていないかは `scripts/check-env.mjs` が見ています。

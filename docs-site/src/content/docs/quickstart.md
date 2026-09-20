@@ -39,9 +39,11 @@ The `.upstream/` submodules hold every upstream source, BrowserHive included.
 Every build context points into them, so nothing builds while they are empty.
 
 `.env` is a copy of `.env.example`: nothing is detected and no value is
-changed. The template already carries the development values; the only ones
-you add are the two OpenFGA ids (§5) and, to crawl, four lines (§7). `-n` refuses
-to overwrite an existing `.env`, so the values you pasted survive a second run.
+changed. The template already carries the development values, and **there is
+nothing for you to add by hand** — the two OpenFGA ids (§5) and the four crawl
+lines (§7) only exist once something has run, so **the tools write them into
+`.env.local`** (node reads that after `.env`, so it wins where they overlap).
+`-n` refuses to overwrite an existing `.env`, so your own edits survive a second run.
 
 ## 3. Start the shared store and the stack
 
@@ -122,16 +124,20 @@ The rest of the CLI (reading a file, listing, disabling) is in
 ## 5. Prepare authorization
 
 The archive API and the picker go through OpenFGA. **The store and model ids do
-not exist until the model is deployed**, so they cannot live in compose. Run the
-two commands and paste the result into `.env`:
+not exist until the model is deployed**, so they cannot live in compose or in the
+template. Run the two commands:
 
 ```sh
 pnpm run fga:migrate  # create the OpenFGA datastore
-pnpm run fga:deploy   # push the model; prints the store id and model id
+pnpm run fga:deploy   # push the model; writes the store id and model id to .env.local
 ```
 
-Copy the two printed lines into `CAPTURE_LEDGER_FGA_STORE_ID` and `CAPTURE_LEDGER_FGA_MODEL_ID`
-in `.env`.
+`fga:deploy` prints the two lines and **writes them into `.env.local`. There is nothing to
+copy.** It never touches `.env` — the boundary is that tools do not edit what a person wrote
+([Two settings files](/capture-ledger/development-environment/#two-settings-files)).
+
+The model id changes on every run (OpenFGA mints a new model even for identical content), so
+**restart the API if it is already up**.
 
 :::note[This step is not optional any more]
 There is no longer a CLI that bypasses OpenFGA. Every way into capture-ledger is the
@@ -179,10 +185,16 @@ capturing does not.
 
 The steps live in one place, [capture-scheduler's quickstart](https://uraitakahito.github.io/capture-scheduler/quickstart/)
 (bring up Windmill, load the flow and the proto, hand over a token). Along the way,
-capture-scheduler's `pnpm run windmill:bootstrap` prints **four lines for this repo's `.env`.
-Paste all four at the end of `.env`** (a later line wins over an earlier one with the same name —
-an `.env` copied from `.env.example` already has commented sample lines further up). **Miss any
-one and no crawl runs to the end.**
+capture-scheduler's `pnpm run windmill:bootstrap` writes **four lines for this repo inside its
+own repo**. **Fetching them is our job:**
+
+```sh
+pnpm run connect   # read the four lines from ../capture-scheduler into this repo's .env.local
+```
+
+A command run over there never rewrites this repo's `.env` — a repo changing because of a command
+typed somewhere else is not what the person typing it expects. These are the four lines, and
+**miss any one and no crawl runs to the end.**
 
 | Line                                                                       | Why                                                                                                                                                                                                           |
 | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -190,8 +202,9 @@ one and no crawl runs to the end.**
 | `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | The flow reports each level back to the API, and the report comes **from a container**. A `127.0.0.1` bind never receives it                                                                                  |
 | `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | The flow identifies itself with a JWT. The API accepts **either** a JWT **or** the development headers, and this line makes it JWT — the picker then shows a token field in place of the two name fields (§8) |
 
-Then start the issuer (`pnpm run oidc:issuer`) and restart the API — it reads its settings once, at
-startup. When the last line of its startup log says `crawl level reports: ready`, the four lines
+Once `connect` has run, start the issuer (`pnpm run oidc:issuer`) and restart the API — it reads its
+settings once, at startup. (Run `connect` again whenever you run `windmill:bootstrap` again: the
+token has changed.) When the last line of its startup log says `crawl level reports: ready`, the four lines
 are in effect; `blocked` means the warnings above it name the missing lines
 ([Check the startup log](/capture-ledger/development-environment/#check-the-startup-log)). When
 `pnpm run doctor`, near the end of capture-scheduler's quickstart, shows ✓ on every line, the two
