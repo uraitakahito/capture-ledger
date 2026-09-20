@@ -124,13 +124,25 @@ until grpcurl -plaintext -import-path proto -proto browserhive/v1/capture.proto 
 
 **dev コンテナはありません。** container-compose のサブコマンドは
 `up` / `down` / `build` / `version` の 4 つだけで、入り込むための `exec` が
-そもそもありません。必要もありません — platform DNS は `<service>.capture-ledger` を
-コンテナ間からもホストからも解決するので、capture-ledger はホストで動かしたまま
-コンテナ側のスタックに繋がります。接続文字列は雛形に入っているので、写した `.env` にそのまま在ります。
+そもそもありません。必要もありません — capture-ledger はホストで動かしたまま、
+スタックが `127.0.0.1` に publish した口を通してコンテナ側に繋がります。
+接続文字列は雛形に入っているので、写した `.env` にそのまま在ります。
 
 ```sh
-DATABASE_URL=postgres://capture_ledger:capture_ledger@postgres.capture-ledger:5432/capture_ledger
+DATABASE_URL=postgres://capture_ledger:capture_ledger@127.0.0.1:5432/capture_ledger
 ```
+
+:::danger[ホストからコンテナの名前を使わない]
+platform DNS は `<service>.capture-ledger` をホストからも解決します —— しかし
+**引けることと届くことは別**です。macOS 26 は Apple 署名でないバイナリ（`node` を含む）が
+コンテナの subnet へ TCP を張るのを止めるので、名前は引けた上で `EHOSTUNREACH` になります。
+`/usr/bin/curl` は Apple 署名なので**通ってしまい**、切り分けを誤らせます ——
+同じ URL が curl では答え、node では落ちます。システム設定にこのノブはありません
+（`node` は一覧に載りません）。
+
+**コンテナの中で**動くもの（`scripts/prod-smoke.sh`）は名前のままで構いません。
+コンテナ同士の通信は、この制限に当たりません。
+:::
 
 BrowserHive の在り処はもうここにありません。スタックが公開している 2 つの gRPC の
 口 `localhost:50051` と `localhost:50052`（Chromium 1 台に BrowserHive 1 つ）は、

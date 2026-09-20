@@ -22,6 +22,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# **コンテナの名前で正しい。** この値は `container run -e` で渡す先、つまりコンテナの中で
+# 使われる。ホスト側の `.env` は `127.0.0.1:5432` を使う (macOS 26 では host の node が
+# コンテナの subnet へ TCP を張れないため)。ここを 127.0.0.1 にすると、コンテナが自分自身を指す。
 DATABASE_URL="postgres://capture_ledger:capture_ledger@postgres.capture-ledger:5432/capture_ledger"
 # One BrowserHive per browser (docker-compose.yml), so readiness is both of them.
 HEALTH_TARGETS=("localhost:50051" "localhost:50052")
