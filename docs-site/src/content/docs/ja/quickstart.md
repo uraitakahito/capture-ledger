@@ -12,6 +12,37 @@ headless の Chromium 2 台、そしてその 1 台ずつに付く BrowserHive
 repo が共有する 1 つの store で、[seaweedfs](https://github.com/uraitakahito/seaweedfs) が
 起こします（§3）。
 
+## いちばん短い道
+
+**§1 と §2 だけは手で**（DNS の登録は `sudo` が要るので道具からは打てず、submodule と
+`.env` は clone した直後の 1 度だけ）。そのあとは 1 本で立ち上がります:
+
+```sh
+pnpm run dev:up
+```
+
+14 段を順に起こします —— 共有 store、スタック、DB、目録、認可、Windmill、issuer、API、
+許可、そして最後に capture-scheduler の `doctor`。**打つコマンドを 1 行ずつ印字してから
+走る**ので、出力を上から読めば、下の §3〜§7 と同じものが並んでいます。doctor が全部 ✓ なら
+撮れる状態です（動いていないところから、実測で約 75 秒）。
+
+| 打つもの                     | 何をするか                                                      |
+| ---------------------------- | --------------------------------------------------------------- |
+| `pnpm run dev:up --dry-run`  | 14 行の一覧だけを出す。**何も起こさない**                       |
+| `pnpm run dev:up --from api` | 途中から。転んだ段を直したあとに使う（失敗時に名指しされます）  |
+| `pnpm run dev:status`        | いま何が立っているか。何も変えない                              |
+| `pnpm run dev:down`          | ホストの 2 本 → 両 repo のコンテナ（共有 store は落としません） |
+
+:::note[クロールまでやるなら、capture-scheduler も横に要ります]
+`dev:up` の 6〜9・13・14 段目は capture-scheduler の repo でそのコマンドを打ちます
+（**向こうのファイルには書きません**）。`~/projects/crawler/capture-scheduler` に無いなら
+`--scheduler <path>` で場所を渡します。あちらにも DNS ドメインの登録が 1 度だけ要ります
+（[capture-scheduler のクイックスタート](https://uraitakahito.github.io/capture-scheduler/ja/quickstart/)）。
+:::
+
+**下の §3 以降は、その 14 段を 1 つずつ手でやる道です。** どちらでも同じところに着きます
+—— `dev:up` は §3〜§7 の script をそのまま呼んでいるだけで、別の実装を持っていません。
+
 ## 1. DNS ドメインを登録する（マシンごとに 1 回）
 
 ```sh
@@ -153,10 +184,13 @@ open http://127.0.0.1:7070/
 ```
 
 :::note[この API は §7 で一度止めて、起こし直します]
-**設定を読むのは起動のときの 1 度だけ**です。§7 で `.env` に 4 行足すので、
-いま走らせているプロセスはそれを知らないまま終わります —— `Ctrl-C` で止めて、
+**設定を読むのは起動のときの 1 度だけ**です。§7 の `pnpm run connect` が `.env.local` に
+4 行書くので、いま走らせているプロセスはそれを知らないまま終わります —— `Ctrl-C` で止めて、
 同じ `pnpm run api` をもう一度打ちます。**2 本目を並べて立てることはできません**
 （`EADDRINUSE: address already in use 0.0.0.0:7070` で落ちます）。
+**どこに残っているか分からなくなったら** `pnpm run dev:status` が pid と起動時刻を出し、
+`pnpm run dev:down` が止めます（`container-compose down` はコンテナしか知らないので、
+ホストで動く issuer と API は残ります）。
 
 いまの 1 本は「API が動くこと」と「picker が開くこと」を見るためのものです。
 :::
