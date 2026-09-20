@@ -133,14 +133,18 @@ Postgres は `127.0.0.1:5432` にも公開しているので `localhost` でも�
 
 Docker Compose から来た場合、日常のコマンドはこう対応します。
 
-| Docker Compose                      | Apple Container                               |
+| Docker Compose                      | このスタックでは                              |
 | ----------------------------------- | --------------------------------------------- |
-| `docker compose up -d --build`      | `container-compose up -d -b`                  |
-| `docker compose down`               | `container-compose down`                      |
+| `docker compose up -d --build`      | `pnpm run stack:up`                           |
+| `docker compose down`               | `pnpm run stack:down`                         |
 | `docker compose ps`                 | `container ls`                                |
 | `docker compose logs browserhive-1` | `container logs browserhive-1.capture-ledger` |
 | `docker compose exec <svc> sh`      | `container exec -it <svc>.capture-ledger sh`  |
 | `docker compose run --rm <svc> …`   | `container run --rm <image> …`                |
+
+起動と停止だけ `container-compose` ではないのは、`scripts/stack.sh` が渡すものが 3 つあるから
+です —— 署名の profile と env ファイルの対、submodule の版（渡らないで建った image は
+BrowserHive が起動を拒みます）、そして起動の前の点検です。
 
 Chromium は 2 台とも **headless** です。描画を見たいときは、ローカルの Chrome で
 `chrome://inspect` を開き、_Configure…_ に `localhost:9222` と `localhost:9223`
