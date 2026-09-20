@@ -323,56 +323,26 @@ export interface Viewport {
 }
 
 /**
- * 走らせるもの 1 つぶん。どれを走らせるかと、どう設定するかを 1 つにする。
+ * 走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは注入の口だけ ——
+ * 形まで分ける理由が無い (どちらも「評価できる JS」しか要求しない)。
  *
- * oneof にしているので、存在しない behavior は **綴れない**。かつては id が
- * ただの文字列で、`autoscrol` と打ち間違えても黙って通り、何も走らないまま
- * 取り込みが成功していた。
+ * かつてここは oneof で、組み込み 1 つにつき 1 枝を持っていた —— 存在しない
+ * behavior を **綴れない** ようにするため。組み込みをサーバから出したいま、
+ * 守るべき顔ぶれがサーバ側に無いので oneof は成り立たない。綴りの検査は
+ * **目録を持っている側** (capture-ledger の scripts 表への外部キー) へ移した。
  */
-export interface Behavior {
-  autoscroll?: AutoScroll | undefined;
-  autofetch?: AutoFetch | undefined;
-  autoplay?: AutoPlay | undefined;
-  custom?: Custom | undefined;
-}
-
-/** ページの全高までスクロールして、遅延読み込みを発火させる。 */
-export interface AutoScroll {
-  /** 既定 40。 */
-  maxSteps?:
-    | number
-    | undefined;
-  /** 既定 250。 */
-  stepDelayMs?:
-    | number
-    | undefined;
-  /** 既定 1000。 */
-  idleTimeMs?: number | undefined;
-}
-
-/** srcset の全候補と data-* の遅延属性を能動的に取りに行く。 */
-export interface AutoFetch {
-  /** 既定 2000。 */
-  maxUrls?: number | undefined;
-}
-
-/** <video> / <audio> をミュート再生して、その資源を取りに行く。 */
-export interface AutoPlay {
-  /** 既定 1000。 */
-  settleMs?: number | undefined;
-}
-
-/**
- * client が持ち込む behavior。サーバが --allow-custom-behaviors で起動している
- * ときだけ効き、そうでなければ黙って無視される。
- */
-export interface Custom {
-  /** behavior report に出る識別子。 */
+export interface Script {
+  /** report と provenance に出る名前。サーバは中身を検査しない。 */
   id: string;
-  /** { static id, static isMatch, run(ctx) } を実装した JS のクラス式。 */
+  /** そのまま評価される JS。behavior は読み込み後に、preload は遷移の前に走る。 */
   source: string;
   /**
-   * この behavior に渡す値。中身が任意の JS である以上、その設定も型では守れない
+   * source の SHA-256 (hex、接頭辞なし)。**サーバが照合して、違えば拒む。**
+   * 中身は検査できないが、運ぶ途中で入れ替わっていないことだけは言える。
+   */
+  sha256: string;
+  /**
+   * そのスクリプトに渡す値。中身が任意の JS である以上、その設定も型では守れない
    * —— JSON の逃げ道はここだけに閉じてある。
    */
   optionsJson?: string | undefined;
@@ -382,32 +352,24 @@ export interface Custom {
  * 走らせるものの列。message で包んでいるのは `optional` を付けるため: proto3 の
  * repeated には presence が無く、空と未指定を区別できない。
  */
-export interface BehaviorList {
-  items: Behavior[];
+export interface ScriptList {
+  items: Script[];
 }
 
-/** capture ごとの behavior の指定。 */
+/** capture ごとの behavior (読み込み後に走るスクリプト) の指定。 */
 export interface BehaviorSpec {
   /**
    * 走らせるものを、走らせる順に。
    *
-   *   省略 → サーバ既定 (--behaviors) をそのまま走らせる
+   *   省略 → **1 つも走らせない**
    *   items が空 → 1 つも走らせない
-   *   並び → 走らせるものを **書き切ったもの**
+   *   並び → 走らせるものを書き切ったもの
    *
-   * 最後の 1 行が肝で、「既定の集合はそのままで設定だけ差し替える」はできない。
-   * かつては有効集合と設定が別々に届いたのでそれができ、同時に「集合を空に
-   * したつもりが既定に戻っていた」も起きていた。
+   * かつては「省略 → サーバ既定」だった。サーバが既定を持たなくなったので、
+   * 省略と空リストは同じ意味になる —— **送らなければ、ページには 1 バイトも
+   * 入らない** (受け皿すら注入しない)。
    */
-  behaviors?:
-    | BehaviorList
-    | undefined;
-  /**
-   * 同梱の site behavior を対象にするか。省略するとサーバ既定 (出荷時は on)。
-   * `behaviors` と別なのは性質が違うから —— site behavior は host を見る
-   * isMatch() が門番で、client が並べるものではない。
-   */
-  siteBehaviors?: boolean | undefined;
+  behaviors?: ScriptList | undefined;
 }
 
 /**
@@ -566,7 +528,24 @@ export interface CaptureRequest {
    * 読み込み後の待ちの、取り込みごとの上書き。省いた欄はサーバ既定 (--load-wait-*)。
    * 最長に当たるのは失敗ではなく、応答と archive の settle に deadline として残る。
    */
-  loadWait?: LoadWait | undefined;
+  loadWait?:
+    | LoadWait
+    | undefined;
+  /**
+   * 遷移の**前**に、書かれた順で注入するスクリプト。behaviors とは約束が違う:
+   *
+   *   いつ   document が出来た直後、そのページの script より前
+   *   どこ   **iframe を含む全フレーム** (behaviors は主フレームだけ)
+   *   何回   タブに 1 回登録し、遷移のたびに自動で再実行 (behaviors は DPR のパスごと)
+   *   結果   **報告の手段を持たない**。戻り値は捨てられる
+   *
+   * この 4 つが違うので、同じ列には入れない —— 1 本のリストにすると「並びが実行順」
+   * という約束が嘘になる (preload は behaviors より前に、何度も走る)。
+   *
+   * 省略と空リストはどちらも「1 つも入れない」。区別を残すのは、archive が
+   * 「送らなかった」と「空を送った」を言い分けられるようにするため。
+   */
+  preload?: ScriptList | undefined;
 }
 
 export interface GetServerStatusRequest {
@@ -1616,409 +1595,28 @@ export const Viewport: MessageFns<Viewport> = {
   },
 };
 
-function createBaseBehavior(): Behavior {
-  return { autoscroll: undefined, autofetch: undefined, autoplay: undefined, custom: undefined };
+function createBaseScript(): Script {
+  return { id: "", source: "", sha256: "", optionsJson: undefined };
 }
 
-export const Behavior: MessageFns<Behavior> = {
-  encode(message: Behavior, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.autoscroll !== undefined) {
-      AutoScroll.encode(message.autoscroll, writer.uint32(10).fork()).join();
-    }
-    if (message.autofetch !== undefined) {
-      AutoFetch.encode(message.autofetch, writer.uint32(18).fork()).join();
-    }
-    if (message.autoplay !== undefined) {
-      AutoPlay.encode(message.autoplay, writer.uint32(26).fork()).join();
-    }
-    if (message.custom !== undefined) {
-      Custom.encode(message.custom, writer.uint32(34).fork()).join();
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): Behavior {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseBehavior();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 10) {
-              break;
-            }
-
-            message.autoscroll = AutoScroll.decode(reader, reader.uint32());
-            continue;
-          }
-          case 2: {
-            if (tag !== 18) {
-              break;
-            }
-
-            message.autofetch = AutoFetch.decode(reader, reader.uint32());
-            continue;
-          }
-          case 3: {
-            if (tag !== 26) {
-              break;
-            }
-
-            message.autoplay = AutoPlay.decode(reader, reader.uint32());
-            continue;
-          }
-          case 4: {
-            if (tag !== 34) {
-              break;
-            }
-
-            message.custom = Custom.decode(reader, reader.uint32());
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  fromJSON(object: any): Behavior {
-    return {
-      autoscroll: isSet(object.autoscroll) ? AutoScroll.fromJSON(object.autoscroll) : undefined,
-      autofetch: isSet(object.autofetch) ? AutoFetch.fromJSON(object.autofetch) : undefined,
-      autoplay: isSet(object.autoplay) ? AutoPlay.fromJSON(object.autoplay) : undefined,
-      custom: isSet(object.custom) ? Custom.fromJSON(object.custom) : undefined,
-    };
-  },
-
-  toJSON(message: Behavior): unknown {
-    const obj: any = {};
-    if (message.autoscroll !== undefined) {
-      obj.autoscroll = AutoScroll.toJSON(message.autoscroll);
-    }
-    if (message.autofetch !== undefined) {
-      obj.autofetch = AutoFetch.toJSON(message.autofetch);
-    }
-    if (message.autoplay !== undefined) {
-      obj.autoplay = AutoPlay.toJSON(message.autoplay);
-    }
-    if (message.custom !== undefined) {
-      obj.custom = Custom.toJSON(message.custom);
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<Behavior>, I>>(base?: I): Behavior {
-    return Behavior.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<Behavior>, I>>(object: I): Behavior {
-    const message = createBaseBehavior();
-    message.autoscroll = (object.autoscroll !== undefined && object.autoscroll !== null)
-      ? AutoScroll.fromPartial(object.autoscroll)
-      : undefined;
-    message.autofetch = (object.autofetch !== undefined && object.autofetch !== null)
-      ? AutoFetch.fromPartial(object.autofetch)
-      : undefined;
-    message.autoplay = (object.autoplay !== undefined && object.autoplay !== null)
-      ? AutoPlay.fromPartial(object.autoplay)
-      : undefined;
-    message.custom = (object.custom !== undefined && object.custom !== null)
-      ? Custom.fromPartial(object.custom)
-      : undefined;
-    return message;
-  },
-};
-
-function createBaseAutoScroll(): AutoScroll {
-  return { maxSteps: undefined, stepDelayMs: undefined, idleTimeMs: undefined };
-}
-
-export const AutoScroll: MessageFns<AutoScroll> = {
-  encode(message: AutoScroll, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.maxSteps !== undefined) {
-      writer.uint32(8).int32(message.maxSteps);
-    }
-    if (message.stepDelayMs !== undefined) {
-      writer.uint32(16).int32(message.stepDelayMs);
-    }
-    if (message.idleTimeMs !== undefined) {
-      writer.uint32(24).int32(message.idleTimeMs);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): AutoScroll {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseAutoScroll();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 8) {
-              break;
-            }
-
-            message.maxSteps = reader.int32();
-            continue;
-          }
-          case 2: {
-            if (tag !== 16) {
-              break;
-            }
-
-            message.stepDelayMs = reader.int32();
-            continue;
-          }
-          case 3: {
-            if (tag !== 24) {
-              break;
-            }
-
-            message.idleTimeMs = reader.int32();
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  fromJSON(object: any): AutoScroll {
-    return {
-      maxSteps: isSet(object.maxSteps)
-        ? globalThis.Number(object.maxSteps)
-        : isSet(object.max_steps)
-        ? globalThis.Number(object.max_steps)
-        : undefined,
-      stepDelayMs: isSet(object.stepDelayMs)
-        ? globalThis.Number(object.stepDelayMs)
-        : isSet(object.step_delay_ms)
-        ? globalThis.Number(object.step_delay_ms)
-        : undefined,
-      idleTimeMs: isSet(object.idleTimeMs)
-        ? globalThis.Number(object.idleTimeMs)
-        : isSet(object.idle_time_ms)
-        ? globalThis.Number(object.idle_time_ms)
-        : undefined,
-    };
-  },
-
-  toJSON(message: AutoScroll): unknown {
-    const obj: any = {};
-    if (message.maxSteps !== undefined) {
-      obj.maxSteps = Math.round(message.maxSteps);
-    }
-    if (message.stepDelayMs !== undefined) {
-      obj.stepDelayMs = Math.round(message.stepDelayMs);
-    }
-    if (message.idleTimeMs !== undefined) {
-      obj.idleTimeMs = Math.round(message.idleTimeMs);
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<AutoScroll>, I>>(base?: I): AutoScroll {
-    return AutoScroll.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<AutoScroll>, I>>(object: I): AutoScroll {
-    const message = createBaseAutoScroll();
-    message.maxSteps = object.maxSteps ?? undefined;
-    message.stepDelayMs = object.stepDelayMs ?? undefined;
-    message.idleTimeMs = object.idleTimeMs ?? undefined;
-    return message;
-  },
-};
-
-function createBaseAutoFetch(): AutoFetch {
-  return { maxUrls: undefined };
-}
-
-export const AutoFetch: MessageFns<AutoFetch> = {
-  encode(message: AutoFetch, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.maxUrls !== undefined) {
-      writer.uint32(8).int32(message.maxUrls);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): AutoFetch {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseAutoFetch();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 8) {
-              break;
-            }
-
-            message.maxUrls = reader.int32();
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  fromJSON(object: any): AutoFetch {
-    return {
-      maxUrls: isSet(object.maxUrls)
-        ? globalThis.Number(object.maxUrls)
-        : isSet(object.max_urls)
-        ? globalThis.Number(object.max_urls)
-        : undefined,
-    };
-  },
-
-  toJSON(message: AutoFetch): unknown {
-    const obj: any = {};
-    if (message.maxUrls !== undefined) {
-      obj.maxUrls = Math.round(message.maxUrls);
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<AutoFetch>, I>>(base?: I): AutoFetch {
-    return AutoFetch.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<AutoFetch>, I>>(object: I): AutoFetch {
-    const message = createBaseAutoFetch();
-    message.maxUrls = object.maxUrls ?? undefined;
-    return message;
-  },
-};
-
-function createBaseAutoPlay(): AutoPlay {
-  return { settleMs: undefined };
-}
-
-export const AutoPlay: MessageFns<AutoPlay> = {
-  encode(message: AutoPlay, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.settleMs !== undefined) {
-      writer.uint32(8).int32(message.settleMs);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): AutoPlay {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
-    if (previousRecursionDepth >= 100) {
-      throw new globalThis.Error("protobuf decode recursion limit exceeded");
-    }
-    (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
-    try {
-      const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseAutoPlay();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 8) {
-              break;
-            }
-
-            message.settleMs = reader.int32();
-            continue;
-          }
-        }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
-        }
-        reader.skip(tag & 7);
-      }
-      return message;
-    } finally {
-      (reader as any).__tsProtoDecodeDepth = previousRecursionDepth;
-    }
-  },
-
-  fromJSON(object: any): AutoPlay {
-    return {
-      settleMs: isSet(object.settleMs)
-        ? globalThis.Number(object.settleMs)
-        : isSet(object.settle_ms)
-        ? globalThis.Number(object.settle_ms)
-        : undefined,
-    };
-  },
-
-  toJSON(message: AutoPlay): unknown {
-    const obj: any = {};
-    if (message.settleMs !== undefined) {
-      obj.settleMs = Math.round(message.settleMs);
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<AutoPlay>, I>>(base?: I): AutoPlay {
-    return AutoPlay.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<AutoPlay>, I>>(object: I): AutoPlay {
-    const message = createBaseAutoPlay();
-    message.settleMs = object.settleMs ?? undefined;
-    return message;
-  },
-};
-
-function createBaseCustom(): Custom {
-  return { id: "", source: "", optionsJson: undefined };
-}
-
-export const Custom: MessageFns<Custom> = {
-  encode(message: Custom, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const Script: MessageFns<Script> = {
+  encode(message: Script, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.id !== "") {
       writer.uint32(10).string(message.id);
     }
     if (message.source !== "") {
       writer.uint32(18).string(message.source);
     }
+    if (message.sha256 !== "") {
+      writer.uint32(26).string(message.sha256);
+    }
     if (message.optionsJson !== undefined) {
-      writer.uint32(26).string(message.optionsJson);
+      writer.uint32(34).string(message.optionsJson);
     }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): Custom {
+  decode(input: BinaryReader | Uint8Array, length?: number): Script {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
     if (previousRecursionDepth >= 100) {
@@ -2027,7 +1625,7 @@ export const Custom: MessageFns<Custom> = {
     (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
     try {
       const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseCustom();
+      const message = createBaseScript();
       while (reader.pos < end) {
         const tag = reader.uint32();
         switch (tag >>> 3) {
@@ -2052,6 +1650,14 @@ export const Custom: MessageFns<Custom> = {
               break;
             }
 
+            message.sha256 = reader.string();
+            continue;
+          }
+          case 4: {
+            if (tag !== 34) {
+              break;
+            }
+
             message.optionsJson = reader.string();
             continue;
           }
@@ -2067,10 +1673,11 @@ export const Custom: MessageFns<Custom> = {
     }
   },
 
-  fromJSON(object: any): Custom {
+  fromJSON(object: any): Script {
     return {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       source: isSet(object.source) ? globalThis.String(object.source) : "",
+      sha256: isSet(object.sha256) ? globalThis.String(object.sha256) : "",
       optionsJson: isSet(object.optionsJson)
         ? globalThis.String(object.optionsJson)
         : isSet(object.options_json)
@@ -2079,7 +1686,7 @@ export const Custom: MessageFns<Custom> = {
     };
   },
 
-  toJSON(message: Custom): unknown {
+  toJSON(message: Script): unknown {
     const obj: any = {};
     if (message.id !== "") {
       obj.id = message.id;
@@ -2087,37 +1694,41 @@ export const Custom: MessageFns<Custom> = {
     if (message.source !== "") {
       obj.source = message.source;
     }
+    if (message.sha256 !== "") {
+      obj.sha256 = message.sha256;
+    }
     if (message.optionsJson !== undefined) {
       obj.optionsJson = message.optionsJson;
     }
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<Custom>, I>>(base?: I): Custom {
-    return Custom.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<Script>, I>>(base?: I): Script {
+    return Script.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<Custom>, I>>(object: I): Custom {
-    const message = createBaseCustom();
+  fromPartial<I extends Exact<DeepPartial<Script>, I>>(object: I): Script {
+    const message = createBaseScript();
     message.id = object.id ?? "";
     message.source = object.source ?? "";
+    message.sha256 = object.sha256 ?? "";
     message.optionsJson = object.optionsJson ?? undefined;
     return message;
   },
 };
 
-function createBaseBehaviorList(): BehaviorList {
+function createBaseScriptList(): ScriptList {
   return { items: [] };
 }
 
-export const BehaviorList: MessageFns<BehaviorList> = {
-  encode(message: BehaviorList, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const ScriptList: MessageFns<ScriptList> = {
+  encode(message: ScriptList, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     for (const v of message.items) {
-      Behavior.encode(v!, writer.uint32(10).fork()).join();
+      Script.encode(v!, writer.uint32(10).fork()).join();
     }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): BehaviorList {
+  decode(input: BinaryReader | Uint8Array, length?: number): ScriptList {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     const previousRecursionDepth = (reader as any).__tsProtoDecodeDepth ?? 0;
     if (previousRecursionDepth >= 100) {
@@ -2126,7 +1737,7 @@ export const BehaviorList: MessageFns<BehaviorList> = {
     (reader as any).__tsProtoDecodeDepth = previousRecursionDepth + 1;
     try {
       const end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseBehaviorList();
+      const message = createBaseScriptList();
       while (reader.pos < end) {
         const tag = reader.uint32();
         switch (tag >>> 3) {
@@ -2135,7 +1746,7 @@ export const BehaviorList: MessageFns<BehaviorList> = {
               break;
             }
 
-            message.items.push(Behavior.decode(reader, reader.uint32()));
+            message.items.push(Script.decode(reader, reader.uint32()));
             continue;
           }
         }
@@ -2150,39 +1761,36 @@ export const BehaviorList: MessageFns<BehaviorList> = {
     }
   },
 
-  fromJSON(object: any): BehaviorList {
-    return { items: globalThis.Array.isArray(object?.items) ? object.items.map((e: any) => Behavior.fromJSON(e)) : [] };
+  fromJSON(object: any): ScriptList {
+    return { items: globalThis.Array.isArray(object?.items) ? object.items.map((e: any) => Script.fromJSON(e)) : [] };
   },
 
-  toJSON(message: BehaviorList): unknown {
+  toJSON(message: ScriptList): unknown {
     const obj: any = {};
     if (message.items?.length) {
-      obj.items = message.items.map((e) => Behavior.toJSON(e));
+      obj.items = message.items.map((e) => Script.toJSON(e));
     }
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<BehaviorList>, I>>(base?: I): BehaviorList {
-    return BehaviorList.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<ScriptList>, I>>(base?: I): ScriptList {
+    return ScriptList.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<BehaviorList>, I>>(object: I): BehaviorList {
-    const message = createBaseBehaviorList();
-    message.items = object.items?.map((e) => Behavior.fromPartial(e)) || [];
+  fromPartial<I extends Exact<DeepPartial<ScriptList>, I>>(object: I): ScriptList {
+    const message = createBaseScriptList();
+    message.items = object.items?.map((e) => Script.fromPartial(e)) || [];
     return message;
   },
 };
 
 function createBaseBehaviorSpec(): BehaviorSpec {
-  return { behaviors: undefined, siteBehaviors: undefined };
+  return { behaviors: undefined };
 }
 
 export const BehaviorSpec: MessageFns<BehaviorSpec> = {
   encode(message: BehaviorSpec, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.behaviors !== undefined) {
-      BehaviorList.encode(message.behaviors, writer.uint32(42).fork()).join();
-    }
-    if (message.siteBehaviors !== undefined) {
-      writer.uint32(24).bool(message.siteBehaviors);
+      ScriptList.encode(message.behaviors, writer.uint32(42).fork()).join();
     }
     return writer;
   },
@@ -2205,15 +1813,7 @@ export const BehaviorSpec: MessageFns<BehaviorSpec> = {
               break;
             }
 
-            message.behaviors = BehaviorList.decode(reader, reader.uint32());
-            continue;
-          }
-          case 3: {
-            if (tag !== 24) {
-              break;
-            }
-
-            message.siteBehaviors = reader.bool();
+            message.behaviors = ScriptList.decode(reader, reader.uint32());
             continue;
           }
         }
@@ -2229,23 +1829,13 @@ export const BehaviorSpec: MessageFns<BehaviorSpec> = {
   },
 
   fromJSON(object: any): BehaviorSpec {
-    return {
-      behaviors: isSet(object.behaviors) ? BehaviorList.fromJSON(object.behaviors) : undefined,
-      siteBehaviors: isSet(object.siteBehaviors)
-        ? globalThis.Boolean(object.siteBehaviors)
-        : isSet(object.site_behaviors)
-        ? globalThis.Boolean(object.site_behaviors)
-        : undefined,
-    };
+    return { behaviors: isSet(object.behaviors) ? ScriptList.fromJSON(object.behaviors) : undefined };
   },
 
   toJSON(message: BehaviorSpec): unknown {
     const obj: any = {};
     if (message.behaviors !== undefined) {
-      obj.behaviors = BehaviorList.toJSON(message.behaviors);
-    }
-    if (message.siteBehaviors !== undefined) {
-      obj.siteBehaviors = message.siteBehaviors;
+      obj.behaviors = ScriptList.toJSON(message.behaviors);
     }
     return obj;
   },
@@ -2256,9 +1846,8 @@ export const BehaviorSpec: MessageFns<BehaviorSpec> = {
   fromPartial<I extends Exact<DeepPartial<BehaviorSpec>, I>>(object: I): BehaviorSpec {
     const message = createBaseBehaviorSpec();
     message.behaviors = (object.behaviors !== undefined && object.behaviors !== null)
-      ? BehaviorList.fromPartial(object.behaviors)
+      ? ScriptList.fromPartial(object.behaviors)
       : undefined;
-    message.siteBehaviors = object.siteBehaviors ?? undefined;
     return message;
   },
 };
@@ -2371,6 +1960,7 @@ function createBaseCaptureRequest(): CaptureRequest {
     storageValues: undefined,
     artifactSink: undefined,
     loadWait: undefined,
+    preload: undefined,
   };
 }
 
@@ -2440,6 +2030,9 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
     }
     if (message.loadWait !== undefined) {
       LoadWait.encode(message.loadWait, writer.uint32(210).fork()).join();
+    }
+    if (message.preload !== undefined) {
+      ScriptList.encode(message.preload, writer.uint32(218).fork()).join();
     }
     return writer;
   },
@@ -2635,6 +2228,14 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
             message.loadWait = LoadWait.decode(reader, reader.uint32());
             continue;
           }
+          case 27: {
+            if (tag !== 218) {
+              break;
+            }
+
+            message.preload = ScriptList.decode(reader, reader.uint32());
+            continue;
+          }
         }
         if ((tag & 7) === 4 || tag === 0) {
           break;
@@ -2726,6 +2327,7 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
         : isSet(object.load_wait)
         ? LoadWait.fromJSON(object.load_wait)
         : undefined,
+      preload: isSet(object.preload) ? ScriptList.fromJSON(object.preload) : undefined,
     };
   },
 
@@ -2794,6 +2396,9 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
     if (message.loadWait !== undefined) {
       obj.loadWait = LoadWait.toJSON(message.loadWait);
     }
+    if (message.preload !== undefined) {
+      obj.preload = ScriptList.toJSON(message.preload);
+    }
     return obj;
   },
 
@@ -2838,6 +2443,9 @@ export const CaptureRequest: MessageFns<CaptureRequest> = {
       : undefined;
     message.loadWait = (object.loadWait !== undefined && object.loadWait !== null)
       ? LoadWait.fromPartial(object.loadWait)
+      : undefined;
+    message.preload = (object.preload !== undefined && object.preload !== null)
+      ? ScriptList.fromPartial(object.preload)
       : undefined;
     return message;
   },
