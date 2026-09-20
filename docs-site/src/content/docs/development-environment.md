@@ -46,7 +46,7 @@ sh .upstream/seaweedfs/scripts/stack.sh up
 ```
 
 Emptying it, looking inside, and recreating it are documented in one place,
-[seaweedfs's docs/operations.md](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.md)
+[seaweedfs's Operations page](https://uraitakahito.github.io/seaweedfs/operations/)
 (`pnpm run store:wipe` empties this repo's bucket).
 
 ### Environment variables
