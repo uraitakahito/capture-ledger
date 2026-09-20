@@ -37,6 +37,18 @@ cd "$(dirname "$0")/.."
 SUBCOMMAND="${1:-up}"
 shift || true
 
+# ## store はこのスタックに居ない
+#
+# 成果物の store は crawler で 1 つ (`seaweedfs.crawler-storage`)。起こすのは
+# `.upstream/seaweedfs/scripts/stack.sh` で、この compose には service が無い。
+#
+# **写しを profile で持つ道は採らなかった。** container-compose は `environment:` の
+# `${VAR}` を展開しないので、宛先を切り替える手段が env ファイルしか無く、しかも
+# `depends_on` に書いた profile のサービスは profile 抜きでも起き上がる (実測。
+# browserhive-1 が seaweedfs を引きずり出した)。この repo に store の要る試験は無いので、
+# 1 つの宛先だけを持つ。他と混ざらない store で試したいときは、共有 store を空にする
+# (`pnpm run store:wipe`)。
+
 # `.env` から 1 行だけ読む。`source` しないのは、`.env` の他の値 (パスワードなど) を
 # この shell に持ち込まないため。
 signing_enabled() {
@@ -57,6 +69,9 @@ signing_enabled() {
 #     言わない**。しかも root のコンテナ (postgres、seaweedfs、replay) では成功するため、
 #     「一部のサービスだけ名前が引けない」という追いにくい症状になる。
 #   - submodule: 空なら submodule-versions.sh が「初期化されていません」で止める。
+#   - 共有 store: 起きているか。**403 は「立っている」** ——
+#     S3 は署名の無い要求を拒むのが正常なので、`curl -f` で見ると立っている store を
+#     「落ちている」と判定する。見るのは status で、接続できないときだけ curl は 000 を返す。
 #
 # down には掛けない。DNS ドメインが無くても、止めることはできるべきだから。
 preflight() {
@@ -81,6 +96,18 @@ preflight() {
     echo "上のコマンドを一度だけ実行してから (sudo が要ります)、もう一度起動してください。" >&2
     exit 1
   fi
+
+  # 共有 store が起きているか。**403 は「立っている」**。
+  local status
+  status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8333/ || true)"
+  if [ "${status}" = "000" ]; then
+    echo "エラー: 共有の store (seaweedfs.crawler-storage) が起きていません。" >&2
+    echo "" >&2
+    echo "    sh .upstream/seaweedfs/scripts/stack.sh up" >&2
+    echo "" >&2
+    echo "起こしてから、もう一度実行してください。" >&2
+    exit 1
+  fi
 }
 
 if [ "${SUBCOMMAND}" = "up" ]; then
@@ -92,6 +119,8 @@ fi
 # 空のときは何も展開されず、素通りする。
 profile_args=()
 env_args=()
+
+echo "store: 共有 (seaweedfs.crawler-storage:8333)"
 
 if signing_enabled; then
   profile_args=(--profile signing)
