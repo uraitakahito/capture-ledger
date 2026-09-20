@@ -1,6 +1,6 @@
 ---
 title: Databases
-description: The two Postgres instances behind capture-ledger and OpenFGA, and the sixteen tables in them.
+description: The two Postgres instances behind capture-ledger and OpenFGA, and the seventeen tables in them.
 ---
 
 The capture-ledger dev stack runs **two Postgres instances**. They hold different things
@@ -8,7 +8,7 @@ and are different databases.
 
 | Container                   | Holds                                                                    | Who touches it with SQL |
 | --------------------------- | ------------------------------------------------------------------------ | ----------------------- |
-| `postgres.capture-ledger`   | `capture_targets` / `archives` / `fga_outbox` and 7 more — **10 tables** | capture-ledger          |
+| `postgres.capture-ledger`   | `capture_targets` / `archives` / `fga_outbox` and 8 more — **11 tables** | capture-ledger          |
 | `openfga-db.capture-ledger` | `tuple` / `authorization_model` and 4 more — **6 tables**                | OpenFGA only            |
 
 No table appears in both. The credentials do not cross either, and `openfga-db`
@@ -35,6 +35,7 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 | [`fga_outbox`](/capture-ledger/databases/fga-outbox/)                   | Tuples waiting to reach OpenFGA                        |
 | `crawls`                                                                | One row per crawl — its policy, state and stop reason  |
 | `crawl_pages`                                                           | One row per page a crawl reached; also the dedup index |
+| `scripts`                                                               | The JavaScript a crawl runs inside the page            |
 | `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`               | Kysely's own bookkeeping (below)                       |
 
 ### OpenFGA's database

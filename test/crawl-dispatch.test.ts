@@ -25,6 +25,16 @@ const CRAWL: DispatchedCrawl = {
   hostParallelism: 2,
   captureFormats: { png: false, webp: false, html: false, links: true, mhtml: false, wacz: true },
   signing: false,
+  scripts: [
+    {
+      id: "autoscroll",
+      version: 2,
+      phase: "behavior",
+      source: "(async () => {})();",
+      sha256: "b".repeat(64),
+      options: { maxSteps: 60 },
+    },
+  ],
 };
 
 const SINK = {
@@ -59,8 +69,18 @@ describe("webhook の本文", () => {
       host_parallelism: CRAWL.hostParallelism,
       capture_formats: CRAWL.captureFormats,
       signing: CRAWL.signing,
+      scripts: CRAWL.scripts,
       artifact_sink: SINK,
     });
+  });
+
+  /**
+   * 走らせるものは **空でも送る**。受け口と違い、鍵ごと落とすと flow は「省かれた」と
+   * 読み、BrowserHive へも何も渡らない —— それは「何も走らせない」と同じ結果になるが、
+   * 台帳が何を頼んだのかを本文から読めなくなる。
+   */
+  it("走らせるものが空でも、scripts の鍵は送る", () => {
+    expect(flowArgs({ ...CRAWL, scripts: [] })).toMatchObject({ scripts: [] });
   });
 
   it("dispatcher が送る本文に受け口が載る", async () => {

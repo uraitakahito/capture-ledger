@@ -71,18 +71,62 @@ The ledger records the outcome. `archives.signed` is `true` when a signature was
 obtained, `null` when none was asked for — so "did this crawl produce
 evidence-grade archives" is answerable without opening a single zip.
 
-## What capture-ledger no longer decides
+## What runs inside the page
+
+From BrowserHive v11.0.0 the server has **no roster of its own**: there are no
+built-in behaviors and no site-specific ones. Send nothing and nothing runs inside
+the page — not even the receptacle. A capture still succeeds and still produces an
+archive; it just never scrolled and never triggered lazy loading.
+
+**That is why the catalog lives here.** The only place that can hold a default is
+the side that decides what a crawl runs, so capture-ledger keeps a `scripts` table
+and pins its resolution onto the crawl.
+
+```sh
+# Register what may run. The version is assigned automatically; re-adding the
+# same bytes reuses the version it already has.
+pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
+pnpm run scripts add hide-webdriver --file ./x.js --phase preload
+pnpm run scripts list                     # what a crawl with no scriptIds will run
+pnpm run scripts disable hide-webdriver   # out of the default set, still nameable
+```
+
+`sha256` is a **generated column**: Postgres computes it from `source` and the
+column cannot be written by hand. BrowserHive checks the two against each other
+and rejects a mismatch with `INVALID_ARGUMENT`, so that check can never be
+answering for capture-ledger's own arithmetic.
+
+`phase` says which of BrowserHive's two injection points to use. `behavior` runs
+after load, in the main frame, once, and can report through the receptacle.
+`preload` runs **before navigation**, in every frame including iframes, on every
+navigation, and **cannot report at all**.
+
+### What a crawl pins
+
+`POST /api/crawls` resolves the catalog **once**, when the crawl starts, and stores
+the result — id, version, phase, source, sha256, options — on the crawl row. Later
+levels reuse that; the catalog is never consulted again. Adding a version halfway
+through a long crawl therefore cannot change what its later pages run.
+
+| `scriptIds`   | What runs                                                          |
+| ------------- | ------------------------------------------------------------------ |
+| omitted       | The newest version of every **enabled** id, `id`-order             |
+| `["b", "a"]`  | Exactly those, **in that order** — order is the instruction        |
+| `[]`          | Nothing. "Use the default" and "run nothing" are different intents |
+| an unknown id | **400**, naming it; no crawl is started                            |
+
+`GET /api/crawls/:id` reports the identity of each — id, version, phase, sha256 —
+and never the source. What ran in bytes is in the archive (`behaviors/custom.jsonl`
+and `preload/scripts.jsonl`) and in the catalog.
+
+## What capture-ledger still does not decide
 
 The old CLI mapped a flag onto every field of BrowserHive's `CaptureRequest`:
-`--device-pixel-ratios`, `--operation-delay-ms`, `--behaviors`,
-`--no-site-behaviors`, `--dismiss-banners`, `--accept-language`, `--session`.
-**None of those exist any more.** capture-ledger sends `captureFormats` and `signing`,
-and nothing else about how a page is rendered — everything unsent falls to
-whatever that BrowserHive server is configured to do, which is what BrowserHive's
-own documentation describes.
-
-Changing how pages are rendered is now a BrowserHive-side or flow-side change,
-not a capture-ledger one.
+`--device-pixel-ratios`, `--operation-delay-ms`, `--dismiss-banners`,
+`--accept-language`, `--session`. **None of those exist any more.** Beyond
+`captureFormats`, `signing` and the scripts above, capture-ledger sends nothing
+about how a page is rendered — everything unsent falls to whatever that BrowserHive
+server is configured to do, which is what BrowserHive's own documentation describes.
 
 ## What a caller can still set, per crawl
 
@@ -96,5 +140,6 @@ Pacing and reach, in the `POST /api/crawls` body — see
 | `maxPages`        | 30, never below the number of seeds | Total pages                        |
 | `perHostDelayMs`  | 2000                                | Gap between pages on one host      |
 | `hostParallelism` | 4                                   | Distinct hosts touched at once     |
+| `scriptIds`       | every enabled id, newest version    | What runs in the page (above)      |
 
 An unknown key is **400**, not silently dropped.

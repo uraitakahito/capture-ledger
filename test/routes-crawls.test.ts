@@ -115,6 +115,19 @@ interface FakeCrawl {
   error: string | null;
   lastJobId?: string | null;
   lastJobDepth?: number | null;
+  /** 解決済みの顔ぶれ。**行に固定されたもの**で、段ごとに引き直さない (`018`)。 */
+  scripts: FakeScript[];
+}
+
+/** 目録の 1 行。解決の並びと、見つからない id の扱いを見るのに要る欄だけ。 */
+interface FakeScript {
+  id: string;
+  version: number;
+  phase: "preload" | "behavior";
+  source: string;
+  sha256: string;
+  options: Record<string, unknown>;
+  enabled: boolean;
 }
 
 /** `crawl_pages` の 1 行。`GET /api/crawls/:id` の `failures` を見るのに要る欄だけ。 */
@@ -146,6 +159,7 @@ const fakeDb = (
   pages: FakePage[] = [],
   /** `updateTable(...).set(値)` の値を、呼ばれた順に積む。 */
   updates: Record<string, unknown>[] = [],
+  scripts: FakeScript[] = [],
 ) => ({
   insertInto: (table: string) => ({
     values: (row: Record<string, unknown> | Record<string, unknown>[]) => ({
@@ -175,8 +189,16 @@ const fakeDb = (
           err.constraint = "crawls_single_active_idx";
           throw err;
         }
+        const inserting = row as unknown as FakeCrawl & { scripts: unknown };
         crawls.push({
-          ...(row as unknown as FakeCrawl),
+          ...inserting,
+          // **jsonb は文字列で書いて、配列で読む。** 本物は node-pg が戻すので、
+          // ここで写さないと「書いた形のまま読める」という、本物では起きない
+          // 振る舞いを試験が肯定する。
+          scripts:
+            typeof inserting.scripts === "string"
+              ? (JSON.parse(inserting.scripts) as FakeScript[])
+              : [],
           stopReason: null,
           startedAt: new Date(),
           finishedAt: null,
@@ -232,6 +254,35 @@ const fakeDb = (
      * なる (反証で素通りした)。偽物が制約を持っていると、消したことに気づけない。
      */
     select: () => {
+      if (table === "scripts") {
+        /**
+         * `resolveScripts` の読み方を写す。**条件は指定されたものだけを当てる**
+         * (`captureTargets` と同じ判断) —— 偽物が `enabled` で勝手に絞ると、
+         * 本物からその条件が消えても試験は緑のままになる。
+         */
+        const scriptQuery = (where: [string, unknown, unknown][]) => ({
+          distinctOn: () => scriptQuery(where),
+          where: (column: string, op: unknown, value: unknown) =>
+            scriptQuery([...where, [column, op, value]]),
+          orderBy: () => scriptQuery(where),
+          execute: async (): Promise<FakeScript[]> => {
+            const matched = scripts.filter((s) =>
+              where.every(([column, op, value]) =>
+                op === "in"
+                  ? (value as unknown[]).includes((s as unknown as Record<string, unknown>)[column])
+                  : (s as unknown as Record<string, unknown>)[column] === value,
+              ),
+            );
+            // `distinctOn("id")` + `ORDER BY id, version DESC` = id ごとに最新版 1 本。
+            const byId = new Map<string, FakeScript>();
+            for (const row of [...matched].sort((a, b) => b.version - a.version)) {
+              if (!byId.has(row.id)) byId.set(row.id, row);
+            }
+            return Promise.resolve([...byId.values()].sort((a, b) => a.id.localeCompare(b.id)));
+          },
+        });
+        return scriptQuery([]);
+      }
       if (table === "crawls") {
         // 409 のときに「走っている 1 本」を引く。
         return {
@@ -292,9 +343,10 @@ const depsWith = (opts: {
   targets?: FakeTarget[];
   pages?: FakePage[];
   updates?: Record<string, unknown>[];
+  scripts?: FakeScript[];
 }): CrawlRouteDeps =>
   ({
-    db: fakeDb(opts.crawls, opts.targets, opts.pages, opts.updates),
+    db: fakeDb(opts.crawls, opts.targets, opts.pages, opts.updates, opts.scripts),
     fga: { check: async () => Promise.resolve({ allowed: opts.allowed }) },
     resolveIdentity: () => Promise.resolve({ subject: "alice", organizations: ["acme"] }),
     dispatch: opts.dispatch ?? (() => Promise.resolve()),
@@ -535,6 +587,17 @@ describe("クロール route の認可と単一実行", () => {
       error: null,
       lastJobId: "0193b6a1-3c1d-7a2e-9f00-1234567890ab",
       lastJobDepth: 0,
+      scripts: [
+        {
+          id: "autoscroll",
+          version: 2,
+          phase: "behavior",
+          source: "(async () => {})();",
+          sha256: "c".repeat(64),
+          options: {},
+          enabled: true,
+        },
+      ],
     };
     const pages: FakePage[] = [
       {
@@ -584,6 +647,7 @@ describe("クロール route の認可と単一実行", () => {
       error: null,
       lastJobId: null,
       lastJobDepth: null,
+      scripts: [],
     } satisfies FakeCrawl;
     const app = await buildApp(depsWith({ crawls: [crawl], allowed: true }));
     const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
@@ -736,5 +800,145 @@ describe("落ちた段を受けて締める", () => {
   it("知らない鍵は拒む", async () => {
     const res = await post(running(), { reason: "x", extra: 1 });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+/**
+ * **何を走らせるかは、クロールを起こした時点で決まる。**
+ *
+ * BrowserHive v11.0.0 から、サーバは走らせるものの顔ぶれを持たない。送らなければ
+ * ページでは何も走らず、それでも取り込みは成功して archive も出る —— 送り忘れが
+ * 見えない劣化になる唯一の欄なので、決め方と運び方をここで固定する。
+ */
+describe("走らせるものの解決", () => {
+  const CATALOG: FakeScript[] = [
+    {
+      id: "autofetch",
+      version: 1,
+      phase: "behavior",
+      source: "(async () => { /* fetch */ })();",
+      sha256: "a".repeat(64),
+      options: {},
+      enabled: true,
+    },
+    {
+      id: "autoscroll",
+      version: 1,
+      phase: "behavior",
+      source: "(async () => { /* v1 */ })();",
+      sha256: "b".repeat(64),
+      options: {},
+      enabled: true,
+    },
+    {
+      id: "autoscroll",
+      version: 2,
+      phase: "behavior",
+      source: "(async () => { /* v2 */ })();",
+      sha256: "c".repeat(64),
+      options: { maxSteps: 60 },
+      enabled: true,
+    },
+    {
+      id: "hide-webdriver",
+      version: 1,
+      phase: "preload",
+      source: "delete navigator.webdriver;",
+      sha256: "d".repeat(64),
+      options: {},
+      enabled: false,
+    },
+  ];
+
+  const start = async (payload: Record<string, unknown>) => {
+    const crawls: FakeCrawl[] = [];
+    const sent: { id: string; version: number }[][] = [];
+    const app = await buildApp(
+      depsWith({
+        crawls,
+        allowed: true,
+        scripts: CATALOG,
+        dispatch: (crawl) => {
+          sent.push(crawl.scripts.map((s) => ({ id: s.id, version: s.version })));
+          return Promise.resolve(undefined);
+        },
+      }),
+    );
+    const res = await app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+    await app.close();
+    return { res, sent, crawls };
+  };
+
+  it("何も指定しなければ、有効な各 id の最新版が走る", async () => {
+    // 無効な `hide-webdriver` は入らず、`autoscroll` は v1 ではなく v2。
+    const { res, sent } = await start({ seeds: [SEED] });
+    expect(res.statusCode).toBe(202);
+    expect(sent[0]).toEqual([
+      { id: "autofetch", version: 1 },
+      { id: "autoscroll", version: 2 },
+    ]);
+  });
+
+  it("名指しした並びが、そのまま実行順になる", async () => {
+    // **id 順に並べ替えない。** behavior は書かれた順に走るので、並びは指示の一部。
+    const { sent } = await start({ seeds: [SEED], scriptIds: ["autoscroll", "autofetch"] });
+    expect(sent[0]).toEqual([
+      { id: "autoscroll", version: 2 },
+      { id: "autofetch", version: 1 },
+    ]);
+  });
+
+  it("無効にした版でも、名指しすれば走る", async () => {
+    // `enabled` が決めるのは「既定に入るか」だけ。名指しは明示なので通す。
+    const { sent } = await start({ seeds: [SEED], scriptIds: ["hide-webdriver"] });
+    expect(sent[0]).toEqual([{ id: "hide-webdriver", version: 1 }]);
+  });
+
+  it("空配列を渡せば、何も走らない", async () => {
+    // 「既定でよい」(省く) と「何も走らせない」([]) は別の意思。
+    const { res, sent } = await start({ seeds: [SEED], scriptIds: [] });
+    expect(res.statusCode).toBe(202);
+    expect(sent[0]).toEqual([]);
+  });
+
+  it("目録に無い id は 400 で名指しし、クロールを立てない", async () => {
+    // **黙って落とさない。** 落とすと、頼んだ側は全部走ったつもりで結果を読む。
+    const { res, sent, crawls } = await start({
+      seeds: [SEED],
+      scriptIds: ["autoscroll", "typo-scroll"],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: "unknown scriptIds", scriptIds: ["typo-scroll"] });
+    expect(sent).toEqual([]);
+    expect(crawls).toEqual([]);
+  });
+
+  it("行に固定するのは解決済みの source で、id ではない", async () => {
+    // 目録は後から変わりうる。段をまたいで同じコードが走ることの根拠がこれ。
+    const { crawls } = await start({ seeds: [SEED], scriptIds: ["autoscroll"] });
+    expect(crawls[0]?.scripts).toEqual([
+      {
+        id: "autoscroll",
+        version: 2,
+        phase: "behavior",
+        source: "(async () => { /* v2 */ })();",
+        sha256: "c".repeat(64),
+        options: { maxSteps: 60 },
+      },
+    ]);
+  });
+
+  it("GET は身元だけを返す —— source は返さない", async () => {
+    // 何が走っているかを知るのに要るのは「どれの何版か」。中身は目録と archive に在る。
+    const { crawls } = await start({ seeds: [SEED], scriptIds: ["autoscroll"] });
+    const app = await buildApp(depsWith({ crawls, allowed: true, scripts: CATALOG }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${crawls[0]!.id}` });
+    await app.close();
+
+    const body = res.json<{ scripts: Record<string, unknown>[] }>();
+    expect(body.scripts).toEqual([
+      { id: "autoscroll", version: 2, phase: "behavior", sha256: "c".repeat(64) },
+    ]);
+    expect(res.body).not.toContain("/* v2 */");
   });
 });
