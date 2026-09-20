@@ -287,6 +287,19 @@ See [Archive ledger](/capture-ledger/archive-ledger/#who-may-start-one).
 
 ## 8. See what came out
 
+The quickest look is the screen. `dev:up` starts it last, so just open it:
+
+```sh
+open http://127.0.0.1:7080/
+```
+
+[dashboard](https://github.com/uraitakahito/dashboard) is **one row per crawl**: state, pages
+captured, how many WACZ, and links out to the run (Windmill) and to replay. **There is no token
+to paste** — it asks the dev issuer for one itself. (Which also means it is not a boundary: that
+issuer hands out a token for any name it is asked for.)
+
+What follows is the same thing by hand, which is what that screen calls.
+
 The listing comes from the ledger (the `archives` table) and is **filtered by OpenFGA's
 `can_view`**. Call the API directly with the token from §7:
 
