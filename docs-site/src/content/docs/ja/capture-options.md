@@ -78,13 +78,23 @@ behavior も、サイト別の behavior もありません。送らなければ�
 決める側だけなので、capture-ledger が `scripts` 表を持ち、解決した結果をクロールの行に
 固定します。
 
+ソースの出どころは [capture-scripts](https://github.com/uraitakahito/capture-scripts) で、
+`.upstream/capture-scripts` の submodule として固定しています。あちらの `catalog.json` が、
+ソースが自分では言えないこと —— `id` と `phase` —— を持ちます。
+
 ```sh
-# 走ってよいものを登録する。版は自動で採番され、同じバイト列を足し直すと既存の版を返す
-pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
-pnpm run scripts add hide-webdriver --file ./x.js --phase preload
+# catalog ごと入れる。何度流しても同じ（同じバイト列は同じ版）
+pnpm run scripts import .upstream/capture-scripts
 pnpm run scripts list                     # scriptIds を書かないクロールが走らせるもの
-pnpm run scripts disable hide-webdriver   # 既定から外す。名指しすれば走る
+
+# 1 本だけ試す・設定を変えるのは、いまも手で
+pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
+pnpm run scripts disable autofetch        # 既定から外す。名指しすれば走る
 ```
+
+`import` は **options について意見を持ちません**。同じ source なら options が何であれ同じ版
+として扱うので、手で調整した版を黙って置き換えることがありません。`--options` を渡すのは
+意見なので、そちらは版を分けます。
 
 `sha256` は**生成列**です。Postgres が `source` から数え、手で書き込むことはできません。
 BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGUMENT` で拒みます ——

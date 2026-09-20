@@ -97,7 +97,14 @@ name — `.env` already holds the connection strings:
 pnpm install         # first time only
 pnpm run db:migrate  # create the capture_targets table
 pnpm run db:seed     # load the five sample URLs
+pnpm run scripts import .upstream/capture-scripts  # what runs inside the page
 ```
+
+:::caution[Do not leave the catalog empty]
+BrowserHive has **no roster of its own**. With an empty catalog a crawl runs nothing inside
+the page — no scrolling, no lazy loading — and still **produces a successful archive**.
+`pnpm run scripts list` says what is in there.
+:::
 
 To capture pages of your own, add them the same way. `--org acme` is the organization
 the crawl in §7 claims, so the rows are visible to it:
