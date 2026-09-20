@@ -90,8 +90,11 @@ local Chrome and add `localhost:9222` and `localhost:9223` under _Configure…_.
 
 ## 4. Prepare the database
 
-**There is no dev container.** capture-ledger runs on the host and reaches the stack by
-name — `.env` already holds the connection strings:
+**There is no dev container.** capture-ledger runs on the host and talks to the ports the
+stack publishes on `127.0.0.1` — `.env` already holds the connection strings. **It does not
+use the container names** (`postgres.capture-ledger`): those resolve but the TCP connection
+never lands, and you get `EHOSTUNREACH`. See
+[Development environment](/capture-ledger/development-environment/).
 
 ```sh
 pnpm install         # first time only

@@ -89,8 +89,10 @@ Chromium は 2 台とも headless です。描画を見たい場合は、ロー�
 
 ## 4. データベースを準備する
 
-**dev コンテナはありません。** capture-ledger はホストで動き、名前でスタックに届きます
-（接続文字列は `.env` に入っています）。
+**dev コンテナはありません。** capture-ledger はホストで動き、スタックが `127.0.0.1` に
+publish した口を叩きます（接続文字列は `.env` に入っています）。**コンテナの名前
+（`postgres.capture-ledger`）は使いません** —— 名前は引けるのに TCP が届かず、
+`EHOSTUNREACH` になります（[開発環境](/capture-ledger/ja/development-environment/)に詳しく）。
 
 ```sh
 pnpm install         # 初回のみ

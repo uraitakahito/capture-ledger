@@ -129,14 +129,25 @@ until grpcurl -plaintext -import-path proto -proto browserhive/v1/capture.proto 
 
 **There is no dev container.** container-compose has exactly four subcommands —
 `up`, `down`, `build`, `version` — so there is no `exec` to drop into. It does
-not need one: the platform DNS resolves `<service>.capture-ledger` from the host as well
-as between containers, so capture-ledger runs on the host against the containerised
-stack. The connection string comes with the template, so the copied `.env`
-already has it:
+not need one: capture-ledger runs on the host against the containerised stack,
+through the ports that stack publishes on `127.0.0.1`. The connection string comes
+with the template, so the copied `.env` already has it:
 
 ```sh
-DATABASE_URL=postgres://capture_ledger:capture_ledger@postgres.capture-ledger:5432/capture_ledger
+DATABASE_URL=postgres://capture_ledger:capture_ledger@127.0.0.1:5432/capture_ledger
 ```
+
+:::danger[Do not use the container name from the host]
+The platform DNS does resolve `<service>.capture-ledger` from the host — but **resolving is
+not reaching**. macOS 26 stops binaries that Apple did not sign (that includes `node`) from
+opening TCP connections to the container subnet, so the name resolves and the connection
+then fails with `EHOSTUNREACH`. `/usr/bin/curl` **is** signed by Apple and gets through,
+which makes this easy to misdiagnose: the same URL answers for `curl` and fails for `node`.
+There is no switch for this in System Settings — `node` is not even listed.
+
+Code that runs **inside** a container (`scripts/prod-smoke.sh`) keeps using the names;
+container-to-container traffic is not affected.
+:::
 
 There is no BrowserHive address here any more. The two gRPC endpoints the stack
 publishes, `localhost:50051` and `localhost:50052` — one BrowserHive per Chromium —
