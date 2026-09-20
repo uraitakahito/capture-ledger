@@ -10,3 +10,6 @@
 [submodule ".upstream/capture-fixtures"]
 	path = .upstream/capture-fixtures
 	url = https://github.com/uraitakahito/capture-fixtures.git
+[submodule ".upstream/capture-scripts"]
+	path = .upstream/capture-scripts
+	url = https://github.com/uraitakahito/capture-scripts.git

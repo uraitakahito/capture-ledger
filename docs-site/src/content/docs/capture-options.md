@@ -82,14 +82,23 @@ archive; it just never scrolled and never triggered lazy loading.
 the side that decides what a crawl runs, so capture-ledger keeps a `scripts` table
 and pins its resolution onto the crawl.
 
+The sources come from [capture-scripts](https://github.com/uraitakahito/capture-scripts),
+pinned here as the `.upstream/capture-scripts` submodule. Its `catalog.json` carries what a
+source cannot say about itself — the `id` and the `phase`.
+
 ```sh
-# Register what may run. The version is assigned automatically; re-adding the
-# same bytes reuses the version it already has.
-pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
-pnpm run scripts add hide-webdriver --file ./x.js --phase preload
+# Import the catalog. Idempotent: same bytes, same version.
+pnpm run scripts import .upstream/capture-scripts
 pnpm run scripts list                     # what a crawl with no scriptIds will run
-pnpm run scripts disable hide-webdriver   # out of the default set, still nameable
+
+# One-offs and tuning still go in by hand.
+pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
+pnpm run scripts disable autofetch        # out of the default set, still nameable
 ```
+
+`import` has **no opinion about options**, so it never replaces a version you tuned by
+hand: same source, whatever the options, is the same version. Passing `--options` is an
+opinion, and that does make a new version.
 
 `sha256` is a **generated column**: Postgres computes it from `source` and the
 column cannot be written by hand. BrowserHive checks the two against each other

@@ -96,7 +96,14 @@ Chromium は 2 台とも headless です。描画を見たい場合は、ロー�
 pnpm install         # 初回のみ
 pnpm run db:migrate  # capture_targets テーブルを作成
 pnpm run db:seed     # サンプル 5 件を投入
+pnpm run scripts import .upstream/capture-scripts  # ページの中で走らせるものを入れる
 ```
+
+:::caution[目録を空のままにしない]
+BrowserHive は**走らせるものの顔ぶれを持ちません**。目録が空だと、クロールはページの中で
+何も走らせず —— スクロールも遅延読み込みも起きないまま、**成功したアーカイブが出ます**。
+入っているかは `pnpm run scripts list` が言います。
+:::
 
 自分のページを撮りたいときは、同じように足します。
 `--org acme` は、§7 のクロールが名乗る組織です。こうすると、そのクロールから見えます。
