@@ -19,9 +19,9 @@ jobs:
   # なので既定の GITHUB_TOKEN では clone できず、App token を鋳造する手順が要る。
   # それを毎 PR の全部の検査に背負わせるより、この 1 本だけに閉じるほうが安い。
   #
-  # SeaweedFS の版の突き合わせ (`check:seaweedfs-pin`) も同じ理由でここに居る。見るのは
-  # proto ではないが、submodule を取る job がこれだけで、比べる相手の原本は submodule の
-  # 中にある。
+  # store の名前の検査 (`check:store-name`) も同じ理由でここに居る。見るのは proto では
+  # ないが、submodule を取る job がこれだけで、検査の実体 (check-store-name.sh) は
+  # submodule の中にある。
   #
   # **検査であって修正ではない。** `pnpm run proto:generate` は頭で sync するが、
   # ここで呼ぶのは `proto:diff` のほう。sync を通してから比べると、ずれを自分で直して
@@ -79,8 +79,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Vendored proto matches the submodule
         run: pnpm run proto:diff
-      - name: SeaweedFS image matches the submodule's pin
-        run: pnpm run check:seaweedfs-pin
       - name: The store is named the shared one everywhere
         run: pnpm run check:store-name
 

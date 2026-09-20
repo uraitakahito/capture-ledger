@@ -46,8 +46,6 @@ sh .upstream/seaweedfs/scripts/stack.sh up
 中身を消す・見る・store ごと作り直す手順は、
 [seaweedfs の docs/operations.ja.md](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.ja.md)
 に 1 つだけ置いてあります（この repo の bucket を空にするだけなら `pnpm run store:wipe`）。
-他と混ざらない store で試したいときは `pnpm run stack:up --own-store` で、このスタックの
-中に使い捨てを立てます。
 
 ### 環境変数
 

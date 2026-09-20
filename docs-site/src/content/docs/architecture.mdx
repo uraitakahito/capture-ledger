@@ -157,8 +157,7 @@ host**, which is why capture-ledger itself needs no container.
 The artifact store (SeaweedFS) is **not in this stack**. It is one store shared by the three
 crawler repos, at `seaweedfs.crawler-storage:8333` (filer on `:8888`). It is brought up by
 [seaweedfs](https://github.com/uraitakahito/seaweedfs)'s `scripts/stack.sh` — the submodule works
-too: `.upstream/seaweedfs/scripts/stack.sh up`. For a store that nothing else touches, `pnpm run
-stack:up --own-store` puts a throwaway one inside this stack.
+too: `.upstream/seaweedfs/scripts/stack.sh up`. To empty it, `pnpm run store:wipe`.
 
 There is one compose file. The one-shot migrate/seed jobs are not services:
 `scripts/prod-smoke.sh` invokes them with `container run --rm`, because

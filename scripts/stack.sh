@@ -23,7 +23,6 @@
 #   ./scripts/stack.sh up            # 起動 (-d -b は既定で付く)
 #   ./scripts/stack.sh down          # 停止
 #   ./scripts/stack.sh up --profile capture-fixtures --profile search
-#   ./scripts/stack.sh up --own-store   # 共有 store を使わず、使い捨てを自分の中に立てる
 #
 # 余分な引数はそのまま container-compose へ渡る。`fixtures` と `search` を包まないのは、
 # どちらも黙っては壊れないから —— fixtures は実行時に種として選ぶもので、search は
@@ -38,20 +37,17 @@ cd "$(dirname "$0")/.."
 SUBCOMMAND="${1:-up}"
 shift || true
 
-# ## store をどちらに向けるか
+# ## store はこのスタックに居ない
 #
-# 日常は **共有 store** (`seaweedfs.crawler-storage`、`.upstream/seaweedfs` が起こす) を見る。
-# `--own-store` を渡したときだけ、使い捨ての store をこのスタックの中に立てて、そちらを向く。
+# 成果物の store は crawler で 1 つ (`seaweedfs.crawler-storage`)。起こすのは
+# `.upstream/seaweedfs/scripts/stack.sh` で、この compose には service が無い。
 #
-# **この 1 つのフラグが 2 つを同時に決める** —— profile を足すことと、宛先を自分の project に
-# 向けること。片方だけ渡せる道を作らない (署名の profile と env-file と同じ形。宛先だけ
-# 変えれば「誰も居ない所へ書く」が、profile だけ足せば「立てたのに見ない」ができてしまう)。
-own_store=0
-rest=()
-for arg in "$@"; do
-  if [ "${arg}" = "--own-store" ]; then own_store=1; else rest+=("${arg}"); fi
-done
-set -- ${rest[@]+"${rest[@]}"}
+# **写しを profile で持つ道は採らなかった。** container-compose は `environment:` の
+# `${VAR}` を展開しないので、宛先を切り替える手段が env ファイルしか無く、しかも
+# `depends_on` に書いた profile のサービスは profile 抜きでも起き上がる (実測。
+# browserhive-1 が seaweedfs を引きずり出した)。この repo に store の要る試験は無いので、
+# 1 つの宛先だけを持つ。他と混ざらない store で試したいときは、共有 store を空にする
+# (`pnpm run store:wipe`)。
 
 # `.env` から 1 行だけ読む。`source` しないのは、`.env` の他の値 (パスワードなど) を
 # この shell に持ち込まないため。
@@ -73,7 +69,7 @@ signing_enabled() {
 #     言わない**。しかも root のコンテナ (postgres、seaweedfs、replay) では成功するため、
 #     「一部のサービスだけ名前が引けない」という追いにくい症状になる。
 #   - submodule: 空なら submodule-versions.sh が「初期化されていません」で止める。
-#   - 共有 store: `--own-store` でないなら、起きているか。**403 は「立っている」** ——
+#   - 共有 store: 起きているか。**403 は「立っている」** ——
 #     S3 は署名の無い要求を拒むのが正常なので、`curl -f` で見ると立っている store を
 #     「落ちている」と判定する。見るのは status で、接続できないときだけ curl は 000 を返す。
 #
@@ -101,18 +97,16 @@ preflight() {
     exit 1
   fi
 
-  if [ "${own_store}" = 0 ]; then
-    local status
-    status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8333/ || true)"
-    if [ "${status}" = "000" ]; then
-      echo "エラー: 共有の store (seaweedfs.crawler-storage) が起きていません。" >&2
-      echo "" >&2
-      echo "    sh .upstream/seaweedfs/scripts/stack.sh up" >&2
-      echo "" >&2
-      echo "起こしてから、もう一度実行してください。自分のスタックの中に使い捨ての store を" >&2
-      echo "立てるなら --own-store を付けます。" >&2
-      exit 1
-    fi
+  # 共有 store が起きているか。**403 は「立っている」**。
+  local status
+  status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8333/ || true)"
+  if [ "${status}" = "000" ]; then
+    echo "エラー: 共有の store (seaweedfs.crawler-storage) が起きていません。" >&2
+    echo "" >&2
+    echo "    sh .upstream/seaweedfs/scripts/stack.sh up" >&2
+    echo "" >&2
+    echo "起こしてから、もう一度実行してください。" >&2
+    exit 1
   fi
 }
 
@@ -126,20 +120,10 @@ fi
 profile_args=()
 env_args=()
 
-if [ "${own_store}" = 1 ]; then
-  profile_args+=(--profile storage)
-  # 使い捨ての store はこのスタックの中に立つので、宛先も自分の project の名前にする。
-  export S3_ENDPOINT="http://seaweedfs.capture-ledger:8333"
-  echo "store: 自前 (このスタックの中に立てる。共有 store は見ない)"
-else
-  echo "store: 共有 (seaweedfs.crawler-storage:8333)"
-fi
+echo "store: 共有 (seaweedfs.crawler-storage:8333)"
 
 if signing_enabled; then
-  # **`=` ではなく `+=`。** 上で --own-store が --profile storage を入れていることがある ——
-  # 代入で書くと、署名を有効にした瞬間に使い捨ての store が起きなくなる (宛先だけが
-  # そちらを向いたまま「誰も居ない所へ書く」)。
-  profile_args+=(--profile signing)
+  profile_args=(--profile signing)
   env_args=(--env-file signing.env)
   echo "署名: 有効 (.env の CAPTURE_LEDGER_CAPTURE_SIGNING=1)"
   echo "  → --profile signing   wacz-signer と tsa を起こす"

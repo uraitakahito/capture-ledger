@@ -128,44 +128,6 @@ services:
     depends_on:
       - openfga-db
 
-  seaweedfs:
-    # **既定では起きない。** 日常は共有 store (seaweedfs.crawler-storage) を見る ——
-    # store は crawler 全体で 1 つで、起こすのは .upstream/seaweedfs/scripts/stack.sh。
-    # ここに在るのは「他と混ざらない store で試したいとき」のための使い捨て:
-    #
-    #   pnpm run stack:up --own-store
-    #
-    # そのとき stack.sh は、この profile を足すのと同時に宛先も自分の project に向ける
-    # (片方だけ渡せる道を作らない —— 署名の profile と env-file と同じ考え方)。
-    profiles: ["storage"]
-    # 版は .upstream/seaweedfs (submodule) の docker-compose.yml と揃える ——
-    # check:seaweedfs-pin が比べて、ずれたら落とす。上げるときは先に submodule 側の
-    # scripts/verify.sh を回す。4.27 未満に戻さないこと: 空にしたバケットが再起動で
-    # 書けなくなる (上流 #9563)。
-    image: docker.io/chrislusf/seaweedfs:4.46
-    # entrypoint は bucket の作成も担う (背後で再試行ループを回す) —— 順序を
-    # 気にしてやる必要のある、使い捨ての init コンテナは別に無い。
-    entrypoint: ["/etc/seaweedfs/entrypoint.sh"]
-    environment:
-      # bucket 名は browserhive のまま —— capture-ledger は browserhive が置いた成果物を
-      # 読む側なので、名前が一致していないと manifest の鍵が引けない。鍵も同じ綴り
-      # (identity は bucket ごとに分かれ、actions は bucket で絞られる)。
-      - S3_BUCKETS=browserhive
-      # replay が資格情報を持たずに /wacz/ を読むために要る。与えるのは Read だけで、
-      # 一覧も書き込みもできない。**この穴は広げても何も言わない**ので、
-      # 触るときは browserhive の test/e2e/s3-anonymous.e2e.test.ts を見ること。
-      - S3_ANONYMOUS_READ_BUCKETS=browserhive
-    # **publish しない。** 共有 store が 127.0.0.1:8333 を出しているので、ここが出すと
-    # 衝突する。この使い捨ての store には、host からもプラットフォーム DNS の名前
-    # (seaweedfs.capture-ledger:8333) で届く。
-    volumes:
-      # seaweedfs は browserhive とは **別の** submodule。proto の同期と chromium /
-      # browserhive 自身の build のために browserhive は持ち続けるが、object store の
-      # ためには持たない —— 以前は browserhive/etc/seaweedfs を mount していて、
-      # 「S3 が欲しいだけなのに browserhive 全体に依存する」形になっていた。
-      - ./.upstream/seaweedfs/etc:/etc/seaweedfs:ro
-      - seaweedfs-data:/data
-
   chromium-1: &chromium
     build:
       # browserhive 自身が動作確認された版の chromium —— submodule の submodule なので、
@@ -209,9 +171,10 @@ services:
     # プラットフォームの DNS (<service>.capture-ledger) を使った、名前による結線。
     environment: &browserhive-env
       BROWSERHIVE_BROWSER_URL: http://chromium-1.capture-ledger:9222
-      # 宛先は共有 store。`--own-store` のときだけ stack.sh が S3_ENDPOINT を
-      # 自分の project の名前に向ける。
-      BROWSERHIVE_S3_ENDPOINT: "${S3_ENDPOINT:-http://seaweedfs.crawler-storage:8333}"
+      # 宛先は共有 store。**変数で書かない** —— container-compose は environment の
+      # `${VAR}` も `${VAR:-既定}` も展開せず、文字列のまま container に渡す (実測:
+      # replay が `S3_BUCKET_URL must be http(s)://…, got: ${S3_ENDPOINT:-…}` で落ちた)。
+      BROWSERHIVE_S3_ENDPOINT: http://seaweedfs.crawler-storage:8333
       BROWSERHIVE_S3_REGION: us-east-1
       BROWSERHIVE_S3_BUCKET: browserhive
       BROWSERHIVE_S3_ACCESS_KEY_ID: browserhive
@@ -223,7 +186,7 @@ services:
       LOG_LEVEL: info
       # entrypoint の shim が、server を起動する前にここを叩いて待つ —— depends_on は
       # 起動順序でしかなく、起動時の HeadBucket は失敗すると致命的なため。
-      WAIT_FOR_S3: "${S3_ENDPOINT:-http://seaweedfs.crawler-storage:8333}"
+      WAIT_FOR_S3: http://seaweedfs.crawler-storage:8333
       # プラットフォームの DNS は AAAA レコードも publish するが、VM 間に v6 の経路は
       # 無い —— v4 を先に引かせないと、browser の WS URL が到達できない v6 アドレスに
       # 着地する。
@@ -250,7 +213,6 @@ services:
       # 指さない限り誰も読まない —— 起動の条件を 1 つ増やすほうが害が大きい。
       - ./.upstream/browserhive/dev-stack/signing-ca:/dev-ca:ro
     depends_on:
-      - seaweedfs
       - chromium-1
 
   browserhive-2:
@@ -261,7 +223,6 @@ services:
       <<: *browserhive-env
       BROWSERHIVE_BROWSER_URL: http://chromium-2.capture-ledger:9222
     depends_on:
-      - seaweedfs
       - chromium-2
 
   # WACZ のビューア。picker がここへ ?source=/wacz/<key> で渡す。
@@ -366,7 +327,7 @@ services:
     environment:
       # 上流は複合値で渡す。素のサービス名を値に書くと container-compose が
       # その IP に書き換えてしまい、読みが全部 403 になる (browserhive で実測)。
-      - S3_BUCKET_URL=${S3_ENDPOINT:-http://seaweedfs.crawler-storage:8333}/browserhive
+      - S3_BUCKET_URL=http://seaweedfs.crawler-storage:8333/browserhive
     ports:
       # loopback であることが要件。Service Worker は secure context (https か
       # loopback) でしか登録できないので、DNS 名で開くと **ページは出るのに
@@ -411,5 +372,4 @@ services:
 
 volumes:
   postgres-data:
-  seaweedfs-data:
   openfga-db-data:

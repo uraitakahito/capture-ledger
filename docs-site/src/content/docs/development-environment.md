@@ -47,8 +47,7 @@ sh .upstream/seaweedfs/scripts/stack.sh up
 
 Emptying it, looking inside, and recreating it are documented in one place,
 [seaweedfs's docs/operations.md](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.md)
-(`pnpm run store:wipe` empties this repo's bucket). For a store nothing else touches, `pnpm run
-stack:up --own-store` puts a throwaway one inside this stack.
+(`pnpm run store:wipe` empties this repo's bucket).
 
 ### Environment variables
 

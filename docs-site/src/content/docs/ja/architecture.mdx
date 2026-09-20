@@ -154,8 +154,7 @@ Fastify の既定は `err.message` と `err.code` をそのまま返しますが
 共有する 1 つの store で、`seaweedfs.crawler-storage:8333`（filer は `:8888`）です。
 起こすのは [seaweedfs](https://github.com/uraitakahito/seaweedfs) の
 `scripts/stack.sh`（submodule なので `.upstream/seaweedfs/scripts/stack.sh up` でも同じ）。
-他と混ざらない store で試したいときは `pnpm run stack:up --own-store` で、このスタックの
-中に使い捨てを立てます。
+中身を空にしたいときは `pnpm run store:wipe`。
 
 compose ファイルは 1 つです。migrate / seed の一発ジョブはサービスではなく、
 `scripts/prod-smoke.sh` が `container run --rm` で起動します（container-compose に

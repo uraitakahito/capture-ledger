@@ -59,9 +59,9 @@ pnpm run stack:up
 ```
 
 Before starting anything it checks the toolchain, the DNS domain (§1), the submodules (§2) and
-**whether the shared store is up**, and stops, naming whatever is missing. For a store that nothing
-else touches, `pnpm run stack:up --own-store` puts a throwaway one inside this stack — see
-[how to wipe and inspect it](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.md).
+**whether the shared store is up**, and stops, naming whatever is missing. Wiping and inspecting the
+store are covered in
+[its operations page](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.md).
 
 The first build compiles BrowserHive and the Chromium image from source, so
 expect several minutes. Check the state — until the stack is up, grpcurl reports
