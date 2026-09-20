@@ -302,9 +302,14 @@ services:
   #
   #   pnpm run stack:up --profile capture-fixtures
   #
-  # port は publish しない —— browserhive も host 側の道具も、プラットフォーム DNS が
-  # 配る capture-fixtures.capture-ledger:8080 という **同じ名前** で引ける。browserhive の compose の
-  # capture-fixtures と同じ形。
+  # **host 側からは loopback で引く。** macOS 26 では Apple 署名でないバイナリ (node) が
+  # コンテナの subnet へ TCP を張れず、DNS 名は引けるのに `EHOSTUNREACH` になる
+  # (実測 2026-09-20: 同じ URL に curl は 200、node は EHOSTUNREACH)。browserhive が
+  # v10.6.0 で全部の口を loopback へ寄せたのと同じ理由で、ここも publish する。
+  #
+  # **コンテナ側からは今までどおり名前で引く** —— 取り込むのは browserhive なので、
+  # 種の URL は capture-fixtures.capture-ledger:8080 のままでなければならない。
+  # つまりこの面は 2 つの宛先を持つ: 中からは名前、外からは 127.0.0.1:18080。
   #
   # 取り込み対象がここに居るので、browserhive 側に
   # BROWSERHIVE_ALLOW_PRIVATE_TARGETS=true が要る (上に入れてある)。
@@ -316,6 +321,13 @@ services:
         GIT_TAG: "${CAPTURE_FIXTURES_TAG:-}"
         GIT_REV: "${CAPTURE_FIXTURES_REV:-dev}"
     profiles: ["capture-fixtures"]
+    ports:
+      # e2e と doctor が host の node から叩く口。**browserhive の e2e スタックと
+      # 番号を分ける** —— あちらは 18080-18082 を publish するので、両方を同時に
+      # 起こすと後から起きたほうが bind できずに落ちる (実測 2026-09-20:
+      # `Service 'capture-fixtures' failed to start`、しかも 18080 には
+      # **browserhive 側の fixtures が答え続ける**ので、気づかずに緑を見る)。
+      - "127.0.0.1:18085:8080"
 
   replay:
     build:
