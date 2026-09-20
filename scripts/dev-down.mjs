@@ -36,7 +36,7 @@ let refused = 0;
 for (const spec of HOST_PROCESSES) {
   const found = inspect(spec);
   if (found.length === 0) {
-    console.log(`・ ${spec.name.padEnd(7)} 居ない (:${String(spec.port)})`);
+    console.log(`・ ${spec.name.padEnd(10)} 居ない (:${String(spec.port)})`);
     continue;
   }
   for (const proc of found) {
@@ -44,7 +44,7 @@ for (const spec of HOST_PROCESSES) {
       // **止めない。** port から引いた PID は、先客かもしれない。何が握っているかを
       // 見せて、決めるのは打った人に返す。
       refused += 1;
-      console.log(`✗ ${spec.name.padEnd(7)} :${String(spec.port)} は別のものが握っている`);
+      console.log(`✗ ${spec.name.padEnd(10)} :${String(spec.port)} は別のものが握っている`);
       console.log(`    pid ${String(proc.pid)}  ${proc.startedAt}`);
       console.log(`    ${proc.command}`);
       console.log(`    止めるなら自分で: kill ${String(proc.pid)}`);
@@ -56,7 +56,7 @@ for (const spec of HOST_PROCESSES) {
       gone: `もう居なかった (pid ${String(proc.pid)})`,
       running: `SIGTERM に応えない (pid ${String(proc.pid)})。kill -9 ${String(proc.pid)}`,
     }[outcome];
-    console.log(`${outcome === "running" ? "✗" : "✓"} ${spec.name.padEnd(7)} ${said}`);
+    console.log(`${outcome === "running" ? "✗" : "✓"} ${spec.name.padEnd(10)} ${said}`);
     if (outcome === "running") refused += 1;
   }
 }

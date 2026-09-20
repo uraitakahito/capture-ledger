@@ -47,7 +47,7 @@ for (const [index, spec] of HOST_PROCESSES.entries()) {
   const found = inspect(spec);
   const label = index === 0 ? "ホスト" : "";
   if (found.length === 0) {
-    console.log(row(label, `${spec.name.padEnd(7)} 居ない (:${String(spec.port)} は空いている)`));
+    console.log(row(label, `${spec.name.padEnd(10)} 居ない (:${String(spec.port)} は空いている)`));
     continue;
   }
   for (const proc of found) {
@@ -55,7 +55,7 @@ for (const [index, spec] of HOST_PROCESSES.entries()) {
     console.log(
       row(
         label,
-        `${spec.name.padEnd(7)} pid ${String(proc.pid)}  ${proc.startedAt}  :${String(spec.port)}${mine}`,
+        `${spec.name.padEnd(10)} pid ${String(proc.pid)}  ${proc.startedAt}  :${String(spec.port)}${mine}`,
       ),
     );
     if (!proc.ours) console.log(row("", `        ${proc.command}`));

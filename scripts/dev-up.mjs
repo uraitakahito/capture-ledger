@@ -6,6 +6,7 @@
  *   pnpm run dev:up --dry-run      # 何を打つかだけ出す。**何も起こさない**
  *   pnpm run dev:up --from api     # 途中から (失敗したときの続き)
  *   pnpm run dev:up --scheduler ../elsewhere   # capture-scheduler が横に無いとき
+ *   pnpm run dev:up --dashboard ../elsewhere   # dashboard が横に無いとき
  *
  * ## 束ねるが、隠さない
  *
@@ -55,7 +56,13 @@ const LOGS = resolve(ROOT, ".dev/logs");
 
 const whoami = (spawnSync("whoami", { encoding: "utf8" }).stdout ?? "").trim() || "you";
 
-const [issuer, api] = HOST_PROCESSES;
+/**
+ * 隣の 2 つ。**読むだけ・向こうのコマンドを打つだけ** で、書きには行かない。
+ * 場所を渡せるようにしてあるのは、横に並べていない clone のためと、
+ * 「無いときに名指しで止まる」を確かめられるようにするため。
+ */
+const [issuer, api, dashboardSpec] = HOST_PROCESSES;
+const dashboard = { ...dashboardSpec, root: resolve(ROOT, flag("--dashboard") ?? "../dashboard") };
 
 /**
  * 14 段。**この表がそのまま手順書。**
@@ -114,6 +121,12 @@ const STEPS = [
   },
   { id: "token", run: "pnpm run windmill:capture-ledger-token", cwd: SCHEDULER },
   { id: "doctor", run: "pnpm run doctor", cwd: SCHEDULER },
+  // **画面は最後。** API が答えるより先に開いても、何も見えない。
+  {
+    id: "dashboard",
+    daemon: dashboard,
+    ready: `http://127.0.0.1:${String(dashboard.port)}/healthz`,
+  },
 ];
 
 // ── 旗 ──────────────────────────────────────────────────────────────
@@ -128,10 +141,14 @@ if (argv.includes("--from") && STEPS.every((step) => step.id !== from)) {
 }
 const startAt = from === undefined ? 0 : STEPS.findIndex((step) => step.id === from);
 
-const shown = (step) =>
-  step.daemon === undefined
-    ? `${step.cwd === SCHEDULER ? `cd ${relative(ROOT, SCHEDULER)} && ` : ""}${step.run}`
-    : `${step.daemon.run}   （背景・.dev/logs/${step.id}.log）`;
+/** 打つときと同じ形で出す。**別の repo で走るものは `cd` から書く。** */
+const shown = (step) => {
+  const where = step.cwd ?? step.daemon?.root;
+  const cd = where === undefined || where === ROOT ? "" : `cd ${relative(ROOT, where)} && `;
+  return step.daemon === undefined
+    ? `${cd}${step.run}`
+    : `${cd}${step.daemon.run}   （背景・.dev/logs/${step.id}.log）`;
+};
 
 if (dryRun) {
   process.stdout.write(`${String(STEPS.length)} 段。何も起こしません。\n\n`);
@@ -218,8 +235,10 @@ const startDaemon = async (step) => {
 
   const log = createWriteStream(logPath, { flags: "a" });
   await new Promise((done) => log.on("open", done));
+  // **その daemon の根で起こす。** dashboard は隣の repo に在るので、この repo の
+  // 根で起こすと `Missing script` になる。
   const child = spawn("/bin/sh", ["-c", step.daemon.run], {
-    cwd: ROOT,
+    cwd: step.daemon.root,
     detached: true,
     stdio: ["ignore", log, log],
   });
@@ -251,9 +270,10 @@ for (const [index, step] of STEPS.entries()) {
 
   const started = Date.now();
   // 相手の repo が無い形で走らせると、spawn は ENOENT を投げる。**走らせてから
-  // 気づかない** よう、名指しで止まる。
-  if (step.cwd !== undefined && !existsSync(step.cwd)) {
-    process.stdout.write(`✗ ${step.cwd} がありません (capture-scheduler を横に clone すること)\n`);
+  // 気づかない** よう、名指しで止まる。daemon も同じ (根が隣の repo のことがある)。
+  const needs = step.cwd ?? step.daemon?.root;
+  if (needs !== undefined && !existsSync(needs)) {
+    process.stdout.write(`✗ ${needs} がありません (crawler の repo を横に clone すること)\n`);
     process.stdout.write(`\n直したら: pnpm run dev:up --from ${step.id}\n`);
     process.exit(1);
   }
@@ -285,7 +305,8 @@ for (const [index, step] of STEPS.entries()) {
 }
 
 process.stdout.write(
-  "\n全段おわり。撮ってみるなら:\n" +
+  `\n全段おわり。画面: http://127.0.0.1:${String(dashboard.port)}/\n` +
+    "\n撮ってみるなら:\n" +
     "  cd ../capture-scheduler && pnpm run smoke\n" +
     "\nいま何が立っているか: pnpm run dev:status   ／   片付け: pnpm run dev:down\n" +
     "\n名乗る名前を変えているなら (capture-scheduler の CAPTURE_LEDGER_SUBJECT)、\n" +
