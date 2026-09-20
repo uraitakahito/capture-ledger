@@ -29,6 +29,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import type { OpenFgaClient } from "@openfga/sdk";
+import { sql } from "kysely";
 import type { Insertable, Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
@@ -37,6 +38,7 @@ import type {
   CrawlScope,
   CrawlScript,
   CrawlsTable,
+  CrawlState,
   Database,
 } from "../db/database.js";
 import { resolveScripts } from "../scripts/store.js";
@@ -71,6 +73,30 @@ const DEFAULT_PER_HOST_DELAY_MS = 2000;
 const DEFAULT_HOST_PARALLELISM = 4;
 /** `GET /api/crawls/:id` が返す、取れなかったページの数の上限。理由を読むには数本で足りる。 */
 const FAILURES_SHOWN = 5;
+/** 一覧の 1 ページ。`GET /api/archives` と同じ大きさに揃えてある。 */
+const CRAWLS_PAGE = 50;
+
+/**
+ * そのクロールから出た WACZ の数。
+ *
+ * **`archives` に `crawl_id` は無い。** 繋ぐのは `crawl_pages` の `task_id` で、
+ * 列を足さずに今日のまま届く (`008` と `013`)。
+ *
+ * **cast が 2 つとも要る。**
+ *
+ *   - `a.task_id::text` —— `archives.task_id` は uuid、`crawl_pages.task_id` は text。
+ *     素で繋ぐと `operator does not exist: text = uuid` で落ちる (実測)。**uuid 側を
+ *     text に倒す**のは意図的で、逆向き (`p.task_id::uuid`) は uuid の形でない値が
+ *     1 行でも入った日に一覧ごと 500 になる。この repo に DB 試験は無いので、
+ *     その日は本番で分かることになる。
+ *   - `count(*)::int` —— `count` は int8 で、node-pg は精度を落とさないために
+ *     **文字列で返す**。そのまま載せると JSON に `"3"` が出る。
+ */
+const waczCount = sql<number>`(
+  select count(*)::int from archives a
+  join crawl_pages p on a.task_id::text = p.task_id
+  where p.crawl_id = crawls.id
+)`;
 
 /**
  * Windmill に投げる関数。既定は webhook を叩くもので、試験だけが差し替える。
@@ -455,6 +481,95 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         "Crawl started",
       );
       return reply.code(202).send({ crawlId });
+    },
+  );
+
+  /**
+   * クロールの一覧。**画面のためではなく資源として返す** —— 並べ方も、どの列を
+   * 見せるかも、呼ぶ側が決める。doctor も smoke も CLI も同じ口を使える。
+   *
+   * ## 絞りは `:id` と同じ `maySubmit`
+   *
+   * `can_submit` は「取り込みを起こしてよい者」で、モデルはそれを **組織を跨ぐ信頼**
+   * として定義している (`fga/model.fga` の `submitter`: 「その 1 つの許可で他の組織の
+   * 対象も投げられる」)。読みだけを狭める規則は増やさない —— 起こせるのに見えない、
+   * という食い違いのほうが説明しにくい。
+   *
+   * 代わりに `orgId` を必ず行に出す。**見えている範囲を、画面が言えるようにするため。**
+   * 組織ごとに絞る必要が出たら、そのときは `crawl` 型を認可モデルに足して
+   * `archives` と同じ `batchCheck` で絞ることになる (モデルの変更なので、
+   * `fga:deploy` と assertion が一緒に動く)。
+   *
+   * 権限が無いときは 403 ではなく**空**を返す。`/api/archives` と同じ作法で、
+   * 「在るが見せない」と「無い」を呼び出し元に区別させない。
+   */
+  app.get<{ Querystring: { state?: CrawlState; before?: string } }>(
+    "/api/crawls",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          properties: {
+            state: { type: "string", enum: ["running", "succeeded", "failed"] },
+            // カーソルは「いま出した最後の行の startedAt」。`/api/archives` と同じ
+            // 綴りにしてある。形式が違えば 400 —— `new Date()` は不正な文字列でも
+            // 投げず Invalid Date を返すので、ここで落とさないと SQL のパラメータに
+            // なり、Postgres が拒んで 500 になる。
+            before: { type: "string", format: "date-time" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) return reply.code(200).send({ crawls: [] });
+
+      const { state, before } = request.query;
+      let query = db
+        .selectFrom("crawls")
+        .select([
+          "id",
+          "state",
+          "stopReason",
+          "seeds",
+          "requestedBy",
+          "orgId",
+          "startedAt",
+          "finishedAt",
+          "pagesDiscovered",
+          "pagesCaptured",
+          "error",
+          "lastJobId",
+          "lastJobDepth",
+          waczCount.as("waczCount"),
+        ])
+        .orderBy("startedAt", "desc")
+        .limit(CRAWLS_PAGE);
+      if (state !== undefined) query = query.where("state", "=", state);
+      if (before !== undefined) query = query.where("startedAt", "<", new Date(before));
+
+      const rows = await query.execute();
+      return reply.code(200).send({
+        crawls: rows.map((crawl) => ({
+          crawlId: crawl.id,
+          state: crawl.state,
+          // **state だけでは足りない。** `succeeded` の大半は打ち切り (`max_depth`) で、
+          // 「全部辿った」(`completed`) と区別が付かない。呼ぶ側が両方を受け取れるようにする。
+          stopReason: crawl.stopReason,
+          seeds: crawl.seeds,
+          requestedBy: crawl.requestedBy,
+          orgId: crawl.orgId,
+          startedAt: crawl.startedAt,
+          finishedAt: crawl.finishedAt,
+          pagesDiscovered: crawl.pagesDiscovered,
+          pagesCaptured: crawl.pagesCaptured,
+          error: crawl.error,
+          waczCount: crawl.waczCount,
+          lastJob:
+            crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
+        })),
+      });
     },
   );
 
