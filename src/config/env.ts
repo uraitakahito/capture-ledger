@@ -33,12 +33,13 @@ export const REQUIRED_ENV = [
 
 /**
  * 必須の変数のうち、**雛形 (.env.example) に値を書けないもの**。OpenFGA に model を
- * デプロイして初めて決まる id で、`pnpm run fga:deploy` の印字を人が .env へ書き写す。
+ * デプロイして初めて決まる id で、`pnpm run fga:deploy` が `.env.local` に書く。
  *
  * 足りないときの案内はこれで分ける (`MissingEnvError`)。この 2 つに雛形の写し直しを
- * 勧めてはいけない —— 雛形は id を持たず、写し直せば書き写した id も消える。以前の案内は
+ * 勧めてはいけない —— 雛形は id を持たないので、写し直しでは埋まらない。以前の案内は
  * 写し直し (当時の setup.sh) を勧めていて、api → 写し直し → api の輪から出られなくなった
- * (2026-09-19)。
+ * (2026-09-19)。**id が消えることはもう無い**: 人が書くのは `.env`、道具が書くのは
+ * `.env.local` と分けてあるので、雛形を写し直しても id のほうは残る。
  */
 export const FGA_DEPLOY_ENV = [
   "CAPTURE_LEDGER_FGA_STORE_ID",
@@ -131,9 +132,8 @@ export const optional = (name: string, fallback: string): string => {
  * 足りない変数を、**値の出どころ** ごとに分けて案内する。
  *
  * 名前を並べるだけでは何を入れればよいか分からない。しかも出どころによって正しい手が
- * 逆になる: 雛形に在るものは写せば埋まるが、`FGA_DEPLOY_ENV` は写しても空のまま。
- * 雛形の段に写し直しの危うさを添えるのは、S3 の変数を直そうとして、書き写した
- * id を消さないため。
+ * 逆になる: 雛形に在るものは写せば埋まるが、`FGA_DEPLOY_ENV` は写しても空のまま ——
+ * あちらを埋めるのは人ではなく道具で、書く先も `.env` ではない。
  */
 const explainMissing = (names: string[]): string => {
   const fromDeploy = names.filter((name) => (FGA_DEPLOY_ENV as readonly string[]).includes(name));
@@ -144,14 +144,14 @@ const explainMissing = (names: string[]): string => {
     sections.push(
       `  .env.example に値があるもの:\n${list(fromTemplate)}\n` +
         "    .env が無ければ cp -n .env.example .env で作る。在るなら .env.example から\n" +
-        "    該当の行を写すこと (丸ごと写し直すと、書き写した OpenFGA の id も消える)。",
+        "    該当の行を写すこと (丸ごと写し直すと、他の手直しも一緒に消える)。",
     );
   }
   if (fromDeploy.length > 0) {
     sections.push(
       `  OpenFGA へのデプロイで決まるもの:\n${list(fromDeploy)}\n` +
-        "    pnpm run fga:deploy が印字する 2 行を .env に書き写すこと\n" +
-        "    (OpenFGA が初めてなら、先に pnpm run fga:migrate)。.env.example には無い。",
+        "    pnpm run fga:deploy を走らせること。id は .env.local に書き込まれる\n" +
+        "    ので、書き写す作業は無い (OpenFGA が初めてなら、先に pnpm run fga:migrate)。",
     );
   }
   return `環境変数が足りない:\n\n${sections.join("\n\n")}`;
