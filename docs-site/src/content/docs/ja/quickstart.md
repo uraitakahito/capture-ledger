@@ -280,6 +280,19 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<craw
 
 ## 8. 結果を見る
 
+いちばん早いのは画面です。`dev:up` が最後に起こしているので、開くだけ:
+
+```sh
+open http://127.0.0.1:7080/
+```
+
+[dashboard](https://github.com/uraitakahito/dashboard) は **1 行 = 1 本のクロール**で、
+状態・撮れた数・WACZ の数と、run（Windmill）と replay への行き先が並びます。
+**トークンを貼る必要はありません** —— あちらが開発用 issuer から自分で取ります
+（そのぶん境界ではありません。issuer は頼まれれば誰の名前でも出します）。
+
+以下は、その画面が叩いているものを手で確かめる道です。
+
 一覧は台帳（`archives` テーブル）から来ていて、**OpenFGA の `can_view` で
 絞ってあります**。§7 と同じ token で API を直に叩けます。
 
