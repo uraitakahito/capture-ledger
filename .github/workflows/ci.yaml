@@ -81,6 +81,8 @@ jobs:
         run: pnpm run proto:diff
       - name: SeaweedFS image matches the submodule's pin
         run: pnpm run check:seaweedfs-pin
+      - name: The store is named the shared one everywhere
+        run: pnpm run check:store-name
 
   check:
     runs-on: ubuntu-latest

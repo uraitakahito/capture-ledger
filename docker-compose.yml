@@ -129,6 +129,15 @@ services:
       - openfga-db
 
   seaweedfs:
+    # **既定では起きない。** 日常は共有 store (seaweedfs.crawler-storage) を見る ——
+    # store は crawler 全体で 1 つで、起こすのは .upstream/seaweedfs/scripts/stack.sh。
+    # ここに在るのは「他と混ざらない store で試したいとき」のための使い捨て:
+    #
+    #   pnpm run stack:up --own-store
+    #
+    # そのとき stack.sh は、この profile を足すのと同時に宛先も自分の project に向ける
+    # (片方だけ渡せる道を作らない —— 署名の profile と env-file と同じ考え方)。
+    profiles: ["storage"]
     # 版は .upstream/seaweedfs (submodule) の docker-compose.yml と揃える ——
     # check:seaweedfs-pin が比べて、ずれたら落とす。上げるときは先に submodule 側の
     # scripts/verify.sh を回す。4.27 未満に戻さないこと: 空にしたバケットが再起動で
@@ -139,20 +148,16 @@ services:
     entrypoint: ["/etc/seaweedfs/entrypoint.sh"]
     environment:
       # bucket 名は browserhive のまま —— capture-ledger は browserhive が置いた成果物を
-      # 読む側なので、名前が一致していないと manifest の鍵が引けない。
-      - S3_ACCESS_KEY_ID=browserhive
-      - S3_SECRET_ACCESS_KEY=browserhive
-      - S3_BUCKET=browserhive
+      # 読む側なので、名前が一致していないと manifest の鍵が引けない。鍵も同じ綴り
+      # (identity は bucket ごとに分かれ、actions は bucket で絞られる)。
+      - S3_BUCKETS=browserhive
       # replay が資格情報を持たずに /wacz/ を読むために要る。与えるのは Read だけで、
       # 一覧も書き込みもできない。**この穴は広げても何も言わない**ので、
       # 触るときは browserhive の test/e2e/s3-anonymous.e2e.test.ts を見ること。
-      - S3_ANONYMOUS_READ=true
-    # host 側の道具のために publish している。browserhive は名前で届くが、capture-ledger は
-    # host 上で動いていて、いまは結果の manifest を読み、URL の署名もここに対して
-    # 行う —— 8333 が S3 API、8888 が filer の UI。
-    ports:
-      - "127.0.0.1:8333:8333"
-      - "127.0.0.1:8888:8888"
+      - S3_ANONYMOUS_READ_BUCKETS=browserhive
+    # **publish しない。** 共有 store が 127.0.0.1:8333 を出しているので、ここが出すと
+    # 衝突する。この使い捨ての store には、host からもプラットフォーム DNS の名前
+    # (seaweedfs.capture-ledger:8333) で届く。
     volumes:
       # seaweedfs は browserhive とは **別の** submodule。proto の同期と chromium /
       # browserhive 自身の build のために browserhive は持ち続けるが、object store の
@@ -204,7 +209,9 @@ services:
     # プラットフォームの DNS (<service>.capture-ledger) を使った、名前による結線。
     environment: &browserhive-env
       BROWSERHIVE_BROWSER_URL: http://chromium-1.capture-ledger:9222
-      BROWSERHIVE_S3_ENDPOINT: http://seaweedfs.capture-ledger:8333
+      # 宛先は共有 store。`--own-store` のときだけ stack.sh が S3_ENDPOINT を
+      # 自分の project の名前に向ける。
+      BROWSERHIVE_S3_ENDPOINT: "${S3_ENDPOINT:-http://seaweedfs.crawler-storage:8333}"
       BROWSERHIVE_S3_REGION: us-east-1
       BROWSERHIVE_S3_BUCKET: browserhive
       BROWSERHIVE_S3_ACCESS_KEY_ID: browserhive
@@ -216,7 +223,7 @@ services:
       LOG_LEVEL: info
       # entrypoint の shim が、server を起動する前にここを叩いて待つ —— depends_on は
       # 起動順序でしかなく、起動時の HeadBucket は失敗すると致命的なため。
-      WAIT_FOR_S3: http://seaweedfs.capture-ledger:8333
+      WAIT_FOR_S3: "${S3_ENDPOINT:-http://seaweedfs.crawler-storage:8333}"
       # プラットフォームの DNS は AAAA レコードも publish するが、VM 間に v6 の経路は
       # 無い —— v4 を先に引かせないと、browser の WS URL が到達できない v6 アドレスに
       # 着地する。
@@ -359,7 +366,7 @@ services:
     environment:
       # 上流は複合値で渡す。素のサービス名を値に書くと container-compose が
       # その IP に書き換えてしまい、読みが全部 403 になる (browserhive で実測)。
-      - S3_BUCKET_URL=http://seaweedfs.capture-ledger:8333/browserhive
+      - S3_BUCKET_URL=${S3_ENDPOINT:-http://seaweedfs.crawler-storage:8333}/browserhive
     ports:
       # loopback であることが要件。Service Worker は secure context (https か
       # loopback) でしか登録できないので、DNS 名で開くと **ページは出るのに

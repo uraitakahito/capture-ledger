@@ -3,16 +3,20 @@ title: Quickstart
 description: Bring the Compose stack up, seed the capture_targets table, and start your first crawl.
 ---
 
-The stack brings up everything capture-ledger needs — Postgres, SeaweedFS, two headless
+The stack brings up everything capture-ledger needs — Postgres, two headless
 Chromiums, and a BrowserHive in front of each, built from the
 [pinned submodule](/capture-ledger/upgrading-browserhive/). It runs on
 [Apple Container](https://github.com/apple/container), driven by
 `container-compose`.
 
+The artifact store (SeaweedFS) is **not part of this stack**: it is one store shared by the three
+crawler repos, brought up by [seaweedfs](https://github.com/uraitakahito/seaweedfs) (§3).
+
 ## 1. Register the DNS domain (once per machine)
 
 ```sh
 sudo container system dns create capture-ledger
+sudo container system dns create crawler-storage   # for the shared store
 ```
 
 The project name is the DNS domain: containers become `<service>.capture-ledger`,
@@ -39,14 +43,25 @@ changed. The template already carries the development values; the only ones
 you add are the two OpenFGA ids (§5) and, to crawl, four lines (§7). `-n` refuses
 to overwrite an existing `.env`, so the values you pasted survive a second run.
 
-## 3. Start the stack
+## 3. Start the shared store and the stack
+
+There is one artifact store for all of crawler. Start it first if it is not already up (it lives in
+the submodule, so you do not have to leave this repo):
+
+```sh
+sh .upstream/seaweedfs/scripts/stack.sh up
+```
+
+Then this repo's stack:
 
 ```sh
 pnpm run stack:up
 ```
 
-Before starting anything it checks the toolchain, the DNS domain (§1) and the
-submodules (§2), and stops, naming whatever is missing.
+Before starting anything it checks the toolchain, the DNS domain (§1), the submodules (§2) and
+**whether the shared store is up**, and stops, naming whatever is missing. For a store that nothing
+else touches, `pnpm run stack:up --own-store` puts a throwaway one inside this stack — see
+[how to wipe and inspect it](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.md).
 
 The first build compiles BrowserHive and the Chromium image from source, so
 expect several minutes. Check the state — until the stack is up, grpcurl reports

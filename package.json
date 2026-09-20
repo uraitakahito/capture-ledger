@@ -104,14 +104,16 @@
     "db:seed:down": "pnpm run build && node --env-file-if-exists=.env dist/db/seed.js down",
     "targets": "pnpm run build && node --env-file-if-exists=.env dist/targets/cli.js",
     "audit": "pnpm audit --audit-level=low",
-    "check": "pnpm run audit && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm test && pnpm run build && pnpm run proto:check && pnpm run proto:check-deps && pnpm run check:overrides && pnpm run proto:diff && pnpm run check:seaweedfs-pin && pnpm run check-env && pnpm run check-comment-refs && pnpm run check:flag-style && pnpm run check:ci-parity && pnpm run fga:test && pnpm run site:check",
+    "check": "pnpm run audit && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm test && pnpm run build && pnpm run proto:check && pnpm run proto:check-deps && pnpm run check:overrides && pnpm run proto:diff && pnpm run check:seaweedfs-pin && pnpm run check:store-name && pnpm run check-env && pnpm run check-comment-refs && pnpm run check:flag-style && pnpm run check:ci-parity && pnpm run fga:test && pnpm run site:check",
     "oidc:issuer": "pnpm run build && node --env-file-if-exists=.env dist/dev/issuer-cli.js",
     "oidc:token": "pnpm run build && node --env-file-if-exists=.env dist/dev/token.js",
     "check:flag-style": "node scripts/check-flag-style.mjs",
     "check:overrides": "node scripts/check-overrides.mjs",
     "clean": "rm -rf dist",
     "check:ci-parity": "node scripts/check-ci-parity.mjs",
-    "check:seaweedfs-pin": "sh .upstream/seaweedfs/scripts/check-pin.sh docker-compose.yml"
+    "check:seaweedfs-pin": "sh .upstream/seaweedfs/scripts/check-pin.sh docker-compose.yml",
+    "check:store-name": "sh .upstream/seaweedfs/scripts/check-store-name.sh crawler-storage docker-compose.yml scripts/stack.sh",
+    "store:wipe": "sh .upstream/seaweedfs/scripts/wipe.sh browserhive"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1133.0",

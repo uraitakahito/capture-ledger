@@ -32,7 +32,22 @@ pnpm run check       # audit + typecheck + lint + format:check + env + テスト
 
 スタックは `container-compose` を直接叩かず、`pnpm run stack:up` で起動してください。
 起動の前に、道具と `capture-ledger` DNS ドメイン、すべての build context が指す
-`.upstream/` の submodule を確かめ、足りなければ名前を挙げて止まります。
+`.upstream/` の submodule、そして**共有 store が起きているか**を確かめ、足りなければ
+名前を挙げて止まります。
+
+成果物を置く store（SeaweedFS）は、このスタックには入っていません。crawler の 3 つの repo が
+共有する 1 つの store（`seaweedfs.crawler-storage`）で、submodule から起こします:
+
+```sh
+sudo container system dns create crawler-storage   # マシンごとに 1 度だけ
+sh .upstream/seaweedfs/scripts/stack.sh up
+```
+
+中身を消す・見る・store ごと作り直す手順は、
+[seaweedfs の docs/operations.ja.md](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.ja.md)
+に 1 つだけ置いてあります（この repo の bucket を空にするだけなら `pnpm run store:wipe`）。
+他と混ざらない store で試したいときは `pnpm run stack:up --own-store` で、このスタックの
+中に使い捨てを立てます。
 
 ### 環境変数
 

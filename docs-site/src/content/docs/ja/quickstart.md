@@ -3,15 +3,20 @@ title: クイックスタート
 description: Compose スタックを立ち上げ、capture_targets を seed し、最初のクロールを起こすまで。
 ---
 
-スタックは capture-ledger に必要なものを一式立ち上げます — Postgres、SeaweedFS、
+スタックは capture-ledger に必要なものを一式立ち上げます — Postgres、
 headless の Chromium 2 台、そしてその 1 台ずつに付く BrowserHive
 （[固定した submodule](/capture-ledger/ja/upgrading-browserhive/)からビルド）です。実行基盤は
 [Apple Container](https://github.com/apple/container)で、`container-compose` が駆動します。
+
+成果物を置く store（SeaweedFS）は**このスタックには入っていません** —— crawler の 3 つの
+repo が共有する 1 つの store で、[seaweedfs](https://github.com/uraitakahito/seaweedfs) が
+起こします（§3）。
 
 ## 1. DNS ドメインを登録する（マシンごとに 1 回）
 
 ```sh
 sudo container system dns create capture-ledger
+sudo container system dns create crawler-storage   # 共有 store のぶん
 ```
 
 プロジェクト名がそのまま DNS ドメインになります。コンテナは `<service>.capture-ledger`
@@ -37,14 +42,25 @@ build context はどれもここを指すので、空のままでは何もビル
 最初から入っていて、書き足すのは OpenFGA の 2 つの ID（§5）と、クロールを起こすときの
 4 行（§7）だけです。`-n` は既にある `.env` を上書きしないための印で、書き写した値を守ります。
 
-## 3. スタックを起動する
+## 3. 共有 store とスタックを起動する
+
+成果物を置く store は crawler で 1 つだけ立てます。まだ起きていなければ先に起こします
+（submodule に入っているので、この repo から出る必要はありません）:
+
+```sh
+sh .upstream/seaweedfs/scripts/stack.sh up
+```
+
+続けて、この repo のスタック:
 
 ```sh
 pnpm run stack:up
 ```
 
-起動の前に、道具と DNS ドメイン（§1）と submodule（§2）を確かめ、足りなければ
-名前を挙げて止まります。
+起動の前に、道具と DNS ドメイン（§1）と submodule（§2）、そして**共有 store が起きているか**
+を確かめ、足りなければ名前を挙げて止まります。他と混ざらない store で試したいときは
+`pnpm run stack:up --own-store` で、このスタックの中に使い捨てを立てます
+（[アーカイブの消し方など](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.ja.md)）。
 
 初回は BrowserHive と Chromium イメージをソースからビルドするため、数分かかります。
 状態を確認します (まだ起動していなければ grpcurl がそのまま失敗を報告します):

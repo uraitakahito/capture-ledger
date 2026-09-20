@@ -71,6 +71,8 @@ const ONLY_IN_CHECK = {
   "proto:diff": "proto-sync job。submodule の認証を全検査に背負わせないため",
   "check:seaweedfs-pin":
     "proto-sync job。原本が submodule の中にあり、submodule を取る job がそこだけ",
+  "check:store-name":
+    "proto-sync job。検査の実体が submodule の中にある (check:seaweedfs-pin と同じ理由)",
   "site:check": "site.yaml。submodule とタグの取得が要る",
 };
 

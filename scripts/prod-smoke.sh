@@ -31,10 +31,11 @@ HEALTH_TIMEOUT_S="${BROWSERHIVE_HEALTHCHECK_TIMEOUT_S:-180}"
 # `.result.json` manifest and `.links.json` at the keys the level report carries,
 # and the picker serves the archives. So the S3 settings belong to the API run and
 # not just to BrowserHive.
-# They match docker-compose.yml's seaweedfs service; path-style because the
-# bundled SeaweedFS has no wildcard DNS for the bucket subdomain.
+# The store is the shared one (seaweedfs.crawler-storage) — this script does not bring
+# it up, so start it first: sh .upstream/seaweedfs/scripts/stack.sh up. Path-style because
+# the bundled SeaweedFS has no wildcard DNS for the bucket subdomain.
 S3_ENV=(
-  -e "CAPTURE_LEDGER_S3_ENDPOINT=http://seaweedfs.capture-ledger:8333"
+  -e "CAPTURE_LEDGER_S3_ENDPOINT=http://seaweedfs.crawler-storage:8333"
   -e "CAPTURE_LEDGER_S3_REGION=us-east-1"
   -e "CAPTURE_LEDGER_S3_BUCKET=browserhive"
   -e "CAPTURE_LEDGER_S3_ACCESS_KEY_ID=browserhive"
