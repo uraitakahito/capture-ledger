@@ -60,7 +60,7 @@ pnpm run stack:up
 起動の前に、道具と DNS ドメイン（§1）と submodule（§2）、そして**共有 store が起きているか**
 を確かめ、足りなければ名前を挙げて止まります。
 store の中身を消す・見る手順は
-[アーカイブの消し方など](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.ja.md)にあります。
+[アーカイブの消し方など](https://uraitakahito.github.io/seaweedfs/ja/operations/)にあります。
 
 初回は BrowserHive と Chromium イメージをソースからビルドするため、数分かかります。
 状態を確認します (まだ起動していなければ grpcurl がそのまま失敗を報告します):
