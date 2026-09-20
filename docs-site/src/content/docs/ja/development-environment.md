@@ -44,7 +44,7 @@ sh .upstream/seaweedfs/scripts/stack.sh up
 ```
 
 中身を消す・見る・store ごと作り直す手順は、
-[seaweedfs の docs/operations.ja.md](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.ja.md)
+[seaweedfs の運用ガイド](https://uraitakahito.github.io/seaweedfs/ja/operations/)
 に 1 つだけ置いてあります（この repo の bucket を空にするだけなら `pnpm run store:wipe`）。
 
 ### 環境変数
