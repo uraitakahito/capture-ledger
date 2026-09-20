@@ -39,8 +39,10 @@ cp -n .env.example .env                   # 設定の雛形を写す (既にあ�
 build context はどれもここを指すので、空のままでは何もビルドできません。
 
 `.env` は `.env.example` の写しです。何も調べず、値も変えません。開発用の値は雛形に
-最初から入っていて、書き足すのは OpenFGA の 2 つの ID（§5）と、クロールを起こすときの
-4 行（§7）だけです。`-n` は既にある `.env` を上書きしないための印で、書き写した値を守ります。
+最初から入っています。**手で書き足すものはありません** —— OpenFGA の 2 つの ID（§5）も
+クロールの 4 行（§7）も、走らせてみないと決まらない値なので、**道具が `.env.local` に
+書きます**（node は `.env` の後にそれを読むので、重なればそちらが効きます）。
+`-n` は既にある `.env` を上書きしないための印で、手で直した値を守ります。
 
 ## 3. 共有 store とスタックを起動する
 
@@ -120,16 +122,19 @@ CLI のほかの使い方（ファイルから読む、一覧、無効にする�
 ## 5. 認可を準備する
 
 アーカイブ API と picker は OpenFGA を通します。**store と model の ID は
-デプロイして初めて決まる**ので、compose には書けません。手で叩いて `.env` に
-貼ります。
+デプロイして初めて決まる**ので、compose にも雛形にも書けません。手で叩きます。
 
 ```sh
 pnpm run fga:migrate  # OpenFGA の datastore を作る
-pnpm run fga:deploy   # model を送り、store id と model id を印字する
+pnpm run fga:deploy   # model を送り、store id と model id を .env.local に書く
 ```
 
-印字された 2 行を `.env` の `CAPTURE_LEDGER_FGA_STORE_ID` と `CAPTURE_LEDGER_FGA_MODEL_ID` に
-書き写してください。
+`fga:deploy` は 2 行を印字したうえで、**`.env.local` に書き込みます。書き写す作業は
+ありません。** `.env` は触りません —— 人が書くファイルに道具は手を入れない、という境界です
+（[設定のファイルは 2 枚ある](/capture-ledger/ja/development-environment/#設定のファイルは-2-枚ある)）。
+
+model id は走らせるたびに変わります（OpenFGA は同じ内容でも新しいモデルを作ります）。
+**API が起動中なら、起こし直してください。**
 
 :::note[この段はもう飛ばせません]
 OpenFGA を通らない CLI は無くなりました。capture-ledger への入口はすべて API で、
@@ -176,9 +181,15 @@ open http://127.0.0.1:7070/
 
 つなぐ手順は [capture-scheduler のクイックスタート](https://uraitakahito.github.io/capture-scheduler/ja/quickstart/)に
 まとめてあります（Windmill を立て、flow と proto を入れ、トークンを渡す）。その途中で、
-capture-scheduler の `pnpm run windmill:bootstrap` が、この repo の `.env` に貼る **4 行をまとめて
-出します。4 行とも `.env` の末尾に貼ります**（同じ名前の行が前にあっても、後ろの行が効きます ——
-`.env.example` を写した `.env` には、`#` 付きの見本の行が前に在ります）。**どれが欠けても、
+capture-scheduler の `pnpm run windmill:bootstrap` が、この repo に渡す **4 行を自分の repo の中に
+置きます**。**取りに行くのはこちらの仕事**です:
+
+```sh
+pnpm run connect   # ../capture-scheduler の 4 行を読み、この repo の .env.local に書く
+```
+
+向こうのコマンドがこの repo の `.env` を書き換えることはありません —— 打った repo の外が
+変わるのは、打った人の予想に反するからです。渡るのは次の 4 行で、**どれが欠けても、
 クロールは最後まで走りません。**
 
 | 行                                                                         | なぜ要るか                                                                                                                                                                         |
@@ -187,8 +198,9 @@ capture-scheduler の `pnpm run windmill:bootstrap` が、この repo の `.env`
 | `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | flow は段ごとの結果を API に報告し、その報告は**コンテナから**来ます。`127.0.0.1` のままでは届きません                                                                             |
 | `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | flow は JWT で名乗ります。API が受けるのは JWT か開発用ヘッダの**どちらか一方**で、この行を書くと JWT になります —— picker も、名乗りの 2 欄の代わりにトークンの欄を出します（§8） |
 
-貼ったら、issuer（`pnpm run oidc:issuer`）を起こし、API を起こし直します。設定は起動のときに
-1 度だけ読みます。API の起動ログの最後の行が `crawl level reports: ready` なら、4 行は効いています。
+`connect` を打ったら、issuer（`pnpm run oidc:issuer`）を起こし、API を起こし直します。設定は
+起動のときに 1 度だけ読みます（`windmill:bootstrap` を打ち直したときは、`connect` も打ち直します ——
+token が変わっています）。API の起動ログの最後の行が `crawl level reports: ready` なら、4 行は効いています。
 `blocked` なら、その上の warn が足りない行を名指しします
 （[起動ログで確かめる](/capture-ledger/ja/development-environment/#起動ログで確かめる)）。
 capture-scheduler のクイックスタートの最後にある `pnpm run doctor` が全部 ✓ なら、つながっています。
@@ -248,7 +260,7 @@ pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy
 open http://127.0.0.1:7070/
 ```
 
-§7 で 4 行を貼った API は JWT の設定なので、picker は §6 の 2 つの欄の代わりに「トークン」の欄を出します。
+§7 で 4 行を受け取った API は JWT の設定なので、picker は §6 の 2 つの欄の代わりに「トークン」の欄を出します。
 貼って「読み込む」を押すと、一覧の上に「（`whoami` の出力）（acme）として見ている」と出て、
 §7 のクロールが撮ったページが並びます。トークンは 1 時間で切れます。
 「401 — このトークンは通らない…」と出たら、同じコマンドで取り直して貼ります
