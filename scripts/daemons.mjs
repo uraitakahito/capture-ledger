@@ -36,14 +36,36 @@ import { fileURLToPath } from "node:url";
 
 /** 末尾に `/` が付く。プロセスの cwd と突き合わせる相手。 */
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+/** 画面は隣の repo で走る。**cwd が違うので、根も 1 本ごとに持たせる。** */
+const DASHBOARD = fileURLToPath(new URL("../../dashboard/", import.meta.url));
 
 /**
- * ホストに残るもの。**compose では消えない** —— どちらもコンテナではないので、
+ * ホストに残るもの。**compose では消えない** —— どれもコンテナではないので、
  * `container-compose down` は 1 つも止めない。
+ *
+ * `root` を 1 本ごとに持つのは、dashboard が **隣の repo** で走るから。持ち主の判定に
+ * 使う cwd はこの repo の根と一致しないので、`ROOT` 固定にすると「自分のものではない」
+ * と言い続けることになる (実装中に実際にそうなった)。
  */
 export const HOST_PROCESSES = [
-  { name: "issuer", port: 9099, entry: "dist/dev/issuer-cli.js", run: "pnpm run oidc:issuer" },
-  { name: "api", port: 7070, entry: "dist/api/server.js", run: "pnpm run api" },
+  {
+    name: "issuer",
+    port: 9099,
+    root: ROOT,
+    entry: "dist/dev/issuer-cli.js",
+    run: "pnpm run oidc:issuer",
+  },
+  { name: "api", port: 7070, root: ROOT, entry: "dist/api/server.js", run: "pnpm run api" },
+  {
+    name: "dashboard",
+    port: 7080,
+    root: DASHBOARD,
+    entry: "src/server.mjs",
+    run: "pnpm run dev",
+    // **7000 ではない。** macOS の ControlCenter (AirPlay Receiver) が `*:7000` を
+    // 握っているので、port から持ち主を引くこの道具は毎回「別のものが握っている」と
+    // 言うことになる (実測)。dashboard 側も 7080 を既定にしてある。
+  },
 ];
 
 const capture = (cmd, args) => {
@@ -90,7 +112,7 @@ export const inspect = (spec) => {
     if (seen.has(pid)) continue;
     const info = describe(pid);
     if (info === undefined) continue;
-    const here = info.cwd !== undefined && `${info.cwd}/` === ROOT;
+    const here = info.cwd !== undefined && `${info.cwd}/` === spec.root;
     seen.set(pid, { ...info, ours: here && info.command.includes(spec.entry) });
   }
   return [...seen.values()];
