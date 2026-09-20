@@ -67,17 +67,59 @@ CAPTURE_LEDGER_CAPTURE_SIGNING=1      # wacz-auth 署名を要求する。wacz �
 いなければ `null` —— 「このクロールは証拠として使える形のアーカイブを作ったか」に、
 zip を 1 つも開かずに答えられます。
 
-## capture-ledger が決めなくなったもの
+## ページの中で走らせるもの
+
+BrowserHive v11.0.0 から、サーバは**走らせるものの顔ぶれを持ちません**。組み込みの
+behavior も、サイト別の behavior もありません。送らなければページの中では何も走らず、
+受け皿すら注入されません。それでも取り込みは成功し、アーカイブも出ます ——
+スクロールも遅延読み込みも起きていない、というだけです。
+
+**だから目録がここに在ります。** 既定を持てるのは「このクロールは何を走らせるか」を
+決める側だけなので、capture-ledger が `scripts` 表を持ち、解決した結果をクロールの行に
+固定します。
+
+```sh
+# 走ってよいものを登録する。版は自動で採番され、同じバイト列を足し直すと既存の版を返す
+pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
+pnpm run scripts add hide-webdriver --file ./x.js --phase preload
+pnpm run scripts list                     # scriptIds を書かないクロールが走らせるもの
+pnpm run scripts disable hide-webdriver   # 既定から外す。名指しすれば走る
+```
+
+`sha256` は**生成列**です。Postgres が `source` から数え、手で書き込むことはできません。
+BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGUMENT` で拒みます ——
+生成列にしてあるので、あの照合が capture-ledger の数え間違いに答えていることはありえません。
+
+`phase` は BrowserHive の 2 つの注入口のどちらを使うかです。`behavior` は読み込みの後・
+主フレーム・1 回で、受け皿を通して報告できます。`preload` は**遷移の前**・iframe を含む
+全フレーム・遷移のたびに走り、**報告する手段を持ちません**。
+
+### クロールが固定するもの
+
+`POST /api/crawls` は目録を**始めるときに 1 度だけ**解決し、その結果 —— id・版・phase・
+source・sha256・options —— をクロールの行に書きます。以後の段はそれをそのまま使い、
+目録を引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
+変わりません。
+
+| `scriptIds`   | 走るもの                                                   |
+| ------------- | ---------------------------------------------------------- |
+| 省く          | **有効な**各 id の最新版を、`id` 順で                      |
+| `["b", "a"]`  | そのとおり、**その並びで** —— 並びは指示の一部             |
+| `[]`          | 何も走らない。「既定でよい」と「何も走らせない」は別の意思 |
+| 目録に無い id | **400** で名指し。クロールは立たない                       |
+
+`GET /api/crawls/:id` が返すのは身元 —— id・版・phase・sha256 —— だけで、source は
+返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
+`preload/scripts.jsonl`）と目録に在ります。
+
+## capture-ledger がいまも決めないもの
 
 以前の CLI は BrowserHive の `CaptureRequest` のフィールドそれぞれに旗を対応させていました
-（`--device-pixel-ratios` / `--operation-delay-ms` / `--behaviors` /
-`--no-site-behaviors` / `--dismiss-banners` / `--accept-language` / `--session`）。
-**これらはもう存在しません。** capture-ledger が送るのは `captureFormats` と `signing` だけで、
-ページの描き方については何も送りません —— 送らないものはすべて、その BrowserHive
-サーバの設定どおりになります（意味は BrowserHive 自身のドキュメントが定義します）。
-
-描き方を変えるのは、いまや BrowserHive 側か flow 側の変更であって、capture-ledger の変更では
-ありません。
+（`--device-pixel-ratios` / `--operation-delay-ms` / `--dismiss-banners` /
+`--accept-language` / `--session`）。**これらはもう存在しません。** `captureFormats`・
+`signing`・上のスクリプトを除けば、capture-ledger はページの描き方について何も送りません
+—— 送らないものはすべて、その BrowserHive サーバの設定どおりになります（意味は
+BrowserHive 自身のドキュメントが定義します）。
 
 ## 呼び出し元がクロールごとに渡せるもの
 
@@ -91,5 +133,6 @@ zip を 1 つも開かずに答えられます。
 | `maxPages`        | 30。ただし種の数は下回らない | 総ページ数                           |
 | `perHostDelayMs`  | 2000                         | 同じホストのページ間の間隔           |
 | `hostParallelism` | 4                            | 同時に触るホストの数                 |
+| `scriptIds`       | 有効な各 id の最新版         | ページの中で走らせるもの（上記）     |
 
 知らないキーは黙って落とさず **400** で返します。
