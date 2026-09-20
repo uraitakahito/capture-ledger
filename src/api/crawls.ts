@@ -346,6 +346,21 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         return reply.code(400).send({ error: "unknown scriptIds", scriptIds: resolved.ids });
       }
 
+      // **既定を頼まれたのに、既定が空。** 目録を埋め忘れた配備はここで止まる ——
+      // 通すと、スクロールも遅延読み込みもしないクロールが「成功」として出ていく。
+      // アーカイブは出るし `completeness` も緑なので、**後から見分ける手が無い**。
+      //
+      // 明示の `scriptIds: []` は通す: 設定漏れと「何も走らせない」という意思は別物で、
+      // 後者を表せなくすると、素の取り込みが欲しい配備が目録を持たされることになる。
+      if (body.scriptIds === undefined && resolved.scripts.length === 0) {
+        return reply.code(400).send({
+          error: "the script catalog is empty",
+          hint:
+            "pnpm run scripts import .upstream/capture-scripts " +
+            "(run nothing on purpose: send scriptIds: [])",
+        });
+      }
+
       const crawlId = randomUUID();
       // **型注釈を付けること。** 注釈の無い変数に入れてから `.values()` へ渡すと
       // 余剰プロパティの検査が効かず、存在しない列名を書いても typecheck が緑で通る。
