@@ -289,11 +289,16 @@ const toggle = (name: "enable" | "disable", enabled: boolean): void => {
     .command(name)
     .description(
       enabled
-        ? "既定の顔ぶれに戻す"
+        ? "既定の顔ぶれに戻す (版を省くと、その id の全版)"
         : "既定の顔ぶれから外す (消さない。scriptIds で名指しすれば走る)",
     )
     .argument("<id...>", "スクリプトの id")
-    .addOption(new Option("--version <n>", "この版だけ (省くと最新版)").argParser(parseVersion))
+    .addOption(
+      new Option(
+        "--version <n>",
+        "この版だけ。**省くとその id の全版** —— 最新版だけ外すと古い版が既定に昇格する",
+      ).argParser(parseVersion),
+    )
     .addOption(databaseUrlOption)
     .action(async (ids: string[], opts: { version?: number; databaseUrl: string }) => {
       await withDb(opts.databaseUrl, async (db) => {

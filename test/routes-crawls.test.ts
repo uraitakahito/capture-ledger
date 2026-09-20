@@ -336,6 +336,23 @@ const fakeDb = (
   }),
 });
 
+/**
+ * 既定の目録。**空にしない** —— 目録が空の配備は `POST /api/crawls` が 400 で止めるので、
+ * 空を既定にすると、この試験の大半が「目録が空だから 400」を見ることになる。
+ * 空そのものを見る試験は `scripts: []` と明示する。
+ */
+const DEFAULT_CATALOG: FakeScript[] = [
+  {
+    id: "autoscroll",
+    version: 1,
+    phase: "behavior",
+    source: "(async () => {})();",
+    sha256: "f".repeat(64),
+    options: {},
+    enabled: true,
+  },
+];
+
 const depsWith = (opts: {
   crawls: FakeCrawl[];
   allowed: boolean;
@@ -346,7 +363,13 @@ const depsWith = (opts: {
   scripts?: FakeScript[];
 }): CrawlRouteDeps =>
   ({
-    db: fakeDb(opts.crawls, opts.targets, opts.pages, opts.updates, opts.scripts),
+    db: fakeDb(
+      opts.crawls,
+      opts.targets,
+      opts.pages,
+      opts.updates,
+      opts.scripts ?? DEFAULT_CATALOG,
+    ),
     fga: { check: async () => Promise.resolve({ allowed: opts.allowed }) },
     resolveIdentity: () => Promise.resolve({ subject: "alice", organizations: ["acme"] }),
     dispatch: opts.dispatch ?? (() => Promise.resolve()),
@@ -926,6 +949,55 @@ describe("走らせるものの解決", () => {
         options: { maxSteps: 60 },
       },
     ]);
+  });
+
+  /**
+   * **目録が空の配備は、ここで止まる。** 通すと、スクロールも遅延読み込みもしない
+   * クロールが「成功」として出ていく —— アーカイブは出るので、後から見分ける手が無い。
+   */
+  it("既定を頼まれたのに目録が空なら、400 で止めてクロールを立てない", async () => {
+    const crawls: FakeCrawl[] = [];
+    const sent: unknown[] = [];
+    const app = await buildApp(
+      depsWith({
+        crawls,
+        allowed: true,
+        scripts: [],
+        dispatch: (crawl) => {
+          sent.push(crawl);
+          return Promise.resolve(undefined);
+        },
+      }),
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: SUBJECT,
+      payload: { seeds: [SEED] },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({ error: "the script catalog is empty" });
+    // **行を立てない。** 立てると部分 unique index が以後のクロールを全部塞ぐ。
+    expect(crawls).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it("目録が空でも、[] と明示すれば通る", async () => {
+    // 設定漏れと「何も走らせない」という意思は別物。後者を表せなくしない。
+    const crawls: FakeCrawl[] = [];
+    const app = await buildApp(depsWith({ crawls, allowed: true, scripts: [] }));
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: SUBJECT,
+      payload: { seeds: [SEED], scriptIds: [] },
+    });
+    await app.close();
+
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.scripts).toEqual([]);
   });
 
   it("GET は身元だけを返す —— source は返さない", async () => {

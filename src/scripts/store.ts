@@ -140,7 +140,15 @@ export const listScripts = async (
 };
 
 /**
- * 既定の顔ぶれに入れる / 外す。版を指定しなければ最新版に効く。
+ * 既定の顔ぶれに入れる / 外す。
+ *
+ * **版を指定しなければ、その id の全版に効く。** 既定の顔ぶれの単位は id であって
+ * 版ではない —— 最新版だけを無効にすると、解決は「有効な中での最新版」を選ぶので、
+ * **古い版が黙って昇格する**。運用する人が `disable autoscroll` と打ったとき、
+ * 起きてほしいのは「autoscroll が走らなくなる」であって「1 つ前の autoscroll が走る」
+ * ではない (2026-09-20 に実機で踏んだ: v2 を無効にしたら v1 が既定になった)。
+ *
+ * 版を指定したときだけ、その 1 つに効く —— 「v3 が悪かったので v2 に戻す」はこちら。
  *
  * **消さずに外せること**が要点。消すと、過去のクロールが何を走らせたのかを
  * 目録の側から辿れなくなる。
@@ -154,12 +162,13 @@ export const setScriptEnabled = async (
     if (targets.kind === "missing") return targets;
 
     for (const target of targets.rows) {
-      await trx
+      let query = trx
         .updateTable("scripts")
         .set({ enabled: input.enabled })
-        .where("id", "=", target.id)
-        .where("version", "=", target.version)
-        .execute();
+        .where("id", "=", target.id);
+      // 版を名指ししたときだけ絞る。省いたら id の全版。
+      if (input.version !== undefined) query = query.where("version", "=", input.version);
+      await query.execute();
     }
     return { kind: "ok" as const, changed: targets.rows };
   });
