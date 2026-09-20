@@ -31,13 +31,23 @@
  * 決めるのは打った人でよい。
  */
 import { spawnSync } from "node:child_process";
+import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-/** 末尾に `/` が付く。プロセスの cwd と突き合わせる相手。 */
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /** 画面は隣の repo で走る。**cwd が違うので、根も 1 本ごとに持たせる。** */
 const DASHBOARD = fileURLToPath(new URL("../../dashboard/", import.meta.url));
+
+/**
+ * 2 つの path が同じディレクトリを指すか。
+ *
+ * **末尾の `/` の有無で比べない。** `fileURLToPath(new URL("..", …))` は `/` 付きを
+ * 返し、`resolve()` は付けない —— 文字列のまま比べると、同じ場所なのに一致しない。
+ * dev:up が `--dashboard` の既定を `resolve()` で作った日に、動いている画面が
+ * **「別のものが握っている」**と報告された (実測)。`resolve` で両側を揃える。
+ */
+const sameDir = (a, b) => a !== undefined && resolve(a) === resolve(b);
 
 /**
  * ホストに残るもの。**compose では消えない** —— どれもコンテナではないので、
@@ -112,7 +122,7 @@ export const inspect = (spec) => {
     if (seen.has(pid)) continue;
     const info = describe(pid);
     if (info === undefined) continue;
-    const here = info.cwd !== undefined && `${info.cwd}/` === spec.root;
+    const here = sameDir(info.cwd, spec.root);
     seen.set(pid, { ...info, ours: here && info.command.includes(spec.entry) });
   }
   return [...seen.values()];
