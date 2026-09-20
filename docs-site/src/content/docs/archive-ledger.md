@@ -664,10 +664,11 @@ who should not be.
 
 ```sh
 pnpm run fga:test    # assertions, no server needed
-pnpm run fga:deploy  # push the model, print the ids to pin
+pnpm run fga:deploy  # push the model, write the ids to pin into .env.local
 ```
 
-`fga:deploy` prints `CAPTURE_LEDGER_FGA_STORE_ID` and `CAPTURE_LEDGER_FGA_MODEL_ID`. **Pin the
+`fga:deploy` prints `CAPTURE_LEDGER_FGA_STORE_ID` and `CAPTURE_LEDGER_FGA_MODEL_ID`, and writes
+them into `.env.local` (it never touches `.env`). **Pin the
 model id.** Models are immutable and every write mints a new one; a client that
 omits the id evaluates against whatever is newest, so editing the model would
 change every decision the moment it lands. Bumping the variable is what makes
@@ -681,12 +682,12 @@ cp -n .env.example .env       # the settings template, verbatim
 pnpm run stack:up
 pnpm run fga:migrate          # OpenFGA's schema (see below)
 pnpm run db:migrate
-pnpm run fga:deploy           # → paste the two ids it prints into .env
+pnpm run fga:deploy           # → writes the two ids into .env.local (nothing to paste)
 pnpm run api
 ```
 
-Everything reads `.env` — the `pnpm run` scripts pass
-`--env-file-if-exists=.env`. Seven variables are mandatory and two of them
+Everything reads `.env` and then `.env.local` — the `pnpm run` scripts pass two
+`--env-file-if-exists` flags, and **the later one wins**. Seven variables are mandatory and two of them
 (`CAPTURE_LEDGER_FGA_STORE_ID`, `CAPTURE_LEDGER_FGA_MODEL_ID`) do not exist until `fga:deploy`
 has run, which is why that step comes before `api`. `scripts/check-env.mjs`
 keeps `.env.example` in step with what the code actually reads.

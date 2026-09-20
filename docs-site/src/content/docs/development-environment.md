@@ -58,14 +58,45 @@ into `scripts/` too. `pnpm run check-env` counts them. Seven are mandatory.
 
 `.env.example` is the single list, and `.env` is a verbatim copy of it
 (`cp -n .env.example .env`); nothing generates `.env`, because a second list
-drifts from the first. The two OpenFGA ids stay
-empty until `pnpm run fga:deploy` prints them — see
-[Archive ledger](/capture-ledger/archive-ledger/#setup).
+drifts from the first. The two OpenFGA ids do not exist until something has run,
+so the template carries only their names — `pnpm run fga:deploy` writes them into
+`.env.local`; see [Archive ledger](/capture-ledger/archive-ledger/#setup).
 
 `scripts/check-env.mjs` (part of `pnpm run check`, and a step of its own in CI)
 compares the names the code reads against the names `.env.example` declares, in
 both directions. A stale template is worse than no template: it gets trusted,
 so when something is missing there is nothing left to suspect.
+
+### Two settings files
+
+Every runnable script hands node `.env` and then `.env.local` (two
+`--env-file-if-exists` flags). **The later one wins**, so a name present in both
+takes its value from `.env.local`.
+
+| File         | Owner     | What is in it                                                 |
+| ------------ | --------- | ------------------------------------------------------------- |
+| `.env`       | you       | a copy of `.env.example`. **The only one you edit by hand**   |
+| `.env.local` | the tools | values that only exist once something has run; git ignores it |
+
+Two tools write it: `pnpm run fga:deploy` (the OpenFGA store and model ids) and
+`pnpm run connect` (the four lines capture-scheduler hands over — quickstart §7).
+They are split because they have different owners: when a tool reorders or drops
+a line a person wrote, nobody can tell afterwards what happened.
+
+**The first line of the API's startup log says which one is winning:**
+
+```text
+config: .env (16 names), .env.local (6 names) — .env.local wins for CAPTURE_LEDGER_FGA_STORE_ID, … (a value set in the shell beats the files)
+```
+
+When "I edited `.env` and nothing changed", look for the name on that line: if it
+is there, `.env.local` is winning. When you suspect a stale `.env.local`, the
+fastest fix is to **regenerate it** — both `fga:deploy` and `connect` are safe to
+repeat.
+
+The line prints **names only, never values**: tokens are among them, and the
+explanation of where a value came from does not need the value. A value set in
+the shell beats both files.
 
 ### An empty value is not the same as no value
 
@@ -84,11 +115,12 @@ strictly worse than a missing one — `DATABASE_URL=` passed commander's mandato
 check, the API started, `/healthz` answered 200, and the first query failed with
 a SASL error that never mentioned `DATABASE_URL`.
 
-So `.env.example` has only two kinds of line:
+So `.env.example` has only three kinds of line:
 
 ```sh
 NAME=value     # pass a value
 #NAME=value    # show the default; uncomment and edit to use it
+#NAME=         # no value until something has run (a tool writes it to .env.local)
 ```
 
 A bare `NAME=` is allowed **only for the seven required variables**, whose
@@ -99,6 +131,9 @@ that rule too.
 
 | Command                                   | What it does                                                                                                       |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `pnpm run dev:up`                         | The 14 startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                   |
+| `pnpm run dev:status`                     | What is up right now. **Changes nothing.**                                                                         |
+| `pnpm run dev:down`                       | The two host processes, then both repos' containers. Never the shared store.                                       |
 | `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                    |
 | `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                                                                 |
 | `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                                                                 |
@@ -116,6 +151,25 @@ that rule too.
 | `pnpm run site:dev` / `site:build`        | This documentation site.                                                                                           |
 | `pnpm run site:check`                     | Build the site and verify its references.                                                                          |
 | `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).                                                           |
+
+### Two things run on the host, not in the stack
+
+**`pnpm run oidc:issuer` (9099) and `pnpm run api` (7070) are host processes**, not containers.
+
+Which means **`container-compose down` does not stop them**. That is what caused
+`EADDRINUSE: address already in use 127.0.0.1:9099` on 2026-09-20: an issuer started the day
+before, in another terminal, was still holding the port. It shows up as "I took the stack down
+and the port is still busy".
+
+```sh
+pnpm run dev:status   # pid, start time, port. Changes nothing
+pnpm run dev:down     # the two host processes, then both repos' containers
+```
+
+`dev:down` first checks whether **whoever holds the port is ours**: the command line has to be
+running this repo's entry, and the process's cwd has to be this repo's root. Anything else it
+**names instead of stopping** — pids get recycled, so a pid looked up from a port must never be
+killed on sight.
 
 ## Working against the stack
 

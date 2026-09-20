@@ -55,14 +55,43 @@ sh .upstream/seaweedfs/scripts/stack.sh up
 数は `pnpm run check-env` が数えて出します。必須は 7 個です。
 
 一覧は `.env.example` の 1 か所だけで、`.env` はその写しです（`cp -n .env.example .env`）。
-値を調べて `.env` を作るものはありません
-—— 一覧が 2 つあれば必ずずれるからです。OpenFGA の 2 つの ID は
-`pnpm run fga:deploy` が出力するまで空のままです
-（[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#セットアップ)を参照）。
+値を調べて `.env` を作るものはありません —— 一覧が 2 つあれば必ずずれるからです。
+OpenFGA の 2 つの ID は、走らせてみないと決まらないので雛形には名前しかありません
+（`pnpm run fga:deploy` が `.env.local` に書きます。
+[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#セットアップ)を参照）。
 
 `scripts/check-env.mjs`（`pnpm run check` に含まれ、CI では独立したステップ）が、
 コードの読み取りと `.env.example` の宣言を両方向で突き合わせます。古い雛形は
 雛形が無いより悪い —— 信用して使われるので、足りないときに疑う先が残りません。
+
+### 設定のファイルは 2 枚ある
+
+実行系の script は `.env` と `.env.local` を**この順で** node に渡します
+（`--env-file-if-exists` を 2 つ）。**後に渡したほうが勝つ**ので、同じ名前が両方に
+在れば `.env.local` の値が効きます。
+
+| ファイル     | 持ち主 | 中身                                                   |
+| ------------ | ------ | ------------------------------------------------------ |
+| `.env`       | 人     | `.env.example` の写し。**手で直すのはこちらだけ**      |
+| `.env.local` | 道具   | 走らせてみないと決まらない値。git は無視する（生成物） |
+
+`.env.local` に書く道具は 2 つです。`pnpm run fga:deploy`（OpenFGA の store id と
+model id）と、`pnpm run connect`（capture-scheduler が渡す 4 行 —— クイックスタート §7）。
+分けてあるのは持ち主が違うからで、道具が人の書いた行を並べ替えたり消したりすると、
+次に何が起きたのか追えなくなります。
+
+**どちらが勝っているかは、API の起動ログの 1 行目が言います**:
+
+```text
+config: .env (16 names), .env.local (6 names) — .env.local wins for CAPTURE_LEDGER_FGA_STORE_ID, … (a value set in the shell beats the files)
+```
+
+「`.env` を直したのに効かない」ときは、この行に名前が出ていないかを見ます。出ていれば
+`.env.local` が勝っています。古い `.env.local` を疑うなら **作り直すのがいちばん速い** ——
+`fga:deploy` も `connect` も、何度打っても構いません。
+
+この行が出すのは**名前だけで、値は出しません**。token が混じるうえ、出どころの説明に
+値は要らないからです。端末で渡した値は、どちらのファイルにも勝ちます。
 
 ### 空文字は「値が無い」とは別の状態
 
@@ -80,11 +109,12 @@ sh .upstream/seaweedfs/scripts/stack.sh up
 チェックを通り、API は起動し、`/healthz` は 200 を返し、最初のクエリで
 `DATABASE_URL` という語を一度も出さない SASL エラーになっていました。
 
-そのため `.env.example` の行は 2 種類しかありません。
+そのため `.env.example` の行は 3 種類しかありません。
 
 ```sh
 NAME=value     # 値を渡す
 #NAME=value    # 既定値を見せるだけ（使うならコメントを外して値を書く）
+#NAME=         # 起動前には値が決まらないもの（道具が .env.local に書く）
 ```
 
 生の `NAME=` を書けるのは**必須の 7 個だけ**です。必須の空は `collectEnv` が
@@ -94,6 +124,9 @@ NAME=value     # 値を渡す
 
 | コマンド                                  | 内容                                                                               |
 | ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm run dev:up`                         | 立ち上げの 14 段を順に。`--dry-run` で一覧、`--from <段>` で途中から。             |
+| `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                           |
+| `pnpm run dev:down`                       | ホストの 2 本 → 両 repo のコンテナ。共有 store は落とさない。                      |
 | `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                    |
 | `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                               |
 | `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                    |
@@ -111,6 +144,26 @@ NAME=value     # 値を渡す
 | `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                           |
 | `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                               |
 | `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                             |
+
+### ホストで動くのは 2 本ある
+
+スタックに入っていないものが 2 つあります。**`pnpm run oidc:issuer` (9099) と
+`pnpm run api` (7070) はホストのプロセス**で、コンテナではありません。
+
+だから **`container-compose down` では消えません**。2026-09-20 に
+`EADDRINUSE: address already in use 127.0.0.1:9099` で止まったのはこれで、前の日に
+別のターミナルで起こした issuer が残っていました。スタックを落としたのに港が
+塞がっている、という形で出ます。
+
+```sh
+pnpm run dev:status   # pid・起動時刻・port。何も変えない
+pnpm run dev:down     # ホストの 2 本 → 両 repo のコンテナ
+```
+
+`dev:down` は **port を持っている相手が自分のものか** を先に確かめます —— コマンド行が
+この repo の entry を動かしていて、かつプロセスの cwd がこの repo の根であること。
+違えば **止めずに名指しします**（番号は使い回されるので、port から引いた PID を
+そのまま kill してはいけません）。
 
 ## スタックで作業する
 
