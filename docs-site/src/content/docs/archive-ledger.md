@@ -144,9 +144,23 @@ the contract rather than a description of it:
 | ---------------------------- | -------- | ---------------------------------------------------------------------------------- |
 | `POST /api/archives/:id/url` | `id`     | a UUID — anything else is **400**, before authorization runs                       |
 | `GET /api/archives`          | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest |
+| `GET /api/crawls`            | `state`  | `running` / `succeeded` / `failed` — anything else is **400**                      |
+|                              | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest |
 
-`before` is a cursor: pass the `capturedAt` of the last row you were given.
+`before` is a cursor: pass the `capturedAt` (or, for crawls, the `startedAt`) of the
+last row you were given.
 Unknown query parameters are dropped rather than rejected.
+
+The crawl list is gated on `maySubmit`, not on a per-row `can_view` the way archives
+are: the authorization model has no `crawl` type, and `can_submit` is defined as
+**trust that crosses organizations** in the first place (`submitter` in
+`fga/model.fga`). A caller without the permission gets neither 403 nor 404 but an
+**empty array**, and every row carries its `orgId` so the caller can say what it is
+seeing. Rows carry both `state` and `stopReason`, because most `succeeded` crawls
+were truncated (`max_depth`) and the state alone cannot tell that from a full walk.
+
+`waczCount` is how many WACZ that crawl produced. `archives` has no `crawl_id`, so
+the count goes through `crawl_pages.task_id` — no column had to be added.
 
 A caller who may not read an archive gets **404, not 403**. A 403 would confirm
 that the id names a real archive — the enumeration leak OWASP API1:2023
