@@ -115,6 +115,13 @@ interface FakeCrawl {
   error: string | null;
   lastJobId?: string | null;
   lastJobDepth?: number | null;
+  /**
+   * 一覧が返す WACZ の数。**偽 DB では数えていない** —— 本物は `crawl_pages` を
+   * 挟んだ相関副問い合わせで、ここに在るのは「返ってきた値を route がそのまま
+   * 載せるか」を見るための置き物。数え方そのものは実機に当てて確かめる
+   * (`capture-ledger には DB 試験が無い`)。
+   */
+  waczCount?: number;
   /** 解決済みの顔ぶれ。**行に固定されたもの**で、段ごとに引き直さない (`018`)。 */
   scripts: FakeScript[];
 }
@@ -284,17 +291,47 @@ const fakeDb = (
         return scriptQuery([]);
       }
       if (table === "crawls") {
-        // 409 のときに「走っている 1 本」を引く。
-        return {
-          where: (_c: unknown, _o: unknown, state: string) => ({
-            executeTakeFirst: async () =>
-              Promise.resolve(
-                crawls
-                  .filter((c) => c.state === state)
-                  .map((c) => ({ id: c.id, startedAt: c.startedAt }))[0],
+        /**
+         * 409 の「走っている 1 本」と、一覧の両方が通る。**指定された条件・並び・上限
+         * だけを当てる** (`captureTargets` と同じ判断) —— 偽物が勝手に新しい順へ
+         * 並べると、本物から `orderBy` が消えても試験は緑のままになる。
+         */
+        type Cond = [string, unknown, unknown];
+        const crawlQuery = (
+          where: Cond[],
+          order?: { column: string; dir: string },
+          limit?: number,
+        ) => {
+          const matched = (): FakeCrawl[] => {
+            const cell = (c: FakeCrawl, column: string): unknown =>
+              (c as unknown as Record<string, unknown>)[column];
+            let rows = crawls.filter((c) =>
+              where.every(([column, op, value]) =>
+                op === "<"
+                  ? (cell(c, column) as Date) < (value as Date)
+                  : cell(c, column) === value,
               ),
-          }),
+            );
+            if (order) {
+              const { column, dir } = order;
+              rows = [...rows].sort((a, b) => {
+                const left = Number(cell(a, column));
+                const right = Number(cell(b, column));
+                return dir === "desc" ? right - left : left - right;
+              });
+            }
+            return limit === undefined ? rows : rows.slice(0, limit);
+          };
+          return {
+            where: (column: string, op: unknown, value: unknown) =>
+              crawlQuery([...where, [column, op, value]], order, limit),
+            orderBy: (column: string, dir: string) => crawlQuery(where, { column, dir }, limit),
+            limit: (n: number) => crawlQuery(where, order, n),
+            executeTakeFirst: async () => Promise.resolve(matched()[0]),
+            execute: async () => Promise.resolve(matched()),
+          };
         };
+        return crawlQuery([]);
       }
       if (table === "crawlPages") {
         // `GET /api/crawls/:id` の `failures`。**指定された条件だけを当てる**（下と同じ理由）。
@@ -1012,5 +1049,140 @@ describe("走らせるものの解決", () => {
       { id: "autoscroll", version: 2, phase: "behavior", sha256: "c".repeat(64) },
     ]);
     expect(res.body).not.toContain("/* v2 */");
+  });
+});
+
+/**
+ * クロールの一覧。
+ *
+ * **数え方そのものはここでは見えない。** `waczCount` は `crawl_pages` を挟んだ相関
+ * 副問い合わせで、偽 DB はそれを実行しない —— ここで見るのは「返ってきた値を route が
+ * そのまま載せるか」まで。数えられているかは実機に当てて確かめた（PR に出力を貼る）。
+ *
+ * 並びは**偽物に並べさせて**いる。入力をわざと古い順で渡すので、本物から
+ * `orderBy` が消えれば、この試験は赤くなる。
+ */
+describe("クロールの一覧", () => {
+  const row = (over: Partial<FakeCrawl> & { id: string; startedAt: Date }): FakeCrawl => ({
+    seeds: [SEED],
+    scope: "same-origin",
+    state: "succeeded",
+    maxDepth: 2,
+    maxPages: 30,
+    perHostDelayMs: 2000,
+    hostParallelism: 4,
+    orgId: "acme",
+    requestedBy: "alice",
+    stopReason: "completed",
+    finishedAt: null,
+    pagesDiscovered: 1,
+    pagesCaptured: 1,
+    error: null,
+    // **本物は必ず null を返す** (列が nullable なだけで、行から欄が消えることは無い)。
+    // 既定を undefined にすると、route の `=== null` を素通りして lastJob が
+    // { id: undefined } になる —— 偽物の形が本物と違うと、試験が嘘をつく。
+    lastJobId: null,
+    lastJobDepth: null,
+    scripts: [],
+    ...over,
+  });
+
+  const OLD = row({ id: "11111111-1111-4111-8111-111111111111", startedAt: new Date(1) });
+  const NEW = row({ id: "22222222-2222-4222-8222-222222222222", startedAt: new Date(2) });
+
+  /** 一覧が返す行のうち、この試験が読む欄だけ。 */
+  interface ListedCrawl {
+    crawlId: string;
+    state: string;
+    stopReason: string | null;
+    orgId: string;
+    waczCount: number;
+    lastJob: { id: string; depth: number } | null;
+  }
+  const ids = (res: { json: <T>() => T }): string[] =>
+    res.json<{ crawls: ListedCrawl[] }>().crawls.map((c) => c.crawlId);
+
+  const list = async (deps: CrawlRouteDeps, url = "/api/crawls") => {
+    const app = await buildApp(deps);
+    const res = await app.inject({ method: "GET", url });
+    await app.close();
+    return res;
+  };
+
+  it("名乗らない呼び出し元には 401", async () => {
+    // 認可は通す側に倒してある。401 が fga より前で返っている証拠。
+    const res = await list({
+      ...depsWith({ crawls: [NEW], allowed: true }),
+      resolveIdentity: () => Promise.resolve(undefined),
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("権限が無ければ、404 でも 403 でもなく空を返す", async () => {
+    // 「在るが見せない」と「無い」を呼び出し元に区別させない (`/api/archives` と同じ作法)。
+    const res = await list(depsWith({ crawls: [NEW, OLD], allowed: false }));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ crawls: [] });
+  });
+
+  it("新しい順に並べる —— 古い順で渡しても、新しいほうが先に出る", async () => {
+    const res = await list(depsWith({ crawls: [OLD, NEW], allowed: true }));
+    expect(ids(res)).toEqual([NEW.id, OLD.id]);
+  });
+
+  it("state で絞る", async () => {
+    const running = row({
+      id: "33333333-3333-4333-8333-333333333333",
+      startedAt: new Date(3),
+      state: "running",
+      stopReason: null,
+    });
+    const res = await list(
+      depsWith({ crawls: [OLD, NEW, running], allowed: true }),
+      "/api/crawls?state=running",
+    );
+    expect(ids(res)).toEqual([running.id]);
+  });
+
+  it("before より前だけを返す —— カーソルの綴りは archives と同じ", async () => {
+    const res = await list(
+      depsWith({ crawls: [OLD, NEW], allowed: true }),
+      `/api/crawls?before=${NEW.startedAt.toISOString()}`,
+    );
+    expect(ids(res)).toEqual([OLD.id]);
+  });
+
+  it("日時でない before は 400 —— SQL のパラメータにしない", async () => {
+    // `new Date("きのう")` は投げずに Invalid Date を返すので、schema で落とさないと
+    // Postgres が拒んで 500 になる。
+    const res = await list(depsWith({ crawls: [], allowed: true }), "/api/crawls?before=きのう");
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("state だけでは足りない欄を、行に載せる", async () => {
+    // 打ち切り (`max_depth`) と完走 (`completed`) は state が同じ。org と run の行き先も、
+    // 画面が「どこまで見えているか」を言うのに要る。
+    const truncated = row({
+      id: "44444444-4444-4444-8444-444444444444",
+      startedAt: new Date(4),
+      stopReason: "max_depth",
+      orgId: "other",
+      lastJobId: "01a0bfad",
+      lastJobDepth: 2,
+      waczCount: 3,
+    });
+    const res = await list(depsWith({ crawls: [truncated], allowed: true }));
+    expect(res.json<{ crawls: ListedCrawl[] }>().crawls[0]).toMatchObject({
+      state: "succeeded",
+      stopReason: "max_depth",
+      orgId: "other",
+      waczCount: 3,
+      lastJob: { id: "01a0bfad", depth: 2 },
+    });
+  });
+
+  it("起こしていない段の run は null", async () => {
+    const res = await list(depsWith({ crawls: [NEW], allowed: true }));
+    expect(res.json<{ crawls: ListedCrawl[] }>().crawls[0]?.lastJob).toBeNull();
   });
 });
