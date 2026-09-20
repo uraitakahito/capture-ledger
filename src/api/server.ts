@@ -10,6 +10,7 @@
 import Fastify, { type FastifyError } from "fastify";
 import { Command, Option } from "commander";
 import { collectEnv, fgaFrom, storageFrom, searchConfig } from "../config/env.js";
+import { envFilesNote, readEnvFiles } from "../config/env-files.js";
 import { createKyselyClient } from "../db/kysely.js";
 import { createFgaClient } from "../fga/client.js";
 import { drainOutbox } from "../fga/outbox-worker.js";
@@ -58,6 +59,9 @@ const parsePort = (value: string): number => {
 };
 
 const start = async (options: ServerOptions): Promise<void> => {
+  // **最初に、値の出どころを言う。** 足りなくてここから先へ進めなかったときにこそ要る
+  // 行なので、何かを建てる前に出す (collectEnv はこの直後に投げうる)。
+  logger.info(envFilesNote(readEnvFiles()));
   // S3 と OpenFGA を **1 つの collectEnv の中で** 建てる。別々に呼ぶと 1 つ目が
   // 投げた時点で 2 つ目は評価されないので、S3 の 4 個を直したあとに FGA の 2 個が
   // 出てきて往復が 2 回になる。
