@@ -149,6 +149,15 @@ pnpm run api
 open http://127.0.0.1:7070/
 ```
 
+:::note[§7 stops this API and starts it again]
+**Settings are read once, at startup.** §7 adds four lines to `.env`, and the process you
+are running now will never see them — you stop it with `Ctrl-C` and run the same
+`pnpm run api` again. **A second one cannot run alongside it** (it exits with
+`EADDRINUSE: address already in use 0.0.0.0:7070`).
+
+This first run is here to show that the API works and the picker opens.
+:::
+
 Once it is open, type your own name (the output of `whoami`) into `subject` and `acme` — the
 organization you will claim when starting the crawl in §7 — into `organizations`, then press 読み込む
 (Load). **At this point the picker says 見えるアーカイブが無い ("no archives visible to you"), and
