@@ -145,15 +145,19 @@ The stack runs on Apple Container. The project name is the DNS domain, so every
 service is `<service>.capture-ledger` — resolvable between containers **and from the
 host**, which is why capture-ledger itself needs no container.
 
-| Service        | DNS name                       | Container port     | Host port         |
-| -------------- | ------------------------------ | ------------------ | ----------------- |
-| postgres       | `postgres.capture-ledger`      | 5432               | 5432              |
-| seaweedfs      | `seaweedfs.capture-ledger`     | 8333 / 8888 / 9333 | — (internal only) |
-| chromium-1     | `chromium-1.capture-ledger`    | 9222 (CDP)         | 9222              |
-| chromium-2     | `chromium-2.capture-ledger`    | 9222 (CDP)         | 9223              |
-| browserhive-1  | `browserhive-1.capture-ledger` | 50051 (gRPC)       | 50051             |
-| browserhive-2  | `browserhive-2.capture-ledger` | 50051 (gRPC)       | 50052             |
-| capture-ledger | — (runs on the host)           | —                  | —                 |
+| Service        | DNS name                       | Container port | Host port |
+| -------------- | ------------------------------ | -------------- | --------- |
+| postgres       | `postgres.capture-ledger`      | 5432           | 5432      |
+| chromium-1     | `chromium-1.capture-ledger`    | 9222 (CDP)     | 9222      |
+| chromium-2     | `chromium-2.capture-ledger`    | 9222 (CDP)     | 9223      |
+| browserhive-1  | `browserhive-1.capture-ledger` | 50051 (gRPC)   | 50051     |
+| browserhive-2  | `browserhive-2.capture-ledger` | 50051 (gRPC)   | 50052     |
+| capture-ledger | — (runs on the host)           | —              | —         |
+
+The artifact store (SeaweedFS) is **not in this stack**. It is one store shared by the three
+crawler repos, at `seaweedfs.crawler-storage:8333` (filer on `:8888`). It is brought up by
+[seaweedfs](https://github.com/uraitakahito/seaweedfs)'s `scripts/stack.sh` — the submodule works
+too: `.upstream/seaweedfs/scripts/stack.sh up`. To empty it, `pnpm run store:wipe`.
 
 There is one compose file. The one-shot migrate/seed jobs are not services:
 `scripts/prod-smoke.sh` invokes them with `container run --rm`, because

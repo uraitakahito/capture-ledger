@@ -33,9 +33,21 @@ pnpm run check       # audit + typecheck + lint + format:check + env + tests
 ```
 
 Start the stack with `pnpm run stack:up`, never with `container-compose`
-directly: before starting anything it checks the toolchain, the
+directly: before starting anything it checks whether the shared store is up, the toolchain, the
 `capture-ledger` DNS domain and the `.upstream/` submodules that every build
 context points at, and stops, naming whatever is missing.
+
+The artifact store (SeaweedFS) is not part of this stack. It is one store shared by the three
+crawler repos (`seaweedfs.crawler-storage`), started from the submodule:
+
+```sh
+sudo container system dns create crawler-storage   # once per machine
+sh .upstream/seaweedfs/scripts/stack.sh up
+```
+
+Emptying it, looking inside, and recreating it are documented in one place,
+[seaweedfs's docs/operations.md](https://github.com/uraitakahito/seaweedfs/blob/main/docs/operations.md)
+(`pnpm run store:wipe` empties this repo's bucket).
 
 ### Environment variables
 

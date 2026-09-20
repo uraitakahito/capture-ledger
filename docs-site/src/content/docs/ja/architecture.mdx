@@ -141,15 +141,20 @@ Fastify の既定は `err.message` と `err.code` をそのまま返しますが
 なるので、各サービスは `<service>.capture-ledger` です。**コンテナ間からもホストからも**
 解決できるため、capture-ledger 自身はコンテナを必要としません。
 
-| サービス       | DNS 名                         | コンテナポート     | ホストポート |
-| -------------- | ------------------------------ | ------------------ | ------------ |
-| postgres       | `postgres.capture-ledger`      | 5432               | 5432         |
-| seaweedfs      | `seaweedfs.capture-ledger`     | 8333 / 8888 / 9333 | — (内部のみ) |
-| chromium-1     | `chromium-1.capture-ledger`    | 9222 (CDP)         | 9222         |
-| chromium-2     | `chromium-2.capture-ledger`    | 9222 (CDP)         | 9223         |
-| browserhive-1  | `browserhive-1.capture-ledger` | 50051 (gRPC)       | 50051        |
-| browserhive-2  | `browserhive-2.capture-ledger` | 50051 (gRPC)       | 50052        |
-| capture-ledger | —（ホストで動く）              | —                  | —            |
+| サービス       | DNS 名                         | コンテナポート | ホストポート |
+| -------------- | ------------------------------ | -------------- | ------------ |
+| postgres       | `postgres.capture-ledger`      | 5432           | 5432         |
+| chromium-1     | `chromium-1.capture-ledger`    | 9222 (CDP)     | 9222         |
+| chromium-2     | `chromium-2.capture-ledger`    | 9222 (CDP)     | 9223         |
+| browserhive-1  | `browserhive-1.capture-ledger` | 50051 (gRPC)   | 50051        |
+| browserhive-2  | `browserhive-2.capture-ledger` | 50051 (gRPC)   | 50052        |
+| capture-ledger | —（ホストで動く）              | —              | —            |
+
+成果物ストア（SeaweedFS）は**このスタックには居ません**。crawler の 3 つの repo が
+共有する 1 つの store で、`seaweedfs.crawler-storage:8333`（filer は `:8888`）です。
+起こすのは [seaweedfs](https://github.com/uraitakahito/seaweedfs) の
+`scripts/stack.sh`（submodule なので `.upstream/seaweedfs/scripts/stack.sh up` でも同じ）。
+中身を空にしたいときは `pnpm run store:wipe`。
 
 compose ファイルは 1 つです。migrate / seed の一発ジョブはサービスではなく、
 `scripts/prod-smoke.sh` が `container run --rm` で起動します（container-compose に
