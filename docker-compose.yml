@@ -1,8 +1,18 @@
 # Apple Container 上の capture-ledger スタック。動かすのは container-compose
 # (https://github.com/Mcrich23/Container-Compose —— Homebrew で入れる)。
 #
-#   container-compose up -d -b     # 全部 build して起動する
-#   container-compose down         # 停止する。volume (とその中身) は残る
+#   pnpm run stack:up      # 全部 build して起動する
+#   pnpm run stack:down    # 停止する。volume (とその中身) は残る
+#
+# **起こすのは `scripts/stack.sh` から。** container-compose を直に叩くと、この設定が
+# 要求する 3 つが渡らない:
+#
+#   - 署名の `--profile signing` と `--env-file signing.env` の対 (`.env` の 1 行から導く)
+#   - submodule の版 (下の build 引数。渡らないで建った image は、BrowserHive が起動を拒む)
+#   - 起動の前の点検 (道具・DNS ドメイン・submodule)
+#
+# 理由は `scripts/stack.sh` の冒頭に書いてある。例外は `scripts/prod-smoke.sh` で、
+# あちらは版の計算だけを同じ `scripts/submodule-versions.sh` から読んで compose を叩く。
 #
 # マシンごとに 1 度だけ要る用意:
 #   sudo container system dns create capture-ledger
@@ -183,8 +193,9 @@ services:
         #
         # 渡さないと版は "unknown"、revision は "dev" になる。**値は手で書かない** ——
         # `pnpm run stack:up` (と `prod-smoke.sh`) が `scripts/submodule-versions.sh`
-        # から submodule の実際のタグを渡す。生の `container-compose up` を叩くと
-        # 既定に落ちるので、docs もそちらを案内していない。
+        # から submodule の実際のタグを渡す。生の `container-compose up` を叩くと既定に
+        # 落ち、**そうして建った image は BrowserHive が起動を拒む** (v9.4.0 から。
+        # `この build は自分の出どころを名乗れない` で exit 1)。
         GIT_TAG: "${BROWSERHIVE_TAG:-}"
         GIT_REV: "${BROWSERHIVE_REV:-dev}"
     ports:
@@ -321,7 +332,7 @@ services:
   # こちらの seaweedfs なので、capture-ledger 用のものが要る。
   # クロールの e2e が辿るフィクスチャ origin。既定では起動しない:
   #
-  #   container-compose --profile capture-fixtures up -d -b
+  #   pnpm run stack:up --profile capture-fixtures
   #
   # port は publish しない —— browserhive も host 側の道具も、プラットフォーム DNS が
   # 配る capture-fixtures.capture-ledger:8080 という **同じ名前** で引ける。browserhive の compose の
@@ -357,7 +368,7 @@ services:
 
   # 全文検索の索引。既定では起動しない:
   #
-  #   container-compose --profile search up -d -b
+  #   pnpm run stack:up --profile search
   #
   # **開発スタック限定の設定が 2 つ入っている。** security plugin を切っているので
   # 認証も TLS も無く、`discovery.type=single-node` なので冗長性も無い。API に
