@@ -44,3 +44,24 @@ false` は **黙って削る** 意味になる。知らない鍵を送った呼�
 拒むなら `ajv: { customOptions: { removeAdditional: false } }` を Fastify の
 生成時に渡す。既存の route は `additionalProperties` を書いていないので影響しない
 (`removeAdditional` は `additionalProperties: false` の schema にしか効かない)。
+
+## 打った repo の外を書き換えない (2026-09-21)
+
+「貼る手間を消す」ために、capture-scheduler の `windmill:bootstrap` が
+capture-ledger の `.env` に 4 行書き足す案を出した。**ユーザーの指摘**:
+「コマンドを実行したリポジトリ以外の別のリポジトリに書き込むのは予想に反する動作」。
+
+手間の数だけを見ると、書きに行くほうが 1 手少ない。だが**打った人が予想できる
+範囲**は repo の境界で切れている。向こうの repo を clone し直しても、git status を
+見ても、書かれた側からは「誰がいつ書いたか」が追えない。
+
+直した形: **書くのは自分の repo だけ。跨ぐときは読むだけ。**
+
+- capture-scheduler は `.dev/capture-ledger.env` に置く (自分の中)
+- capture-ledger の `pnpm run connect` が**取りに行く** (手順は 1 つ増える)
+- 受け取る名前は、自分の `.env.example` が宣言しているものだけ。知らない名前は
+  写さずに名指しする —— 相手のファイルをそのまま環境に流し込むと、向こうの都合で
+  こちらの設定が変わる
+
+**規則**: 道具が書き込む先は、その道具を打った repo の中に限る。手順が 1 つ増えても、
+**驚きが無いほうを選ぶ**。跨ぐ必要がある値は、置く側と取りに行く側に分ける。
