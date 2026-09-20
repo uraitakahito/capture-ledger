@@ -140,14 +140,18 @@ Postgres is also published on `127.0.0.1:5432`, so `localhost` works too.
 
 Coming from Docker Compose, the everyday commands map like this:
 
-| Docker Compose                      | Apple Container                               |
+| Docker Compose                      | In this stack                                 |
 | ----------------------------------- | --------------------------------------------- |
-| `docker compose up -d --build`      | `container-compose up -d -b`                  |
-| `docker compose down`               | `container-compose down`                      |
+| `docker compose up -d --build`      | `pnpm run stack:up`                           |
+| `docker compose down`               | `pnpm run stack:down`                         |
 | `docker compose ps`                 | `container ls`                                |
 | `docker compose logs browserhive-1` | `container logs browserhive-1.capture-ledger` |
 | `docker compose exec <svc> sh`      | `container exec -it <svc>.capture-ledger sh`  |
 | `docker compose run --rm <svc> …`   | `container run --rm <image> …`                |
+
+Starting and stopping are the two that are not `container-compose`, because `scripts/stack.sh`
+passes three things along: the signing profile and its env file as a pair, the submodule versions
+(an image built without them is one BrowserHive refuses to start), and the checks it runs first.
 
 Both Chromiums are **headless**. To watch one render, open
 `chrome://inspect` in a local Chrome, add `localhost:9222` and `localhost:9223`
