@@ -131,6 +131,9 @@ that rule too.
 
 | Command                                   | What it does                                                                                                       |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `pnpm run dev:up`                         | The 14 startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                   |
+| `pnpm run dev:status`                     | What is up right now. **Changes nothing.**                                                                         |
+| `pnpm run dev:down`                       | The two host processes, then both repos' containers. Never the shared store.                                       |
 | `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                    |
 | `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                                                                 |
 | `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                                                                 |
@@ -148,6 +151,25 @@ that rule too.
 | `pnpm run site:dev` / `site:build`        | This documentation site.                                                                                           |
 | `pnpm run site:check`                     | Build the site and verify its references.                                                                          |
 | `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).                                                           |
+
+### Two things run on the host, not in the stack
+
+**`pnpm run oidc:issuer` (9099) and `pnpm run api` (7070) are host processes**, not containers.
+
+Which means **`container-compose down` does not stop them**. That is what caused
+`EADDRINUSE: address already in use 127.0.0.1:9099` on 2026-09-20: an issuer started the day
+before, in another terminal, was still holding the port. It shows up as "I took the stack down
+and the port is still busy".
+
+```sh
+pnpm run dev:status   # pid, start time, port. Changes nothing
+pnpm run dev:down     # the two host processes, then both repos' containers
+```
+
+`dev:down` first checks whether **whoever holds the port is ours**: the command line has to be
+running this repo's entry, and the process's cwd has to be this repo's root. Anything else it
+**names instead of stopping** — pids get recycled, so a pid looked up from a port must never be
+killed on sight.
 
 ## Working against the stack
 

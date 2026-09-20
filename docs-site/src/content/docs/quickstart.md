@@ -12,6 +12,38 @@ Chromiums, and a BrowserHive in front of each, built from the
 The artifact store (SeaweedFS) is **not part of this stack**: it is one store shared by the three
 crawler repos, brought up by [seaweedfs](https://github.com/uraitakahito/seaweedfs) (§3).
 
+## The short way
+
+**Only §1 and §2 are by hand** (registering DNS needs `sudo`, so no tool can do it, and the
+submodules and `.env` are a one-time thing right after cloning). After that, one command:
+
+```sh
+pnpm run dev:up
+```
+
+It runs 14 steps in order — the shared store, the stack, the database, the script catalog,
+authorization, Windmill, the issuer, the API, the grants, and finally capture-scheduler's
+`doctor`. **It prints each command before running it**, so reading the output top to bottom
+gives you the same thing §3–§7 spell out. When doctor is all ✓ you can capture (about 75
+seconds from nothing running, measured).
+
+| Command                      | What it does                                                                 |
+| ---------------------------- | ---------------------------------------------------------------------------- |
+| `pnpm run dev:up --dry-run`  | print the 14 lines. **Nothing is started**                                   |
+| `pnpm run dev:up --from api` | resume partway, after fixing whatever step it named when it failed           |
+| `pnpm run dev:status`        | what is up right now. Changes nothing                                        |
+| `pnpm run dev:down`          | the two host processes, then both repos' containers (never the shared store) |
+
+:::note[Crawling needs capture-scheduler next door]
+Steps 6–9, 13 and 14 run capture-scheduler's own commands in its own repo (**they never write
+files there**). If it is not at `~/projects/crawler/capture-scheduler`, pass `--scheduler <path>`.
+It also needs its DNS domain registered once —
+see [capture-scheduler's quickstart](https://uraitakahito.github.io/capture-scheduler/quickstart/).
+:::
+
+**§3 onwards is the same 14 steps done one at a time.** Both roads end in the same place —
+`dev:up` calls the scripts from §3–§7 and has no implementation of its own.
+
 ## 1. Register the DNS domain (once per machine)
 
 ```sh
@@ -156,10 +188,13 @@ open http://127.0.0.1:7070/
 ```
 
 :::note[§7 stops this API and starts it again]
-**Settings are read once, at startup.** §7 adds four lines to `.env`, and the process you
-are running now will never see them — you stop it with `Ctrl-C` and run the same
+**Settings are read once, at startup.** §7's `pnpm run connect` writes four lines into
+`.env.local`, and the process you are running now will never see them — you stop it with `Ctrl-C` and run the same
 `pnpm run api` again. **A second one cannot run alongside it** (it exits with
 `EADDRINUSE: address already in use 0.0.0.0:7070`).
+**When you cannot tell what is still running**, `pnpm run dev:status` prints the pid and start
+time, and `pnpm run dev:down` stops it — `container-compose down` only knows about containers,
+so the issuer and the API, which run on the host, survive it.
 
 This first run is here to show that the API works and the picker opens.
 :::

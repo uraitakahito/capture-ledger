@@ -124,6 +124,9 @@ NAME=value     # 値を渡す
 
 | コマンド                                  | 内容                                                                               |
 | ----------------------------------------- | ---------------------------------------------------------------------------------- |
+| `pnpm run dev:up`                         | 立ち上げの 14 段を順に。`--dry-run` で一覧、`--from <段>` で途中から。             |
+| `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                           |
+| `pnpm run dev:down`                       | ホストの 2 本 → 両 repo のコンテナ。共有 store は落とさない。                      |
 | `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                    |
 | `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                               |
 | `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                    |
@@ -141,6 +144,26 @@ NAME=value     # 値を渡す
 | `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                           |
 | `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                               |
 | `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                             |
+
+### ホストで動くのは 2 本ある
+
+スタックに入っていないものが 2 つあります。**`pnpm run oidc:issuer` (9099) と
+`pnpm run api` (7070) はホストのプロセス**で、コンテナではありません。
+
+だから **`container-compose down` では消えません**。2026-09-20 に
+`EADDRINUSE: address already in use 127.0.0.1:9099` で止まったのはこれで、前の日に
+別のターミナルで起こした issuer が残っていました。スタックを落としたのに港が
+塞がっている、という形で出ます。
+
+```sh
+pnpm run dev:status   # pid・起動時刻・port。何も変えない
+pnpm run dev:down     # ホストの 2 本 → 両 repo のコンテナ
+```
+
+`dev:down` は **port を持っている相手が自分のものか** を先に確かめます —— コマンド行が
+この repo の entry を動かしていて、かつプロセスの cwd がこの repo の根であること。
+違えば **止めずに名指しします**（番号は使い回されるので、port から引いた PID を
+そのまま kill してはいけません）。
 
 ## スタックで作業する
 
