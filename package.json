@@ -131,10 +131,10 @@
     "store:wipe": "sh .upstream/seaweedfs/scripts/wipe.sh browserhive"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1133.0",
-    "@aws-sdk/s3-request-presigner": "^3.1133.0",
+    "@aws-sdk/client-s3": "^3.1135.0",
+    "@aws-sdk/s3-request-presigner": "^3.1135.0",
     "@bufbuild/protobuf": "^2.15.0",
-    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/grpc-js": "^1.14.5",
     "@openfga/sdk": "^0.9.6",
     "@opensearch-project/opensearch": "^3.6.0",
     "commander": "^15.0.0",
