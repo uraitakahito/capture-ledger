@@ -153,7 +153,7 @@
     "@types/yauzl-promise": "^4.0.1",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.9.7",
+    "prettier": "^3.9.8",
     "puppeteer": "25.11.0",
     "semver": "^7.8.5",
     "ts-proto": "^2.12.4",
