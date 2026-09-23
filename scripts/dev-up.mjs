@@ -7,6 +7,7 @@
  *   pnpm run dev:up --from api     # 途中から (失敗したときの続き)
  *   pnpm run dev:up --scheduler ../elsewhere   # capture-scheduler が横に無いとき
  *   pnpm run dev:up --dashboard ../elsewhere   # dashboard が横に無いとき
+ *   pnpm run dev:up --validator ../elsewhere   # wacz-validator が横に無いとき
  *
  * ## 束ねるが、隠さない
  *
@@ -57,12 +58,29 @@ const LOGS = resolve(ROOT, ".dev/logs");
 const whoami = (spawnSync("whoami", { encoding: "utf8" }).stdout ?? "").trim() || "you";
 
 /**
- * 隣の 2 つ。**読むだけ・向こうのコマンドを打つだけ** で、書きには行かない。
+ * 隣の repo で走るもの。**読むだけ・向こうのコマンドを打つだけ** で、書きには行かない。
  * 場所を渡せるようにしてあるのは、横に並べていない clone のためと、
  * 「無いときに名指しで止まる」を確かめられるようにするため。
+ *
+ * **並びではなく名前で引く。** 分割代入だと `HOST_PROCESSES` に 1 本足した日に
+ * 黙ってずれる —— 実際、validator を足した瞬間に dashboard の段が validator の
+ * コマンドを打ち始めた (--dry-run で気づいた)。
  */
-const [issuer, api, dashboardSpec] = HOST_PROCESSES;
-const dashboard = { ...dashboardSpec, root: resolve(ROOT, flag("--dashboard") ?? "../dashboard") };
+const spec = (name) => {
+  const found = HOST_PROCESSES.find((one) => one.name === name);
+  if (found === undefined) throw new Error(`unknown host process: ${name}`);
+  return found;
+};
+const issuer = spec("issuer");
+const api = spec("api");
+const validator = {
+  ...spec("validator"),
+  root: resolve(ROOT, flag("--validator") ?? "../wacz-validator"),
+};
+const dashboard = {
+  ...spec("dashboard"),
+  root: resolve(ROOT, flag("--dashboard") ?? "../dashboard"),
+};
 
 /**
  * 14 段。**この表がそのまま手順書。**
@@ -121,6 +139,13 @@ const STEPS = [
   },
   { id: "token", run: "pnpm run windmill:capture-ledger-token", cwd: SCHEDULER },
   { id: "doctor", run: "pnpm run doctor", cwd: SCHEDULER },
+  // **検証の daemon は画面より前。** 先に画面が立つと、「検証」を押した人が
+  // daemon の不在を踏む。
+  {
+    id: "validator",
+    daemon: validator,
+    ready: `http://127.0.0.1:${String(validator.port)}/healthz`,
+  },
   // **画面は最後。** API が答えるより先に開いても、何も見えない。
   {
     id: "dashboard",
