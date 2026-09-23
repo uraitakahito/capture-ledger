@@ -76,7 +76,10 @@ export const HOST_PROCESSES = [
     // **鍵を渡さない。** 読むのは台帳が署名した URL だけなので、`AWS_*` は要らない ——
     // 渡した瞬間に「鍵を持つ相手を増やさない」という、この経路を選んだ理由が消える。
     // build を挟むのは、clone した直後でも 1 本で立つようにするため (数秒)。
-    run: "pnpm --filter @wacz-validator/daemon build && node packages/daemon/dist/cli.js --port 7180",
+    // `daemon...`（末尾の 3 点）で依存（contract・core・protocol）ごと建てる。daemon だけを
+    // 建てると、core を変えたあとに古い core/dist の上で新しい daemon が黙って立つ（実際に
+    // そうなっていた。気づかなかったのは、毎回 pnpm run check を先に打っていたから）。
+    run: "pnpm --filter @wacz-validator/daemon... build && node packages/daemon/dist/cli.js --port 7180",
   },
   {
     name: "dashboard",
