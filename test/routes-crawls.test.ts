@@ -1045,8 +1045,16 @@ describe("走らせるものの解決", () => {
     await app.close();
 
     const body = res.json<{ scripts: Record<string, unknown>[] }>();
+    // 走った JS の hash と変換の記録は、最初の段の報告で埋まる。始めた直後はまだ無い (null)。
     expect(body.scripts).toEqual([
-      { id: "autoscroll", version: 2, phase: "behavior", sha256: "c".repeat(64) },
+      {
+        id: "autoscroll",
+        version: 2,
+        phase: "behavior",
+        sha256: "c".repeat(64),
+        jsSha256: null,
+        compiledWith: null,
+      },
     ]);
     expect(res.body).not.toContain("/* v2 */");
   });

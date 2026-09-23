@@ -144,6 +144,14 @@ export interface CrawlScript {
   source: string;
   sha256: string;
   options: Record<string, unknown>;
+  /**
+   * 変換サービスが返した JS の sha256。段の報告 (`POST /api/crawls/:id/pages` の `compiled`) から
+   * 写す (`crawl/compiled.ts`)。無ければまだ 1 段も報告が来ていない。archive の
+   * `behaviors/custom.jsonl` に残る JS はこの hash の物。flow へは渡さない。
+   */
+  jsSha256?: string;
+  /** 何で (typescript の版)・何に向けて (受け皿の型の tag) 変換したか。`jsSha256` と一緒に写す。 */
+  compiledWith?: { typescript: string; hostTypes: string };
 }
 
 /**
