@@ -297,7 +297,10 @@ open http://127.0.0.1:7080/
 captured, how many WACZ, and links out to the run (Windmill) and to replay. On the archives
 face, each row's 検証 (Validate) button reports **whether what was captured matches the WACZ
 spec** — answered by [wacz-validator](https://github.com/uraitakahito/wacz-validator), which is
-handed a URL the ledger signed, so **no store credentials are added anywhere**. **There is no token
+handed a URL the ledger signed, so **no store credentials are added anywhere**. The row's
+**開く** (open) shows the archive's contents too — the file tree, lines, one line split into
+fields, the WARC records and images; the records BrowserHive wrote for what it did not or could
+not fetch (`WARC-Type: metadata`) appear there as well. **There is no token
 to paste** — it asks the dev issuer for one itself. (Which also means it is not a boundary: that
 issuer hands out a token for any name it is asked for.)
 
