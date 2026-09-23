@@ -288,6 +288,9 @@ open http://127.0.0.1:7080/
 
 [dashboard](https://github.com/uraitakahito/dashboard) は **1 行 = 1 本のクロール**で、
 状態・撮れた数・WACZ の数と、run（Windmill）と replay への行き先が並びます。
+アーカイブの面では、行の「検証」から **撮れたものが WACZ の仕様どおりか**を見られます
+（[wacz-validator](https://github.com/uraitakahito/wacz-validator) が答えます。
+台帳が署名した URL を渡すので、**store の鍵はどこにも増えません**）。
 **トークンを貼る必要はありません** —— あちらが開発用 issuer から自分で取ります
 （そのぶん境界ではありません。issuer は頼まれれば誰の名前でも出します）。
 
