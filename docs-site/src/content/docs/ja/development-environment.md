@@ -124,9 +124,9 @@ NAME=value     # 値を渡す
 
 | コマンド                                  | 内容                                                                               |
 | ----------------------------------------- | ---------------------------------------------------------------------------------- |
-| `pnpm run dev:up`                         | 立ち上げの 15 段を順に。`--dry-run` で一覧、`--from <段>` で途中から。             |
+| `pnpm run dev:up`                         | 立ち上げの 16 段を順に。`--dry-run` で一覧、`--from <段>` で途中から。             |
 | `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                           |
-| `pnpm run dev:down`                       | ホストの 3 本 → 両 repo のコンテナ。共有 store は落とさない。                      |
+| `pnpm run dev:down`                       | ホストの 4 本 → 両 repo のコンテナ。共有 store は落とさない。                      |
 | `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                    |
 | `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                               |
 | `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                    |
@@ -145,11 +145,17 @@ NAME=value     # 値を渡す
 | `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                               |
 | `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                             |
 
-### ホストで動くのは 3 本ある
+### ホストで動くのは 4 本ある
 
-スタックに入っていないものが 3 つあります。**`pnpm run oidc:issuer` (9099)・
-`pnpm run api` (7070)・[dashboard](https://github.com/uraitakahito/dashboard) の
+スタックに入っていないものが 4 つあります。**`pnpm run oidc:issuer` (9099)・
+`pnpm run api` (7070)・[wacz-validator](https://github.com/uraitakahito/wacz-validator) の
+daemon (7180)・[dashboard](https://github.com/uraitakahito/dashboard) の
 `pnpm run dev` (7080) はホストのプロセス**で、コンテナではありません。
+
+検証の daemon には **store の鍵を渡していません**。読むのは台帳が署名した URL
+だけなので要らず、渡せば「鍵を持つ相手を増やさない」という選択の意味が消えます。
+daemon の既定の port は `0`（OS 任せ）なので、`--port 7180` で固定してあります ——
+固定しないと下の 2 つが見つけられません（どちらも port から持ち主を引くため）。
 
 画面が 7000 ではなく **7080** なのは、macOS の ControlCenter (AirPlay Receiver) が
 `*:7000` を握っているためです（実測）。`127.0.0.1:7000` に bind できてしまうので
@@ -163,7 +169,7 @@ NAME=value     # 値を渡す
 
 ```sh
 pnpm run dev:status   # pid・起動時刻・port。何も変えない
-pnpm run dev:down     # ホストの 3 本 → 両 repo のコンテナ
+pnpm run dev:down     # ホストの 4 本 → 両 repo のコンテナ
 ```
 
 `dev:down` は **port を持っている相手が自分のものか** を先に確かめます —— コマンド行が
