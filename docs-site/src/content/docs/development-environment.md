@@ -131,9 +131,9 @@ that rule too.
 
 | Command                                   | What it does                                                                                                       |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `pnpm run dev:up`                         | The 15 startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                   |
+| `pnpm run dev:up`                         | The 16 startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                   |
 | `pnpm run dev:status`                     | What is up right now. **Changes nothing.**                                                                         |
-| `pnpm run dev:down`                       | The three host processes, then both repos' containers. Never the shared store.                                     |
+| `pnpm run dev:down`                       | The four host processes, then both repos' containers. Never the shared store.                                      |
 | `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                    |
 | `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                                                                 |
 | `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                                                                 |
@@ -152,11 +152,17 @@ that rule too.
 | `pnpm run site:check`                     | Build the site and verify its references.                                                                          |
 | `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).                                                           |
 
-### Three things run on the host, not in the stack
+### Four things run on the host, not in the stack
 
-**`pnpm run oidc:issuer` (9099), `pnpm run api` (7070) and
+**`pnpm run oidc:issuer` (9099), `pnpm run api` (7070),
+[wacz-validator](https://github.com/uraitakahito/wacz-validator)'s daemon (7180) and
 [dashboard](https://github.com/uraitakahito/dashboard)'s `pnpm run dev` (7080) are host
 processes**, not containers.
+
+The validator daemon is given **no store credentials**: all it reads are URLs the ledger
+signed, so it needs none — and handing it some would undo the point of choosing that route.
+Its default port is `0` (whatever the OS picks), so it is pinned with `--port 7180`; without
+that the two tools below could not find it, since both look an owner up by port.
 
 The screen is on **7080 rather than 7000** because macOS's ControlCenter (AirPlay Receiver)
 holds `*:7000` (measured). Binding `127.0.0.1:7000` still succeeds, which is what makes it
@@ -170,7 +176,7 @@ and the port is still busy".
 
 ```sh
 pnpm run dev:status   # pid, start time, port. Changes nothing
-pnpm run dev:down     # the three host processes, then both repos' containers
+pnpm run dev:down     # the four host processes, then both repos' containers
 ```
 
 `dev:down` first checks whether **whoever holds the port is ours**: the command line has to be
