@@ -128,6 +128,15 @@ through a long crawl therefore cannot change what its later pages run.
 and never the source. What ran in bytes is in the archive (`behaviors/custom.jsonl`
 and `preload/scripts.jsonl`) and in the catalog.
 
+Once the first level has been reported, each entry also carries `jsSha256` and
+`compiledWith` (`{ typescript, hostTypes }`): the hash of the JavaScript that level ran,
+and what produced it, as ts-compile-service answered and the flow reported
+(`POST /api/crawls/:id/pages`, `compiled`). The catalog's `sha256` is over the
+TypeScript; the archive holds JavaScript; this is the link between them, written by the
+ledger from the report. Every level must report the same hashes — a different one is
+answered with 409, because it means the compiler changed underneath a running crawl.
+Before the first report both are `null`.
+
 ## What capture-ledger still does not decide
 
 The old CLI mapped a flag onto every field of BrowserHive's `CaptureRequest`:

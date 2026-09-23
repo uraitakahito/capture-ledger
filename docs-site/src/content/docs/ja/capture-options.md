@@ -122,6 +122,14 @@ source・sha256・options —— をクロールの行に書きます。以後�
 返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
 `preload/scripts.jsonl`）と目録に在ります。
 
+最初の段の報告が来ると、各要素に `jsSha256` と `compiledWith`（`{ typescript, hostTypes }`）も
+付きます。その段が走らせた JavaScript の sha256 と、何で・何に向けて変換したか ——
+ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の `compiled`）で
+運んだ物です。目録の `sha256` は TypeScript に打たれ、アーカイブに残るのは JavaScript。
+その間を継ぐのがこの値で、台帳が報告から写します。段ごとに同じ hash が来なければ 409 ——
+走行中のクロールの下で変換サービスが替わったということです。報告が来る前はどちらも
+`null` です。
+
 ## capture-ledger がいまも決めないもの
 
 以前の CLI は BrowserHive の `CaptureRequest` のフィールドそれぞれに旗を対応させていました

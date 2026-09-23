@@ -44,6 +44,7 @@ import type {
 import { resolveScripts } from "../scripts/store.js";
 import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
+import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
 import { acceptLinks, parseHttpUrl, type DiscoveredLink, type ParsedUrl } from "../crawl/scope.js";
 import { planNextLevel } from "../crawl/budget.js";
 import { getJsonObject } from "../archive/s3.js";
@@ -220,7 +221,29 @@ interface PageReport {
 interface LevelBody {
   depth: number;
   results: PageReport[];
+  /** 走った JS の sha256 と、何で・何に向けて変換したか。**必ず載せる** (`crawl/compiled.ts`)。 */
+  compiled: CompiledReport;
 }
+
+/**
+ * flow へ渡す形は変えない。報告で写した JS の hash と変換の記録は台帳の物で、
+ * 変換サービスと BrowserHive には見せない (見せても読まないが、契約を 1 つに保つ)。
+ */
+const toDispatched = ({
+  id,
+  version,
+  phase,
+  source,
+  sha256,
+  options,
+}: CrawlScript): CrawlScript => ({
+  id,
+  version,
+  phase,
+  source,
+  sha256,
+  options,
+});
 
 export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps): void => {
   const { db, fga, resolveIdentity, dispatch, capture, sink } = deps;
@@ -627,11 +650,14 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         error: crawl.error,
         // **身元だけ出す。** source は出さない —— 何が走っているかを知るのに要るのは
         // 「どれの何版か」で、中身は目録 (`pnpm run scripts show`) と archive に在る。
+        // `jsSha256` と `compiledWith` は最初の段の報告で埋まる。それまでは null。
         scripts: crawl.scripts.map((script) => ({
           id: script.id,
           version: script.version,
           phase: script.phase,
           sha256: script.sha256,
+          jsSha256: script.jsSha256 ?? null,
+          compiledWith: script.compiledWith ?? null,
         })),
         lastJob:
           crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
@@ -665,9 +691,33 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         body: {
           type: "object",
           additionalProperties: false,
-          required: ["depth", "results"],
+          required: ["depth", "results", "compiled"],
           properties: {
             depth: { type: "integer", minimum: 0 },
+            // 走った JS の hash と、何で・何に向けて変換したか。省略可にしない —— 載せ忘れた flow が
+            // 黙って通ると、台帳は「どの JS が走ったか」を二度と言えない (`capture_formats` と同じ理由)。
+            compiled: {
+              type: "object",
+              additionalProperties: false,
+              required: ["typescript", "hostTypes", "scripts"],
+              properties: {
+                typescript: { type: "string", minLength: 1 },
+                hostTypes: { type: "string", minLength: 1 },
+                scripts: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["id", "version", "sha256"],
+                    properties: {
+                      id: { type: "string", minLength: 1 },
+                      version: { type: "integer", minimum: 1 },
+                      sha256: { type: "string", pattern: "^[0-9a-f]{64}$" },
+                    },
+                  },
+                },
+              },
+            },
             results: {
               type: "array",
               items: {
@@ -717,7 +767,25 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         .executeTakeFirst();
       if (!crawl) return reply.code(404).send({ error: "not found" });
 
-      const { depth, results } = request.body;
+      const { depth, results, compiled } = request.body;
+
+      // ── 0. 走った JS の hash を、固定した目録に写す ──────────────────
+      // 台帳の `sha256` は TS の物で、archive に残るのは JS。その間を継ぐ JS の hash は
+      // 報告にしか無い。揃っていなければ断る (400/409) —— **台帳と flow の片方だけを新しく
+      // すると 1 段目でここに当たる。** 黙って通すより、報告の形が違うことを最初に言う。
+      const merge = mergeCompiled(crawl.scripts, compiled);
+      if ("status" in merge) {
+        log.warn({ crawlId, depth, scriptId: merge.scriptId }, merge.error);
+        return reply.code(merge.status).send({ error: merge.error, scriptId: merge.scriptId });
+      }
+      if (merge.changed) {
+        await db
+          .updateTable("crawls")
+          .set({ scripts: JSON.stringify(merge.scripts) })
+          .where("id", "=", crawlId)
+          .execute();
+      }
+
       // 種は投入時に検査しているので、読めない行はここに来ない。**それでも
       // 全部を読み直す** —— 範囲の判定に要るのは正規化した形で、行に入っているのは
       // 文字列だから。1 本でも読めなければ行が壊れている。
@@ -953,8 +1021,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           hostParallelism: crawl.hostParallelism,
           captureFormats: withLinks(capture.formats, crawl.maxDepth > nextDepth),
           signing: capture.signing,
-          // 目録は引き直さない —— 行に固定したものをそのまま配る。
-          scripts: crawl.scripts,
+          // 目録は引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
+          scripts: crawl.scripts.map(toDispatched),
           ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
         });
       }

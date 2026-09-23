@@ -11,6 +11,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { CrawlRouteDeps } from "../src/api/crawls.js";
+import type { CrawlScript } from "../src/db/database.js";
 
 vi.mock("../src/crawl/admit-level.js", () => ({ admitLevel: vi.fn() }));
 
@@ -25,6 +26,10 @@ const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organiz
 
 /** `capture_submissions` に書こうとした行。insert の `values` が受け取ったもの。 */
 let inserted: unknown[];
+/** クロールが固定した目録。報告の `compiled` と突き合わされる (`crawl/compiled.ts`)。 */
+let fakeScripts: CrawlScript[] = [];
+/** 走った JS の hash と変換の記録。台帳側で必須なので、どの報告にも載せる。 */
+const COMPILED = { typescript: "6.0.3", hostTypes: "v0.2.0", scripts: [] };
 
 const fakeDb = {
   selectFrom: () => ({
@@ -45,12 +50,18 @@ const fakeDb = {
             pagesDiscovered: 1,
             pagesCaptured: 0,
             artifactKeyPrefix: null,
+            scripts: fakeScripts,
           }),
       }),
     }),
   }),
   updateTable: () => ({
-    set: () => ({ where: () => ({ where: () => ({ execute: () => Promise.resolve() }) }) }),
+    set: () => ({
+      where: () => ({
+        execute: () => Promise.resolve(),
+        where: () => ({ execute: () => Promise.resolve() }),
+      }),
+    }),
   }),
   insertInto: () => ({
     values: (rows: unknown) => {
@@ -92,9 +103,27 @@ const report = async (results: Record<string, unknown>[]): Promise<number> => {
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
       headers: SUBJECT,
-      payload: { depth: 0, results },
+      payload: { depth: 0, results, compiled: COMPILED },
     });
     return res.statusCode;
+  } finally {
+    await app.close();
+  }
+};
+
+/** 本文を丸ごと指定して投げる。status と、台帳の言い分。 */
+const post = async (
+  payload: Record<string, unknown>,
+): Promise<{ status: number; body: Record<string, unknown> }> => {
+  const app = await buildApp();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/crawls/${CRAWL}/pages`,
+      headers: SUBJECT,
+      payload,
+    });
+    return { status: res.statusCode, body: res.json<Record<string, unknown>>() };
   } finally {
     await app.close();
   }
@@ -106,8 +135,52 @@ const firstRow = (): Record<string, unknown> | undefined =>
 
 beforeEach(() => {
   inserted = [];
+  fakeScripts = [];
   vi.mocked(admitLevel).mockReset();
   vi.mocked(admitLevel).mockResolvedValue({ registered: 0, admittedUrls: [] });
+});
+
+/**
+ * 段の報告の `compiled` —— 走った JS の hash と、何で・何に向けて変換したか。
+ * 断る条件そのものは `crawl-compiled.test.ts` が見ている。ここで見るのは配線: schema が
+ * 必須にしていること、断りが status と言い分になって返り、その先 (帰属・登録) に進まないこと。
+ */
+describe("段の報告の compiled", () => {
+  it("compiled の無い報告は 400 —— 古い flow を黙って通さない", async () => {
+    expect((await post({ depth: 0, results: [] })).status).toBe(400);
+    expect(admitLevel).not.toHaveBeenCalled();
+  });
+
+  it("compiled の中の知らない鍵は 400", async () => {
+    const res = await post({ depth: 0, results: [], compiled: { ...COMPILED, cached: false } });
+    expect(res.status).toBe(400);
+  });
+
+  it("前の段と違う JS の hash は 409 で、どれかを名指しし、先へ進まない", async () => {
+    fakeScripts = [
+      {
+        id: "autoscroll",
+        version: 3,
+        phase: "behavior",
+        source: "ts",
+        sha256: "a".repeat(64),
+        options: {},
+        jsSha256: "b".repeat(64),
+        compiledWith: { typescript: "6.0.3", hostTypes: "v0.2.0" },
+      },
+    ];
+    const res = await post({
+      depth: 1,
+      results: [],
+      compiled: {
+        ...COMPILED,
+        scripts: [{ id: "autoscroll", version: 3, sha256: "c".repeat(64) }],
+      },
+    });
+    expect(res.status).toBe(409);
+    expect(res.body["scriptId"]).toBe("autoscroll@3");
+    expect(admitLevel).not.toHaveBeenCalled();
+  });
 });
 
 describe("段の報告と manifest", () => {
