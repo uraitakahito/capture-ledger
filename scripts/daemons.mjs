@@ -38,6 +38,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /** 画面は隣の repo で走る。**cwd が違うので、根も 1 本ごとに持たせる。** */
 const DASHBOARD = fileURLToPath(new URL("../../dashboard/", import.meta.url));
+/** WACZ を検証する daemon も隣の repo。 */
+const VALIDATOR = fileURLToPath(new URL("../../wacz-validator/", import.meta.url));
 
 /**
  * 2 つの path が同じディレクトリを指すか。
@@ -66,6 +68,16 @@ export const HOST_PROCESSES = [
     run: "pnpm run oidc:issuer",
   },
   { name: "api", port: 7070, root: ROOT, entry: "dist/api/server.js", run: "pnpm run api" },
+  {
+    name: "validator",
+    port: 7180,
+    root: VALIDATOR,
+    entry: "packages/daemon/dist/cli.js",
+    // **鍵を渡さない。** 読むのは台帳が署名した URL だけなので、`AWS_*` は要らない ——
+    // 渡した瞬間に「鍵を持つ相手を増やさない」という、この経路を選んだ理由が消える。
+    // build を挟むのは、clone した直後でも 1 本で立つようにするため (数秒)。
+    run: "pnpm --filter @wacz-validator/daemon build && node packages/daemon/dist/cli.js --port 7180",
+  },
   {
     name: "dashboard",
     port: 7080,
