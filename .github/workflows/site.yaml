@@ -81,7 +81,7 @@ jobs:
     name: Docs sync guard
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Dependabot が出した PR では走らせない。理由は ci.yaml の proto-sync と同じ ——
+    # Dependabot が出した PR では走らせない。理由は ci.yaml の contract-sync と同じ ——
     # **Dependabot の PR は Actions secrets を読めない** ので、下の
     # create-github-app-token が private-key 空で必ず落ちる。変更の中身とは無関係に。
     #

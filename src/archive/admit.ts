@@ -25,11 +25,7 @@
  * OpenFGA に受け入れられるまで再送しながら配送する。
  */
 import type { Kysely } from "kysely";
-import {
-  CaptureStatus,
-  captureStatusToJSON,
-  type CaptureResultReport,
-} from "../rpc/generated/browserhive/v1/capture.js";
+import type { CaptureResultReport } from "./manifest.js";
 import type { Database } from "../db/database.js";
 import { parseS3Uri } from "./s3-uri.js";
 import { createChildLogger } from "../logger.js";
@@ -73,7 +69,7 @@ export const archiveRow = (
   bucket: location.bucket,
   objectKey: location.key,
   sourceUrl: report.url,
-  labels: report.labels,
+  labels: report.labels ?? [],
   waczComplete: report.completeness?.complete ?? null,
   // 署名を求めていない取り込みでは報告ごと来ないので `null`。「求めたが付かなかった」
   // (`false`) とは別の主張で、後者は配備の異常を意味する。
@@ -96,18 +92,14 @@ export const admitArchive = async (
   // 失敗した取り込みは何もアップロードしていない。それを記録すると、署名の
   // エンドポイントが存在しないオブジェクトの URL を配ることになる —— 404 に対して
   // 認可が完璧に働いている状態で、最も気づきにくい壊れ方。
-  // 比べる相手は必ず enum で、文字列ではない。report はいま protobuf —— wire でも
-  // `.result.json` の manifest でも同じ —— なので `status` は数値であり、
-  // `report.status !== "success"` はコンパイルは通ったうえで、これまでのすべての
-  // 取り込みについて真になっていた。
-  if (
-    report.status !== CaptureStatus.CAPTURE_STATUS_SUCCESS ||
-    report.artifacts?.wacz === undefined
-  ) {
+  // 比べる相手は契約 (OpenAPI の `CaptureStatus`) の綴り。`"success"` 以外の綴りは型が
+  // 断る —— protobuf の頃 (v3〜v11) は enum が数値で、この文字列との比較がコンパイルを
+  // 通ったうえで常に真になった。いまの `report` は `readManifest` が契約に照らした後の物。
+  if (report.status !== "success" || report.artifacts?.wacz === undefined) {
     log.warn(
       {
         taskId: report.taskId,
-        status: captureStatusToJSON(report.status),
+        status: report.status,
         error: report.errorDetails?.message,
         url: report.url,
       },

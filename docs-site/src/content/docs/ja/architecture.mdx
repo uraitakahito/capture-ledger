@@ -32,11 +32,11 @@ flowchart LR
 
 ## 投げてから、結末を回収するまで
 
-**capture-ledger はもう BrowserHive と gRPC で話しません。** `Capture` を呼んで答えを
+**capture-ledger は BrowserHive とまったく話しません。** `POST /captures` を呼んで答えを
 待ち、報告するのは Windmill の flow で、capture-ledger は次の段を組み立てて記録します。
 capture-ledger の設定に BrowserHive の在り処は 1 つも入っていません。BrowserHive は
 1 プロセスが browser 1 台を持ち、取り込みは 1 度に 1 つ —— 走行中なら
-`RESOURCE_EXHAUSTED` で断る —— ので、空いている口を選ぶのも flow の仕事です。
+`429 Busy` で断る —— ので、空いている口を選ぶのも flow の仕事です。
 
 1 段が 1 往復です。flow は渡された URL を取り込み、`POST /api/crawls/:id/pages` に
 ページごとの `taskId` と状態を載せて返します。capture-ledger は `crawl_pages` を書き、
@@ -109,20 +109,20 @@ flowchart LR
 
 ## モジュール構成
 
-| モジュール                      | 責務                                                                                             |
-| ------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `src/api/server.ts`             | 唯一の入口。取り込みの設定を起動時に 1 度読み、route を登録し、outbox をタイマーで掃き出す。     |
-| `src/api/crawls.ts`             | クロールを起こす / 段を受ける / 次の段を返す。認可・方針・記録。                                 |
-| `src/crawl/`                    | 範囲、上限、段の台帳登録、Windmill への dispatch。                                               |
-| `src/config/capture-formats.ts` | `CAPTURE_LEDGER_CAPTURE_FORMATS` / `_SIGNING` を、毎回載せる `captureFormats` にする。           |
-| `src/data/url-source.ts`        | 唯一の SQL クエリ。`capture_targets` から、頼んだ組織のぶんだけ `{ url }[]` を返す。             |
-| `src/archive/`                  | manifest、台帳への受け入れ、reconciler。                                                         |
-| `src/rpc/generated/`            | 型だけ。vendored の `.proto` からの生成物で手で編集しない（manifest が `CaptureResultReport`）。 |
-| `src/db/`                       | プール、Kysely の配線、マイグレーション、seed。                                                  |
+| モジュール                      | 責務                                                                                                                                                              |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/api/server.ts`             | 唯一の入口。取り込みの設定を起動時に 1 度読み、route を登録し、outbox をタイマーで掃き出す。                                                                      |
+| `src/api/crawls.ts`             | クロールを起こす / 段を受ける / 次の段を返す。認可・方針・記録。                                                                                                  |
+| `src/crawl/`                    | 範囲、上限、段の台帳登録、Windmill への dispatch。                                                                                                                |
+| `src/config/capture-formats.ts` | `CAPTURE_LEDGER_CAPTURE_FORMATS` / `_SIGNING` を、毎回載せる `captureFormats` にする。                                                                            |
+| `src/data/url-source.ts`        | 唯一の SQL クエリ。`capture_targets` から、頼んだ組織のぶんだけ `{ url }[]` を返す。                                                                              |
+| `src/archive/`                  | manifest、台帳への受け入れ、reconciler。                                                                                                                          |
+| `src/rpc/generated/`            | BrowserHive の契約（submodule から写した `openapi.json`）と、そこから作った型。manifest は `CaptureResultReport` で、台帳が読む前にこれに照らす。手で編集しない。 |
+| `src/db/`                       | プール、Kysely の配線、マイグレーション、seed。                                                                                                                   |
 
 ## エラーの扱い
 
-拒否と障害の見分けは、いまや flow の仕事です —— gRPC のチャンネルを持っているのが
+拒否と障害の見分けは、いまや flow の仕事です —— BrowserHive を呼んでいるのが
 あちらだからです。capture-ledger の側の関心事は、`crawls` の行がどうなるかです。
 
 投げられなかった dispatch は、その行をメッセージ付きで `failed` にして締めます。
@@ -146,8 +146,8 @@ Fastify の既定は `err.message` と `err.code` をそのまま返しますが
 | postgres       | `postgres.capture-ledger`      | 5432           | 5432         |
 | chromium-1     | `chromium-1.capture-ledger`    | 9222 (CDP)     | 9222         |
 | chromium-2     | `chromium-2.capture-ledger`    | 9222 (CDP)     | 9223         |
-| browserhive-1  | `browserhive-1.capture-ledger` | 50051 (gRPC)   | 50051        |
-| browserhive-2  | `browserhive-2.capture-ledger` | 50051 (gRPC)   | 50052        |
+| browserhive-1  | `browserhive-1.capture-ledger` | 50051 (HTTP)   | 50051        |
+| browserhive-2  | `browserhive-2.capture-ledger` | 50051 (HTTP)   | 50052        |
 | capture-ledger | —（ホストで動く）              | —              | —            |
 
 成果物ストア（SeaweedFS）は**このスタックには居ません**。crawler の 3 つの repo が

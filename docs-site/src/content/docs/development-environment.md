@@ -145,9 +145,9 @@ that rule too.
 | `pnpm run db:migrate` / `db:migrate:down` | Kysely migrations against `DATABASE_URL`.                                                                          |
 | `pnpm run db:seed` / `db:seed:down`       | Kysely seeds from `src/db/seeds/`.                                                                                 |
 | `pnpm run targets`                        | Add, list, disable or remove capture targets (`capture_targets`). A dev tool that writes to the database directly. |
-| `pnpm run proto:generate`                 | Regenerate `src/rpc/generated/` from the vendored `.proto` (buf).                                                  |
-| `pnpm run proto:check`                    | Generate, then `git diff --exit-code` (CI drift gate).                                                             |
-| `pnpm run proto:sync`                     | Re-copy the `.proto` from the pinned submodule.                                                                    |
+| `pnpm run openapi:generate`               | Re-copy BrowserHive's `openapi.json` from the pinned submodule and regenerate its types (openapi-typescript).      |
+| `pnpm run openapi:check`                  | Regenerate the types, then `git diff --exit-code` (CI drift gate).                                                 |
+| `pnpm run openapi:sync`                   | Re-copy the `openapi.json` from the pinned submodule only.                                                         |
 | `pnpm run site:dev` / `site:build`        | This documentation site.                                                                                           |
 | `pnpm run site:check`                     | Build the site and verify its references.                                                                          |
 | `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).                                                           |
@@ -188,10 +188,9 @@ killed on sight.
 
 ```sh
 pnpm run stack:up
-# grpcurl reads the vendored contract; GetServerStatus is the readiness probe.
+# GET /status (BrowserHive's HTTP API) is the readiness probe.
 # browserhive-2 is the same on localhost:50052.
-until grpcurl -plaintext -import-path proto -proto browserhive/v1/capture.proto \
-  localhost:50051 browserhive.v1.CaptureService/GetServerStatus >/dev/null 2>&1; do sleep 1; done
+until curl -fsS http://localhost:50051/status >/dev/null 2>&1; do sleep 1; done
 ```
 
 **There is no dev container.** container-compose has exactly four subcommands —
@@ -216,9 +215,9 @@ Code that runs **inside** a container (`scripts/prod-smoke.sh`) keeps using the 
 container-to-container traffic is not affected.
 :::
 
-There is no BrowserHive address here any more. The two gRPC endpoints the stack
+There is no BrowserHive address here any more. The two HTTP endpoints the stack
 publishes, `localhost:50051` and `localhost:50052` — one BrowserHive per Chromium —
-are for grpcurl and for the flow, not for capture-ledger.
+are for curl and for the flow, not for capture-ledger.
 
 The `pnpm run` scripts read that `.env` themselves
 (`node --env-file-if-exists=.env`) — no shell `export` needed. **Variables
@@ -253,12 +252,12 @@ under _Configure…_, and inspect the target.
 ./scripts/prod-smoke.sh
 ```
 
-It brings the stack up, polls `GetServerStatus` until both BrowserHives answer, builds
+It brings the stack up, polls `GET /status` until both BrowserHives answer, builds
 `capture-ledger:latest`, then runs migrate → seed → the API with `container run --rm`,
 asks the API for `/healthz`, tears the stack down through an `EXIT` trap, and
 forwards the exit code as its own.
 
-**It no longer captures anything.** capture-ledger does not speak gRPC to BrowserHive,
+**It no longer captures anything.** capture-ledger does not talk to BrowserHive,
 so what this script proves is that the image boots: migrations apply, the seed
 lands, the API answers. The capture path is covered end to end by capture-scheduler's
 `pnpm run test:e2e`, which needs Windmill as well.

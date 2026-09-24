@@ -98,26 +98,21 @@ store are covered in
 [its operations page](https://uraitakahito.github.io/seaweedfs/operations/).
 
 The first build compiles BrowserHive and the Chromium image from source, so
-expect several minutes. Check the state — until the stack is up, grpcurl reports
+expect several minutes. Check the state — until the stack is up, curl reports
 the failure itself:
 
 ```sh
-grpcurl -plaintext -emit-defaults -import-path proto -proto browserhive/v1/capture.proto \
-  localhost:50051 browserhive.v1.CaptureService/GetServerStatus \
-  | jq '{busy, browser: .browser.url}'
+curl -fsS http://localhost:50051/status | jq '{busy, browser: .browser.url}'
 # → { "busy": false, "browser": "http://chromium-1.capture-ledger:9222/" }
 ```
 
 That is `browserhive-1`. The stack runs two — a BrowserHive drives exactly one
 browser, so there is one per Chromium — and the second answers on `localhost:50052`.
-`-emit-defaults` is what makes `busy: false` visible: grpcurl otherwise drops
-fields at their default value, and an idle server would print `null`.
 
-`-import-path proto -proto …` points grpcurl at the contract vendored in this
-repo. BrowserHive does not serve reflection — a deliberate choice, not a gap:
-enabling it would mean shipping a descriptor set and reading it at runtime,
-making the `.proto` a runtime asset. So the `.proto` is how a caller learns the
-service — the same file the client is generated from.
+`/status` is BrowserHive's HTTP API (JSON, since v12; plaintext in this stack).
+Its contract is the OpenAPI document vendored in this repo
+(`src/rpc/generated/browserhive/openapi.json`, copied from the submodule) — the
+same file the ledger checks every `.result.json` manifest against.
 
 Both Chromiums are headless. To watch one render, open `chrome://inspect` in a
 local Chrome and add `localhost:9222` and `localhost:9223` under _Configure…_.
@@ -219,7 +214,7 @@ capturing does not.
 ### Once: connect capture-scheduler
 
 The steps live in one place, [capture-scheduler's quickstart](https://uraitakahito.github.io/capture-scheduler/quickstart/)
-(bring up Windmill, load the flow and the proto, hand over a token). Along the way,
+(bring up Windmill, load the flow, hand over a token). Along the way,
 capture-scheduler's `pnpm run windmill:bootstrap` writes **four lines for this repo inside its
 own repo**. **Fetching them is our job:**
 
@@ -338,15 +333,13 @@ See [Archive ledger](/capture-ledger/archive-ledger/) for the whole API.
 
 **A page reaches the ledger only after the flow reports the level it was in.**
 If it is not in the picker, the level is either still open or the page failed.
-There is nothing to poll for a capture in flight: a capture is one gRPC call, and
-its result goes back to the caller — the Windmill run — and into the
-`.result.json` manifest next to the artifacts. What a BrowserHive will tell you
-is whether it is busy:
+There is nothing to poll for a capture in flight: a capture is one HTTP call
+(`POST /captures`), and its result goes back to the caller — the Windmill run —
+and into the `.result.json` manifest next to the artifacts. What a BrowserHive
+will tell you is whether it is busy:
 
 ```sh
-grpcurl -plaintext -emit-defaults -import-path proto -proto browserhive/v1/capture.proto \
-  localhost:50051 browserhive.v1.CaptureService/GetServerStatus \
-  | jq '{busy, browser: .browser.url}'
+curl -fsS http://localhost:50051/status | jq '{busy, browser: .browser.url}'
 ```
 
 `"busy": true` means that browser is in the middle of a page; `localhost:50052`

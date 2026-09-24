@@ -7,17 +7,13 @@ packages:
 # 「実行してよいか」を pnpm に聞かれたパッケージで、**どれも false でよい**
 # ことを実測で確かめてある。
 #
-# 直感に反するが、上の 3 つの postinstall はどれも必須ではない:
+# 直感に反するが、どの postinstall も必須ではない:
 #
-#   @bufbuild/buf — bin/buf は platform 別のパッケージ (ここでは
-#                   @bufbuild/buf-darwin-arm64) を **実行時に** 解決する Node の
-#                   シム。platform パッケージは optional dependency として
-#                   postinstall と無関係に入るので、false でも buf は動く。
-#   esbuild       — docs-site (Astro) 経由。同じ形で、bin/esbuild が
-#                   @esbuild/<platform> を実行時に解決する。
-#   protobufjs    — @grpc/grpc-js 経由。postinstall は依存の版の書き方について
-#                   stderr に助言を書くだけで、ファイルを 1 つも作らない
-#                   (実物を読んで確認済み。副作用は process.stderr.write のみ)。
+#   esbuild       — docs-site (Astro) 経由。bin/esbuild は @esbuild/<platform> を
+#                   **実行時に** 解決する Node のシム。platform パッケージは optional
+#                   dependency として postinstall と無関係に入るので、false でも動く。
+#                   (@bufbuild/buf と protobufjs も同じ形で false にしていた。BrowserHive
+#                   v12 で proto が無くなり、どちらも依存から消えた。)
 #   puppeteer     — docs の画面の絵を撮る (scripts/docs-shots.mjs) ためだけに在る。
 #                   postinstall は Chromium (150MB) を取りに行くので、false にして
 #                   install のたびに DL させない (CI でも要らない)。撮る人は初回だけ
@@ -29,8 +25,7 @@ packages:
 #
 #   rm -rf node_modules
 #   pnpm install --store-dir /tmp/pnpm-verify   # ← ストアを分けるのが肝
-#   node_modules/.bin/buf --version             # → 1.72.0
-#   pnpm run site:build                         # → 17 ページ
+#   pnpm run site:build                         # → 17 ページ (esbuild が動いた証拠)
 #
 # node_modules を消すだけでは足りない。pnpm のストア (既定は
 # ~/Library/pnpm/store) に前の postinstall の結果が残っていて link され直すので、
@@ -41,9 +36,7 @@ packages:
 # 判断して false にしている。**増やすときは同じ手順で「本当に要るのか」を
 # 確かめること** —— 要る/要らないは直感では当たらない。
 allowBuilds:
-  "@bufbuild/buf": false
   esbuild: false
-  protobufjs: false
   puppeteer: false
 
 # npm の `overrides` の移設先。pnpm 11 は package.json の `overrides` を読まず、

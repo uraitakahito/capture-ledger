@@ -12,7 +12,7 @@ import type { Database } from "../src/db/database.js";
  */
 vi.mock("../src/archive/s3.js", () => ({ getJsonObject: vi.fn() }));
 vi.mock("../src/archive/admit.js", () => ({ admitArchive: vi.fn() }));
-// `readManifest` の本物は `undefined` で投げる。飛ばした分岐と投げた分岐を区別するため偽物にする。
+// `readManifest` の本物は契約に照らして投げる。飛ばした分岐と投げた分岐を区別するため偽物にする。
 vi.mock("../src/archive/manifest.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/archive/manifest.js")>()),
   readManifest: vi.fn((raw: unknown) => raw),
@@ -20,6 +20,7 @@ vi.mock("../src/archive/manifest.js", async (importOriginal) => ({
 
 const { getJsonObject } = await import("../src/archive/s3.js");
 const { admitArchive } = await import("../src/archive/admit.js");
+const { readManifest } = await import("../src/archive/manifest.js");
 const { reconcile } = await import("../src/archive/reconcile.js");
 
 const TASK = "550e8400-e29b-41d4-a716-446655440000";
@@ -51,6 +52,8 @@ const row = (manifestKey: string) => ({
 beforeEach(() => {
   vi.mocked(getJsonObject).mockReset();
   vi.mocked(admitArchive).mockReset();
+  vi.mocked(readManifest).mockReset();
+  vi.mocked(readManifest).mockImplementation((raw: unknown) => raw as never);
 });
 
 describe("reconcile は記録された鍵だけを読む", () => {
@@ -79,6 +82,26 @@ describe("reconcile は記録された鍵だけを読む", () => {
 
     expect(admitArchive).not.toHaveBeenCalled();
     expect(result).toEqual({ pending: 1, registered: 0, skipped: 0, missing: 1 });
+  });
+
+  /**
+   * 契約の形でない manifest (v11 以前の protobuf JSON など)。`readManifest` が投げるが、
+   * 1 件で回し全体を止めない —— 次の行は読めるので、飛ばして数え、残りを続ける。
+   */
+  it("読めない manifest は skipped に数え、台帳には触らず、次の行へ進む", async () => {
+    const { db } = fakeDb([row("v11.result.json"), row("v12.result.json")]);
+    vi.mocked(getJsonObject).mockResolvedValue({ taskId: TASK });
+    vi.mocked(readManifest)
+      .mockImplementationOnce(() => {
+        throw new Error("manifest is not a BrowserHive CaptureResultReport: data/status …");
+      })
+      .mockImplementationOnce((raw: unknown) => raw as never);
+    vi.mocked(admitArchive).mockResolvedValue({ archiveId: "a1" });
+
+    const result = await reconcile(db, S3, "b");
+
+    expect(admitArchive).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ pending: 2, registered: 1, skipped: 1, missing: 0 });
   });
 
   // 成果物の無い manifest (cancelled など)。manifest は在るので missing ではない。

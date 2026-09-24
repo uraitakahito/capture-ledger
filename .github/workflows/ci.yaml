@@ -10,24 +10,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # vendored proto が submodule の proto と一致しているか。
+  # vendored の契約 (BrowserHive の OpenAPI) が submodule の物と一致しているか。
   #
-  # `proto:sync` は submodule から `proto/` へ cp するだけなので、submodule を上げても
-  # sync を忘れれば古い契約のまま喋る。実際に一度それで通り抜けている。
+  # `openapi:sync` は submodule から `src/rpc/generated/browserhive/` へ cp するだけなので、
+  # submodule を上げても sync を忘れれば古い契約のまま manifest を照らす。proto の頃に
+  # 実際に一度それで通り抜けている。
   #
   # `check` job とは別に切ってあるのは submodule が要るから —— BrowserHive は private
   # なので既定の GITHUB_TOKEN では clone できず、App token を鋳造する手順が要る。
   # それを毎 PR の全部の検査に背負わせるより、この 1 本だけに閉じるほうが安い。
   #
-  # store の名前の検査 (`check:store-name`) も同じ理由でここに居る。見るのは proto では
+  # store の名前の検査 (`check:store-name`) も同じ理由でここに居る。見るのは契約では
   # ないが、submodule を取る job がこれだけで、検査の実体 (check-store-name.sh) は
   # submodule の中にある。
   #
-  # **検査であって修正ではない。** `pnpm run proto:generate` は頭で sync するが、
-  # ここで呼ぶのは `proto:diff` のほう。sync を通してから比べると、ずれを自分で直して
+  # **検査であって修正ではない。** `pnpm run openapi:generate` は頭で sync するが、
+  # ここで呼ぶのは `openapi:diff` のほう。sync を通してから比べると、ずれを自分で直して
   # しまって必ず緑になる (実際にその形で書いて、反証したら素通りした)。
-  proto-sync:
-    name: Proto sync check
+  contract-sync:
+    name: Contract sync check
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Dependabot が出した PR では走らせない。
@@ -38,10 +39,10 @@ jobs:
     # create-github-app-token が "The 'private-key' input must be set to a
     # non-empty string" で落ちる —— 変更の中身とは無関係に、必ず。
     #
-    # 飛ばして失うものは無い。この job が見るのは「vendor した proto が submodule と
+    # 飛ばして失うものは無い。この job が見るのは「vendor した契約が submodule と
     # 一致するか」と「compose の SeaweedFS の版が submodule の原本と同じか」で、
     # Dependabot の PR が書き換えるのは package.json と lockfile (docker の entry なら
-    # Dockerfile、github-actions の entry なら workflow) で、proto/ にも
+    # Dockerfile、github-actions の entry なら workflow) で、src/rpc/generated/ にも
     # docker-compose.yml にも触らないので、どれも動かない。
     # しかも develop に入った直後の push で同じ job が (secrets 付きで) 走るため、
     # 検査そのものは消えない —— 前倒しでなくなるだけ。
@@ -77,8 +78,8 @@ jobs:
           node-version-file: .nvmrc
           cache: "pnpm"
       - run: pnpm install --frozen-lockfile
-      - name: Vendored proto matches the submodule
-        run: pnpm run proto:diff
+      - name: Vendored OpenAPI matches the submodule
+        run: pnpm run openapi:diff
       - name: The store is named the shared one everywhere
         run: pnpm run check:store-name
 
@@ -149,16 +150,9 @@ jobs:
       - name: Targets CLI against Postgres
         run: node scripts/targets-smoke.mjs
 
-      - name: Proto drift check
-        run: pnpm run proto:check
-
-      # Separate from the drift check: that one asks whether the generated tree
-      # matches the .proto, this one asks whether what it imports will still be
-      # installed in the prod-only layer the runtime image is built from.
-      # pnpm does not hoist, so a package that only resolved by hoisting now
-      # fails during development too — this stays as the second line of defence.
-      - name: Generated dependency check
-        run: pnpm run proto:check-deps
+      # 契約 (openapi.json) から生成した型が、コミットされた物と一致するか。
+      - name: OpenAPI types drift check
+        run: pnpm run openapi:check
 
       # pnpm-workspace.yaml の overrides が、まだ要るか。
       #

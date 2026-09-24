@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { archiveRow } from "../src/archive/admit.js";
-import type { CaptureResultReport } from "../src/rpc/generated/browserhive/v1/capture.js";
-import { CaptureStatus } from "../src/rpc/generated/browserhive/v1/capture.js";
+import type { CaptureResultReport } from "../src/archive/manifest.js";
 
 /**
  * 取り込みの報告から台帳の 1 行を組む写像。
@@ -18,15 +17,15 @@ import { CaptureStatus } from "../src/rpc/generated/browserhive/v1/capture.js";
  */
 const LOCATION = { bucket: "browserhive", key: "task_.wacz" };
 
-const report = (over: Partial<CaptureResultReport> = {}): CaptureResultReport =>
-  ({
-    taskId: "550e8400-e29b-41d4-a716-446655440000",
-    url: "https://example.com/",
-    labels: [],
-    status: CaptureStatus.CAPTURE_STATUS_SUCCESS,
-    timestamp: "2026-09-08T00:00:00.000Z",
-    ...over,
-  }) as CaptureResultReport;
+const report = (over: Partial<CaptureResultReport> = {}): CaptureResultReport => ({
+  taskId: "550e8400-e29b-41d4-a716-446655440000",
+  url: "https://example.com/",
+  labels: [],
+  status: "success",
+  timestamp: "2026-09-08T00:00:00.000Z",
+  captureProcessingTimeMs: 0,
+  ...over,
+});
 
 describe("archiveRow", () => {
   it("署名された取り込みは signed: true で台帳に載る", () => {
