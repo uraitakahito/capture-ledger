@@ -14,12 +14,12 @@
     "noFallthroughCasesInSwitch": true,
     // Require the bracket notation for accessing properties with index signatures
     "noPropertyAccessFromIndexSignature": true,
-    // exactOptionalPropertyTypes intentionally OFF (BrowserHive has it ON):
-    // ts-proto writes every optional field as `field?: T | undefined`, which
-    // is exactly what this check rejects. That spelling is not a bug to wait
-    // out — it is how a generator expresses proto3's "a message field is
-    // always optional" — so the way to turn this on is to fence
-    // src/rpc/generated/ off behind its own tsconfig project reference.
+    // exactOptionalPropertyTypes intentionally OFF (BrowserHive has it ON).
+    // It was off because ts-proto (the contract copy until v0.55) wrote every
+    // optional field as `field?: T | undefined`, which this check rejects. The
+    // generator is gone (BrowserHive v12 speaks JSON over HTTP; the copy is now
+    // openapi-typescript output, which this check accepts), so turning it on is
+    // a question for this repo's own code, not for the contract copy.
 
     /*
      * Modules
@@ -75,10 +75,10 @@
     "target": "ES2022",
     // No DOM. It used to be here for `@hey-api/openapi-ts`, whose generated
     // client referenced Web-platform types (`Request`, `Response`, `BodyInit`)
-    // even though the runtime is Node. The gRPC client speaks HTTP/2 through
-    // Node's own sockets, so the lie is no longer needed — and dropping it
-    // means a stray `document` or `window` is now a compile error rather than
-    // a runtime one.
+    // even though the runtime is Node. capture-ledger has no BrowserHive client
+    // at all any more (the Windmill flow calls it), so the lie is not needed —
+    // and dropping it means a stray `document` or `window` is a compile error
+    // rather than a runtime one.
     "lib": ["ES2023"]
   },
   // Root config covers source, tests, and *.config.ts so editors and the

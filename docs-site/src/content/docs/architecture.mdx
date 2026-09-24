@@ -32,12 +32,12 @@ flowchart LR
 
 ## From submission to outcome
 
-**capture-ledger does not speak gRPC to BrowserHive any more.** The Windmill flow
-calls `Capture`, waits for the answer, and reports; capture-ledger plans the next
+**capture-ledger does not talk to BrowserHive at all.** The Windmill flow calls
+`POST /captures`, waits for the answer, and reports; capture-ledger plans the next
 level and records what happened. There is no BrowserHive address in capture-ledger's
 configuration at all. Each BrowserHive drives one browser and runs one capture at
-a time — a busy one refuses with `RESOURCE_EXHAUSTED` — so picking a free endpoint
-is the flow's job too.
+a time — a busy one refuses with `429 Busy` — so picking a free endpoint is the
+flow's job too.
 
 One level is one round trip. The flow captures the URLs it was handed and posts
 `POST /api/crawls/:id/pages` with a `taskId` and a status per page. capture-ledger writes
@@ -112,21 +112,21 @@ See [Archive ledger](/capture-ledger/archive-ledger/) for the details.
 
 ## Module layout
 
-| Module                          | Responsibility                                                                                             |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `src/api/server.ts`             | The only entry point. Reads the capture settings once, registers the routes, drains the outbox on a timer. |
-| `src/api/crawls.ts`             | Start a crawl, report a level, hand back the next one. Authorization, policy, and record-keeping.          |
-| `src/crawl/`                    | Scope, budget, level admission, and the Windmill dispatch.                                                 |
-| `src/config/capture-formats.ts` | `CAPTURE_LEDGER_CAPTURE_FORMATS` / `_SIGNING` → the `captureFormats` every dispatch carries.               |
-| `src/data/url-source.ts`        | The one SQL query over `capture_targets`. Returns `{ url }[]` for the organization asking.                 |
-| `src/archive/`                  | Manifests, admission into the ledger, and the reconciler.                                                  |
-| `src/rpc/generated/`            | Types only, from the vendored `.proto` — the manifest is a `CaptureResultReport`. Never edited by hand.    |
-| `src/db/`                       | Pool, Kysely wiring, migrations, seeds.                                                                    |
+| Module                          | Responsibility                                                                                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/api/server.ts`             | The only entry point. Reads the capture settings once, registers the routes, drains the outbox on a timer.                                                                                                   |
+| `src/api/crawls.ts`             | Start a crawl, report a level, hand back the next one. Authorization, policy, and record-keeping.                                                                                                            |
+| `src/crawl/`                    | Scope, budget, level admission, and the Windmill dispatch.                                                                                                                                                   |
+| `src/config/capture-formats.ts` | `CAPTURE_LEDGER_CAPTURE_FORMATS` / `_SIGNING` → the `captureFormats` every dispatch carries.                                                                                                                 |
+| `src/data/url-source.ts`        | The one SQL query over `capture_targets`. Returns `{ url }[]` for the organization asking.                                                                                                                   |
+| `src/archive/`                  | Manifests, admission into the ledger, and the reconciler.                                                                                                                                                    |
+| `src/rpc/generated/`            | BrowserHive's contract (`openapi.json`, copied from the submodule) and the types made from it. The manifest is a `CaptureResultReport`, checked against it before the ledger reads it. Never edited by hand. |
+| `src/db/`                       | Pool, Kysely wiring, migrations, seeds.                                                                                                                                                                      |
 
 ## Error handling
 
 Telling a rejection apart from an outage is the flow's job now — it is the side
-holding the gRPC channel. capture-ledger's half is what happens to the `crawls` row.
+that calls BrowserHive. capture-ledger's half is what happens to the `crawls` row.
 
 A dispatch that cannot be delivered closes the row as `failed` with the message
 on it. **It is never left `running`**: the partial unique index means an unclosed
@@ -150,8 +150,8 @@ host**, which is why capture-ledger itself needs no container.
 | postgres       | `postgres.capture-ledger`      | 5432           | 5432      |
 | chromium-1     | `chromium-1.capture-ledger`    | 9222 (CDP)     | 9222      |
 | chromium-2     | `chromium-2.capture-ledger`    | 9222 (CDP)     | 9223      |
-| browserhive-1  | `browserhive-1.capture-ledger` | 50051 (gRPC)   | 50051     |
-| browserhive-2  | `browserhive-2.capture-ledger` | 50051 (gRPC)   | 50052     |
+| browserhive-1  | `browserhive-1.capture-ledger` | 50051 (HTTP)   | 50051     |
+| browserhive-2  | `browserhive-2.capture-ledger` | 50051 (HTTP)   | 50052     |
 | capture-ledger | — (runs on the host)           | —              | —         |
 
 The artifact store (SeaweedFS) is **not in this stack**. It is one store shared by the three

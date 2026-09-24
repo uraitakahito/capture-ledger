@@ -122,28 +122,28 @@ NAME=value     # 値を渡す
 
 ## 日々のコマンド
 
-| コマンド                                  | 内容                                                                               |
-| ----------------------------------------- | ---------------------------------------------------------------------------------- |
-| `pnpm run dev:up`                         | 立ち上げの 16 段を順に。`--dry-run` で一覧、`--from <段>` で途中から。             |
-| `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                           |
-| `pnpm run dev:down`                       | ホストの 4 本 → 両 repo のコンテナ。共有 store は落とさない。                      |
-| `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                    |
-| `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                               |
-| `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                    |
-| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked)。                    |
-| `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。            |
-| `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                             |
-| `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                               |
-| `pnpm run check`                          | audit + typecheck + lint + format:check + test。push 前に実行。                    |
-| `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                  |
-| `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                                          |
-| `pnpm run targets`                        | 撮る対象（`capture_targets`）を足す・見る・外す・消す。DB に直接書く開発用の道具。 |
-| `pnpm run proto:generate`                 | vendored の `.proto` から `src/rpc/generated/` を再生成 (buf)。                    |
-| `pnpm run proto:check`                    | 生成して `git diff --exit-code` (CI のドリフト検査)。                              |
-| `pnpm run proto:sync`                     | 固定した submodule から `.proto` を取り直す。                                      |
-| `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                           |
-| `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                               |
-| `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                             |
+| コマンド                                  | 内容                                                                                                |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `pnpm run dev:up`                         | 立ち上げの 16 段を順に。`--dry-run` で一覧、`--from <段>` で途中から。                              |
+| `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                                            |
+| `pnpm run dev:down`                       | ホストの 4 本 → 両 repo のコンテナ。共有 store は落とさない。                                       |
+| `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                                     |
+| `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                                                |
+| `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                                     |
+| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked)。                                     |
+| `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。                             |
+| `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                                              |
+| `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                                                |
+| `pnpm run check`                          | audit + typecheck + lint + format:check + test。push 前に実行。                                     |
+| `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                                   |
+| `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                                                           |
+| `pnpm run targets`                        | 撮る対象（`capture_targets`）を足す・見る・外す・消す。DB に直接書く開発用の道具。                  |
+| `pnpm run openapi:generate`               | 固定した submodule から BrowserHive の `openapi.json` を取り直し、型を再生成 (openapi-typescript)。 |
+| `pnpm run openapi:check`                  | 型を再生成して `git diff --exit-code` (CI のドリフト検査)。                                         |
+| `pnpm run openapi:sync`                   | 固定した submodule から `openapi.json` を取り直すだけ。                                             |
+| `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                                            |
+| `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                                                |
+| `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                                              |
 
 ### ホストで動くのは 4 本ある
 
@@ -181,10 +181,9 @@ pnpm run dev:down     # ホストの 4 本 → 両 repo のコンテナ
 
 ```sh
 pnpm run stack:up
-# grpcurl は vendored の契約を読む。準備完了の判定は GetServerStatus。
+# 準備完了の判定は GET /status (BrowserHive の HTTP API)。
 # browserhive-2 も同じ (localhost:50052)。
-until grpcurl -plaintext -import-path proto -proto browserhive/v1/capture.proto \
-  localhost:50051 browserhive.v1.CaptureService/GetServerStatus >/dev/null 2>&1; do sleep 1; done
+until curl -fsS http://localhost:50051/status >/dev/null 2>&1; do sleep 1; done
 ```
 
 **dev コンテナはありません。** container-compose のサブコマンドは
@@ -209,9 +208,9 @@ platform DNS は `<service>.capture-ledger` をホストからも解決します
 コンテナ同士の通信は、この制限に当たりません。
 :::
 
-BrowserHive の在り処はもうここにありません。スタックが公開している 2 つの gRPC の
+BrowserHive の在り処はもうここにありません。スタックが公開している 2 つの HTTP の
 口 `localhost:50051` と `localhost:50052`（Chromium 1 台に BrowserHive 1 つ）は、
-grpcurl と flow のためのもので、capture-ledger のためではありません。
+curl と flow のためのもので、capture-ledger のためではありません。
 
 `pnpm run` 系のコマンドはこの `.env` を自分で読みます
 （`node --env-file-if-exists=.env`）。シェルで `export` する必要はありません。
@@ -246,12 +245,12 @@ Chromium は 2 台とも **headless** です。描画を見たいときは、ロ
 ./scripts/prod-smoke.sh
 ```
 
-スタックを起動し、BrowserHive が 2 つとも `GetServerStatus` に応答するまでポーリングし、
+スタックを起動し、BrowserHive が 2 つとも `GET /status` に応答するまでポーリングし、
 `capture-ledger:latest` をビルドしてから migrate → seed → API を `container run --rm` で
 順に実行し、API に `/healthz` を訊き、`EXIT` トラップでスタックを片付け、
 終了コードを自分の終了コードとして返します。
 
-**もう取り込みはしません。** capture-ledger は BrowserHive と gRPC で話さないので、
+**もう取り込みはしません。** capture-ledger は BrowserHive と話さないので、
 このスクリプトが示すのは「イメージが起動すること」—— migration が当たり、seed が
 入り、API が答えること —— です。取り込みの経路は capture-scheduler の `pnpm run test:e2e` が
 端から端まで見ます（あちらは Windmill も要ります）。

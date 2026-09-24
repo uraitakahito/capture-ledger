@@ -1,0 +1,993 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "BrowserHive",
+        "version": "2026-09-24",
+        "description": "BrowserHive の capture API。\n\n**1 往復で結果が返る。** `Capture` は取り込みが終わるまで返らず、応答に結果を載せる。\n\nこの server は **browser 1 台ぶん** しか知らない。並列は呼ぶ側が endpoint を並べて作る。\nだから queue も pool も無く、走行中に呼ばれたら待たせずに `Busy` (429) を返す ——\n空いている台を探すのは呼ぶ側の仕事。\n\n形と値域の検証は生成した server が行い、外れれば `ValidationException` (400)。"
+    },
+    "paths": {
+        "/captures": {
+            "post": {
+                "description": "取り込んで、**結果を返す**。受理では返らない。\n\n呼ぶ側が途中で切ったら、取り込みはページごと壊されて cancelled の結果になる。\n応答は届かないが、manifest には切られた記録が書かれる。\n\n応答は、結果の記録 (manifest) を書き終えてから返す (書き込みの予算は 10 秒)。",
+                "operationId": "Capture",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/CaptureRequestContent"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Capture 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/CaptureResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationException 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationExceptionResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Busy 429 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BusyResponseContent"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/status": {
+            "get": {
+                "description": "この台の現在。**server 全体**の話で、取り込み 1 件のことは言わない —— 結果は\nCapture の応答にしか無い。health と版の probe、それと呼ぶ側が「いま塞がっているか」\nを投げる前に知るために在る。",
+                "operationId": "GetServerStatus",
+                "responses": {
+                    "200": {
+                        "description": "GetServerStatus 200 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/GetServerStatusResponseContent"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "ValidationException 400 response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ValidationExceptionResponseContent"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "ArtifactSink": {
+                "type": "object",
+                "description": "成果物の送り先。**呼ぶ側が 1 回きりの口を渡し、こちらはそこへ押し出す。**\n\n省略すればサーバ自身の保管庫へ書く。保管庫を持たない配備では必須で、無ければ受理の時点で断る。",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "PUT の宛先。`<url>/<filename>` へ 1 成果物ずつ送る。"
+                    },
+                    "token": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "呼ぶ側が発行した 1 回きりの資格。`authorization: Bearer <token>` で送る。"
+                    }
+                },
+                "required": [
+                    "token",
+                    "url"
+                ]
+            },
+            "BrowserStatus": {
+                "type": "object",
+                "description": "この台が抱えている browser。",
+                "properties": {
+                    "url": {
+                        "type": "string"
+                    },
+                    "connected": {
+                        "type": "boolean"
+                    },
+                    "version": {
+                        "type": "string",
+                        "description": "Chromium が自称する版 (例 `Chrome/150.0.7871.181`)。接続していないときは無い。"
+                    }
+                },
+                "required": [
+                    "connected",
+                    "url"
+                ]
+            },
+            "BuildInfo": {
+                "type": "object",
+                "properties": {
+                    "version": {
+                        "type": "string"
+                    },
+                    "revision": {
+                        "type": "string"
+                    },
+                    "buildTime": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "buildTime",
+                    "revision",
+                    "version"
+                ]
+            },
+            "BusyResponseContent": {
+                "type": "object",
+                "description": "走行中 (1 台 1 件)。「いま無理」であって誤りではない —— 呼ぶ側は別の台へ、\n無ければ少し待って同じ台へ戻る。",
+                "properties": {
+                    "message": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            },
+            "CaptureArtifacts": {
+                "type": "object",
+                "description": "成果物の置き場所 (s3://…)。取得しなかった形式は無い。",
+                "properties": {
+                    "png": {
+                        "type": "string"
+                    },
+                    "webp": {
+                        "type": "string"
+                    },
+                    "html": {
+                        "type": "string"
+                    },
+                    "links": {
+                        "type": "string"
+                    },
+                    "mhtml": {
+                        "type": "string"
+                    },
+                    "wacz": {
+                        "type": "string"
+                    }
+                }
+            },
+            "CaptureErrorDetails": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "$ref": "#/components/schemas/ErrorType"
+                    },
+                    "message": {
+                        "type": "string"
+                    },
+                    "httpStatusCode": {
+                        "type": "number"
+                    },
+                    "httpStatusText": {
+                        "type": "string"
+                    },
+                    "timeoutMs": {
+                        "type": "number"
+                    },
+                    "step": {
+                        "type": "string",
+                        "description": "時間切れか cancel で終わったとき、取り込みがどの段階に居たか。"
+                    }
+                },
+                "required": [
+                    "message",
+                    "type"
+                ]
+            },
+            "CaptureFormats": {
+                "type": "object",
+                "description": "取得する形式。6 つ全部を書く。少なくとも 1 つは true でなければならない (server が検証する)。",
+                "properties": {
+                    "png": {
+                        "type": "boolean"
+                    },
+                    "webp": {
+                        "type": "boolean"
+                    },
+                    "html": {
+                        "type": "boolean"
+                    },
+                    "links": {
+                        "type": "boolean"
+                    },
+                    "mhtml": {
+                        "type": "boolean"
+                    },
+                    "wacz": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "html",
+                    "links",
+                    "mhtml",
+                    "png",
+                    "wacz",
+                    "webp"
+                ]
+            },
+            "CaptureRequestContent": {
+                "type": "object",
+                "description": "Capture の要求。取り込みの中身を全部ここで決める —— 応答は結果そのもので、受理の印は無い。",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "labels": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "成果物のファイル名に入る札。制限は合計の長さだけで、\n`{taskId}_{correlationId}[_{labels}].result.json` が 255 UTF-8 バイトを超える要求は server が拒む。"
+                    },
+                    "correlationId": {
+                        "type": "string",
+                        "description": "client 側の相関キー。labels と同じ規則でファイル名に入る。"
+                    },
+                    "captureFormats": {
+                        "$ref": "#/components/schemas/CaptureFormats"
+                    },
+                    "acceptLanguage": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "pattern": "^[\\x20-\\x7e]*$",
+                        "description": "上流へ送る Accept-Language。印字可能な ASCII のみ、200 文字以下。\nこの値は header として上流へ渡るので、CR / LF が入れば header の注入になる。\nCDP も不正な header 値を拒むが、それは向こうの都合であってこちらの保証ではない。\n空白だけの値は server が「指定なし」に畳む。"
+                    },
+                    "signing": {
+                        "type": "boolean",
+                        "description": "wacz-auth の署名を求める。`captureFormats.wacz` と一緒のときだけ有効で、他の組み合わせは 400。"
+                    },
+                    "dismissBanners": {
+                        "$ref": "#/components/schemas/DismissBanners"
+                    },
+                    "viewport": {
+                        "$ref": "#/components/schemas/Viewport"
+                    },
+                    "operationDelayMs": {
+                        "type": "number",
+                        "maximum": 5000,
+                        "minimum": 0,
+                        "description": "ページ操作 1 つごとに挟む遅延 (ms)。待ちの手段ではないので上限が要る。"
+                    },
+                    "trace": {
+                        "type": "boolean"
+                    },
+                    "devicePixelRatios": {
+                        "type": "array",
+                        "items": {
+                            "type": "number",
+                            "maximum": 3,
+                            "minimum": 1
+                        },
+                        "uniqueItems": true,
+                        "description": "読み込む device pixel ratio を、読み込む順に。各要素は 1–3 の整数で、同じ値を 2 度置くことはできない。\n\n要素数がそのまま読み込みの回数になる。PNG / WebP は **最後の要素**の倍率になる。\n省略ならサーバ既定 (--device-pixel-ratios)。"
+                    },
+                    "fullPage": {
+                        "type": "boolean"
+                    },
+                    "behaviors": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Script"
+                        },
+                        "description": "読み込み後に走らせるもの (主フレーム・DPR のパスごと)。書かれた順に走る。"
+                    },
+                    "session": {
+                        "$ref": "#/components/schemas/SessionMode"
+                    },
+                    "maxResponseBytes": {
+                        "type": "number",
+                        "minimum": 1,
+                        "description": "この取り込みに限って本文の上限を締める。既定より大きい値は既定に丸める。"
+                    },
+                    "urlPolicies": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UrlPolicy"
+                        },
+                        "description": "この取り込みに限って policy を差し替える。**丸ごと置き換え** で、サーバ既定とは混ざらない。"
+                    },
+                    "contentTypePolicies": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ContentTypePolicy"
+                        }
+                    },
+                    "storageValues": {
+                        "type": "boolean",
+                        "description": "web storage の **値** まで archive に入れるか。省略時はサーバ既定 (--storage-values)。"
+                    },
+                    "artifactSink": {
+                        "$ref": "#/components/schemas/ArtifactSink"
+                    },
+                    "loadWait": {
+                        "$ref": "#/components/schemas/LoadWait"
+                    },
+                    "preload": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Script"
+                        },
+                        "description": "遷移の**前**に、書かれた順で注入するスクリプト。iframe を含む全フレームで、遷移のたびに走り、\n報告の手段を持たない。behaviors とは約束が違うので同じ列には入れない。"
+                    }
+                },
+                "required": [
+                    "captureFormats",
+                    "url"
+                ]
+            },
+            "CaptureResponseContent": {
+                "type": "object",
+                "description": "Capture の応答。結果そのものと、それを記録できたか。",
+                "properties": {
+                    "taskId": {
+                        "type": "string",
+                        "description": "成果物と manifest (`.result.json`) の鍵。ここで初めて呼ぶ側に渡る。"
+                    },
+                    "report": {
+                        "$ref": "#/components/schemas/CaptureResultReport"
+                    },
+                    "manifest": {
+                        "$ref": "#/components/schemas/ManifestOutcome"
+                    }
+                },
+                "required": [
+                    "manifest",
+                    "report",
+                    "taskId"
+                ]
+            },
+            "CaptureResultReport": {
+                "type": "object",
+                "description": "結果。manifest (`.result.json`) はこれをそのまま JSON にした物。",
+                "properties": {
+                    "taskId": {
+                        "type": "string"
+                    },
+                    "correlationId": {
+                        "type": "string"
+                    },
+                    "url": {
+                        "type": "string"
+                    },
+                    "labels": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "status": {
+                        "$ref": "#/components/schemas/CaptureStatus"
+                    },
+                    "httpStatusCode": {
+                        "type": "number"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "description": "RFC 3339 の文字列。"
+                    },
+                    "captureProcessingTimeMs": {
+                        "type": "number"
+                    },
+                    "artifacts": {
+                        "$ref": "#/components/schemas/CaptureArtifacts"
+                    },
+                    "waczStats": {
+                        "$ref": "#/components/schemas/WaczStats"
+                    },
+                    "completeness": {
+                        "$ref": "#/components/schemas/WaczCompleteness"
+                    },
+                    "signature": {
+                        "$ref": "#/components/schemas/WaczSignature"
+                    },
+                    "errorDetails": {
+                        "$ref": "#/components/schemas/CaptureErrorDetails"
+                    },
+                    "settle": {
+                        "$ref": "#/components/schemas/Settle"
+                    }
+                },
+                "required": [
+                    "captureProcessingTimeMs",
+                    "status",
+                    "taskId",
+                    "timestamp",
+                    "url"
+                ]
+            },
+            "CaptureStatus": {
+                "type": "string",
+                "description": "capture の結末。",
+                "enum": [
+                    "success",
+                    "failed",
+                    "timeout",
+                    "http_error"
+                ]
+            },
+            "CheckOutcome": {
+                "type": "string",
+                "description": "署名の検査 1 つぶんの結果。",
+                "enum": [
+                    "ok",
+                    "failed",
+                    "skipped"
+                ]
+            },
+            "ContentTypePolicy": {
+                "type": "object",
+                "description": "メディア型への扱い。応答が届いてからしか判定できないので deny は取りえない。",
+                "properties": {
+                    "prefix": {
+                        "type": "string"
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": "no-body のみ。"
+                    }
+                },
+                "required": [
+                    "action",
+                    "prefix"
+                ]
+            },
+            "DismissBanners": {
+                "description": "true/false だけの指定と、細かい指定を区別する。",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "title": "enabled",
+                        "properties": {
+                            "enabled": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "enabled"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "title": "spec",
+                        "properties": {
+                            "spec": {
+                                "$ref": "#/components/schemas/DismissSpec"
+                            }
+                        },
+                        "required": [
+                            "spec"
+                        ]
+                    }
+                ]
+            },
+            "DismissHeuristicSpec": {
+                "type": "object",
+                "description": "大きな固定オーバーレイを消す第 2 パスの閾値。省略時はサーバ既定。",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "minViewportCoverageRatio": {
+                        "type": "number",
+                        "format": "double"
+                    },
+                    "minZIndex": {
+                        "type": "number"
+                    }
+                }
+            },
+            "DismissSpec": {
+                "type": "object",
+                "description": "banner / modal の除去を 1 回の capture だけ調整する。",
+                "properties": {
+                    "useDefaults": {
+                        "type": "boolean"
+                    },
+                    "extraSelectors": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "excludeFrameworks": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "heuristic": {
+                        "$ref": "#/components/schemas/DismissHeuristicSpec"
+                    },
+                    "failOnError": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "ErrorType": {
+                "type": "string",
+                "description": "失敗の分類。",
+                "enum": [
+                    "http",
+                    "timeout",
+                    "connection",
+                    "signing",
+                    "internal",
+                    "artifact_sink",
+                    "cancelled"
+                ]
+            },
+            "GetServerStatusResponseContent": {
+                "type": "object",
+                "properties": {
+                    "busy": {
+                        "type": "boolean",
+                        "description": "走行中の取り込みが在るか。true のとき Capture は Busy を返す。"
+                    },
+                    "browser": {
+                        "$ref": "#/components/schemas/BrowserStatus"
+                    },
+                    "build": {
+                        "$ref": "#/components/schemas/BuildInfo"
+                    },
+                    "limits": {
+                        "$ref": "#/components/schemas/ServerLimits"
+                    },
+                    "defaultUrlPolicies": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/UrlPolicy"
+                        },
+                        "description": "空の一覧は「何も濾さないで」という指示で、省略は「サーバ既定に任せる」。"
+                    },
+                    "defaultContentTypePolicies": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ContentTypePolicy"
+                        }
+                    }
+                },
+                "required": [
+                    "browser",
+                    "build",
+                    "busy"
+                ]
+            },
+            "LoadWait": {
+                "type": "object",
+                "description": "読み込み後の待ち (settle) の、取り込みごとの上書き。省いた欄はサーバ既定 (--load-wait-*)。\n上限の 60,000 は navigation の予算 (30 秒) の倍。欄をまたぐ関係 (min ≤ max、quiet ≤ max) は\nmodel では言えないので、server が受け取ってから見る。",
+                "properties": {
+                    "minMs": {
+                        "type": "number",
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "description": "load の後、静止を見始める前に置く最短。"
+                    },
+                    "maxMs": {
+                        "type": "number",
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "description": "合図が来なくても切り上げる最長。"
+                    },
+                    "quietMs": {
+                        "type": "number",
+                        "maximum": 60000,
+                        "minimum": 0,
+                        "description": "網・CPU・DOM が「静か」とみなす窓。"
+                    },
+                    "networkConcurrency": {
+                        "type": "number",
+                        "maximum": 100,
+                        "minimum": 0,
+                        "description": "静かでも許す同時接続数。0 なら全部届くまで (既定)。"
+                    }
+                }
+            },
+            "ManifestOutcome": {
+                "description": "結果の記録 (manifest) の結末。",
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "title": "location",
+                        "properties": {
+                            "location": {
+                                "type": "string",
+                                "description": "書けた場所 (`s3://…`、または受け口が返した場所)。"
+                            }
+                        },
+                        "required": [
+                            "location"
+                        ]
+                    },
+                    {
+                        "type": "object",
+                        "title": "error",
+                        "properties": {
+                            "error": {
+                                "type": "string",
+                                "description": "書けなかった理由。書き込み先から始まる。"
+                            }
+                        },
+                        "required": [
+                            "error"
+                        ]
+                    }
+                ]
+            },
+            "Script": {
+                "type": "object",
+                "description": "走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは注入の口だけ。",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "report と provenance に出る名前。サーバは中身を検査しない。"
+                    },
+                    "source": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "そのまま評価される JS。behavior は読み込み後に、preload は遷移の前に走る。"
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{64}$",
+                        "description": "source の SHA-256 (hex、接頭辞なし)。**サーバが照合して、違えば拒む。**\n中身は検査できないが、運ぶ途中で入れ替わっていないことだけは言える。"
+                    },
+                    "options": {
+                        "description": "そのスクリプトに渡す値。中身が任意の JS である以上、その設定も型では守れない。"
+                    }
+                },
+                "required": [
+                    "id",
+                    "sha256",
+                    "source"
+                ]
+            },
+            "ServerLimits": {
+                "type": "object",
+                "description": "サーバが強いる境界。リクエストでは変えられないもの。",
+                "properties": {
+                    "maxResponseBytes": {
+                        "type": "number",
+                        "description": "1 レスポンスの本文の上限。超えた本文は落とし、切り詰めとして記録する。"
+                    },
+                    "maxTaskBytes": {
+                        "type": "number",
+                        "description": "1 タスクが記録する本文の合計の上限。"
+                    },
+                    "maxPendingRequests": {
+                        "type": "number",
+                        "description": "1 タスクが同時に抱える保留リクエストの上限。"
+                    }
+                },
+                "required": [
+                    "maxPendingRequests",
+                    "maxResponseBytes",
+                    "maxTaskBytes"
+                ]
+            },
+            "SessionMode": {
+                "type": "string",
+                "description": "この取り込みが、前のタスクの残留物を持ち越すかどうか。省略は ISOLATED。",
+                "enum": [
+                    "isolated",
+                    "shared"
+                ]
+            },
+            "Settle": {
+                "type": "object",
+                "description": "読み込み後の待ちがどう終わったか。archive の browserhive:capture.settle と同じ形。",
+                "properties": {
+                    "strategy": {
+                        "type": "string",
+                        "description": "見ていた合図の組。"
+                    },
+                    "endedBy": {
+                        "type": "string",
+                        "description": "quiet か deadline。deadline は失敗ではない —— ページがまだ動いていたという観測。"
+                    },
+                    "waitedMs": {
+                        "type": "number",
+                        "description": "goto が返ってから待ちを終えるまでの ms。"
+                    },
+                    "devicePixelRatio": {
+                        "type": "number",
+                        "description": "最後のパスの観測。"
+                    },
+                    "limits": {
+                        "$ref": "#/components/schemas/SettleLimits"
+                    },
+                    "network": {
+                        "$ref": "#/components/schemas/SettleSignal"
+                    },
+                    "dom": {
+                        "$ref": "#/components/schemas/SettleSignal"
+                    },
+                    "load": {
+                        "$ref": "#/components/schemas/SettleLoad"
+                    },
+                    "cpu": {
+                        "$ref": "#/components/schemas/SettleSignal"
+                    }
+                },
+                "required": [
+                    "cpu",
+                    "devicePixelRatio",
+                    "dom",
+                    "endedBy",
+                    "limits",
+                    "load",
+                    "network",
+                    "strategy",
+                    "waitedMs"
+                ]
+            },
+            "SettleLimits": {
+                "type": "object",
+                "description": "効いていた最短・最長・窓・許す接続数。要求ではなく効いた値。",
+                "properties": {
+                    "minMs": {
+                        "type": "number"
+                    },
+                    "maxMs": {
+                        "type": "number"
+                    },
+                    "quietMs": {
+                        "type": "number"
+                    },
+                    "networkConcurrency": {
+                        "type": "number"
+                    }
+                },
+                "required": [
+                    "maxMs",
+                    "minMs",
+                    "networkConcurrency",
+                    "quietMs"
+                ]
+            },
+            "SettleLoad": {
+                "type": "object",
+                "description": "load の結末。atMs が無ければ、最長までに load を見なかった。",
+                "properties": {
+                    "atMs": {
+                        "type": "number"
+                    }
+                }
+            },
+            "SettleSignal": {
+                "type": "object",
+                "description": "合図 1 つの結末。quietAtMs が無ければ、最長までに満ちなかった。",
+                "properties": {
+                    "quietAtMs": {
+                        "type": "number"
+                    }
+                }
+            },
+            "UrlPolicy": {
+                "type": "object",
+                "description": "URL への扱い。順序付きの一覧の 1 項目で、最初に当たったものが効く。",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "URL 全体に当てる glob。ワイルドカードは `*` のみ。"
+                    },
+                    "action": {
+                        "type": "string",
+                        "description": "deny | no-archive | no-body。綴りの検査は server が行い、知らない値は 400。"
+                    }
+                },
+                "required": [
+                    "action",
+                    "pattern"
+                ]
+            },
+            "ValidationExceptionField": {
+                "type": "object",
+                "description": "Describes one specific validation failure for an input member.",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "A JSONPointer expression to the structure member whose value failed to satisfy the modeled constraints."
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "A detailed description of the validation failure."
+                    }
+                },
+                "required": [
+                    "message",
+                    "path"
+                ]
+            },
+            "ValidationExceptionResponseContent": {
+                "type": "object",
+                "description": "A standard error for input validation failures.\nThis should be thrown by services when a member of the input structure\nfalls outside of the modeled or documented constraints.",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "A summary of the validation failure."
+                    },
+                    "fieldList": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationExceptionField"
+                        },
+                        "description": "A list of specific failures encountered while validating the input.\nA member can appear in this list more than once if it failed to satisfy multiple constraints."
+                    }
+                },
+                "required": [
+                    "message"
+                ]
+            },
+            "Viewport": {
+                "type": "object",
+                "description": "viewport の指定。値域は model に書いてあり、外れると 400。",
+                "properties": {
+                    "width": {
+                        "type": "number",
+                        "maximum": 7680,
+                        "minimum": 1,
+                        "description": "1–7680 (8K の幅)。"
+                    },
+                    "height": {
+                        "type": "number",
+                        "maximum": 4320,
+                        "minimum": 1,
+                        "description": "1–4320 (8K の高さ)。"
+                    }
+                },
+                "required": [
+                    "height",
+                    "width"
+                ]
+            },
+            "WaczCompleteness": {
+                "type": "object",
+                "properties": {
+                    "bodylessUrls": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "truncatedUrls": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "complete": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "complete"
+                ]
+            },
+            "WaczSignature": {
+                "type": "object",
+                "properties": {
+                    "signed": {
+                        "type": "boolean"
+                    },
+                    "reason": {
+                        "type": "string"
+                    },
+                    "domain": {
+                        "type": "string"
+                    },
+                    "checks": {
+                        "$ref": "#/components/schemas/WaczSignatureChecks"
+                    }
+                },
+                "required": [
+                    "signed"
+                ]
+            },
+            "WaczSignatureChecks": {
+                "type": "object",
+                "properties": {
+                    "signature": {
+                        "$ref": "#/components/schemas/CheckOutcome"
+                    },
+                    "chain": {
+                        "$ref": "#/components/schemas/CheckOutcome"
+                    },
+                    "domain": {
+                        "$ref": "#/components/schemas/CheckOutcome"
+                    },
+                    "timestamp": {
+                        "$ref": "#/components/schemas/CheckOutcome"
+                    }
+                },
+                "required": [
+                    "chain",
+                    "domain",
+                    "signature",
+                    "timestamp"
+                ]
+            },
+            "WaczStats": {
+                "type": "object",
+                "properties": {
+                    "totalRecorded": {
+                        "type": "number"
+                    },
+                    "totalBlocked": {
+                        "type": "number",
+                        "description": "deny または no-archive の policy に一致し、request / response のレコードを書かなかったもの。"
+                    },
+                    "totalSkippedContentType": {
+                        "type": "number"
+                    },
+                    "totalTruncatedTooLarge": {
+                        "type": "number"
+                    },
+                    "totalTruncatedTaskCap": {
+                        "type": "number"
+                    },
+                    "totalFailed": {
+                        "type": "number"
+                    },
+                    "totalIncomplete": {
+                        "type": "number"
+                    },
+                    "totalBodyBytes": {
+                        "type": "number"
+                    },
+                    "totalDenied": {
+                        "type": "number",
+                        "description": "deny の policy により、リクエスト自体を送らなかったもの。totalBlocked の内数。"
+                    }
+                },
+                "required": [
+                    "totalBlocked",
+                    "totalBodyBytes",
+                    "totalDenied",
+                    "totalFailed",
+                    "totalIncomplete",
+                    "totalRecorded",
+                    "totalSkippedContentType",
+                    "totalTruncatedTaskCap",
+                    "totalTruncatedTooLarge"
+                ]
+            }
+        }
+    }
+}

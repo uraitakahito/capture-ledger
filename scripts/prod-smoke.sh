@@ -6,7 +6,7 @@
 # then runs migrate → seed → the API from the freshly built capture-ledger image, and
 # tears everything down through an EXIT trap.
 #
-# **It no longer captures anything.** capture-ledger does not speak gRPC to BrowserHive
+# **It no longer captures anything.** capture-ledger does not talk to BrowserHive
 # any more — the Windmill flow submits, and capture-ledger plans and records. What this
 # script proves is that the image boots: migrations apply, the seed lands, and
 # the API answers. The capture path is covered end to end by capture-scheduler's
@@ -71,19 +71,13 @@ log "Starting the stack..."
 container-compose up -d -b
 
 # container-compose has no healthcheck support, so readiness is ours to check.
-# BrowserHive serves no HTTP and no gRPC health service, so the probe is a real
-# GetServerStatus call over the vendored contract — which is also the strongest
-# readiness signal available: the server only starts listening once it has
-# connected to its browser, so an answer means the whole pair is up.
-if ! command -v grpcurl >/dev/null 2>&1; then
-  log "ERROR: grpcurl is required to probe BrowserHive (brew install grpcurl)"
-  exit 1
-fi
+# The probe is a real GET /status (BrowserHive's HTTP API since v12) — which is
+# also the strongest readiness signal available: the server only starts listening
+# once it has connected to its browser, so an answer means the whole pair is up.
 probe() {
   local target
   for target in "${HEALTH_TARGETS[@]}"; do
-    grpcurl -plaintext -import-path proto -proto browserhive/v1/capture.proto \
-      "${target}" browserhive.v1.CaptureService/GetServerStatus >/dev/null 2>&1 || return 1
+    curl -fsS "http://${target}/status" >/dev/null 2>&1 || return 1
   done
 }
 log "Waiting for BrowserHive (up to ${HEALTH_TIMEOUT_S}s)..."

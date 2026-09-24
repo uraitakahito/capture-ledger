@@ -21,7 +21,7 @@
  *
  * ## なぜ script は `oidc:` なのにディレクトリは `dev/` なのか
  *
- * script の接頭辞は **どの領域か** を言う (`db:` `fga:` `site:` `proto:`)。
+ * script の接頭辞は **どの領域か** を言う (`db:` `fga:` `site:` `openapi:`)。
  * だから `oidc:issuer`。一方この `src/dev/` は **本物が来たら丸ごと消えるもの** という
  * 印で、`CAPTURE_LEDGER_DEV_*` という環境変数の接頭辞と同じ役目 —— grep 一発で残骸を
  * 全部見つけられるようにしてある。役目が違うので揃えない。
