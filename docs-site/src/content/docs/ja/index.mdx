@@ -45,8 +45,8 @@ Windmill の flow に渡します。実際に投げるのはその flow です�
 BrowserHive のチェックアウトで `pnpm run docs:local` を実行して読んでください。
 
 **投げることも、もう capture-ledger の仕事ではありません。**
-[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) の Windmill flow が gRPC の
-チャンネルを持っていて、capture-ledger の設定に BrowserHive の在り処は 1 つも入って
+[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) の Windmill flow が BrowserHive を
+呼び（`POST /captures`）、capture-ledger の設定に BrowserHive の在り処は 1 つも入って
 いません。flow が報告する 1 段には、ページごとの `taskId` が載っています。capture-ledger は
 そこからアーカイブを生んだものを[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)に
 記録します。そこで入らなかったものは、後から `pnpm run fga:reconcile` が、段の報告の

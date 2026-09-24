@@ -11,8 +11,8 @@ capture-ledger は `main` ではなく **特定の BrowserHive の版**に固定
 これは `.upstream/browserhive` submodule から来ています。ビルド時に
 `git describe --tags` で読んでいるので、このページが古くなることはありません。
 submodule が**唯一のピン**で、BrowserHive 本体・BrowserHive が検証済みの
-`chromium-server-docker`・スタックがマウントする SeaweedFS 設定・クライアントの
-生成元の `.proto` が、すべてこの中に入っています。
+`chromium-server-docker`・スタックがマウントする SeaweedFS 設定・manifest を照らす
+OpenAPI 文書（`generated/openapi.json`）が、すべてこの中に入っています。
 
 :::note[以前は 4 箇所ありました]
 かつては `package.json`・setup.sh（いまは無い）・compose 2 枚にバージョン文字列が書かれ、
@@ -29,10 +29,9 @@ git -C .upstream/browserhive checkout <new-tag>
 git -C .upstream/browserhive submodule update --init --recursive
 git add .upstream/browserhive
 
-# 2. 契約を取り直してスタブを再生成する（ローカルコピー。ネットワーク不要）。
-pnpm run proto:sync
-pnpm run proto:generate
-pnpm run proto:check       # コミット後に exit 0 になること
+# 2. 契約を取り直して型を再生成する（ローカルコピー。ネットワーク不要）。
+pnpm run openapi:generate
+pnpm run openapi:check     # コミット後に exit 0 になること
 
 # 3. まっさらな状態から作り直す。古いボリュームには前のバケットと DB が残っており、
 #    更新で入り込んだ順序の不具合を隠してしまう。
@@ -75,11 +74,11 @@ container build -f .upstream/browserhive/Dockerfile.prod -t bh-probe .upstream/b
 
 API の追加だけの変更 (オプショナルなリクエストフィールドが増える等) なら、手順 2
 以外は何も要りません。再生成した型はそのままコンパイルが通り、テストも無修正で
-通ります。1.6.0 はまさにこれでした。upstream は変更のたびに `buf breaking` を
-回しているので、フィールドが増えただけの更新でフィールド番号が生成物の下から
-入れ替わることはありません。
+通ります。1.6.0 はまさにこれでした。upstream は変更のたびに前のリリースとの
+`smithy diff` を回しているので、項目が増えただけの更新で既存の項目の名前や型が
+写しの下から変わることはありません。
 
-厄介なのは**インフラの変更**です。`.proto` の差分にはまったく現れません。
+厄介なのは**インフラの変更**です。OpenAPI の差分にはまったく現れません。
 1.5.2 → 1.6.0 の移行で実際にあった 2 例:
 
 - BrowserHive の SeaweedFS entrypoint がバケットを自分で作るようになり、capture-ledger

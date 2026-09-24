@@ -46,8 +46,8 @@ published on the web — build them from the BrowserHive checkout with
 `pnpm run docs:local`.
 
 **Submitting is not capture-ledger's either, any more.** The Windmill flow in
-[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) holds the gRPC channel, and
-capture-ledger has no BrowserHive address in its configuration at all. Each level the
+[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) is what calls BrowserHive
+(`POST /captures`), and capture-ledger has no BrowserHive address in its configuration at all. Each level the
 flow reports comes back with a `taskId` per page, and capture-ledger registers what
 produced an archive in the [archive ledger](/capture-ledger/archive-ledger/). Anything
 the level handler failed to admit is picked up later by `pnpm run fga:reconcile`,

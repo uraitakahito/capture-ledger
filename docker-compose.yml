@@ -145,8 +145,8 @@ services:
     ports:
       - "127.0.0.1:9223:9222"
 
-  # BrowserHive v9 は **browser 1 台に endpoint 1 つ** —— queue も pool も無く、走行中に
-  # 呼ばれれば RESOURCE_EXHAUSTED で断る。並列に取り込むにはこの対 (browserhive-N と
+  # BrowserHive は **browser 1 台に口 1 つ** —— queue も pool も無く、走行中に
+  # 呼ばれれば 429 Busy で断る。並列に取り込むにはこの対 (browserhive-N と
   # chromium-N) を増やし、空いている口を選ぶのは呼ぶ側 (Windmill の flow) の仕事。
   # 2 つ目以降は anchor との差分 (browser、host 側の port、depends_on) だけを書く。
   browserhive-1: &browserhive
@@ -166,7 +166,8 @@ services:
         GIT_TAG: "${BROWSERHIVE_TAG:-}"
         GIT_REV: "${BROWSERHIVE_REV:-dev}"
     ports:
-      # gRPC。BrowserHive は v3 で HTTP の提供をやめた。
+      # HTTP (JSON)。v12 から。v3〜v11 は同じ port で gRPC を喋っていた。TLS の証明書を
+      # 渡していないので平文 —— flow の口の既定 (http://browserhive-N.capture-ledger:50051) と対。
       - "127.0.0.1:50051:50051"
     # プラットフォームの DNS (<service>.capture-ledger) を使った、名前による結線。
     environment: &browserhive-env

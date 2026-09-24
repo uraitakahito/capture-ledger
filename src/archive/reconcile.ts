@@ -42,7 +42,10 @@ export interface ReconcileResult {
   /** 報告は届いたのに台帳に入っていない、鍵の在る取り込み。 */
   pending: number;
   registered: number;
-  /** manifest は在ったが台帳が受け付けなかった (成果物の無い cancelled など)。 */
+  /**
+   * manifest は在ったが台帳が受け付けなかった (成果物の無い cancelled など)、または
+   * 契約の形でなかった (v11 以前の protobuf JSON など。理由は warn に出る)。
+   */
   skipped: number;
   /** 「書けた」と報告された場所に manifest が無かった。 */
   missing: number;
@@ -86,10 +89,24 @@ export const reconcile = async (
       continue;
     }
 
+    // 契約の形でない manifest (BrowserHive v11 以前が書いた protobuf JSON など) は、
+    // 飛ばしてそう言う。1 件で回し全体を止めない —— 残りの行は読める。
+    let report;
+    try {
+      report = readManifest(raw);
+    } catch (err) {
+      result.skipped += 1;
+      log.warn(
+        { err, taskId: row.taskId, key: row.manifestKey },
+        "Manifest is not a report the ledger can read; skipping it",
+      );
+      continue;
+    }
+
     // 冪等: 段の登録との競合は unique index が吸収する。identity はここでは作らない ——
     // reconcile は掃除役で、いま動かしている人と取り込みを頼んだ人は別。投げた時点の
     // 記録から読む。
-    const admitted = await admitArchive(db, readManifest(raw), row.orgId, row.submittedBy);
+    const admitted = await admitArchive(db, report, row.orgId, row.submittedBy);
     if (admitted.archiveId !== undefined) result.registered += 1;
     else result.skipped += 1;
   }

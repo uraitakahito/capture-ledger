@@ -128,7 +128,7 @@ const STEPS = [
     waitFor: { label: "windmill", url: `${WINDMILL}/api/version`, timeoutMs: 300_000 },
   },
   { id: "connect", run: `pnpm run connect ${relative(ROOT, SCHEDULER)}` },
-  { id: "flow", run: "pnpm run windmill:push && pnpm run windmill:push-proto", cwd: SCHEDULER },
+  { id: "flow", run: "pnpm run windmill:push", cwd: SCHEDULER },
   { id: "issuer", daemon: issuer, ready: "http://127.0.0.1:9099/.well-known/openid-configuration" },
   { id: "api", daemon: api, ready: "http://127.0.0.1:7070/healthz" },
   // flow が名乗る名前 (capture-scheduler の CAPTURE_LEDGER_SUBJECT。既定は windmill) と、

@@ -68,9 +68,9 @@ const ONLY_IN_CI = {
 /** 別の job / workflow が持っている `check` の構成要素。 */
 const ONLY_IN_CHECK = {
   audit: "audit.yaml。PR と push に加えて毎日走る (勧告は PR の合間にも公開される)",
-  "proto:diff": "proto-sync job。submodule の認証を全検査に背負わせないため",
+  "openapi:diff": "contract-sync job。submodule の認証を全検査に背負わせないため",
   "check:store-name":
-    "proto-sync job。検査の実体 (check-store-name.sh) が submodule の中にあり、submodule を取る job がそこだけ",
+    "contract-sync job。検査の実体 (check-store-name.sh) が submodule の中にあり、submodule を取る job がそこだけ",
   "site:check": "site.yaml。submodule とタグの取得が要る",
 };
 

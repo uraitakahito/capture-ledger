@@ -96,25 +96,20 @@ store の中身を消す・見る手順は
 [アーカイブの消し方など](https://uraitakahito.github.io/seaweedfs/ja/operations/)にあります。
 
 初回は BrowserHive と Chromium イメージをソースからビルドするため、数分かかります。
-状態を確認します (まだ起動していなければ grpcurl がそのまま失敗を報告します):
+状態を確認します (まだ起動していなければ curl がそのまま失敗を報告します):
 
 ```sh
-grpcurl -plaintext -emit-defaults -import-path proto -proto browserhive/v1/capture.proto \
-  localhost:50051 browserhive.v1.CaptureService/GetServerStatus \
-  | jq '{busy, browser: .browser.url}'
+curl -fsS http://localhost:50051/status | jq '{busy, browser: .browser.url}'
 # → { "busy": false, "browser": "http://chromium-1.capture-ledger:9222/" }
 ```
 
 これは `browserhive-1` です。スタックには 2 つ在ります —— BrowserHive は browser を
 ちょうど 1 台持つので、Chromium 1 台に 1 つ —— 2 つ目は `localhost:50052` で答えます。
-`-emit-defaults` を付けているのは `busy: false` を見せるためです。grpcurl は既定値の
-フィールドを落とすので、付けないと空いている server は `null` と出ます。
 
-`-import-path proto -proto …` は、この repo に vendor した契約を grpcurl に
-指しています。BrowserHive は reflection を提供しません —— 未実装ではなく意図的な
-判断で、有効にするには descriptor set を同梱して実行時に読ませることになり、
-`.proto` がランタイムの資産になってしまうためです。したがって呼ぶ側がサービスを
-知る手段がこの `.proto` です —— クライアントの生成元と同じファイルです。
+`/status` は BrowserHive の HTTP API です (JSON。v12 から。このスタックでは平文)。
+契約は、この repo に vendor した OpenAPI 文書
+(`src/rpc/generated/browserhive/openapi.json`、submodule からの写し) —— 台帳が
+`.result.json` manifest を照らすのと同じファイルです。
 
 Chromium は 2 台とも headless です。描画を見たい場合は、ローカルの Chrome で
 `chrome://inspect` を開き、_Configure…_ に `localhost:9222` と `localhost:9223`
@@ -214,7 +209,7 @@ open http://127.0.0.1:7070/
 ### 1 度だけ: capture-scheduler とつなぐ
 
 つなぐ手順は [capture-scheduler のクイックスタート](https://uraitakahito.github.io/capture-scheduler/ja/quickstart/)に
-まとめてあります（Windmill を立て、flow と proto を入れ、トークンを渡す）。その途中で、
+まとめてあります（Windmill を立て、flow を入れ、トークンを渡す）。その途中で、
 capture-scheduler の `pnpm run windmill:bootstrap` が、この repo に渡す **4 行を自分の repo の中に
 置きます**。**取りに行くのはこちらの仕事**です:
 
@@ -329,14 +324,12 @@ API の全体は[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)に�
 
 **ページが台帳に載るのは、そのページの居た段を flow が報告した後**です。picker に
 出てこないなら、段がまだ開いているか、そのページが失敗しています。走行中の取り込みに
-問い合わせる口はありません —— 取り込みは 1 回の gRPC 呼び出しで、結果は呼んだ側
-（Windmill の run）に返り、成果物の隣の `.result.json` manifest にも書かれます。
-BrowserHive が答えるのは「いま busy かどうか」です。
+問い合わせる口はありません —— 取り込みは 1 回の HTTP 呼び出し（`POST /captures`）で、
+結果は呼んだ側（Windmill の run）に返り、成果物の隣の `.result.json` manifest にも
+書かれます。BrowserHive が答えるのは「いま busy かどうか」です。
 
 ```sh
-grpcurl -plaintext -emit-defaults -import-path proto -proto browserhive/v1/capture.proto \
-  localhost:50051 browserhive.v1.CaptureService/GetServerStatus \
-  | jq '{busy, browser: .browser.url}'
+curl -fsS http://localhost:50051/status | jq '{busy, browser: .browser.url}'
 ```
 
 `"busy": true` ならその browser はページの途中です。もう 1 つは `localhost:50052`。
