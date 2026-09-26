@@ -16,6 +16,15 @@ export interface paths {
         /**
          * @description 取り込んで、**結果を返す**。受理では返らない。
          *
+         *     断りは 2 通りで、どちらも**何も始めていない**: 走行中なら `Busy` (429)、形と値域が外れれば
+         *     `ValidationException` (400)。model の制約 (`@range` など) で外れた欄は `fieldList` に並ぶが、
+         *     欄をまたぐ関係 (signing には wacz が要る、など) の違反は `message` だけで伝える。
+         *
+         *     **契約に無い欄も断る。** 綴りの誤り (たとえば snake_case の旧い綴り) を黙って捨てると、頼んだ
+         *     上限や方針が効かないまま撮ってしまうため。`fieldList` に path が並び、近い欄名があれば
+         *     `message` が提案する。形を持たない欄 (script の `options`) の中は見ない。
+         *     browser に繋がらないのは断りではない —— 取り込みは走り、`connection` の failed の結果で返る。
+         *
          *     呼ぶ側が途中で切ったら、取り込みはページごと壊されて cancelled の結果になる。
          *     応答は届かないが、manifest には切られた記録が書かれる。
          *
@@ -66,14 +75,32 @@ export interface components {
         };
         /** @description この台が抱えている browser。 */
         BrowserStatus: {
+            /** @description この server が繋ぐ browser の CDP の URL (起動時の `--browser-url` を正規化したもの)。 */
             url: string;
+            /**
+             * @description いま browser への接続を握っているか。browser 側で切れると false になり、次の Capture が
+             *     繋ぎ直すまで false のまま (GetServerStatus 自身は繋ぎ直さない)。繋ぎ直せなければ、その
+             *     Capture は `connection` の failed で返る。
+             */
             connected: boolean;
             /** @description Chromium が自称する版 (例 `Chrome/150.0.7871.181`)。接続していないときは無い。 */
             version?: string;
         };
+        /**
+         * @description この server の build の指紋。build のときに焼き込んだ値で、実行時に git には訊かない。3 つとも
+         *     WACZ の `datapackage.json` (`browserhive:capture.build`) にも書かれ、署名されるバイト列に入る。
+         *     `version` が `unknown` か `revision` が `dev` の build は、明示しない限り起動を拒む。
+         */
         BuildInfo: {
+            /**
+             * @description リリースのタグから先頭の `v` を落としたもの (`12.0.1`)。タグの上に無い build は
+             *     `<最新のタグ>+<そこからの commit 数>.g<revision>`、分からなければ `unknown`。
+             *     `browserhive/<version>` の形で、archive の `software` と WARC の `warcinfo` にも入る。
+             */
             version: string;
+            /** @description build した commit の短い SHA。分からなければ `dev`。 */
             revision: string;
+            /** @description build した時刻 (UTC、ミリ秒付きの ISO 8601)。 */
             buildTime: string;
         };
         /**
@@ -81,37 +108,110 @@ export interface components {
          *     無ければ少し待って同じ台へ戻る。
          */
         BusyResponseContent: {
+            /**
+             * @description 人が読むための理由 (`a capture is already running on this browser`)。分岐は応答の
+             *     `x-amzn-errortype` (`Busy`) で行う。
+             */
             message: string;
         };
-        /** @description 成果物の置き場所 (s3://…)。取得しなかった形式は無い。 */
+        /**
+         * @description 成果物の置き場所。`status` が `success` のときだけ埋まり、それ以外は空 (`{}`)。
+         *     値は書き込み先が答えたものをそのまま入れる —— 自前の bucket なら `s3://<bucket>/<key>`、
+         *     `artifactSink` を持つリクエストなら受け口が返した値 (BrowserHive は解析も整形もしない)。
+         *     求めなかった形式の欄は無い。主文書が方針に当たって伏せた取り込みでは、`status` は `success` の
+         *     まま、ページから作る形式 (`png`・`webp`・`html`・`links`・`mhtml`) の欄が無い —— 在るのは `wacz`
+         *     だけ。ファイル名は `{taskId}_{correlationId}[_{labels}]` に拡張子
+         *     (correlationId が無くても枠は残るので `<taskId>_.png` になる)。
+         */
         CaptureArtifacts: {
+            /** @description PNG の screenshot (`image/png`)。すべての読み込みの後に、最後の devicePixelRatio で撮る。 */
             png?: string;
+            /** @description 同じ screenshot の WebP (`image/webp`)。 */
             webp?: string;
+            /** @description 描画後の DOM (behavior とバナー除去の後) を直列化した HTML (`text/html`)。受け取った元の本文ではない。 */
             html?: string;
+            /**
+             * @description ページの `a[href]` から http(s) の URL を集めて重複を除いた JSON (`.links.json`、`application/json`)。
+             *     JSON には redirect の後の最終 URL (`finalUrl`) も入る —— report の `url` は要求した URL のまま。
+             */
             links?: string;
+            /** @description CDP の `Page.captureSnapshot` による 1 ファイルの MHTML (`multipart/related`)。 */
             mhtml?: string;
+            /**
+             * @description WACZ (`application/wacz+zip`)。読み込みの前から形式の取得を終えるまでの通信の記録 (WARC) と、
+             *     索引・`datapackage.json` を束ねたもの。
+             */
             wacz?: string;
         };
+        /** @description 失敗の中身。`status` が `success` 以外 (`failed`・`timeout`・`http_error`) のときだけ入る。 */
         CaptureErrorDetails: {
             type: components["schemas"]["ErrorType"];
+            /**
+             * @description 人が読むための 1 行。分類 (`type`) より細かいこと —— 時間切れの位置、書き込み先、
+             *     署名を得られなかった理由 (`a signature was required and could not be obtained: …`) ——
+             *     はここに入る。分岐には使わないこと。
+             */
             message: string;
+            /** @description `type` が `http` のとき、主文書の HTTP の status (report の `httpStatusCode` と同じ値)。 */
             httpStatusCode?: number;
+            /**
+             * @description `type` が `http` のとき、その status の文言。server が返さなければ (HTTP/2 など) 標準の
+             *     対応表から補い、表にも無ければ欄ごと無い。
+             */
             httpStatusText?: string;
+            /** @description `type` が `timeout` のとき、使い切った予算 (ms)。browser 側の時間切れで値を読めなければ無い。 */
             timeoutMs?: number;
-            /** @description 時間切れか cancel で終わったとき、取り込みがどの段階に居たか。 */
+            /**
+             * @description 取り込み全体の予算を使い切ったとき (`timeout`) と、呼ぶ側が切ったとき (`cancelled`)、
+             *     取り込みがどの段階に居たか。起きる順に `check-address` (内部アドレスを拒むための名前解決)・
+             *     `start-recording` (WARC の記録を始める)・`load-pages` (読み込み・待ち・バナー除去・behavior。
+             *     DPR ごと)・`write-formats` (WACZ 以外の形式)・`package-wacz` (WACZ を組み立てて署名)・
+             *     `upload-wacz` (WACZ を書き込み先へ)。操作ごとの予算の時間切れには無い。
+             */
             step?: string;
         };
-        /** @description 取得する形式。6 つ全部を書く。少なくとも 1 つは true でなければならない (server が検証する)。 */
+        /**
+         * @description 取得する形式。6 つ全部を書く。少なくとも 1 つは true でなければならない (server が検証する)。
+         *
+         *     WACZ 以外の形式は、すべての DPR のパスを終えた後に **1 回だけ**、最後のパスが残した状態から
+         *     png → webp → html → links → mhtml の順に取る。
+         */
         CaptureFormats: {
+            /**
+             * @description 描画後の画面の PNG。範囲はビューポートか文書の全高か (`fullPage`)。倍率は
+             *     `devicePixelRatios` の最後の値。
+             */
             png: boolean;
+            /** @description PNG と同じ画面を WebP で。品質は server の `--screenshot-quality`。 */
             webp: boolean;
+            /** @description 描画後の DOM を直列化した HTML。サーバが返した原文ではない。 */
             html: boolean;
+            /**
+             * @description 描画後のページにある `<a href>` の一覧 (JSON)。http(s) のものだけを、href の完全一致で
+             *     重複を除いて並べる。各項目は `href` (絶対 URL)・`text` (前後の空白を除き 200 文字まで)・
+             *     `rel` (無ければ null)。
+             */
             links: boolean;
+            /**
+             * @description 描画後のページを MHTML の 1 ファイルに (CDP の `Page.captureSnapshot`)。CSS・画像・フォントを
+             *     埋め込むので、オフラインで開いても描ける。
+             */
             mhtml: boolean;
+            /**
+             * @description 通信の記録 (WARC) を WACZ に詰めたもの。読み込みの前から他の形式を取り終えるまでを記録する。
+             *     `maxResponseBytes` / `storageValues` / `signing` は WACZ があるときだけ効く。`urlPolicies` /
+             *     `contentTypePolicies` は、要求を止めて記録から外す働きは WACZ があるときだけで、ページから作る
+             *     形式を作らない働きはどの形式にも効く。
+             */
             wacz: boolean;
         };
         /** @description Capture の要求。取り込みの中身を全部ここで決める —— 応答は結果そのもので、受理の印は無い。 */
         CaptureRequestContent: {
+            /**
+             * @description 取り込む URL。http(s) のみで、前後の空白は除く。受理の後、記録の前に名前を解決し、
+             *     ループバック・link-local などの内部アドレスは拒む (`internal` の failed、`url is not allowed`)。
+             *     私設アドレス (RFC 1918 など) は server の `--allow-private-targets` が無ければ同じく拒む。
+             */
             url: string;
             /**
              * @description 成果物のファイル名に入る札。制限は合計の長さだけで、
@@ -128,12 +228,23 @@ export interface components {
              *     空白だけの値は server が「指定なし」に畳む。
              */
             acceptLanguage?: string;
-            /** @description wacz-auth の署名を求める。`captureFormats.wacz` と一緒のときだけ有効で、他の組み合わせは 400。 */
+            /**
+             * @description wacz-auth の署名を求める。`captureFormats.wacz` と一緒のときだけ有効で、他の組み合わせは 400。
+             *     server の `--signing-policy` の範囲で選ぶ —— `forbidden` の server に true、`required` の server に
+             *     false は 400。省略すれば server の方針に従う (`required` なら署名必須)。
+             */
             signing?: boolean;
             dismissBanners?: components["schemas"]["DismissBanners"];
+            /** @description リクエスト単位の viewport。 */
             viewport?: components["schemas"]["Viewport"];
             /** @description ページ操作 1 つごとに挟む遅延 (ms)。待ちの手段ではないので上限が要る。 */
             operationDelayMs?: number;
+            /**
+             * @description この取り込みに限り server の `--capture-trace` を上書きする。true なら、BrowserHive がページに
+             *     何をしたか (viewport・バナー除去など) と、どの応答が archive に届かなかったかを、取り込み先の
+             *     ページ自身の console に `[bh]` 付きで書く (`chrome://inspect` で読むためのもの)。送られた
+             *     スクリプトの判断は、スクリプトが自分で書かない限り出ない。成果物は変わらない。
+             */
             trace?: boolean;
             /**
              * @description 読み込む device pixel ratio を、読み込む順に。各要素は 1–3 の整数で、同じ値を 2 度置くことはできない。
@@ -142,14 +253,34 @@ export interface components {
              *     省略ならサーバ既定 (--device-pixel-ratios)。
              */
             devicePixelRatios?: number[];
+            /**
+             * @description この取り込みに限り server の `--screenshot-full-page` を上書きする。true なら PNG / WebP を
+             *     ビューポートではなく文書の全高で撮る。他の形式には効かない。
+             */
             fullPage?: boolean;
             /** @description 読み込み後に走らせるもの (主フレーム・DPR のパスごと)。書かれた順に走る。 */
             behaviors?: components["schemas"]["Script"][];
+            /** @description 前のタスクの残留物を持ち越すか。省略は `isolated`。 */
             session?: components["schemas"]["SessionMode"];
             /** @description この取り込みに限って本文の上限を締める。既定より大きい値は既定に丸める。 */
             maxResponseBytes?: number;
-            /** @description この取り込みに限って policy を差し替える。**丸ごと置き換え** で、サーバ既定とは混ざらない。 */
+            /**
+             * @description この取り込みに限って policy を差し替える。**丸ごと置き換え** で、サーバ既定 (`--url-policy`)
+             *     とは混ざらない。省略は既定に任せ、`[]` は何も濾さない。上限 100 本。
+             *
+             *     どの形式を求めても効く: 主文書が `no-archive` か `no-body` に当たると、ページから作る形式を
+             *     1 つも作らない。要求を止める (`deny`) のと、記録から外す (`no-archive`・`no-body`) のは WACZ を
+             *     求めたときの記録器で、他の形式だけの取り込みでは `deny` も要求を止めない。効いた一覧は
+             *     `datapackage.json` の `settings` に残る。
+             */
             urlPolicies?: components["schemas"]["UrlPolicy"][];
+            /**
+             * @description この取り込みに限って content-type の方針を差し替える。**丸ごと置き換え** で、サーバ既定
+             *     (`--content-type-policy`) とは混ざらない。省略は既定に任せ、`[]` は何も濾さない。上限 50 本。
+             *     主文書の MIME に当たると (`urlPolicies` のどれにも当たらないとき)、ページから作る形式を 1 つも
+             *     作らない —— これはどの形式を求めても効く。本文を省くのは WACZ を求めたときの記録器。効いた一覧は
+             *     `datapackage.json` の `settings` に残る。
+             */
             contentTypePolicies?: components["schemas"]["ContentTypePolicy"][];
             /** @description web storage の **値** まで archive に入れるか。省略時はサーバ既定 (--storage-values)。 */
             storageValues?: boolean;
@@ -166,76 +297,224 @@ export interface components {
             /** @description 成果物と manifest (`.result.json`) の鍵。ここで初めて呼ぶ側に渡る。 */
             taskId: string;
             report: components["schemas"]["CaptureResultReport"];
+            /** @description report を `.result.json` として書けたか。書けなかったなら、この応答が唯一の記録。 */
             manifest: components["schemas"]["ManifestOutcome"];
         };
         /** @description 結果。manifest (`.result.json`) はこれをそのまま JSON にした物。 */
         CaptureResultReport: {
+            /** @description server が受理のときに振る id (UUID)。成果物と manifest の名前の頭になる。 */
             taskId: string;
+            /** @description リクエストの `correlationId` をそのまま返す。書かなければ無い。 */
             correlationId?: string;
+            /** @description 要求した URL (前後の空白を除いたもの)。redirect の後の最終 URL ではない。 */
             url: string;
+            /** @description リクエストの `labels` (前後の空白を除き、空を落としたもの)。常に在る (空のことがある)。 */
             labels?: string[];
             status: components["schemas"]["CaptureStatus"];
+            /**
+             * @description 最初の読み込みで主文書が返した HTTP の status (redirect を辿った先の応答)。`success` と
+             *     `http_error` のときだけ入る。
+             */
             httpStatusCode?: number;
-            /** @description RFC 3339 の文字列。 */
+            /** @description 結果を組み立てた時刻 (取り込みの終わり)。RFC 3339 の文字列。 */
             timestamp: string;
+            /**
+             * @description 取り込みに掛かった時間 (ms)。内部アドレスの確認から結果を組み立てるまでで、読み込み・待ち・
+             *     形式と WACZ の保存 (署名込み)・`operationDelayMs` の間を含み、manifest の書き込みは含まない。
+             *     browser に繋がらず始まらなかったときは 0。
+             */
             captureProcessingTimeMs: number;
             artifacts?: components["schemas"]["CaptureArtifacts"];
+            /** @description `status` が `success` で WACZ を求めたときだけ入る。 */
             waczStats?: components["schemas"]["WaczStats"];
+            /** @description `status` が `success` で WACZ を求めたときだけ入る。 */
             completeness?: components["schemas"]["WaczCompleteness"];
+            /**
+             * @description 署名が必須だった取り込み (リクエストの `signing: true`、または server の `--signing-policy required`)
+             *     が成功したときだけ入る。求めていなければ欄ごと無い —— `signed: false` とは別の答え。必須で
+             *     得られなければ取り込みは `signing` の failed になり、この欄は付かない。
+             */
             signature?: components["schemas"]["WaczSignature"];
+            /** @description `status` が `success` 以外のときだけ入る。 */
             errorDetails?: components["schemas"]["CaptureErrorDetails"];
+            /**
+             * @description 読み込み後の待ちがどう終わったか。`status` が `success` のときだけ入る (WACZ を作ったなら、
+             *     同じものが `datapackage.json` にも在る)。
+             */
             settle?: components["schemas"]["Settle"];
+            /**
+             * @description ページから作るもの (PNG・WebP・HTML・links・MHTML と、WACZ の文字・題・ツリー) を、どの文書
+             *     から作ったか。`status` が `success` のときだけ入る。`withheld` があれば、`artifacts` には
+             *     ページから作る形式の欄が無い (在るのは `wacz` だけ)。
+             */
+            document?: components["schemas"]["DocumentRecord"];
         };
         /**
-         * @description capture の結末。
+         * @description capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が
+         *     `errorDetails` に入る。
+         *
+         *     - `success`: 最初の読み込みで主文書が 2xx を返し、すべての読み込みと、求めた形式の保存
+         *       (WACZ なら組み立て・署名・保存まで) を終えた。
+         *     - `failed`: 時間切れ以外の理由で成り立たなかった。分類は `errorDetails.type`
+         *       (`"connection"`・`"internal"`・`"signing"`・`"artifact_sink"`・`"cancelled"`)。
+         *     - `timeout`: 時間の予算を使い切った —— 操作ごとの予算 (読み込みなど) か、取り込み全体の予算。
+         *     - `http_error`: 最初の読み込みで主文書の HTTP の status が 2xx でなかった。そこで打ち切り、
+         *       形式も WACZ も作らない。status は `httpStatusCode` に載る。
+         *
+         *     失敗より前の段で保存した形式 (PNG など、WACZ 以外) のファイルは書き込み先に残る ——
+         *     `artifacts` が空でも、書き込み先が空とは限らない。
          * @enum {string}
          */
         CaptureStatus: "success" | "failed" | "timeout" | "http_error";
         /**
          * @description 署名の検査 1 つぶんの結果。
+         *
+         *     - `ok`: その検査が走って合格した。
+         *     - `failed`: その検査が走って不合格だった。1 つでも出れば署名は得られなかった扱いになり、
+         *       取り込みは `signing` の failed で終わる —— だから成功した取り込みの `checks` には現れない。
+         *     - `skipped`: 照合先が無くて検査が走らなかった。**合格ではない。** `chain` は署名用の信頼アンカー
+         *       が無いとき、`timestamp` はタイムスタンプ用の信頼アンカーが無いか、署名にトークンが付いて
+         *       いないとき。`signature` と `domain` は設定を要さず、`skipped` にならない。
+         *
+         *     成功した取り込みの `checks` を読むと、その配備が実際に何を検証したかが分かる。
          * @enum {string}
          */
         CheckOutcome: "ok" | "failed" | "skipped";
         /** @description メディア型への扱い。応答が届いてからしか判定できないので deny は取りえない。 */
         ContentTypePolicy: {
+            /** @description 応答の MIME 型に対する前方一致で、大文字と小文字を区別する。例: `video/`、`audio/`。空は 400。 */
             prefix: string;
-            /** @description no-body のみ。 */
+            /**
+             * @description `no-body` のみ。当たった応答は本文を入れずに記録し、`waczStats.totalSkippedContentType` に数える。
+             *     URL の方針の `no-body` にも当たった応答は、先に決まるそちらの理由で記録する。大きさに関係なく、
+             *     上限による切り詰めとは記録しない (`completeness.truncatedUrls` に載らない)。
+             */
             action: string;
         };
-        /** @description true/false だけの指定と、細かい指定を区別する。 */
+        /** @description バナーの除去を頼むか。省略すれば除去しない。 */
         DismissBanners: {
+            /** @description true なら同梱の CMP 一覧と既定の閾値で除去する。false は省略と同じ。 */
             enabled: boolean;
         } | {
+            /** @description 除去を細かく指定する。 */
             spec: components["schemas"]["DismissSpec"];
         };
-        /** @description 大きな固定オーバーレイを消す第 2 パスの閾値。省略時はサーバ既定。 */
+        /**
+         * @description 選択子の一覧に無いオーバーレイを消す第 2 パスの閾値。省略した欄は BrowserHive の既定
+         *     (server の設定ではなくコードの定数) で埋まる。3 つの条件をすべて満たす要素を消す ——
+         *     `position` が fixed か sticky・`z-index` が `minZIndex` 以上・ビューポートの
+         *     `minViewportCoverageRatio` 以上を覆う。header / footer / nav / main / aside とその内側は消さない。
+         */
         DismissHeuristicSpec: {
+            /** @description 第 2 パスを走らせるか。既定は true。 */
             enabled?: boolean;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description ビューポートの面積に対する、要素の面積の比の下限。既定は 0.3。
+             */
             minViewportCoverageRatio?: number;
+            /** @description `z-index` の下限。既定は 1000。数値でない `z-index` (`auto` など) の要素は消さない。 */
             minZIndex?: number;
         };
-        /** @description banner / modal の除去を 1 回の capture だけ調整する。 */
+        /**
+         * @description banner / modal の除去を 1 回の capture だけ調整する。省略した欄は既定で埋まる。
+         *     除去は DPR のパスごとに走り、archive に残るのは最後のパスの報告。
+         */
         DismissSpec: {
+            /**
+             * @description 同梱の CMP 選択子の一覧を使うか。既定は true。一覧にあるのは OneTrust・Cookiebot・Quantcast・
+             *     Didomi・TrustArc・Sourcepoint・Osano・CookieLawInfo・InsitesCookieConsent・Klaro・Usercentrics。
+             */
             useDefaults?: boolean;
+            /**
+             * @description 同梱の一覧の後に足す CSS 選択子。選択子ごとに最初に当たった要素を 1 つ消し、報告では
+             *     framework `custom` として現れる。選択子として成り立たないものは `unusableSelectors` に並ぶ
+             *     (`failOnError` が true なら取り込みが失敗する)。
+             */
             extraSelectors?: string[];
+            /**
+             * @description 同梱の一覧から外す framework の名前 (完全一致)。`useDefaults` が true のときだけ意味を持ち、
+             *     知らない名前は黙って無視される。
+             */
             excludeFrameworks?: string[];
             heuristic?: components["schemas"]["DismissHeuristicSpec"];
+            /**
+             * @description 除去そのものが遂行できなかったとき、取り込みを失敗させるか。既定は false で、そのときは
+             *     取り込みを続け、archive の除去の報告に `unreadable` を残す。true なら失敗させる (5 秒の
+             *     時間切れは `timeout`)。`dismissBanners` を `enabled: true` で頼むと常に false。
+             */
             failOnError?: boolean;
         };
         /**
-         * @description 失敗の分類。
+         * @description ページから作るものを、どの文書から作ったか。WACZ の `datapackage.json` の
+         *     `browserhive:capture.document` と同じ形・同じ値 (WACZ を求めなくても結果には入る)。
+         *
+         *     文書は、撮る時点で主フレームに確定していた文書。要求の URL の文書とは限らない ——
+         *     サーバのリダイレクトやページ自身の遷移が文書を置き換える。撮る前後で文書を読み比べ、
+         *     撮っている間に替われば、替わった先の文書から撮り直す。
+         */
+        DocumentRecord: {
+            /** @description browser が確定させた、その文書の URL。`withheld` が `unattributed` のときだけ無い。 */
+            url?: string;
+            /** @description ページから作るものを 1 つも作らなかった理由。作ったときは無い。 */
+            withheld?: components["schemas"]["DocumentWithheld"];
+        };
+        /**
+         * @description ページから作るものを伏せた理由。方針が **文書に** 当たったとき、そしてそのときに限り伏せる ——
+         *     リダイレクトの中継や、遷移で去った文書にだけ当たった方針は何も伏せない。上限で本文を落とした
+         *     だけでも伏せない。
+         *
+         *     - `url-policy`: 文書の URL に最初に当たった `urlPolicies` の項目が `no-body`。
+         *     - `content-type`: `urlPolicies` のどれにも当たらず、`contentTypePolicies` が文書の MIME に当たった。
+         *     - `no-archive`: 文書の URL に最初に当たった `urlPolicies` の項目が `no-archive`。
+         *     - `unattributed`: 撮るあいだに主フレームの文書が替わり続け (撮り直しても替わった)、どの文書の
+         *       ものかを言えない。
+         * @enum {string}
+         */
+        DocumentWithheld: "url-policy" | "content-type" | "no-archive" | "unattributed";
+        /**
+         * @description 失敗の分類 (`errorDetails.type`)。直し方の種類ごとに分けてある。
+         *
+         *     - `"http"`: 主文書の HTTP の status が 2xx でなかった (status は `http_error`)。
+         *     - `"timeout"`: 時間切れ —— 操作ごとの予算か、取り込み全体の予算。署名サービスや書き込み先の
+         *       時間切れはここではなく `"signing"` / `"artifact_sink"`。
+         *     - `"connection"`: browser に繋がらなかった (取り込みに入れず、所要時間は 0)、または取り込みの
+         *       途中で browser との接続が切れた。
+         *     - `"signing"`: 署名が必須だったのに得られなかった (サービスが無い・届かない・拒まれた・検査に
+         *       落ちた)。WACZ は書かない。
+         *     - `"internal"`: 上のどれにも当たらない失敗。取り込み先へ繋がらない (`net::ERR_…`) もここ。
+         *       内部アドレスへの取り込みの拒否 (`url is not allowed`) も。
+         *     - `"artifact_sink"`: 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け口) へ置けなかった。
+         *       書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。
+         *     - `"cancelled"`: 呼ぶ側が途中で接続を切った。取り込みは打ち切られる (応答は誰にも届かないが、
+         *       manifest には残る)。
          * @enum {string}
          */
         ErrorType: "http" | "timeout" | "connection" | "signing" | "internal" | "artifact_sink" | "cancelled";
+        /**
+         * @description この台 (process 1 つ、browser 1 台) の現在。取り込み 1 件の結果は何も知らない —— 結果は
+         *     Capture の応答と manifest にしか無い。呼ぶ側が分岐に使うのは `busy` だけ。
+         */
         GetServerStatusResponseContent: {
             /** @description 走行中の取り込みが在るか。true のとき Capture は Busy を返す。 */
             busy: boolean;
             browser: components["schemas"]["BrowserStatus"];
+            /** @description この server の build。archive に焼き込まれる版と同じ。 */
             build: components["schemas"]["BuildInfo"];
+            /**
+             * @description WACZ の記録を持たない配備では無い。0 を返すと「上限が 0」と読めてしまい、
+             *     「上限という概念が無い」とは別の主張になる。
+             */
             limits?: components["schemas"]["ServerLimits"];
-            /** @description 空の一覧は「何も濾さないで」という指示で、省略は「サーバ既定に任せる」。 */
+            /**
+             * @description リクエストが `urlPolicies` を書かなかったときに効く URL の方針 (評価順、最初に当たったものが
+             *     効く)。server の `--url-policy` で決まる。常に在る (WACZ の記録を持たない配備では空)。
+             */
             defaultUrlPolicies?: components["schemas"]["UrlPolicy"][];
+            /**
+             * @description リクエストが `contentTypePolicies` を書かなかったときに効く content-type の方針。server の
+             *     `--content-type-policy` で決まる。常に在る (空のことがある)。
+             */
             defaultContentTypePolicies?: components["schemas"]["ContentTypePolicy"][];
         };
         /**
@@ -285,7 +564,12 @@ export interface components {
             maxPendingRequests: number;
         };
         /**
-         * @description この取り込みが、前のタスクの残留物を持ち越すかどうか。省略は ISOLATED。
+         * @description この取り込みが、前のタスクの残留物を持ち越すかどうか。省略は `isolated`。
+         *
+         *     - `isolated`: 使い捨ての BrowserContext で取り込む。cookie / HTTP キャッシュ / localStorage /
+         *       sessionStorage / IndexedDB / Service Worker がすべて空から始まる。
+         *     - `shared`: server が持ち回る BrowserContext とタブを使う。同じ server で続けて走る
+         *       **無関係な取り込みにも状態が漏れる** ことを承知の上で。後始末は一切しない。
          * @enum {string}
          */
         SessionMode: "isolated" | "shared";
@@ -305,26 +589,54 @@ export interface components {
             load: components["schemas"]["SettleLoad"];
             cpu: components["schemas"]["SettleSignal"];
         };
-        /** @description 効いていた最短・最長・窓・許す接続数。要求ではなく効いた値。 */
+        /**
+         * @description 効いていた最短・最長・窓・許す接続数。要求ではなく効いた値 (要求の `loadWait` とサーバの
+         *     既定を合わせ、最長に収めた後のもの)。
+         */
         SettleLimits: {
+            /** @description load を見た後、静止を見始める前に必ず置く時間 (ms)。 */
             minMs: number;
+            /** @description 待ちの最長 (ms、goto が返ってから)。先にここに当たれば `endedBy` は `deadline` —— 失敗ではない。 */
             maxMs: number;
+            /** @description 網・CPU・DOM に共通の、静かとみなす窓 (ms)。 */
             quietMs: number;
+            /** @description 網が静まったとみなす in-flight の要求数の上限。0 は全部届くまで待つ。 */
             networkConcurrency: number;
         };
         /** @description load の結末。atMs が無ければ、最長までに load を見なかった。 */
         SettleLoad: {
+            /** @description `document.readyState` が `complete` になったのを見た時刻 (ms)。時計は `quietAtMs` と同じ。 */
             atMs?: number;
         };
         /** @description 合図 1 つの結末。quietAtMs が無ければ、最長までに満ちなかった。 */
         SettleSignal: {
+            /**
+             * @description 静止が `quietMs` の窓のあいだ続いて合図が満ちた時刻 (ms)。時計は goto が返ってからで、
+             *     `operationDelayMs` のために差し込んだ間は数えない。archive では満ちなければ `null`。
+             */
             quietAtMs?: number;
         };
         /** @description URL への扱い。順序付きの一覧の 1 項目で、最初に当たったものが効く。 */
         UrlPolicy: {
-            /** @description URL 全体に当てる glob。ワイルドカードは `*` のみ。 */
+            /** @description URL 全体 (スキーム・ホスト・パス・クエリ) に当てる glob。ワイルドカードは `*` のみ。空は 400。 */
             pattern: string;
-            /** @description deny | no-archive | no-body。綴りの検査は server が行い、知らない値は 400。 */
+            /**
+             * @description 当たった URL をどう扱うか。綴りの検査は server が行い、知らない値は 400。
+             *
+             *     - `deny`: リクエストを送らない。相手のサーバは取り込みを知らない。
+             *     - `no-archive`: 送るが、request / response のレコードを書かない。
+             *     - `no-body`: 送ってレコードも書くが、本文は入れない。
+             *
+             *     主文書 (ページを読む時点で主フレームに確定している文書) に `no-archive` か `no-body` が当たると、
+             *     ページから作る形式 (PNG・WebP・HTML・links・MHTML) を 1 つも作らない。WACZ の中の文字・題・
+             *     アクセシビリティツリーも入れない。リダイレクトの中継や、遷移で去った文書にだけ当たった方針は
+             *     何も伏せない。
+             *
+             *     `deny` と `no-archive` は、落としたことを WARC の metadata レコード (action と当たった
+             *     pattern) に残し、`waczStats.totalBlocked` に数える。`no-body` で省いた本文は
+             *     `waczStats.totalSkippedUrlPolicy` に数え、大きさに関係なく上限による切り詰めとは記録しない
+             *     (`completeness.truncatedUrls` に載らない)。
+             */
             action: string;
         };
         /** @description Describes one specific validation failure for an input member. */
@@ -355,35 +667,115 @@ export interface components {
             /** @description 1–4320 (8K の高さ)。 */
             height: number;
         };
+        /**
+         * @description 記録した応答のうち、本文を失ったものがあるか。WARC だけを見て決まる (ページのどこまで
+         *     到達したかは別の問いで、archive の `coverage` が答える)。`status` が `success` で WACZ を
+         *     求めたときだけ入り、同じものが `datapackage.json` にも書かれる。
+         */
         WaczCompleteness: {
+            /**
+             * @description `304` としてしか現れなかった URL。本文は archive に無く、replay は回復できない
+             *     (オリジン側の事情)。整列済み、常に在る (空のことがある)。
+             */
             bodylessUrls?: string[];
+            /**
+             * @description 上限 (`maxResponseBytes` / `maxTaskBytes`) で本文を落とした URL。上限を上げれば取り戻せる
+             *     (こちら側の事情)。整列済み、常に在る。方針 (URL / content-type の `no-body`) で省いた本文は、
+             *     大きさに関係なくここに載らない —— 呼ぶ側が自分で省いたもので、失ったものではない。
+             */
             truncatedUrls?: string[];
+            /** @description 2 つの一覧がどちらも空なら true。 */
             complete: boolean;
         };
+        /**
+         * @description wacz-auth の署名の結末。署名が必須だった取り込みが WACZ を作って成功したときだけ入る ——
+         *     だから現れるときは常に `signed: true`。必須で得られなければ取り込みは `signing` の failed に
+         *     なってこの欄は付かず、理由は `errorDetails.message` (`a signature was required and could not
+         *     be obtained: …`) に出る。
+         */
         WaczSignature: {
+            /**
+             * @description 署名サービスから受け取った署名を BrowserHive が検証し、走った検査がすべて合格した
+             *     (「受け取った」ではなく「検証した」)。
+             */
             signed: boolean;
+            /**
+             * @description `signed` が false のときの理由。いまの server は `signed: false` の結果を返さないので入らない
+             *     —— 得られなかった理由は `errorDetails.message` を読むこと。
+             */
             reason?: string;
+            /**
+             * @description 署名サービスの応答が名乗るドメイン。署名用の証明書がこのドメイン向けであることは
+             *     `checks.domain` が確かめている。
+             */
             domain?: string;
+            /** @description 4 つの検査それぞれの結末。`signed` が true なら必ず在る。 */
             checks?: components["schemas"]["WaczSignatureChecks"];
         };
+        /**
+         * @description 返ってきた署名を、BrowserHive 自身が確かめた 4 つの検査。成功した取り込みの値は `ok` か
+         *     `skipped` だけ (`failed` が 1 つでもあれば取り込みが失敗するため)。
+         */
         WaczSignatureChecks: {
+            /**
+             * @description 署名が、BrowserHive 自身が計算した `datapackage.json` のハッシュを覆っているか —— 署名
+             *     サービスの応答がこだました値ではなく。設定を要さず常に走り、サービスが別のバイトに署名して
+             *     いる事態を捕まえるのはここ。
+             */
             signature: components["schemas"]["CheckOutcome"];
+            /**
+             * @description 署名用の証明書が、この server の信頼アンカー (`--signing-trust-anchor`) まで辿れるか。経路上の
+             *     すべての証明書がタイムスタンプの時刻 (今ではない) に有効期間の内側にあることも見る。アンカーが
+             *     無ければ `skipped`。
+             */
             chain: components["schemas"]["CheckOutcome"];
+            /** @description 署名用の証明書が、応答の名乗るドメイン向けに発行されているか。設定を要さず常に走る。 */
             domain: components["schemas"]["CheckOutcome"];
+            /**
+             * @description RFC 3161 のタイムスタンプトークンが**この**署名を覆い、タイムスタンプ用の信頼アンカー
+             *     (`--signing-timestamp-anchor`) に繋がるか。トークンが主張する時刻の時点で確かめる (今ではない。
+             *     認証局の証明書が後で切れても、保存済みのアーカイブが検証に落ちないように)。`openssl ts -verify`
+             *     を使う。アンカーが無いか、署名にトークンが付いていなければ `skipped`。
+             */
             timestamp: components["schemas"]["CheckOutcome"];
         };
+        /**
+         * @description WACZ の記録 (WARC) の内訳。`status` が `success` で WACZ を求めたときだけ入る。数えるのは
+         *     読み込みの前から形式の取得を終えるまで —— すべての DPR のパスを 1 本の記録で。
+         */
         WaczStats: {
+            /**
+             * @description 方針や上限で本文を省かずに request / response の対を書いた数。redirect の中継・304 / 204・
+             *     本文を取れなかった応答も含むので、「本文付き」の数ではない。
+             */
             totalRecorded: number;
             /** @description deny または no-archive の policy に一致し、request / response のレコードを書かなかったもの。 */
             totalBlocked: number;
+            /**
+             * @description content-type の方針 (`no-body`) に当たり、本文を取らずに記録した応答。URL の方針の
+             *     `no-body` にも当たったものは含まない。
+             */
             totalSkippedContentType: number;
+            /** @description 1 応答の上限 (`maxResponseBytes`) を超えたので、本文を落として記録した応答。 */
             totalTruncatedTooLarge: number;
+            /** @description 取り込みの累計の上限 (`maxTaskBytes`) に達したので、本文を落として記録した応答。 */
             totalTruncatedTaskCap: number;
+            /** @description 失敗した要求 (中断・DNS の失敗など) と、応答の無いまま終わった要求。 */
             totalFailed: number;
+            /** @description 記録を止めた時点でまだ終わっていなかった要求 (長く開いたままの接続など)。 */
             totalIncomplete: number;
+            /** @description WARC の response レコードに書いた本文の累計バイト数 (content-encoding を外した後の長さ)。 */
             totalBodyBytes: number;
             /** @description deny の policy により、リクエスト自体を送らなかったもの。totalBlocked の内数。 */
             totalDenied: number;
+            /**
+             * @description URL の方針 (`no-body`) に当たり、本文を取らずに記録した応答。content-type の方針にも
+             *     当たったものはこちらに数える —— 先に決まるのが URL の方針だから。後から足した欄なので
+             *     最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。JSON Schema の側では
+             *     `required` のままで、この欄を持たない古い server の manifest は検証に通らない。
+             * @default 0
+             */
+            totalSkippedUrlPolicy: number;
         };
     };
     responses: never;
