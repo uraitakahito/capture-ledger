@@ -38,7 +38,7 @@ import { relative, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-import { HOST_PROCESSES, inspect, stop } from "./daemons.mjs";
+import { HOST_PROCESSES, inspect, runningBuild, stop } from "./daemons.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -271,8 +271,11 @@ const startDaemon = async (step) => {
 
   if (await waitFor({ url: step.ready }, 60_000)) {
     const found = inspect(step.daemon).find((proc) => proc.ours);
+    // 名乗る口を持つものは、**何が起きたか** も書く。後で dev:status が checkout と比べる。
+    const build = await runningBuild(step.daemon);
+    const named = build === undefined ? "" : `  ${build.version} (${build.gitSha})`;
     process.stdout.write(
-      `        pid ${String(found?.pid ?? child.pid)}  :${String(step.daemon.port)}\n`,
+      `        pid ${String(found?.pid ?? child.pid)}  :${String(step.daemon.port)}${named}\n`,
     );
     return 0;
   }
