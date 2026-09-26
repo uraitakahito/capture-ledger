@@ -1,5 +1,6 @@
 /**
- * ホストで動く長生きのプロセス (issuer 9099 / api 7070) を見つけて、止める。
+ * ホストで動く長生きのプロセス (issuer 9099 / api 7070 / validator 7180 / dashboard 7080) を
+ * 見つけて、止める。validator には、動いている build も訊く。
  *
  * ## なぜ pidfile ではなく port から探すのか
  *
@@ -80,6 +81,11 @@ export const HOST_PROCESSES = [
     // 建てると、core を変えたあとに古い core/dist の上で新しい daemon が黙って立つ（実際に
     // そうなっていた。気づかなかったのは、毎回 pnpm run check を先に打っていたから）。
     run: "pnpm --filter @wacz-validator/daemon... build && node packages/daemon/dist/cli.js --port 7180",
+    // **動いている build が名乗る口。** daemon は自分で建て直らない —— wacz-validator を
+    // 出しても、:7180 は起こした時の build のまま動き続ける (2026-09-26 に見たとき、
+    // v0.28.1 が 2 日動いていて、その間に出た v0.29.0・v0.30.0 の rule はどれも画面に
+    // 出ていなかった)。dev:status は、ここで訊いた `gitSha` を根の checkout と比べる。
+    identity: "/healthz",
   },
   {
     name: "dashboard",
@@ -142,6 +148,68 @@ export const inspect = (spec) => {
   }
   return [...seen.values()];
 };
+
+/**
+ * 動いている build が名乗る版と commit。`identity` を持つものだけ訊ける。
+ * 答えない・形が違うときは undefined —— **訊けないことを、名乗らないことと混ぜない**
+ * (呼ぶ側は「訊けない」と書く)。
+ */
+export const runningBuild = async (spec) => {
+  if (spec.identity === undefined) return undefined;
+  try {
+    const response = await fetch(`http://127.0.0.1:${String(spec.port)}${spec.identity}`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!response.ok) return undefined;
+    const { version, gitSha } = await response.json();
+    return typeof version === "string" && typeof gitSha === "string"
+      ? { version, gitSha }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/** 根の HEAD (40 桁) と、未コミットの変更の有無。git が答えなければ undefined。 */
+export const checkoutOf = (root) => {
+  const head = capture("git", ["-C", root, "rev-parse", "HEAD"]).trim();
+  if (!/^[0-9a-f]{40}$/.test(head)) return undefined;
+  const dirty = capture("git", ["-C", root, "status", "--porcelain"]).trim() !== "";
+  return { head, dirty };
+};
+
+/**
+ * 動いている build を、根の checkout と比べる。
+ *
+ * **比べるのは commit だけ。** 未コミットの変更は中身を比べられないので、どちらかに
+ * 在れば `unsure` と言う —— 同じと言えば嘘になりうるし、違うと言っても嘘になりうる。
+ * `-dirty` は wacz-validator の scripts/gen-build-info.mjs が `git status --porcelain`
+ * から付ける印で、こちらの `dirty` も同じものを見る。
+ *
+ * 短い SHA は **前方一致** で比べる。短くする桁数は repo の大きさで伸びるので、
+ * build した日と今日とで長さが違いうる。
+ *
+ * @returns "same" | "differs" | "unsure"
+ */
+export const compareBuild = (running, checkout) => {
+  const dirty = running.gitSha.endsWith("-dirty");
+  const sha = dirty ? running.gitSha.slice(0, -"-dirty".length) : running.gitSha;
+  // "nogit" (git の無い所で建てた) や空は比べようがない。空のまま前方一致を
+  // 取ると、どの HEAD にも一致してしまう。
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) return "unsure";
+  if (!checkout.head.startsWith(sha)) return "differs";
+  return dirty || checkout.dirty ? "unsure" : "same";
+};
+
+/**
+ * `sha` が根の HEAD の祖先か —— つまり、動いている build より checkout が先に進んだか。
+ *
+ * 違うときに「古い」と言ってよいのはこの場合だけ。checkout を古いタグへ戻したときや、
+ * 別の branch にいるときは、動いている build のほうが新しいか、どちらでもない。
+ * git が知らない commit (消えた branch で建てた) も「祖先ではない」に落とす。
+ */
+export const behindHead = (root, sha) =>
+  spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", sha, "HEAD"]).status === 0;
 
 /**
  * SIGTERM を送り、消えるまで待つ。
