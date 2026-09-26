@@ -41,6 +41,48 @@ describe("readManifest", () => {
     );
   });
 
+  /**
+   * 契約の既定値は、欠けていれば既定値として読む。BrowserHive v12.2.0 で
+   * `waczStats.totalSkippedUrlPolicy` が required（既定 0）になり、それより前の server が
+   * 書いた manifest はこの欄を持たない（2026-09-26 に共有の保管庫で数えると、1677 本のうち
+   * 384 本）。Smithy の `@default(0)` は「無ければ 0」なので、照らす前に既定値を補う。
+   */
+  it("v12.2.0 より前の manifest（totalSkippedUrlPolicy が無い）も読み、既定の 0 とする", () => {
+    const report = readManifest({
+      ...v12Manifest,
+      waczStats: {
+        totalRecorded: 2,
+        totalBlocked: 0,
+        totalDenied: 0,
+        totalSkippedContentType: 0,
+        totalTruncatedTooLarge: 0,
+        totalTruncatedTaskCap: 0,
+        totalFailed: 0,
+        totalIncomplete: 0,
+        totalBodyBytes: 187,
+      },
+    });
+    expect(report.waczStats?.totalSkippedUrlPolicy).toBe(0);
+  });
+
+  /** v17 はページから作るものを撮った文書を名乗る。形式を伏せた取り込みも success のまま。 */
+  it("v17 の manifest（形式を伏せ、document が理由を名乗る）を読む", () => {
+    const report = readManifest({
+      ...v12Manifest,
+      document: { url: "https://example.com/private/", withheld: "no-archive" },
+    });
+    expect(report.document).toEqual({
+      url: "https://example.com/private/",
+      withheld: "no-archive",
+    });
+  });
+
+  it("document の withheld が契約に無い綴りなら断る", () => {
+    expect(() =>
+      readManifest({ ...v12Manifest, document: { url: "https://example.com/", withheld: "deny" } }),
+    ).toThrow(/document\/withheld must be equal to one of the allowed values/);
+  });
+
   it("必須の項目が無ければ、その名前を挙げて断る", () => {
     expect(() => readManifest({ ...v12Manifest, taskId: undefined })).toThrow(
       /must have required property 'taskId'/,

@@ -3,18 +3,71 @@
     "info": {
         "title": "BrowserHive",
         "version": "2026-09-24",
-        "description": "BrowserHive の capture API。\n\n**1 往復で結果が返る。** `Capture` は取り込みが終わるまで返らず、応答に結果を載せる。\n\nこの server は **browser 1 台ぶん** しか知らない。並列は呼ぶ側が endpoint を並べて作る。\nだから queue も pool も無く、走行中に呼ばれたら待たせずに `Busy` (429) を返す ——\n空いている台を探すのは呼ぶ側の仕事。\n\n形と値域の検証は生成した server が行い、外れれば `ValidationException` (400)。"
+        "description": "BrowserHive の capture API。\n\n**1 往復で結果が返る。** `Capture` は取り込みが終わるまで返らず、応答に結果を載せる。\n\nこの server は **browser 1 台ぶん** しか知らない。並列は呼ぶ側が endpoint を並べて作る。\nだから queue も pool も無く、走行中に呼ばれたら待たせずに `Busy` (429) を返す ——\n空いている台を探すのは呼ぶ側の仕事。\n\n形と値域の検証は生成した server が行い、外れれば `ValidationException` (400)。契約に無い欄も\n同じ 400 で断る (生成した server に渡す前に)。"
     },
     "paths": {
         "/captures": {
             "post": {
-                "description": "取り込んで、**結果を返す**。受理では返らない。\n\n呼ぶ側が途中で切ったら、取り込みはページごと壊されて cancelled の結果になる。\n応答は届かないが、manifest には切られた記録が書かれる。\n\n応答は、結果の記録 (manifest) を書き終えてから返す (書き込みの予算は 10 秒)。",
+                "description": "取り込んで、**結果を返す**。受理では返らない。\n\n断りは 2 通りで、どちらも**何も始めていない**: 走行中なら `Busy` (429)、形と値域が外れれば\n`ValidationException` (400)。model の制約 (`@range` など) で外れた欄は `fieldList` に並ぶが、\n欄をまたぐ関係 (signing には wacz が要る、など) の違反は `message` だけで伝える。\n\n**契約に無い欄も断る。** 綴りの誤り (たとえば snake_case の旧い綴り) を黙って捨てると、頼んだ\n上限や方針が効かないまま撮ってしまうため。`fieldList` に path が並び、近い欄名があれば\n`message` が提案する。形を持たない欄 (script の `options`) の中は見ない。\nbrowser に繋がらないのは断りではない —— 取り込みは走り、`connection` の failed の結果で返る。\n\n呼ぶ側が途中で切ったら、取り込みはページごと壊されて cancelled の結果になる。\n応答は届かないが、manifest には切られた記録が書かれる。\n\n応答は、結果の記録 (manifest) を書き終えてから返す (書き込みの予算は 10 秒)。",
                 "operationId": "Capture",
                 "requestBody": {
                     "content": {
                         "application/json": {
                             "schema": {
                                 "$ref": "#/components/schemas/CaptureRequestContent"
+                            },
+                            "examples": {
+                                "Capture_example1": {
+                                    "summary": "PNG と WACZ を 1 枚",
+                                    "description": "画面 1 枚と WACZ を求め、成功した往復。manifest は成果物の隣に書かれる。",
+                                    "value": {
+                                        "url": "https://example.com/",
+                                        "captureFormats": {
+                                            "png": true,
+                                            "webp": false,
+                                            "html": false,
+                                            "links": false,
+                                            "mhtml": false,
+                                            "wacz": true
+                                        }
+                                    }
+                                },
+                                "Capture_example2": {
+                                    "summary": "主文書が no-archive に当たって、形式を伏せた",
+                                    "description": "PNG・HTML・WACZ を求めたが、読み込んだ文書が no-archive に当たった。status は success のまま、ページから作る形式の欄は無く (在るのは wacz だけ)、document が理由を名乗る。",
+                                    "value": {
+                                        "url": "https://example.com/private",
+                                        "captureFormats": {
+                                            "png": true,
+                                            "webp": false,
+                                            "html": true,
+                                            "links": false,
+                                            "mhtml": false,
+                                            "wacz": true
+                                        },
+                                        "urlPolicies": [
+                                            {
+                                                "pattern": "https://example.com/private/*",
+                                                "action": "no-archive"
+                                            }
+                                        ]
+                                    }
+                                },
+                                "Capture_example3": {
+                                    "summary": "走行中の台に投げると Busy (429)",
+                                    "description": "1 台 1 件。待たせずに断るので、呼ぶ側は別の台へ、無ければ少し待って戻る。",
+                                    "value": {
+                                        "url": "https://example.com/",
+                                        "captureFormats": {
+                                            "png": true,
+                                            "webp": false,
+                                            "html": false,
+                                            "links": false,
+                                            "mhtml": false,
+                                            "wacz": false
+                                        }
+                                    }
+                                }
                             }
                         }
                     },
@@ -27,6 +80,142 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/CaptureResponseContent"
+                                },
+                                "examples": {
+                                    "Capture_example1": {
+                                        "summary": "PNG と WACZ を 1 枚",
+                                        "description": "画面 1 枚と WACZ を求め、成功した往復。manifest は成果物の隣に書かれる。",
+                                        "value": {
+                                            "taskId": "2b9e63ec-06e6-47cc-ab37-cb8495993cd6",
+                                            "report": {
+                                                "taskId": "2b9e63ec-06e6-47cc-ab37-cb8495993cd6",
+                                                "url": "https://example.com/",
+                                                "labels": [],
+                                                "status": "success",
+                                                "httpStatusCode": 200,
+                                                "timestamp": "2026-09-24T00:00:04.210Z",
+                                                "captureProcessingTimeMs": 4210,
+                                                "artifacts": {
+                                                    "png": "s3://browserhive/2b9e63ec-06e6-47cc-ab37-cb8495993cd6_.png",
+                                                    "wacz": "s3://browserhive/2b9e63ec-06e6-47cc-ab37-cb8495993cd6_.wacz"
+                                                },
+                                                "document": {
+                                                    "url": "https://example.com/"
+                                                },
+                                                "waczStats": {
+                                                    "totalRecorded": 14,
+                                                    "totalBlocked": 2,
+                                                    "totalDenied": 0,
+                                                    "totalSkippedContentType": 0,
+                                                    "totalSkippedUrlPolicy": 0,
+                                                    "totalTruncatedTooLarge": 0,
+                                                    "totalTruncatedTaskCap": 0,
+                                                    "totalFailed": 0,
+                                                    "totalIncomplete": 0,
+                                                    "totalBodyBytes": 187342
+                                                },
+                                                "completeness": {
+                                                    "bodylessUrls": [],
+                                                    "truncatedUrls": [],
+                                                    "complete": true
+                                                },
+                                                "settle": {
+                                                    "strategy": "fully-loaded",
+                                                    "endedBy": "quiet",
+                                                    "waitedMs": 2310,
+                                                    "devicePixelRatio": 1,
+                                                    "limits": {
+                                                        "minMs": 1000,
+                                                        "maxMs": 3000,
+                                                        "quietMs": 1000,
+                                                        "networkConcurrency": 0
+                                                    },
+                                                    "load": {
+                                                        "atMs": 210
+                                                    },
+                                                    "network": {
+                                                        "quietAtMs": 2205
+                                                    },
+                                                    "cpu": {
+                                                        "quietAtMs": 2104
+                                                    },
+                                                    "dom": {
+                                                        "quietAtMs": 2004
+                                                    }
+                                                }
+                                            },
+                                            "manifest": {
+                                                "location": "s3://browserhive/2b9e63ec-06e6-47cc-ab37-cb8495993cd6_.result.json"
+                                            }
+                                        }
+                                    },
+                                    "Capture_example2": {
+                                        "summary": "主文書が no-archive に当たって、形式を伏せた",
+                                        "description": "PNG・HTML・WACZ を求めたが、読み込んだ文書が no-archive に当たった。status は success のまま、ページから作る形式の欄は無く (在るのは wacz だけ)、document が理由を名乗る。",
+                                        "value": {
+                                            "taskId": "7c1f0a52-3d4e-4f7a-9b61-0e2d8c5a4b17",
+                                            "report": {
+                                                "taskId": "7c1f0a52-3d4e-4f7a-9b61-0e2d8c5a4b17",
+                                                "url": "https://example.com/private",
+                                                "labels": [],
+                                                "status": "success",
+                                                "httpStatusCode": 200,
+                                                "timestamp": "2026-09-26T00:00:03.870Z",
+                                                "captureProcessingTimeMs": 3870,
+                                                "artifacts": {
+                                                    "wacz": "s3://browserhive/7c1f0a52-3d4e-4f7a-9b61-0e2d8c5a4b17_.wacz"
+                                                },
+                                                "document": {
+                                                    "url": "https://example.com/private/",
+                                                    "withheld": "no-archive"
+                                                },
+                                                "waczStats": {
+                                                    "totalRecorded": 3,
+                                                    "totalBlocked": 1,
+                                                    "totalDenied": 0,
+                                                    "totalSkippedContentType": 0,
+                                                    "totalSkippedUrlPolicy": 0,
+                                                    "totalTruncatedTooLarge": 0,
+                                                    "totalTruncatedTaskCap": 0,
+                                                    "totalFailed": 0,
+                                                    "totalIncomplete": 0,
+                                                    "totalBodyBytes": 20431
+                                                },
+                                                "completeness": {
+                                                    "bodylessUrls": [],
+                                                    "truncatedUrls": [],
+                                                    "complete": true
+                                                },
+                                                "settle": {
+                                                    "strategy": "fully-loaded",
+                                                    "endedBy": "quiet",
+                                                    "waitedMs": 2120,
+                                                    "devicePixelRatio": 1,
+                                                    "limits": {
+                                                        "minMs": 1000,
+                                                        "maxMs": 3000,
+                                                        "quietMs": 1000,
+                                                        "networkConcurrency": 0
+                                                    },
+                                                    "load": {
+                                                        "atMs": 180
+                                                    },
+                                                    "network": {
+                                                        "quietAtMs": 2011
+                                                    },
+                                                    "cpu": {
+                                                        "quietAtMs": 1930
+                                                    },
+                                                    "dom": {
+                                                        "quietAtMs": 1890
+                                                    }
+                                                }
+                                            },
+                                            "manifest": {
+                                                "location": "s3://browserhive/7c1f0a52-3d4e-4f7a-9b61-0e2d8c5a4b17_.result.json"
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -47,6 +236,15 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/BusyResponseContent"
+                                },
+                                "examples": {
+                                    "Capture_example3": {
+                                        "summary": "走行中の台に投げると Busy (429)",
+                                        "description": "1 台 1 件。待たせずに断るので、呼ぶ側は別の台へ、無ければ少し待って戻る。",
+                                        "value": {
+                                            "message": "a capture is already running on this browser"
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -65,6 +263,41 @@
                             "application/json": {
                                 "schema": {
                                     "$ref": "#/components/schemas/GetServerStatusResponseContent"
+                                },
+                                "examples": {
+                                    "GetServerStatus_example1": {
+                                        "summary": "空いている台",
+                                        "description": "busy が false なら投げてよい。build は archive の datapackage.json にも焼き込まれる版。defaultUrlPolicies は既定の 10 本のうち 2 本だけを載せている。",
+                                        "value": {
+                                            "busy": false,
+                                            "browser": {
+                                                "url": "http://chromium-1.capture-ledger:9222/",
+                                                "connected": true,
+                                                "version": "Chrome/150.0.7871.181"
+                                            },
+                                            "build": {
+                                                "version": "12.0.1",
+                                                "revision": "5168d9e",
+                                                "buildTime": "2026-09-24T01:20:00.000Z"
+                                            },
+                                            "limits": {
+                                                "maxResponseBytes": 20971520,
+                                                "maxTaskBytes": 209715200,
+                                                "maxPendingRequests": 5000
+                                            },
+                                            "defaultUrlPolicies": [
+                                                {
+                                                    "pattern": "*://*.google-analytics.com/*",
+                                                    "action": "no-archive"
+                                                },
+                                                {
+                                                    "pattern": "*://*.googletagmanager.com/*",
+                                                    "action": "no-archive"
+                                                }
+                                            ],
+                                            "defaultContentTypePolicies": []
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -110,10 +343,12 @@
                 "description": "この台が抱えている browser。",
                 "properties": {
                     "url": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "この server が繋ぐ browser の CDP の URL (起動時の `--browser-url` を正規化したもの)。"
                     },
                     "connected": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "いま browser への接続を握っているか。browser 側で切れると false になり、次の Capture が\n繋ぎ直すまで false のまま (GetServerStatus 自身は繋ぎ直さない)。繋ぎ直せなければ、その\nCapture は `connection` の failed で返る。"
                     },
                     "version": {
                         "type": "string",
@@ -127,15 +362,19 @@
             },
             "BuildInfo": {
                 "type": "object",
+                "description": "この server の build の指紋。build のときに焼き込んだ値で、実行時に git には訊かない。3 つとも\nWACZ の `datapackage.json` (`browserhive:capture.build`) にも書かれ、署名されるバイト列に入る。\n`version` が `unknown` か `revision` が `dev` の build は、明示しない限り起動を拒む。",
                 "properties": {
                     "version": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "リリースのタグから先頭の `v` を落としたもの (`12.0.1`)。タグの上に無い build は\n`<最新のタグ>+<そこからの commit 数>.g<revision>`、分からなければ `unknown`。\n`browserhive/<version>` の形で、archive の `software` と WARC の `warcinfo` にも入る。"
                     },
                     "revision": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "build した commit の短い SHA。分からなければ `dev`。"
                     },
                     "buildTime": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "build した時刻 (UTC、ミリ秒付きの ISO 8601)。"
                     }
                 },
                 "required": [
@@ -149,7 +388,8 @@
                 "description": "走行中 (1 台 1 件)。「いま無理」であって誤りではない —— 呼ぶ側は別の台へ、\n無ければ少し待って同じ台へ戻る。",
                 "properties": {
                     "message": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "人が読むための理由 (`a capture is already running on this browser`)。分岐は応答の\n`x-amzn-errortype` (`Busy`) で行う。"
                     }
                 },
                 "required": [
@@ -158,49 +398,60 @@
             },
             "CaptureArtifacts": {
                 "type": "object",
-                "description": "成果物の置き場所 (s3://…)。取得しなかった形式は無い。",
+                "description": "成果物の置き場所。`status` が `success` のときだけ埋まり、それ以外は空 (`{}`)。\n値は書き込み先が答えたものをそのまま入れる —— 自前の bucket なら `s3://<bucket>/<key>`、\n`artifactSink` を持つリクエストなら受け口が返した値 (BrowserHive は解析も整形もしない)。\n求めなかった形式の欄は無い。主文書が方針に当たって伏せた取り込みでは、`status` は `success` の\nまま、ページから作る形式 (`png`・`webp`・`html`・`links`・`mhtml`) の欄が無い —— 在るのは `wacz`\nだけ。ファイル名は `{taskId}_{correlationId}[_{labels}]` に拡張子\n(correlationId が無くても枠は残るので `<taskId>_.png` になる)。",
                 "properties": {
                     "png": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "PNG の screenshot (`image/png`)。すべての読み込みの後に、最後の devicePixelRatio で撮る。"
                     },
                     "webp": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "同じ screenshot の WebP (`image/webp`)。"
                     },
                     "html": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "描画後の DOM (behavior とバナー除去の後) を直列化した HTML (`text/html`)。受け取った元の本文ではない。"
                     },
                     "links": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "ページの `a[href]` から http(s) の URL を集めて重複を除いた JSON (`.links.json`、`application/json`)。\nJSON には redirect の後の最終 URL (`finalUrl`) も入る —— report の `url` は要求した URL のまま。"
                     },
                     "mhtml": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "CDP の `Page.captureSnapshot` による 1 ファイルの MHTML (`multipart/related`)。"
                     },
                     "wacz": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "WACZ (`application/wacz+zip`)。読み込みの前から形式の取得を終えるまでの通信の記録 (WARC) と、\n索引・`datapackage.json` を束ねたもの。"
                     }
                 }
             },
             "CaptureErrorDetails": {
                 "type": "object",
+                "description": "失敗の中身。`status` が `success` 以外 (`failed`・`timeout`・`http_error`) のときだけ入る。",
                 "properties": {
                     "type": {
                         "$ref": "#/components/schemas/ErrorType"
                     },
                     "message": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "人が読むための 1 行。分類 (`type`) より細かいこと —— 時間切れの位置、書き込み先、\n署名を得られなかった理由 (`a signature was required and could not be obtained: …`) ——\nはここに入る。分岐には使わないこと。"
                     },
                     "httpStatusCode": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "`type` が `http` のとき、主文書の HTTP の status (report の `httpStatusCode` と同じ値)。"
                     },
                     "httpStatusText": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "`type` が `http` のとき、その status の文言。server が返さなければ (HTTP/2 など) 標準の\n対応表から補い、表にも無ければ欄ごと無い。"
                     },
                     "timeoutMs": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "`type` が `timeout` のとき、使い切った予算 (ms)。browser 側の時間切れで値を読めなければ無い。"
                     },
                     "step": {
                         "type": "string",
-                        "description": "時間切れか cancel で終わったとき、取り込みがどの段階に居たか。"
+                        "description": "取り込み全体の予算を使い切ったとき (`timeout`) と、呼ぶ側が切ったとき (`cancelled`)、\n取り込みがどの段階に居たか。起きる順に `check-address` (内部アドレスを拒むための名前解決)・\n`start-recording` (WARC の記録を始める)・`load-pages` (読み込み・待ち・バナー除去・behavior。\nDPR ごと)・`write-formats` (WACZ 以外の形式)・`package-wacz` (WACZ を組み立てて署名)・\n`upload-wacz` (WACZ を書き込み先へ)。操作ごとの予算の時間切れには無い。"
                     }
                 },
                 "required": [
@@ -210,25 +461,31 @@
             },
             "CaptureFormats": {
                 "type": "object",
-                "description": "取得する形式。6 つ全部を書く。少なくとも 1 つは true でなければならない (server が検証する)。",
+                "description": "取得する形式。6 つ全部を書く。少なくとも 1 つは true でなければならない (server が検証する)。\n\nWACZ 以外の形式は、すべての DPR のパスを終えた後に **1 回だけ**、最後のパスが残した状態から\npng → webp → html → links → mhtml の順に取る。",
                 "properties": {
                     "png": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "描画後の画面の PNG。範囲はビューポートか文書の全高か (`fullPage`)。倍率は\n`devicePixelRatios` の最後の値。"
                     },
                     "webp": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "PNG と同じ画面を WebP で。品質は server の `--screenshot-quality`。"
                     },
                     "html": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "描画後の DOM を直列化した HTML。サーバが返した原文ではない。"
                     },
                     "links": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "描画後のページにある `<a href>` の一覧 (JSON)。http(s) のものだけを、href の完全一致で\n重複を除いて並べる。各項目は `href` (絶対 URL)・`text` (前後の空白を除き 200 文字まで)・\n`rel` (無ければ null)。"
                     },
                     "mhtml": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "描画後のページを MHTML の 1 ファイルに (CDP の `Page.captureSnapshot`)。CSS・画像・フォントを\n埋め込むので、オフラインで開いても描ける。"
                     },
                     "wacz": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "通信の記録 (WARC) を WACZ に詰めたもの。読み込みの前から他の形式を取り終えるまでを記録する。\n`maxResponseBytes` / `storageValues` / `signing` は WACZ があるときだけ効く。`urlPolicies` /\n`contentTypePolicies` は、要求を止めて記録から外す働きは WACZ があるときだけで、ページから作る\n形式を作らない働きはどの形式にも効く。"
                     }
                 },
                 "required": [
@@ -246,7 +503,8 @@
                 "properties": {
                     "url": {
                         "type": "string",
-                        "minLength": 1
+                        "minLength": 1,
+                        "description": "取り込む URL。http(s) のみで、前後の空白は除く。受理の後、記録の前に名前を解決し、\nループバック・link-local などの内部アドレスは拒む (`internal` の failed、`url is not allowed`)。\n私設アドレス (RFC 1918 など) は server の `--allow-private-targets` が無ければ同じく拒む。"
                     },
                     "labels": {
                         "type": "array",
@@ -270,13 +528,14 @@
                     },
                     "signing": {
                         "type": "boolean",
-                        "description": "wacz-auth の署名を求める。`captureFormats.wacz` と一緒のときだけ有効で、他の組み合わせは 400。"
+                        "description": "wacz-auth の署名を求める。`captureFormats.wacz` と一緒のときだけ有効で、他の組み合わせは 400。\nserver の `--signing-policy` の範囲で選ぶ —— `forbidden` の server に true、`required` の server に\nfalse は 400。省略すれば server の方針に従う (`required` なら署名必須)。"
                     },
                     "dismissBanners": {
                         "$ref": "#/components/schemas/DismissBanners"
                     },
                     "viewport": {
-                        "$ref": "#/components/schemas/Viewport"
+                        "$ref": "#/components/schemas/Viewport",
+                        "description": "リクエスト単位の viewport。"
                     },
                     "operationDelayMs": {
                         "type": "number",
@@ -285,7 +544,8 @@
                         "description": "ページ操作 1 つごとに挟む遅延 (ms)。待ちの手段ではないので上限が要る。"
                     },
                     "trace": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "この取り込みに限り server の `--capture-trace` を上書きする。true なら、BrowserHive がページに\n何をしたか (viewport・バナー除去など) と、どの応答が archive に届かなかったかを、取り込み先の\nページ自身の console に `[bh]` 付きで書く (`chrome://inspect` で読むためのもの)。送られた\nスクリプトの判断は、スクリプトが自分で書かない限り出ない。成果物は変わらない。"
                     },
                     "devicePixelRatios": {
                         "type": "array",
@@ -298,7 +558,8 @@
                         "description": "読み込む device pixel ratio を、読み込む順に。各要素は 1–3 の整数で、同じ値を 2 度置くことはできない。\n\n要素数がそのまま読み込みの回数になる。PNG / WebP は **最後の要素**の倍率になる。\n省略ならサーバ既定 (--device-pixel-ratios)。"
                     },
                     "fullPage": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "この取り込みに限り server の `--screenshot-full-page` を上書きする。true なら PNG / WebP を\nビューポートではなく文書の全高で撮る。他の形式には効かない。"
                     },
                     "behaviors": {
                         "type": "array",
@@ -308,7 +569,8 @@
                         "description": "読み込み後に走らせるもの (主フレーム・DPR のパスごと)。書かれた順に走る。"
                     },
                     "session": {
-                        "$ref": "#/components/schemas/SessionMode"
+                        "$ref": "#/components/schemas/SessionMode",
+                        "description": "前のタスクの残留物を持ち越すか。省略は `isolated`。"
                     },
                     "maxResponseBytes": {
                         "type": "number",
@@ -320,13 +582,14 @@
                         "items": {
                             "$ref": "#/components/schemas/UrlPolicy"
                         },
-                        "description": "この取り込みに限って policy を差し替える。**丸ごと置き換え** で、サーバ既定とは混ざらない。"
+                        "description": "この取り込みに限って policy を差し替える。**丸ごと置き換え** で、サーバ既定 (`--url-policy`)\nとは混ざらない。省略は既定に任せ、`[]` は何も濾さない。上限 100 本。\n\nどの形式を求めても効く: 主文書が `no-archive` か `no-body` に当たると、ページから作る形式を\n1 つも作らない。要求を止める (`deny`) のと、記録から外す (`no-archive`・`no-body`) のは WACZ を\n求めたときの記録器で、他の形式だけの取り込みでは `deny` も要求を止めない。効いた一覧は\n`datapackage.json` の `settings` に残る。"
                     },
                     "contentTypePolicies": {
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/ContentTypePolicy"
-                        }
+                        },
+                        "description": "この取り込みに限って content-type の方針を差し替える。**丸ごと置き換え** で、サーバ既定\n(`--content-type-policy`) とは混ざらない。省略は既定に任せ、`[]` は何も濾さない。上限 50 本。\n主文書の MIME に当たると (`urlPolicies` のどれにも当たらないとき)、ページから作る形式を 1 つも\n作らない —— これはどの形式を求めても効く。本文を省くのは WACZ を求めたときの記録器。効いた一覧は\n`datapackage.json` の `settings` に残る。"
                     },
                     "storageValues": {
                         "type": "boolean",
@@ -363,7 +626,8 @@
                         "$ref": "#/components/schemas/CaptureResultReport"
                     },
                     "manifest": {
-                        "$ref": "#/components/schemas/ManifestOutcome"
+                        "$ref": "#/components/schemas/ManifestOutcome",
+                        "description": "report を `.result.json` として書けたか。書けなかったなら、この応答が唯一の記録。"
                     }
                 },
                 "required": [
@@ -377,50 +641,65 @@
                 "description": "結果。manifest (`.result.json`) はこれをそのまま JSON にした物。",
                 "properties": {
                     "taskId": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "server が受理のときに振る id (UUID)。成果物と manifest の名前の頭になる。"
                     },
                     "correlationId": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "リクエストの `correlationId` をそのまま返す。書かなければ無い。"
                     },
                     "url": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "要求した URL (前後の空白を除いたもの)。redirect の後の最終 URL ではない。"
                     },
                     "labels": {
                         "type": "array",
                         "items": {
                             "type": "string"
-                        }
+                        },
+                        "description": "リクエストの `labels` (前後の空白を除き、空を落としたもの)。常に在る (空のことがある)。"
                     },
                     "status": {
                         "$ref": "#/components/schemas/CaptureStatus"
                     },
                     "httpStatusCode": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "最初の読み込みで主文書が返した HTTP の status (redirect を辿った先の応答)。`success` と\n`http_error` のときだけ入る。"
                     },
                     "timestamp": {
                         "type": "string",
-                        "description": "RFC 3339 の文字列。"
+                        "description": "結果を組み立てた時刻 (取り込みの終わり)。RFC 3339 の文字列。"
                     },
                     "captureProcessingTimeMs": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "取り込みに掛かった時間 (ms)。内部アドレスの確認から結果を組み立てるまでで、読み込み・待ち・\n形式と WACZ の保存 (署名込み)・`operationDelayMs` の間を含み、manifest の書き込みは含まない。\nbrowser に繋がらず始まらなかったときは 0。"
                     },
                     "artifacts": {
                         "$ref": "#/components/schemas/CaptureArtifacts"
                     },
                     "waczStats": {
-                        "$ref": "#/components/schemas/WaczStats"
+                        "$ref": "#/components/schemas/WaczStats",
+                        "description": "`status` が `success` で WACZ を求めたときだけ入る。"
                     },
                     "completeness": {
-                        "$ref": "#/components/schemas/WaczCompleteness"
+                        "$ref": "#/components/schemas/WaczCompleteness",
+                        "description": "`status` が `success` で WACZ を求めたときだけ入る。"
                     },
                     "signature": {
-                        "$ref": "#/components/schemas/WaczSignature"
+                        "$ref": "#/components/schemas/WaczSignature",
+                        "description": "署名が必須だった取り込み (リクエストの `signing: true`、または server の `--signing-policy required`)\nが成功したときだけ入る。求めていなければ欄ごと無い —— `signed: false` とは別の答え。必須で\n得られなければ取り込みは `signing` の failed になり、この欄は付かない。"
                     },
                     "errorDetails": {
-                        "$ref": "#/components/schemas/CaptureErrorDetails"
+                        "$ref": "#/components/schemas/CaptureErrorDetails",
+                        "description": "`status` が `success` 以外のときだけ入る。"
                     },
                     "settle": {
-                        "$ref": "#/components/schemas/Settle"
+                        "$ref": "#/components/schemas/Settle",
+                        "description": "読み込み後の待ちがどう終わったか。`status` が `success` のときだけ入る (WACZ を作ったなら、\n同じものが `datapackage.json` にも在る)。"
+                    },
+                    "document": {
+                        "$ref": "#/components/schemas/DocumentRecord",
+                        "description": "ページから作るもの (PNG・WebP・HTML・links・MHTML と、WACZ の文字・題・ツリー) を、どの文書\nから作ったか。`status` が `success` のときだけ入る。`withheld` があれば、`artifacts` には\nページから作る形式の欄が無い (在るのは `wacz` だけ)。"
                     }
                 },
                 "required": [
@@ -433,7 +712,7 @@
             },
             "CaptureStatus": {
                 "type": "string",
-                "description": "capture の結末。",
+                "description": "capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が\n`errorDetails` に入る。\n\n- `success`: 最初の読み込みで主文書が 2xx を返し、すべての読み込みと、求めた形式の保存\n  (WACZ なら組み立て・署名・保存まで) を終えた。\n- `failed`: 時間切れ以外の理由で成り立たなかった。分類は `errorDetails.type`\n  (`\"connection\"`・`\"internal\"`・`\"signing\"`・`\"artifact_sink\"`・`\"cancelled\"`)。\n- `timeout`: 時間の予算を使い切った —— 操作ごとの予算 (読み込みなど) か、取り込み全体の予算。\n- `http_error`: 最初の読み込みで主文書の HTTP の status が 2xx でなかった。そこで打ち切り、\n  形式も WACZ も作らない。status は `httpStatusCode` に載る。\n\n失敗より前の段で保存した形式 (PNG など、WACZ 以外) のファイルは書き込み先に残る ——\n`artifacts` が空でも、書き込み先が空とは限らない。",
                 "enum": [
                     "success",
                     "failed",
@@ -443,7 +722,7 @@
             },
             "CheckOutcome": {
                 "type": "string",
-                "description": "署名の検査 1 つぶんの結果。",
+                "description": "署名の検査 1 つぶんの結果。\n\n- `ok`: その検査が走って合格した。\n- `failed`: その検査が走って不合格だった。1 つでも出れば署名は得られなかった扱いになり、\n  取り込みは `signing` の failed で終わる —— だから成功した取り込みの `checks` には現れない。\n- `skipped`: 照合先が無くて検査が走らなかった。**合格ではない。** `chain` は署名用の信頼アンカー\n  が無いとき、`timestamp` はタイムスタンプ用の信頼アンカーが無いか、署名にトークンが付いて\n  いないとき。`signature` と `domain` は設定を要さず、`skipped` にならない。\n\n成功した取り込みの `checks` を読むと、その配備が実際に何を検証したかが分かる。",
                 "enum": [
                     "ok",
                     "failed",
@@ -455,11 +734,12 @@
                 "description": "メディア型への扱い。応答が届いてからしか判定できないので deny は取りえない。",
                 "properties": {
                     "prefix": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "応答の MIME 型に対する前方一致で、大文字と小文字を区別する。例: `video/`、`audio/`。空は 400。"
                     },
                     "action": {
                         "type": "string",
-                        "description": "no-body のみ。"
+                        "description": "`no-body` のみ。当たった応答は本文を入れずに記録し、`waczStats.totalSkippedContentType` に数える。\nURL の方針の `no-body` にも当たった応答は、先に決まるそちらの理由で記録する。大きさに関係なく、\n上限による切り詰めとは記録しない (`completeness.truncatedUrls` に載らない)。"
                     }
                 },
                 "required": [
@@ -468,14 +748,15 @@
                 ]
             },
             "DismissBanners": {
-                "description": "true/false だけの指定と、細かい指定を区別する。",
+                "description": "バナーの除去を頼むか。省略すれば除去しない。",
                 "oneOf": [
                     {
                         "type": "object",
                         "title": "enabled",
                         "properties": {
                             "enabled": {
-                                "type": "boolean"
+                                "type": "boolean",
+                                "description": "true なら同梱の CMP 一覧と既定の閾値で除去する。false は省略と同じ。"
                             }
                         },
                         "required": [
@@ -487,7 +768,8 @@
                         "title": "spec",
                         "properties": {
                             "spec": {
-                                "$ref": "#/components/schemas/DismissSpec"
+                                "$ref": "#/components/schemas/DismissSpec",
+                                "description": "除去を細かく指定する。"
                             }
                         },
                         "required": [
@@ -498,50 +780,81 @@
             },
             "DismissHeuristicSpec": {
                 "type": "object",
-                "description": "大きな固定オーバーレイを消す第 2 パスの閾値。省略時はサーバ既定。",
+                "description": "選択子の一覧に無いオーバーレイを消す第 2 パスの閾値。省略した欄は BrowserHive の既定\n(server の設定ではなくコードの定数) で埋まる。3 つの条件をすべて満たす要素を消す ——\n`position` が fixed か sticky・`z-index` が `minZIndex` 以上・ビューポートの\n`minViewportCoverageRatio` 以上を覆う。header / footer / nav / main / aside とその内側は消さない。",
                 "properties": {
                     "enabled": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "第 2 パスを走らせるか。既定は true。"
                     },
                     "minViewportCoverageRatio": {
                         "type": "number",
+                        "description": "ビューポートの面積に対する、要素の面積の比の下限。既定は 0.3。",
                         "format": "double"
                     },
                     "minZIndex": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "`z-index` の下限。既定は 1000。数値でない `z-index` (`auto` など) の要素は消さない。"
                     }
                 }
             },
             "DismissSpec": {
                 "type": "object",
-                "description": "banner / modal の除去を 1 回の capture だけ調整する。",
+                "description": "banner / modal の除去を 1 回の capture だけ調整する。省略した欄は既定で埋まる。\n除去は DPR のパスごとに走り、archive に残るのは最後のパスの報告。",
                 "properties": {
                     "useDefaults": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "同梱の CMP 選択子の一覧を使うか。既定は true。一覧にあるのは OneTrust・Cookiebot・Quantcast・\nDidomi・TrustArc・Sourcepoint・Osano・CookieLawInfo・InsitesCookieConsent・Klaro・Usercentrics。"
                     },
                     "extraSelectors": {
                         "type": "array",
                         "items": {
                             "type": "string"
-                        }
+                        },
+                        "description": "同梱の一覧の後に足す CSS 選択子。選択子ごとに最初に当たった要素を 1 つ消し、報告では\nframework `custom` として現れる。選択子として成り立たないものは `unusableSelectors` に並ぶ\n(`failOnError` が true なら取り込みが失敗する)。"
                     },
                     "excludeFrameworks": {
                         "type": "array",
                         "items": {
                             "type": "string"
-                        }
+                        },
+                        "description": "同梱の一覧から外す framework の名前 (完全一致)。`useDefaults` が true のときだけ意味を持ち、\n知らない名前は黙って無視される。"
                     },
                     "heuristic": {
                         "$ref": "#/components/schemas/DismissHeuristicSpec"
                     },
                     "failOnError": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "除去そのものが遂行できなかったとき、取り込みを失敗させるか。既定は false で、そのときは\n取り込みを続け、archive の除去の報告に `unreadable` を残す。true なら失敗させる (5 秒の\n時間切れは `timeout`)。`dismissBanners` を `enabled: true` で頼むと常に false。"
                     }
                 }
             },
+            "DocumentRecord": {
+                "type": "object",
+                "description": "ページから作るものを、どの文書から作ったか。WACZ の `datapackage.json` の\n`browserhive:capture.document` と同じ形・同じ値 (WACZ を求めなくても結果には入る)。\n\n文書は、撮る時点で主フレームに確定していた文書。要求の URL の文書とは限らない ——\nサーバのリダイレクトやページ自身の遷移が文書を置き換える。撮る前後で文書を読み比べ、\n撮っている間に替われば、替わった先の文書から撮り直す。",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "browser が確定させた、その文書の URL。`withheld` が `unattributed` のときだけ無い。"
+                    },
+                    "withheld": {
+                        "$ref": "#/components/schemas/DocumentWithheld",
+                        "description": "ページから作るものを 1 つも作らなかった理由。作ったときは無い。"
+                    }
+                }
+            },
+            "DocumentWithheld": {
+                "type": "string",
+                "description": "ページから作るものを伏せた理由。方針が **文書に** 当たったとき、そしてそのときに限り伏せる ——\nリダイレクトの中継や、遷移で去った文書にだけ当たった方針は何も伏せない。上限で本文を落とした\nだけでも伏せない。\n\n- `url-policy`: 文書の URL に最初に当たった `urlPolicies` の項目が `no-body`。\n- `content-type`: `urlPolicies` のどれにも当たらず、`contentTypePolicies` が文書の MIME に当たった。\n- `no-archive`: 文書の URL に最初に当たった `urlPolicies` の項目が `no-archive`。\n- `unattributed`: 撮るあいだに主フレームの文書が替わり続け (撮り直しても替わった)、どの文書の\n  ものかを言えない。",
+                "enum": [
+                    "url-policy",
+                    "content-type",
+                    "no-archive",
+                    "unattributed"
+                ]
+            },
             "ErrorType": {
                 "type": "string",
-                "description": "失敗の分類。",
+                "description": "失敗の分類 (`errorDetails.type`)。直し方の種類ごとに分けてある。\n\n- `\"http\"`: 主文書の HTTP の status が 2xx でなかった (status は `http_error`)。\n- `\"timeout\"`: 時間切れ —— 操作ごとの予算か、取り込み全体の予算。署名サービスや書き込み先の\n  時間切れはここではなく `\"signing\"` / `\"artifact_sink\"`。\n- `\"connection\"`: browser に繋がらなかった (取り込みに入れず、所要時間は 0)、または取り込みの\n  途中で browser との接続が切れた。\n- `\"signing\"`: 署名が必須だったのに得られなかった (サービスが無い・届かない・拒まれた・検査に\n  落ちた)。WACZ は書かない。\n- `\"internal\"`: 上のどれにも当たらない失敗。取り込み先へ繋がらない (`net::ERR_…`) もここ。\n  内部アドレスへの取り込みの拒否 (`url is not allowed`) も。\n- `\"artifact_sink\"`: 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け口) へ置けなかった。\n  書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。\n- `\"cancelled\"`: 呼ぶ側が途中で接続を切った。取り込みは打ち切られる (応答は誰にも届かないが、\n  manifest には残る)。",
                 "enum": [
                     "http",
                     "timeout",
@@ -554,6 +867,7 @@
             },
             "GetServerStatusResponseContent": {
                 "type": "object",
+                "description": "この台 (process 1 つ、browser 1 台) の現在。取り込み 1 件の結果は何も知らない —— 結果は\nCapture の応答と manifest にしか無い。呼ぶ側が分岐に使うのは `busy` だけ。",
                 "properties": {
                     "busy": {
                         "type": "boolean",
@@ -563,23 +877,26 @@
                         "$ref": "#/components/schemas/BrowserStatus"
                     },
                     "build": {
-                        "$ref": "#/components/schemas/BuildInfo"
+                        "$ref": "#/components/schemas/BuildInfo",
+                        "description": "この server の build。archive に焼き込まれる版と同じ。"
                     },
                     "limits": {
-                        "$ref": "#/components/schemas/ServerLimits"
+                        "$ref": "#/components/schemas/ServerLimits",
+                        "description": "WACZ の記録を持たない配備では無い。0 を返すと「上限が 0」と読めてしまい、\n「上限という概念が無い」とは別の主張になる。"
                     },
                     "defaultUrlPolicies": {
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/UrlPolicy"
                         },
-                        "description": "空の一覧は「何も濾さないで」という指示で、省略は「サーバ既定に任せる」。"
+                        "description": "リクエストが `urlPolicies` を書かなかったときに効く URL の方針 (評価順、最初に当たったものが\n効く)。server の `--url-policy` で決まる。常に在る (WACZ の記録を持たない配備では空)。"
                     },
                     "defaultContentTypePolicies": {
                         "type": "array",
                         "items": {
                             "$ref": "#/components/schemas/ContentTypePolicy"
-                        }
+                        },
+                        "description": "リクエストが `contentTypePolicies` を書かなかったときに効く content-type の方針。server の\n`--content-type-policy` で決まる。常に在る (空のことがある)。"
                     }
                 },
                 "required": [
@@ -703,7 +1020,7 @@
             },
             "SessionMode": {
                 "type": "string",
-                "description": "この取り込みが、前のタスクの残留物を持ち越すかどうか。省略は ISOLATED。",
+                "description": "この取り込みが、前のタスクの残留物を持ち越すかどうか。省略は `isolated`。\n\n- `isolated`: 使い捨ての BrowserContext で取り込む。cookie / HTTP キャッシュ / localStorage /\n  sessionStorage / IndexedDB / Service Worker がすべて空から始まる。\n- `shared`: server が持ち回る BrowserContext とタブを使う。同じ server で続けて走る\n  **無関係な取り込みにも状態が漏れる** ことを承知の上で。後始末は一切しない。",
                 "enum": [
                     "isolated",
                     "shared"
@@ -759,19 +1076,23 @@
             },
             "SettleLimits": {
                 "type": "object",
-                "description": "効いていた最短・最長・窓・許す接続数。要求ではなく効いた値。",
+                "description": "効いていた最短・最長・窓・許す接続数。要求ではなく効いた値 (要求の `loadWait` とサーバの\n既定を合わせ、最長に収めた後のもの)。",
                 "properties": {
                     "minMs": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "load を見た後、静止を見始める前に必ず置く時間 (ms)。"
                     },
                     "maxMs": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "待ちの最長 (ms、goto が返ってから)。先にここに当たれば `endedBy` は `deadline` —— 失敗ではない。"
                     },
                     "quietMs": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "網・CPU・DOM に共通の、静かとみなす窓 (ms)。"
                     },
                     "networkConcurrency": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "網が静まったとみなす in-flight の要求数の上限。0 は全部届くまで待つ。"
                     }
                 },
                 "required": [
@@ -786,7 +1107,8 @@
                 "description": "load の結末。atMs が無ければ、最長までに load を見なかった。",
                 "properties": {
                     "atMs": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "`document.readyState` が `complete` になったのを見た時刻 (ms)。時計は `quietAtMs` と同じ。"
                     }
                 }
             },
@@ -795,7 +1117,8 @@
                 "description": "合図 1 つの結末。quietAtMs が無ければ、最長までに満ちなかった。",
                 "properties": {
                     "quietAtMs": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "静止が `quietMs` の窓のあいだ続いて合図が満ちた時刻 (ms)。時計は goto が返ってからで、\n`operationDelayMs` のために差し込んだ間は数えない。archive では満ちなければ `null`。"
                     }
                 }
             },
@@ -805,11 +1128,11 @@
                 "properties": {
                     "pattern": {
                         "type": "string",
-                        "description": "URL 全体に当てる glob。ワイルドカードは `*` のみ。"
+                        "description": "URL 全体 (スキーム・ホスト・パス・クエリ) に当てる glob。ワイルドカードは `*` のみ。空は 400。"
                     },
                     "action": {
                         "type": "string",
-                        "description": "deny | no-archive | no-body。綴りの検査は server が行い、知らない値は 400。"
+                        "description": "当たった URL をどう扱うか。綴りの検査は server が行い、知らない値は 400。\n\n- `deny`: リクエストを送らない。相手のサーバは取り込みを知らない。\n- `no-archive`: 送るが、request / response のレコードを書かない。\n- `no-body`: 送ってレコードも書くが、本文は入れない。\n\n主文書 (ページを読む時点で主フレームに確定している文書) に `no-archive` か `no-body` が当たると、\nページから作る形式 (PNG・WebP・HTML・links・MHTML) を 1 つも作らない。WACZ の中の文字・題・\nアクセシビリティツリーも入れない。リダイレクトの中継や、遷移で去った文書にだけ当たった方針は\n何も伏せない。\n\n`deny` と `no-archive` は、落としたことを WARC の metadata レコード (action と当たった\npattern) に残し、`waczStats.totalBlocked` に数える。`no-body` で省いた本文は\n`waczStats.totalSkippedUrlPolicy` に数え、大きさに関係なく上限による切り詰めとは記録しない\n(`completeness.truncatedUrls` に載らない)。"
                     }
                 },
                 "required": [
@@ -879,21 +1202,25 @@
             },
             "WaczCompleteness": {
                 "type": "object",
+                "description": "記録した応答のうち、本文を失ったものがあるか。WARC だけを見て決まる (ページのどこまで\n到達したかは別の問いで、archive の `coverage` が答える)。`status` が `success` で WACZ を\n求めたときだけ入り、同じものが `datapackage.json` にも書かれる。",
                 "properties": {
                     "bodylessUrls": {
                         "type": "array",
                         "items": {
                             "type": "string"
-                        }
+                        },
+                        "description": "`304` としてしか現れなかった URL。本文は archive に無く、replay は回復できない\n(オリジン側の事情)。整列済み、常に在る (空のことがある)。"
                     },
                     "truncatedUrls": {
                         "type": "array",
                         "items": {
                             "type": "string"
-                        }
+                        },
+                        "description": "上限 (`maxResponseBytes` / `maxTaskBytes`) で本文を落とした URL。上限を上げれば取り戻せる\n(こちら側の事情)。整列済み、常に在る。方針 (URL / content-type の `no-body`) で省いた本文は、\n大きさに関係なくここに載らない —— 呼ぶ側が自分で省いたもので、失ったものではない。"
                     },
                     "complete": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "2 つの一覧がどちらも空なら true。"
                     }
                 },
                 "required": [
@@ -902,18 +1229,23 @@
             },
             "WaczSignature": {
                 "type": "object",
+                "description": "wacz-auth の署名の結末。署名が必須だった取り込みが WACZ を作って成功したときだけ入る ——\nだから現れるときは常に `signed: true`。必須で得られなければ取り込みは `signing` の failed に\nなってこの欄は付かず、理由は `errorDetails.message` (`a signature was required and could not\nbe obtained: …`) に出る。",
                 "properties": {
                     "signed": {
-                        "type": "boolean"
+                        "type": "boolean",
+                        "description": "署名サービスから受け取った署名を BrowserHive が検証し、走った検査がすべて合格した\n(「受け取った」ではなく「検証した」)。"
                     },
                     "reason": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "`signed` が false のときの理由。いまの server は `signed: false` の結果を返さないので入らない\n—— 得られなかった理由は `errorDetails.message` を読むこと。"
                     },
                     "domain": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "署名サービスの応答が名乗るドメイン。署名用の証明書がこのドメイン向けであることは\n`checks.domain` が確かめている。"
                     },
                     "checks": {
-                        "$ref": "#/components/schemas/WaczSignatureChecks"
+                        "$ref": "#/components/schemas/WaczSignatureChecks",
+                        "description": "4 つの検査それぞれの結末。`signed` が true なら必ず在る。"
                     }
                 },
                 "required": [
@@ -922,18 +1254,23 @@
             },
             "WaczSignatureChecks": {
                 "type": "object",
+                "description": "返ってきた署名を、BrowserHive 自身が確かめた 4 つの検査。成功した取り込みの値は `ok` か\n`skipped` だけ (`failed` が 1 つでもあれば取り込みが失敗するため)。",
                 "properties": {
                     "signature": {
-                        "$ref": "#/components/schemas/CheckOutcome"
+                        "$ref": "#/components/schemas/CheckOutcome",
+                        "description": "署名が、BrowserHive 自身が計算した `datapackage.json` のハッシュを覆っているか —— 署名\nサービスの応答がこだました値ではなく。設定を要さず常に走り、サービスが別のバイトに署名して\nいる事態を捕まえるのはここ。"
                     },
                     "chain": {
-                        "$ref": "#/components/schemas/CheckOutcome"
+                        "$ref": "#/components/schemas/CheckOutcome",
+                        "description": "署名用の証明書が、この server の信頼アンカー (`--signing-trust-anchor`) まで辿れるか。経路上の\nすべての証明書がタイムスタンプの時刻 (今ではない) に有効期間の内側にあることも見る。アンカーが\n無ければ `skipped`。"
                     },
                     "domain": {
-                        "$ref": "#/components/schemas/CheckOutcome"
+                        "$ref": "#/components/schemas/CheckOutcome",
+                        "description": "署名用の証明書が、応答の名乗るドメイン向けに発行されているか。設定を要さず常に走る。"
                     },
                     "timestamp": {
-                        "$ref": "#/components/schemas/CheckOutcome"
+                        "$ref": "#/components/schemas/CheckOutcome",
+                        "description": "RFC 3161 のタイムスタンプトークンが**この**署名を覆い、タイムスタンプ用の信頼アンカー\n(`--signing-timestamp-anchor`) に繋がるか。トークンが主張する時刻の時点で確かめる (今ではない。\n認証局の証明書が後で切れても、保存済みのアーカイブが検証に落ちないように)。`openssl ts -verify`\nを使う。アンカーが無いか、署名にトークンが付いていなければ `skipped`。"
                     }
                 },
                 "required": [
@@ -945,35 +1282,48 @@
             },
             "WaczStats": {
                 "type": "object",
+                "description": "WACZ の記録 (WARC) の内訳。`status` が `success` で WACZ を求めたときだけ入る。数えるのは\n読み込みの前から形式の取得を終えるまで —— すべての DPR のパスを 1 本の記録で。",
                 "properties": {
                     "totalRecorded": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "方針や上限で本文を省かずに request / response の対を書いた数。redirect の中継・304 / 204・\n本文を取れなかった応答も含むので、「本文付き」の数ではない。"
                     },
                     "totalBlocked": {
                         "type": "number",
                         "description": "deny または no-archive の policy に一致し、request / response のレコードを書かなかったもの。"
                     },
                     "totalSkippedContentType": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "content-type の方針 (`no-body`) に当たり、本文を取らずに記録した応答。URL の方針の\n`no-body` にも当たったものは含まない。"
                     },
                     "totalTruncatedTooLarge": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "1 応答の上限 (`maxResponseBytes`) を超えたので、本文を落として記録した応答。"
                     },
                     "totalTruncatedTaskCap": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "取り込みの累計の上限 (`maxTaskBytes`) に達したので、本文を落として記録した応答。"
                     },
                     "totalFailed": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "失敗した要求 (中断・DNS の失敗など) と、応答の無いまま終わった要求。"
                     },
                     "totalIncomplete": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "記録を止めた時点でまだ終わっていなかった要求 (長く開いたままの接続など)。"
                     },
                     "totalBodyBytes": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "WARC の response レコードに書いた本文の累計バイト数 (content-encoding を外した後の長さ)。"
                     },
                     "totalDenied": {
                         "type": "number",
                         "description": "deny の policy により、リクエスト自体を送らなかったもの。totalBlocked の内数。"
+                    },
+                    "totalSkippedUrlPolicy": {
+                        "type": "number",
+                        "default": 0,
+                        "description": "URL の方針 (`no-body`) に当たり、本文を取らずに記録した応答。content-type の方針にも\n当たったものはこちらに数える —— 先に決まるのが URL の方針だから。後から足した欄なので\n最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。JSON Schema の側では\n`required` のままで、この欄を持たない古い server の manifest は検証に通らない。"
                     }
                 },
                 "required": [
@@ -984,6 +1334,7 @@
                     "totalIncomplete",
                     "totalRecorded",
                     "totalSkippedContentType",
+                    "totalSkippedUrlPolicy",
                     "totalTruncatedTaskCap",
                     "totalTruncatedTooLarge"
                 ]
