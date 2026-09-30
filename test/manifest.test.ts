@@ -77,9 +77,45 @@ describe("readManifest", () => {
     });
   });
 
+  /**
+   * v18 は、要求した頁を deny が止めた取り込みを success で返す。成果物は 1 つも無く、
+   * httpStatusCode も無い。document は止めた URL と withheld: "deny" を名乗る。
+   */
+  it("v18 の manifest（要求した頁を deny が止め、成果物が無い）を読む", () => {
+    const report = readManifest({
+      taskId: "01J8Z1",
+      url: "https://example.com/private",
+      labels: [],
+      status: "success",
+      timestamp: "2026-09-30T00:00:00.000Z",
+      captureProcessingTimeMs: 120,
+      artifacts: {},
+      document: { url: "https://example.com/private", withheld: "deny" },
+    });
+    expect(report.status).toBe("success");
+    expect(report.httpStatusCode).toBeUndefined();
+    expect(report.document).toEqual({ url: "https://example.com/private", withheld: "deny" });
+  });
+
+  /** v18 は、方針を守れなかった取り込み（deny に当たる WebSocket を開いた、など）を policy で失敗にする。 */
+  it("v18 の manifest（errorDetails.type が policy）を読む", () => {
+    const report = readManifest({
+      ...v12Manifest,
+      status: "failed",
+      errorDetails: {
+        type: "policy",
+        message: "ws://example.com/socket: deny に当たる WebSocket を開いた",
+      },
+    });
+    expect(report.errorDetails?.type).toBe("policy");
+  });
+
   it("document の withheld が契約に無い綴りなら断る", () => {
     expect(() =>
-      readManifest({ ...v12Manifest, document: { url: "https://example.com/", withheld: "deny" } }),
+      readManifest({
+        ...v12Manifest,
+        document: { url: "https://example.com/", withheld: "denied" },
+      }),
     ).toThrow(/document\/withheld must be equal to one of the allowed values/);
   });
 
