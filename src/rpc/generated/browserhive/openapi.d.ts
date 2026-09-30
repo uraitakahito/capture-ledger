@@ -118,9 +118,11 @@ export interface components {
          * @description 成果物の置き場所。`status` が `success` のときだけ埋まり、それ以外は空 (`{}`)。
          *     値は書き込み先が答えたものをそのまま入れる —— 自前の bucket なら `s3://<bucket>/<key>`、
          *     `artifactSink` を持つリクエストなら受け口が返した値 (BrowserHive は解析も整形もしない)。
-         *     求めなかった形式の欄は無い。主文書が方針に当たって伏せた取り込みでは、`status` は `success` の
-         *     まま、ページから作る形式 (`png`・`webp`・`html`・`links`・`mhtml`) の欄が無い —— 在るのは `wacz`
-         *     だけ。ファイル名は `{taskId}_{correlationId}[_{labels}]` に拡張子
+         *     求めなかった形式の欄は無い。
+         *     主文書が方針に当たって伏せた取り込みでは、`status` は `success` のまま、
+         *     ページから作る形式 (`png`・`webp`・`html`・`links`・`mhtml`) の欄が無い —— 在るのは `wacz` だけ。
+         *     最初の読み込みの文書を `deny` が止めたなら、`wacz` も無い (`{}`)。
+         *     ファイル名は `{taskId}_{correlationId}[_{labels}]` に拡張子
          *     (correlationId が無くても枠は残るので `<taskId>_.png` になる)。
          */
         CaptureArtifacts: {
@@ -199,9 +201,10 @@ export interface components {
             mhtml: boolean;
             /**
              * @description 通信の記録 (WARC) を WACZ に詰めたもの。読み込みの前から他の形式を取り終えるまでを記録する。
-             *     `maxResponseBytes` / `storageValues` / `signing` は WACZ があるときだけ効く。`urlPolicies` /
-             *     `contentTypePolicies` は、要求を止めて記録から外す働きは WACZ があるときだけで、ページから作る
-             *     形式を作らない働きはどの形式にも効く。
+             *     `maxResponseBytes` / `storageValues` / `signing` は WACZ があるときだけ効く。
+             *     `urlPolicies` の `deny` は、WACZ が無くても要求を止める (要求の関所)。
+             *     記録から外す働き (`no-archive`・`no-body`・`contentTypePolicies`) は WACZ があるときだけで、
+             *     ページから作る形式を作らない働きは、どの形式にも効く。
              */
             wacz: boolean;
         };
@@ -268,10 +271,11 @@ export interface components {
              * @description この取り込みに限って policy を差し替える。**丸ごと置き換え** で、サーバ既定 (`--url-policy`)
              *     とは混ざらない。省略は既定に任せ、`[]` は何も濾さない。上限 100 本。
              *
-             *     どの形式を求めても効く: 主文書が `no-archive` か `no-body` に当たると、ページから作る形式を
-             *     1 つも作らない。要求を止める (`deny`) のと、記録から外す (`no-archive`・`no-body`) のは WACZ を
-             *     求めたときの記録器で、他の形式だけの取り込みでは `deny` も要求を止めない。効いた一覧は
-             *     `datapackage.json` の `settings` に残る。
+             *     どの形式を求めても効く: 主文書に方針が当たると (`deny`・`no-archive`・`no-body` のどれでも)、
+             *     ページから作る形式を 1 つも作らない。
+             *     `deny` は要求の関所が送る前に止め、WACZ を求めない取り込みでも止まる。
+             *     記録から外す (`no-archive`・`no-body`) のは、WACZ を求めたときの記録器。
+             *     効いた一覧は `datapackage.json` の `settings` に残る。
              */
             urlPolicies?: components["schemas"]["UrlPolicy"][];
             /**
@@ -314,6 +318,7 @@ export interface components {
             /**
              * @description 最初の読み込みで主文書が返した HTTP の status (redirect を辿った先の応答)。`success` と
              *     `http_error` のときだけ入る。
+             *     最初の読み込みの文書を `deny` が止めた `success` には無い (要求を送っていない)。
              */
             httpStatusCode?: number;
             /** @description 結果を組み立てた時刻 (取り込みの終わり)。RFC 3339 の文字列。 */
@@ -333,6 +338,7 @@ export interface components {
              * @description 署名が必須だった取り込み (リクエストの `signing: true`、または server の `--signing-policy required`)
              *     が成功したときだけ入る。求めていなければ欄ごと無い —— `signed: false` とは別の答え。必須で
              *     得られなければ取り込みは `signing` の failed になり、この欄は付かない。
+             *     最初の読み込みの文書を `deny` が止めた `success` にも無い (署名する WACZ を作っていない)。
              */
             signature?: components["schemas"]["WaczSignature"];
             /** @description `status` が `success` 以外のときだけ入る。 */
@@ -340,12 +346,14 @@ export interface components {
             /**
              * @description 読み込み後の待ちがどう終わったか。`status` が `success` のときだけ入る (WACZ を作ったなら、
              *     同じものが `datapackage.json` にも在る)。
+             *     最初の読み込みの文書を `deny` が止めた `success` には無い (待ちが走っていない)。
              */
             settle?: components["schemas"]["Settle"];
             /**
-             * @description ページから作るもの (PNG・WebP・HTML・links・MHTML と、WACZ の文字・題・ツリー) を、どの文書
-             *     から作ったか。`status` が `success` のときだけ入る。`withheld` があれば、`artifacts` には
-             *     ページから作る形式の欄が無い (在るのは `wacz` だけ)。
+             * @description ページから作るもの (PNG・WebP・HTML・links・MHTML と、WACZ の文字・題・ツリー) を、
+             *     どの文書から作ったか。`status` が `success` のときだけ入る。
+             *     `withheld` があれば、`artifacts` にはページから作る形式の欄が無い (在るのは `wacz` だけ)。
+             *     最初の読み込みの文書を `deny` が止めたなら、`wacz` も無い。
              */
             document?: components["schemas"]["DocumentRecord"];
         };
@@ -355,8 +363,10 @@ export interface components {
          *
          *     - `success`: 最初の読み込みで主文書が 2xx を返し、すべての読み込みと、求めた形式の保存
          *       (WACZ なら組み立て・署名・保存まで) を終えた。
+         *       または、最初の読み込みの文書を `urlPolicies` の `deny` が止めた —— 方針どおりの結末で、
+         *       `document.withheld` が `deny`、形式も WACZ も無く、`httpStatusCode` も無い (要求を送っていない)。
          *     - `failed`: 時間切れ以外の理由で成り立たなかった。分類は `errorDetails.type`
-         *       (`"connection"`・`"internal"`・`"signing"`・`"artifact_sink"`・`"cancelled"`)。
+         *       (`"connection"`・`"internal"`・`"signing"`・`"artifact_sink"`・`"cancelled"`・`"policy"`)。
          *     - `timeout`: 時間の予算を使い切った —— 操作ごとの予算 (読み込みなど) か、取り込み全体の予算。
          *     - `http_error`: 最初の読み込みで主文書の HTTP の status が 2xx でなかった。そこで打ち切り、
          *       形式も WACZ も作らない。status は `httpStatusCode` に載る。
@@ -454,7 +464,10 @@ export interface components {
          *     撮っている間に替われば、替わった先の文書から撮り直す。
          */
         DocumentRecord: {
-            /** @description browser が確定させた、その文書の URL。`withheld` が `unattributed` のときだけ無い。 */
+            /**
+             * @description browser が確定させた、その文書の URL。`withheld` が `unattributed` のときだけ無い。
+             *     `deny` なら、送らずに止めた文書の URL (リダイレクトの先で止めたなら、その先)。
+             */
             url?: string;
             /** @description ページから作るものを 1 つも作らなかった理由。作ったときは無い。 */
             withheld?: components["schemas"]["DocumentWithheld"];
@@ -467,11 +480,14 @@ export interface components {
          *     - `url-policy`: 文書の URL に最初に当たった `urlPolicies` の項目が `no-body`。
          *     - `content-type`: `urlPolicies` のどれにも当たらず、`contentTypePolicies` が文書の MIME に当たった。
          *     - `no-archive`: 文書の URL に最初に当たった `urlPolicies` の項目が `no-archive`。
+         *     - `deny`: 文書の URL に最初に当たった `urlPolicies` の項目が `deny`。
+         *       文書は要求されず、主フレームは Chrome の誤り頁になる。
+         *       最初の読み込みを止めたなら、形式も WACZ も作らない (status は `success`)。
          *     - `unattributed`: 撮るあいだに主フレームの文書が替わり続け (撮り直しても替わった)、どの文書の
          *       ものかを言えない。
          * @enum {string}
          */
-        DocumentWithheld: "url-policy" | "content-type" | "no-archive" | "unattributed";
+        DocumentWithheld: "url-policy" | "content-type" | "no-archive" | "unattributed" | "deny";
         /**
          * @description 失敗の分類 (`errorDetails.type`)。直し方の種類ごとに分けてある。
          *
@@ -488,9 +504,12 @@ export interface components {
          *       書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。
          *     - `"cancelled"`: 呼ぶ側が途中で接続を切った。取り込みは打ち切られる (応答は誰にも届かないが、
          *       manifest には残る)。
+         *     - `"policy"`: 方針を守れなかった —— `deny` の要求を、止め損ねたかもしれない。
+         *       要求の関所を掛けられなかった target があったか、止めたはずの要求に応答が届いたか、
+         *       `deny` に当たる WebSocket を開いた (handshake は止められない)。WACZ は書かない。
          * @enum {string}
          */
-        ErrorType: "http" | "timeout" | "connection" | "signing" | "internal" | "artifact_sink" | "cancelled";
+        ErrorType: "http" | "timeout" | "connection" | "signing" | "internal" | "artifact_sink" | "cancelled" | "policy";
         /**
          * @description この台 (process 1 つ、browser 1 台) の現在。取り込み 1 件の結果は何も知らない —— 結果は
          *     Capture の応答と manifest にしか無い。呼ぶ側が分岐に使うのは `busy` だけ。
@@ -507,8 +526,9 @@ export interface components {
              */
             limits?: components["schemas"]["ServerLimits"];
             /**
-             * @description リクエストが `urlPolicies` を書かなかったときに効く URL の方針 (評価順、最初に当たったものが
-             *     効く)。server の `--url-policy` で決まる。常に在る (WACZ の記録を持たない配備では空)。
+             * @description リクエストが `urlPolicies` を書かなかったときに効く URL の方針 (評価順、最初に当たったものが効く)。
+             *     server の `--url-policy` で決まる。常に在る (空のことがある)。
+             *     WACZ の記録を持たない配備でも効く —— `deny` は要求の関所が止め、主文書に当たれば形式を作らない。
              */
             defaultUrlPolicies?: components["schemas"]["UrlPolicy"][];
             /**
@@ -570,6 +590,7 @@ export interface components {
          *       sessionStorage / IndexedDB / Service Worker がすべて空から始まる。
          *     - `shared`: server が持ち回る BrowserContext とタブを使う。同じ server で続けて走る
          *       **無関係な取り込みにも状態が漏れる** ことを承知の上で。後始末は一切しない。
+         *       取り込みの合間にタブが出す要求は、要求の関所がすべて断る。
          * @enum {string}
          */
         SessionMode: "isolated" | "shared";
@@ -624,13 +645,15 @@ export interface components {
              * @description 当たった URL をどう扱うか。綴りの検査は server が行い、知らない値は 400。
              *
              *     - `deny`: リクエストを送らない。相手のサーバは取り込みを知らない。
+             *       主フレームの遷移 (直接・リダイレクトの先・ページの JS)、iframe、ページが開くウィンドウの文書にも当てる。
+             *       WebSocket の handshake だけは止められず、当たる WebSocket を開いた取り込みは `policy` で失敗する。
              *     - `no-archive`: 送るが、request / response のレコードを書かない。
              *     - `no-body`: 送ってレコードも書くが、本文は入れない。
              *
-             *     主文書 (ページを読む時点で主フレームに確定している文書) に `no-archive` か `no-body` が当たると、
-             *     ページから作る形式 (PNG・WebP・HTML・links・MHTML) を 1 つも作らない。WACZ の中の文字・題・
-             *     アクセシビリティツリーも入れない。リダイレクトの中継や、遷移で去った文書にだけ当たった方針は
-             *     何も伏せない。
+             *     主文書 (ページを読む時点で主フレームに確定している文書) に方針が当たると、
+             *     ページから作る形式 (PNG・WebP・HTML・links・MHTML) を 1 つも作らない (`deny`・`no-archive`・`no-body` のどれでも)。
+             *     WACZ の中の文字・題・アクセシビリティツリーも入れない。
+             *     リダイレクトの中継や、遷移で去った文書にだけ当たった方針は、何も伏せない。
              *
              *     `deny` と `no-archive` は、落としたことを WARC の metadata レコード (action と当たった
              *     pattern) に残し、`waczStats.totalBlocked` に数える。`no-body` で省いた本文は

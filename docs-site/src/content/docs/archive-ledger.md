@@ -484,7 +484,8 @@ BrowserHive writes `title` and `text` into the WACZ's `pages/pages.jsonl`. The
 indexes that as-is. Re-deriving it from HTML would let the index disagree with
 what the archive signed for.
 
-`textWithheld` (`url-policy` / `content-type`) travels with it. Drop it and
+`textWithheld` (BrowserHive's `DocumentWithheld`: `url-policy`, `content-type`,
+`no-archive`, `deny` or `unattributed`) travels with it. Drop it and
 **a capture that came back empty** looks identical to **a body policy refused to
 store**. The first is a fault worth investigating; the second is normal.
 
