@@ -700,6 +700,10 @@
                     "document": {
                         "$ref": "#/components/schemas/DocumentRecord",
                         "description": "ページから作るもの (PNG・WebP・HTML・links・MHTML と、WACZ の文字・題・ツリー) を、\nどの文書から作ったか。`status` が `success` のときだけ入る。\n`withheld` があれば、`artifacts` にはページから作る形式の欄が無い (在るのは `wacz` だけ)。\n最初の読み込みの文書を `deny` が止めたなら、`wacz` も無い。"
+                    },
+                    "windowsNotOpened": {
+                        "type": "number",
+                        "description": "頁が開こうとして、開かせなかったウィンドウの数。`status` が `success` のときだけ入る (0 のことがある)。\n取り込みは、頁にウィンドウを開かせない (頁にユーザー操作の印を渡さないので、browser が断る)。\nWACZ を求めたなら、開こうとした先は WARC に `window: not-opened` の metadata として 1 つずつ在り、数は一致する。\nWACZ を求めない取り込みでも数える。"
                     }
                 },
                 "required": [
@@ -1134,7 +1138,7 @@
                     },
                     "action": {
                         "type": "string",
-                        "description": "当たった URL をどう扱うか。綴りの検査は server が行い、知らない値は 400。\n\n- `deny`: リクエストを送らない。相手のサーバは取り込みを知らない。\n  主フレームの遷移 (直接・リダイレクトの先・ページの JS)、iframe、ページが開くウィンドウの文書にも当てる。\n  WebSocket の handshake だけは止められず、当たる WebSocket を開いた取り込みは `policy` で失敗する。\n- `no-archive`: 送るが、request / response のレコードを書かない。\n- `no-body`: 送ってレコードも書くが、本文は入れない。\n\n主文書 (ページを読む時点で主フレームに確定している文書) に方針が当たると、\nページから作る形式 (PNG・WebP・HTML・links・MHTML) を 1 つも作らない (`deny`・`no-archive`・`no-body` のどれでも)。\nWACZ の中の文字・題・アクセシビリティツリーも入れない。\nリダイレクトの中継や、遷移で去った文書にだけ当たった方針は、何も伏せない。\n\n`deny` と `no-archive` は、落としたことを WARC の metadata レコード (action と当たった\npattern) に残し、`waczStats.totalBlocked` に数える。`no-body` で省いた本文は\n`waczStats.totalSkippedUrlPolicy` に数え、大きさに関係なく上限による切り詰めとは記録しない\n(`completeness.truncatedUrls` に載らない)。"
+                        "description": "当たった URL をどう扱うか。綴りの検査は server が行い、知らない値は 400。\n\n- `deny`: リクエストを送らない。相手のサーバは取り込みを知らない。\n  主フレームの遷移 (直接・リダイレクトの先・ページの JS) と iframe の文書にも当てる\n  (ページはウィンドウを開かないので、ウィンドウの文書は無い。開こうとしたことは `windowsNotOpened` と WARC に残る)。\n  WebSocket の handshake だけは止められず、当たる WebSocket を開いた取り込みは `policy` で失敗する。\n- `no-archive`: 送るが、request / response のレコードを書かない。\n- `no-body`: 送ってレコードも書くが、本文は入れない。\n\n主文書 (ページを読む時点で主フレームに確定している文書) に方針が当たると、\nページから作る形式 (PNG・WebP・HTML・links・MHTML) を 1 つも作らない (`deny`・`no-archive`・`no-body` のどれでも)。\nWACZ の中の文字・題・アクセシビリティツリーも入れない。\nリダイレクトの中継や、遷移で去った文書にだけ当たった方針は、何も伏せない。\n\n`deny` と `no-archive` は、落としたことを WARC の metadata レコード (action と当たった\npattern) に残し、`waczStats.totalBlocked` に数える。`no-body` で省いた本文は\n`waczStats.totalSkippedUrlPolicy` に数え、大きさに関係なく上限による切り詰めとは記録しない\n(`completeness.truncatedUrls` に載らない)。"
                     }
                 },
                 "required": [

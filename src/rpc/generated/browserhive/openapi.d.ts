@@ -356,6 +356,13 @@ export interface components {
              *     最初の読み込みの文書を `deny` が止めたなら、`wacz` も無い。
              */
             document?: components["schemas"]["DocumentRecord"];
+            /**
+             * @description 頁が開こうとして、開かせなかったウィンドウの数。`status` が `success` のときだけ入る (0 のことがある)。
+             *     取り込みは、頁にウィンドウを開かせない (頁にユーザー操作の印を渡さないので、browser が断る)。
+             *     WACZ を求めたなら、開こうとした先は WARC に `window: not-opened` の metadata として 1 つずつ在り、数は一致する。
+             *     WACZ を求めない取り込みでも数える。
+             */
+            windowsNotOpened?: number;
         };
         /**
          * @description capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が
@@ -645,7 +652,8 @@ export interface components {
              * @description 当たった URL をどう扱うか。綴りの検査は server が行い、知らない値は 400。
              *
              *     - `deny`: リクエストを送らない。相手のサーバは取り込みを知らない。
-             *       主フレームの遷移 (直接・リダイレクトの先・ページの JS)、iframe、ページが開くウィンドウの文書にも当てる。
+             *       主フレームの遷移 (直接・リダイレクトの先・ページの JS) と iframe の文書にも当てる
+             *       (ページはウィンドウを開かないので、ウィンドウの文書は無い。開こうとしたことは `windowsNotOpened` と WARC に残る)。
              *       WebSocket の handshake だけは止められず、当たる WebSocket を開いた取り込みは `policy` で失敗する。
              *     - `no-archive`: 送るが、request / response のレコードを書かない。
              *     - `no-body`: 送ってレコードも書くが、本文は入れない。
