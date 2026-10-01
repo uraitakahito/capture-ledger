@@ -793,7 +793,12 @@ export interface components {
             totalTruncatedTaskCap: number;
             /** @description 失敗した要求 (中断・DNS の失敗など) と、応答の無いまま終わった要求。 */
             totalFailed: number;
-            /** @description 記録を止めた時点でまだ終わっていなかった要求 (長く開いたままの接続など)。 */
+            /**
+             * @description 記録を止めた時点でまだ終わっていなかった要求 (長く開いたままの接続など) と、
+             *     browser が読み終えたのに、本文を取りに行っている最中で、待つ上限までに戻らなかった応答。
+             *     どちらも WARC には未完了の metadata として 1 つずつ残る (`incomplete: true`。
+             *     `reason` は `stop-while-pending` か `stop-while-fetching-body`)。
+             */
             totalIncomplete: number;
             /** @description WARC の response レコードに書いた本文の累計バイト数 (content-encoding を外した後の長さ)。 */
             totalBodyBytes: number;

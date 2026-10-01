@@ -1316,7 +1316,7 @@
                     },
                     "totalIncomplete": {
                         "type": "number",
-                        "description": "記録を止めた時点でまだ終わっていなかった要求 (長く開いたままの接続など)。"
+                        "description": "記録を止めた時点でまだ終わっていなかった要求 (長く開いたままの接続など) と、\nbrowser が読み終えたのに、本文を取りに行っている最中で、待つ上限までに戻らなかった応答。\nどちらも WARC には未完了の metadata として 1 つずつ残る (`incomplete: true`。\n`reason` は `stop-while-pending` か `stop-while-fetching-body`)。"
                     },
                     "totalBodyBytes": {
                         "type": "number",
