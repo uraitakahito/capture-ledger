@@ -24,9 +24,11 @@
 # ## タグの上に無ければ落とす
 #
 # `--exact-match` を付けているのは、外れたときに `describe` が**到達可能なタグ**しか
-# 見ないから。browserhive はタグを main の merge commit に打ち develop で開発するので、
-# develop の commit を指した submodule に `describe` を当てると何メジャーも古い値が
-# 返る (上流でそれを踏み、`generate-version.mjs` を書き直した)。
+# 見ないから。タグの上に無い commit に `describe` を当てると、その commit から辿れる
+# 最も近いタグが返り、それは最新の版とは限らない。
+# 2026-10 まで browserhive は develop で開発し、タグは main の merge commit に在ったので、
+# develop の commit を指した submodule では何メジャーも古い値が返った (上流でそれを踏み、
+# `generate-version.mjs` を書き直した)。
 #
 # capture-ledger は「submodule はタグに固定する」を既に規約にしている —— CI の site job が
 # `browserhivePin()` 経由でそれに依存している。ここで守らせるのはその規約の延長。

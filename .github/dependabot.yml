@@ -1,8 +1,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/dependabot-2.0.json
 #
 # Dependabot が読むのは **default branch (main) に置かれたこのファイル** だけ。
-# `target-branch` は「PR をどこへ出すか」を指すだけで、設定の置き場所ではない。
-# develop にだけ置いても効かないので、両方に同じものを入れてある。
+# PR も main へ出す (`target-branch` を書かなければ、default branch 宛てになる)。
 #
 # この repo は pnpm の workspace で、lockfile は root の pnpm-lock.yaml 1 本だけ。
 # したがって npm の entry も **root の 1 つだけ**。`directory: /` が docs-site を
@@ -21,7 +20,6 @@ updates:
   # ── アプリ本体 ──
   - package-ecosystem: npm
     directory: /
-    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -94,7 +92,6 @@ updates:
   # ── GitHub Actions ──
   - package-ecosystem: github-actions
     directory: /
-    target-branch: develop
     schedule:
       interval: weekly
       day: monday
@@ -112,7 +109,6 @@ updates:
   # ── Docker base image ──
   - package-ecosystem: docker
     directory: /
-    target-branch: develop
     schedule:
       interval: weekly
       day: monday
