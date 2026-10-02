@@ -5,28 +5,26 @@ name: docs
 #   /capture-ledger/      → English
 #   /capture-ledger/ja/   → Japanese
 #
+# Publishing:
+#   - Triggered by pushing a release tag (v*), so the published docs are those
+#     of a released version. A push to main does not publish: main also carries
+#     changes that are not released yet. The github-pages environment allows
+#     deployments from v* tags only; to publish again, dispatch on a tag
+#     (gh workflow run docs.yaml --ref vX.Y.Z).
+#
 # Security:
-#   - Triggered only by push to main and manual dispatch, never on
-#     pull_request — that would build untrusted fork code with Pages
-#     permissions. The read-only guard for PRs is site.yaml.
+#   - Never triggered on pull_request — that would build untrusted fork code
+#     with Pages permissions. The read-only guard for PRs is site.yaml.
 #   - Permissions are split per job: build gets contents:read; deploy gets
 #     pages:write + id-token:write, required by deploy-pages' OIDC handshake.
 #   - No secrets are referenced.
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "docs-site/**"
-      # The site renders the pinned BrowserHive version straight out of this
-      # submodule (browserhivePin() shells out to `git describe --tags`), so a
-      # bump changes a published page while touching nothing else. Without this
-      # line the docs keep serving the previous version indefinitely.
-      - ".upstream/browserhive"
-      - "docker-compose.yml"
-      - "package.json"
-      - ".github/workflows/docs.yaml"
+    # Every release publishes again, so the pinned BrowserHive version the site
+    # renders (browserhivePin() reads it from the .upstream/browserhive
+    # submodule) is always the one that release carries.
+    tags: ["v*"]
   workflow_dispatch:
 
 # One in-flight Pages deployment; queue rather than cancel so a running deploy

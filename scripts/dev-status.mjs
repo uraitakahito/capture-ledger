@@ -15,7 +15,15 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { HOST_PROCESSES, containersByDomain, inspect } from "./daemons.mjs";
+import {
+  HOST_PROCESSES,
+  behindHead,
+  checkoutOf,
+  compareBuild,
+  containersByDomain,
+  inspect,
+  runningBuild,
+} from "./daemons.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -41,8 +49,37 @@ if (counts === undefined) {
 }
 
 // ── ホストのプロセス ────────────────────────────────────────────────
-// **compose では消えない 2 本。** どちらもコンテナではないので、スタックを
-// 落としても残る。2026-09-20 に 9099 を塞いでいたのはこれ。
+
+/**
+ * 動いている build が checkout と同じかを 1 行で言う。**違うなら、直す 1 行を添える。**
+ * 居ることは分かっても、何が動いているかは pid と時刻からは読めない —— 2026-09-26 に
+ * 見た validator は v0.28.1 のまま 2 日動いていて、その間に v0.29.0 と v0.30.0 が
+ * 出ていた。この画面には「居る」とだけ出ていた。
+ */
+const buildLine = async (spec) => {
+  const running = await runningBuild(spec);
+  if (running === undefined)
+    return `版を訊けない (:${String(spec.port)}${spec.identity} が答えない)`;
+  const named = `${running.version} (${running.gitSha})`;
+  const checkout = checkoutOf(spec.root);
+  if (checkout === undefined) return `${named}  checkout を読めない (git が答えない)`;
+  switch (compareBuild(running, checkout)) {
+    case "same":
+      return `${named}  checkout と同じ`;
+    case "unsure":
+      return `${named}  未コミットの変更があり、checkout と同じかは分からない`;
+    default: {
+      const older = behindHead(spec.root, running.gitSha.replace(/-dirty$/, ""));
+      return (
+        `${named}  checkout は ${checkout.head.slice(0, 7)} —— ${older ? "古い" : "違う"} build が動いている\n` +
+        row("", `           起こし直す: pnpm run dev:up --from ${spec.name}`)
+      );
+    }
+  }
+};
+
+// **compose では消えない 4 本。** どれもコンテナではないので、スタックを
+// 落としても残る。2026-09-20 に 9099 を塞いでいたのは issuer だった。
 for (const [index, spec] of HOST_PROCESSES.entries()) {
   const found = inspect(spec);
   const label = index === 0 ? "ホスト" : "";
@@ -59,6 +96,8 @@ for (const [index, spec] of HOST_PROCESSES.entries()) {
       ),
     );
     if (!proc.ours) console.log(row("", `        ${proc.command}`));
+    else if (spec.identity !== undefined)
+      console.log(row("", `           ${await buildLine(spec)}`));
   }
 }
 

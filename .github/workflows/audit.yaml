@@ -8,7 +8,6 @@ name: audit
 # アラートは出ているのに何も赤くならないまま残っていた。
 #
 # schedule と workflow_dispatch は default branch (main) に在る workflow でしか動かない。
-# develop に入った時点で効くのは pull_request と push。
 #
 # Security:
 #   - permissions は contents:read だけ。secret を 1 つも参照しない。submodule も取らない
@@ -16,7 +15,7 @@ name: audit
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
   schedule:
     - cron: "17 21 * * *"

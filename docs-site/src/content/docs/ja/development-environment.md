@@ -157,6 +157,13 @@ daemon (7180)・[dashboard](https://github.com/uraitakahito/dashboard) の
 daemon の既定の port は `0`（OS 任せ）なので、`--port 7180` で固定してあります ——
 固定しないと下の 2 つが見つけられません（どちらも port から持ち主を引くため）。
 
+daemon は **自分で建て直りません**。wacz-validator を出しても、7180 は起こした時の
+build のまま動き続けます（2026-09-26 に見たとき、v0.28.1 が 2 日動いていて、その間に
+出た v0.29.0・v0.30.0 の rule はどれも画面に出ていませんでした）。`pnpm run dev:status` が、
+動いている build（`/healthz` が名乗る commit）を wacz-validator の checkout の HEAD と
+比べます。違えば、checkout が先に進んだのか（古い build）、それ以外か（違う build）を言い、
+起こし直す 1 行を添えます。
+
 画面が 7000 ではなく **7080** なのは、macOS の ControlCenter (AirPlay Receiver) が
 `*:7000` を握っているためです（実測）。`127.0.0.1:7000` に bind できてしまうので
 気づきにくいのですが、port から持ち主を引く下の道具が毎回「別のものが握っている」と
@@ -168,7 +175,7 @@ daemon の既定の port は `0`（OS 任せ）なので、`--port 7180` で固�
 塞がっている、という形で出ます。
 
 ```sh
-pnpm run dev:status   # pid・起動時刻・port。何も変えない
+pnpm run dev:status   # pid・起動時刻・port。validator は動いている build も。何も変えない
 pnpm run dev:down     # ホストの 4 本 → 両 repo のコンテナ
 ```
 

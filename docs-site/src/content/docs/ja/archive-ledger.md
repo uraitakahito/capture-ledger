@@ -446,7 +446,7 @@ BrowserHive が WACZ の `pages/pages.jsonl` に `title` と `text` を書いて
 ありません。capture-ledger はそれをそのまま索引に載せます。HTML から起こし直すと、
 アーカイブが署名して主張している内容と索引が食い違いえます。
 
-`textWithheld`（`url-policy` / `content-type`）も一緒に運びます。捨てると
+`textWithheld`（BrowserHive の `DocumentWithheld`。`url-policy`・`content-type`・`no-archive`・`deny`・`unattributed`）も一緒に運びます。捨てると
 **取り込みが空だった**のと**方針が保存を禁じた**のが同じ見た目になります。
 前者は調べるべき異常で、後者は正常な運用です。
 

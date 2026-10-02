@@ -14,6 +14,12 @@
  * reconcile) は 1 件の失敗で止まらず、飛ばしてそう言う。
  *
  * 契約に無い項目は通す。BrowserHive が項目を足す版上げで台帳が止まらないため。
+ *
+ * 契約が既定値を持つ項目は、欠けていれば既定値で補ってから照らす（Ajv の `useDefaults`）。
+ * Smithy の `@default` は「無ければその値」という意味で、後から required になった項目を
+ * 持たない古い manifest も、そのまま読めるようにするため。いま該当するのは v12.2.0 で
+ * required（既定 0）になった `waczStats.totalSkippedUrlPolicy` だけで、それより前の server が
+ * 書いた manifest はこの欄を持たない（2026-09-26 に共有の保管庫で数えると、1677 本のうち 384 本）。
  */
 import { Ajv2020 } from "ajv/dist/2020.js";
 import openapi from "../rpc/generated/browserhive/openapi.json" with { type: "json" };
@@ -26,7 +32,7 @@ export type CaptureResultReport = components["schemas"]["CaptureResultReport"];
  * OpenAPI の components を、`$ref` (`#/components/schemas/X`) がそのまま引ける鍵で登録する。
  * 文書ごと足すと、strict の Ajv が根の `components` を知らない keyword として断る。
  */
-const ajv = new Ajv2020({ allErrors: true });
+const ajv = new Ajv2020({ allErrors: true, useDefaults: true });
 for (const [name, schema] of Object.entries(openapi.components.schemas)) {
   ajv.addSchema(schema, `#/components/schemas/${name}`);
 }
