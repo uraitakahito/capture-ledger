@@ -30,12 +30,11 @@ name: site
 
 on:
   push:
-    # develop is here for the Dependabot pull requests. This job is skipped on
-    # them (see the `if:` below), so the push right after the merge is the
-    # first time anything builds the docs with the bumped dependencies. It ran
-    # on main only until 2026-09, which left that build to the next unrelated
-    # pull request or to the release.
-    branches: [main, develop]
+    # The push to main checks the Dependabot pull requests. This job is skipped
+    # on them (see the `if:` below), so the push right after the merge is the
+    # first time anything builds the docs with the bumped dependencies. Every
+    # merge has been a push to main since develop was retired (2026-10).
+    branches: [main]
     paths:
       - "src/**"
       - "docs-site/**"
@@ -91,8 +90,7 @@ jobs:
     # build が落ちる形だったが、CI は緑のままだった。以前ここには「飛ばして失うものは無い。
     # Dependabot の PR は lockfile しか触らない」と書いてあり、どちらも誤りだった。
     #
-    # 代わりに、develop に入った直後の push でこの job が secrets 付きで走る (上の
-    # `push.branches` に develop が入っているのはそのため)。検査は消えず、前倒しで
+    # 代わりに、main に入った直後の push でこの job が secrets 付きで走る。検査は消えず、前倒しで
     # なくなるだけ。マージの前に見たいなら、repo の **Dependabot secrets** に
     # SUBMODULE_APP_KEY を置けばこの if は外せる —— 要るのはその 1 つだけで、client-id の
     # 変数 (vars) は Dependabot の run にも届いている (2026-08-31 の run のログで確認)。

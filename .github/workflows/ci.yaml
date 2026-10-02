@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
 
 concurrency:
@@ -44,7 +44,7 @@ jobs:
     # Dependabot の PR が書き換えるのは package.json と lockfile (docker の entry なら
     # Dockerfile、github-actions の entry なら workflow) で、src/rpc/generated/ にも
     # docker-compose.yml にも触らないので、どれも動かない。
-    # しかも develop に入った直後の push で同じ job が (secrets 付きで) 走るため、
+    # しかも main に入った直後の push で同じ job が (secrets 付きで) 走るため、
     # 検査そのものは消えない —— 前倒しでなくなるだけ。
     #
     # **site.yaml の同じ if は事情が違う** —— あちらが見る docs のビルドは、依存の版上げで
