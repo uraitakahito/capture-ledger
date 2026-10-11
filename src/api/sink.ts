@@ -111,7 +111,7 @@ export const crawlKeyPrefix = (orgId: string, at: Date): string =>
  * という最悪の中間状態が作れてしまう —— 署名の設定で同じ形を一度踏んでいる。
  */
 export interface SinkConfig {
-  /** BrowserHive から届く ledger の起点。例: `http://capture-ledger.capture-ledger:7070`。 */
+  /** BrowserHive から届く ledger のアドレス (origin)。例: `http://capture-ledger.capture-ledger:7070`。 */
   origin: string;
   secret: string;
 }

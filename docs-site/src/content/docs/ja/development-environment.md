@@ -467,12 +467,12 @@ CAPTURE_LEDGER_SINK_SECRET=$(openssl rand -hex 32) \
 コマンド行で渡せば `.env` を触らずに済みます —— Node の `--env-file-if-exists` は、shell が
 既に持っている変数を上書きしません。
 
-起点は **BrowserHive のコンテナから API に届くアドレス**で、手元から使うアドレスではありません。
+origin は **BrowserHive のコンテナから API に届くアドレス**で、手元から使うアドレスではありません。
 dev のスタックでは、コンテナのネットワークから見た host —— default ネットワークの gateway で、
 上のコマンドがその場で読みます（この文書を書いた Mac では `192.168.66.1`。network を作り直すと
 変わるので、写さないでください）。API は
 `0.0.0.0` で待ち受ける必要があります —— loopback に bind すると、コンテナからの接続を断ります。
-起点を誤ると、取り込みは受け口の URL で始まる誤り（`http://…/api/sink/…: …`）で落ちます。
+origin を誤ると、取り込みは受け口の URL で始まる誤り（`http://…/api/sink/…: …`）で落ちます。
 
 **そのうえで、成果物がどこに置かれたかを見てください。**この経路は、音も無く素通りされることも
 あります。受け口を立てて始めたクロールは `crawls.artifact_key_prefix`（`org/<orgId>/<YYYY-MM>/`）
