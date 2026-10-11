@@ -76,3 +76,18 @@ overrides:
   # **外す条件: mermaid が chevrotain を 13.2 以上へ上げたとき** (13.2.0 は lodash-es を
   # 持たない)。確かめ方: pnpm why lodash-es
   lodash-es: "^4.18.1"
+
+  # @expressive-code/core 0.44.2（2026-10-11 の時点で最新。starlight が連れてくる）が、
+  # postcss-nested を ^6.0.1 で要求している。postcss-nested 6 が連れてくる postcss-selector-parser 6 は、
+  # GHSA-rj75-hqrm-r3gf（moderate、修正版は 7.1.6）の対象で、6 系に修正版は無い。
+  # 7 に上げても、docs の build の出力（CSS と HTML）は変わらなかった。
+  #
+  # **外す条件: @expressive-code/core が、postcss-nested を 7 以上で要求する版を出したとき。**
+  # 外せるようになれば、`pnpm run check:overrides` が名指しする。確かめ方: pnpm why postcss-nested
+  "@expressive-code/core>postcss-nested": "^7.0.2"
+
+  # mermaid 12.1.0（最新）が、katex を ^0.16.47 で要求している。0.16 系は
+  # GHSA-238p-pmpm-9mq7（low、修正版は 0.18.2）の対象。0.18 に上げても、図は 6 枚とも描けた。
+  #
+  # **外す条件: mermaid が、katex を 0.18.2 以上で要求する版を出したとき。**
+  "mermaid>katex": "^0.18.2"
