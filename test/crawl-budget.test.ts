@@ -58,7 +58,7 @@ describe("件数の上限", () => {
   });
 
   it("counts the seed against the budget", () => {
-    // 種も 1 件。既定の 30 なら、辿れるのは 29 件。
+    // 起点も 1 件。既定の 30 なら、辿れるのは 29 件。
     const plan = planNextLevel(links(30), { nextDepth: 1, maxDepth: 5, maxPages: 30, known: 1 });
     expect(plan.toInsert).toHaveLength(29);
     expect(plan.stopReason).toBe("max_pages");

@@ -12,7 +12,7 @@ import type { Kysely } from "kysely";
 import type { Database } from "../db/database.js";
 
 /**
- * クロールの種として `capture_targets` を読む。
+ * クロールの起点として `capture_targets` を読む。
  *
  * ## 組織で絞る
  *

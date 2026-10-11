@@ -309,7 +309,7 @@ services:
   # v10.6.0 で全部の口を loopback へ寄せたのと同じ理由で、ここも publish する。
   #
   # **コンテナ側からは今までどおり名前で引く** —— 取り込むのは browserhive なので、
-  # 種の URL は capture-fixtures.capture-ledger:8080 のままでなければならない。
+  # 起点の URL は capture-fixtures.capture-ledger:8080 のままでなければならない。
   # つまりこの面は 2 つの宛先を持つ: 中からは名前、外からは 127.0.0.1:18080。
   #
   # 取り込み対象がここに居るので、browserhive 側に

@@ -25,8 +25,8 @@
 #   ./scripts/stack.sh up --profile capture-fixtures --profile search
 #
 # 余分な引数はそのまま container-compose へ渡る。`fixtures` と `search` を包まないのは、
-# どちらも黙っては壊れないから —— fixtures は実行時に種として選ぶもので、search は
-# URL が空なら capture-ledger が口ごと出さない。
+# どちらも黙っては壊れないから —— fixtures は実行時に起点として選ぶもので、
+# search は URL が空なら capture-ledger が口ごと出さない。
 #
 # `up` は起動の前に、道具・DNS ドメイン・submodule を確かめ、足りなければ名前を挙げて
 # 止まる (下の preflight と submodule-versions.sh)。

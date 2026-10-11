@@ -119,27 +119,27 @@ describe("辿るリンクの選び方", () => {
   });
 });
 
-describe("種が複数のとき", () => {
+describe("起点が複数のとき", () => {
   const a = parseHttpUrl("https://a.example.com/start")!;
   const b = parseHttpUrl("https://b.example.com/start")!;
 
-  it("どれか 1 つの種の範囲に入れば入る", () => {
-    // **範囲は種の数だけ広がる。** それでも「依頼時に決まって後から動かない」
+  it("どれか 1 つの起点の範囲に入れば入る", () => {
+    // **範囲は起点の数だけ広がる。** それでも「依頼時に決まって後から動かない」
     // という性質は変わらない —— 端のページが新しい中心になることは無い。
     expect(inScope(parseHttpUrl("https://b.example.com/deep")!, [a, b], "same-origin")).toBe(true);
   });
 
-  it("どの種の範囲にも入らなければ入らない", () => {
+  it("どの起点の範囲にも入らなければ入らない", () => {
     expect(inScope(parseHttpUrl("https://c.example.com/x")!, [a, b], "same-origin")).toBe(false);
   });
 
-  it("種が 0 本なら何も入らない", () => {
+  it("起点の URL が 0 本なら何も入らない", () => {
     // `011` の CHECK が作らせないので実際には来ないが、来たときに全部を範囲内と
     // 読むよりは、何も入らないほうがよい。
     expect(inScope(parseHttpUrl("https://a.example.com/x")!, [], "same-origin")).toBe(false);
   });
 
-  it("acceptLinks も複数の種で絞る", () => {
+  it("acceptLinks も複数の起点で絞る", () => {
     const accepted = acceptLinks(
       [
         { href: "https://a.example.com/1" },

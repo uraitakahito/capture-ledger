@@ -8,8 +8,8 @@
  *
  *   - 組織を書かない INSERT は、列の既定値 `default` の行になる。案内どおりの名乗り
  *     (`acme`) の `fromTargets` からは見えない。エラーは出ない。
- *   - `example.org` (scheme 無し) も入る。クロールは種を `parseHttpUrl` で読み、読めない
- *     種が 1 本でもあれば 400 を返すので、その組織の `fromTargets` が全部止まる。
+ *   - `example.org` (scheme 無し) も入る。クロールは起点を `parseHttpUrl` で読み、
+ *     読めない起点の URL が 1 本でもあれば 400 を返すので、その組織の `fromTargets` が全部止まる。
  *
  * ## ① `org_id` の既定値を外す
  *

@@ -12,7 +12,7 @@
 import type { CrawlStopReason } from "../db/database.js";
 
 export interface Budget {
-  /** 次の段の深さ。種が 0。 */
+  /** 次の段の深さ。起点が 0。 */
   nextDepth: number;
   maxDepth: number;
   maxPages: number;

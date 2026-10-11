@@ -16,10 +16,10 @@ capture-ledger の入力は Postgres のテーブル 1 つだけです。**API �
 SELECT url FROM capture_targets WHERE enabled AND org_id = $1 ORDER BY id ASC [LIMIT $2]
 ```
 
-`ORDER BY id ASC` なので**登録順に種になり**、`fromTargets.limit` は先頭 n 件を
-取ります。つまり動作確認では常に同じ URL が対象になります。`org_id` で絞るのが
-テナントの境目です —— クロールは組織を 1 つしか持たないので、別の組織の行を
-種にすると帰属が言えなくなります。
+`ORDER BY id ASC` なので**登録順に起点になり**、`fromTargets.limit` は先頭 n 件を取ります。
+つまり動作確認では常に同じ URL が対象になります。
+`org_id` で絞るのがテナントの境目です —— クロールは組織を 1 つしか持たないので、
+別の組織の行を起点にすると帰属が言えなくなります。
 
 ## スキーマ
 
@@ -74,7 +74,7 @@ pnpm run targets disable 6                        # 履歴を残したまま外�
 pnpm run targets rm 6
 ```
 
-URL は、クロールが種を読むのと同じ関数で読み、同じ形（フラグメントを落とした形）で保存します。
+URL は、クロールが起点を読むのと同じ関数で読み、同じ形（フラグメントを落とした形）で保存します。
 ここで足せた URL は、撮るときにも読めます。
 **読めない URL が 1 本でもあれば、何も足さずに**名指しします。
 無効にしてあった URL を足すと、有効に戻ります。
@@ -91,7 +91,7 @@ ON CONFLICT (org_id, url_hash) DO NOTHING;
 ```
 
 `org_id` は必ず書きます。既定値が無いので、書かなければ `NOT NULL` で断られます。
-クロールは、呼んだ人の組織の行だけを種にします。
+クロールは、呼んだ人の組織の行だけを起点にします。
 
 履歴を残したまま対象から外したいときは、行を削除せずに無効にします
 （`pnpm run targets disable <id>`、または `enabled = false`）。

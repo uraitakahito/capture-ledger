@@ -133,7 +133,7 @@ const describeRow = (row: TargetRow): string =>
 
 program
   .command("list")
-  .description("撮る対象を並べる。組織ごとに、足した順 (クロールが種にする順)")
+  .description("撮る対象を並べる。組織ごとに、足した順 (クロールが起点にする順)")
   .addOption(new Option("--org <id>", "この組織のぶんだけ").argParser(nonEmpty))
   .option("--json", "JSON で出す")
   .addOption(databaseUrlOption)
