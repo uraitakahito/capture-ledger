@@ -201,6 +201,11 @@ jobs:
       - name: No npm-style `--` before flags
         run: pnpm run check:flag-style
 
+      # seed の旧い訳語が、docs・コメント・試験の名前に戻っていないか。
+      # 中身は scripts/check-terms.mjs。この注記には、探す字そのものを書かない（検査に掛かる）。
+      - name: seed を「起点」と書いているか
+        run: pnpm run check:terms
+
       # CI が並べるこの一覧と、package.json の `check` がずれていないか。
       #
       # **一覧は 2 か所に書かれている。** 片方だけ直すと、片側でしか走らない検査が
