@@ -181,7 +181,7 @@ S3 は署名しか見ないので、URL を署名した瞬間に判断は確定�
 になりました。概念が 1 つ、表が 1 つ、担保が 1 組。
 
 ```sh
-# 種を明示する形。
+# 起点を明示する形。
 curl -X POST http://localhost:7070/api/crawls \
      -H 'content-type: application/json' \
      -d '{"seeds":["https://example.com/"],"maxDepth":2}'
@@ -209,18 +209,18 @@ curl http://localhost:7070/api/crawls/9072b625-…
 
 ### 対象一覧から起こす
 
-`fromTargets` は[`capture_targets`](/capture-ledger/ja/databases/capture-targets/)の有効な行を
-種にする。`limit` を渡せば先頭 n 件。他とは 2 点だけ違う:
+`fromTargets` は[`capture_targets`](/capture-ledger/ja/databases/capture-targets/)の有効な行を起点にする。
+`limit` を渡せば先頭 n 件。他とは 2 点だけ違う:
 
-- **`maxDepth` の既定は 0** —— 辿らない。以前の run が意味していたのはこれ。明示した
-  値は勝つので、「対象一覧を種にして 2 段辿る」も書ける。
-- **`maxPages` は種の数を下回らない。** 既定の 30 のままだと、長い対象一覧が黙って
+- **`maxDepth` の既定は 0** —— 辿らない。以前の run が意味していたのはこれ。
+  明示した値は勝つので、「対象一覧を起点にして 2 段辿る」も書ける。
+- **`maxPages` は起点の数を下回らない。** 既定の 30 のままだと、長い対象一覧が黙って
   切り落とされる。
 
 読む行は呼び出し元の組織で絞る。クロールは `org_id` を 1 つ持つ行なので、別の組織の
-対象を混ぜると帰属が言えなくなる。有効な対象が 1 件も無い呼び出し元には、空のクロール
-ではなく **400** を返す —— `crawls.seeds` には `CHECK (array_length(seeds, 1) >= 1)` が
-あり、種の無いクロールはそもそも始まりようがない。
+対象を混ぜると帰属が言えなくなる。
+有効な対象が 1 件も無い呼び出し元には、空のクロールではなく **400** を返す —— `crawls.seeds` には `CHECK (array_length(seeds, 1) >= 1)` があり、
+起点の無いクロールはそもそも始まりようがない。
 
 :::note[`fromTargets` は必ず `max_depth` で終わる]
 深さ 0 では 1 段目が最後の段なので、`stopReason` は毎回 `max_depth` になる。
@@ -345,7 +345,7 @@ subject に 202 が出た。
 
 ## リンクを辿る
 
-同じ口に深さを 1 以上で渡すと、種からリンクを辿る。辿る作業は Windmill が回し、
+同じ口に深さを 1 以上で渡すと、起点からリンクを辿る。辿る作業は Windmill が回し、
 **範囲・既読・打ち切り**を決めるのは capture-ledger。
 
 ```sh
@@ -371,7 +371,7 @@ curl http://localhost:7070/api/crawls/9072b625-…
 | ----------------- | ---- | ---------------------------------------------------------- |
 | `perHostDelayMs`  | 2000 | 同じホストで、**前が終わってから**次を**投げる**までの間隔 |
 | `hostParallelism` | 4    | 同時に触るホストの数                                       |
-| `maxPages`        | 30   | 種を含む総ページ数                                         |
+| `maxPages`        | 30   | 起点を含む総ページ数                                       |
 
 間隔を「投入から」ではなく「**完了から**」測るのが肝。取り込みにかかる時間は前もって
 分からない —— 2 秒で終わるページも 2 分かかるページもある —— ので、投入から測った
@@ -406,7 +406,7 @@ WINDOW w AS (PARTITION BY host ORDER BY submitted_at);
 
 ### 何を辿るか
 
-既定は種と同じ origin（`scope: "same-host"` にするとホスト単位に緩む）。判定は
+既定は起点と同じ origin（`scope: "same-host"` にするとホスト単位に緩む）。判定は
 リダイレクト後の **最終 URL** に対して行う。`rel="nofollow"` は尊重し、`http(s)` 以外は
 辿らない。フラグメントは落とす —— `#section` はページの中の位置であって別のページではない
 —— が、それ以外は正規化しない。クエリを並べ替えると別のページを返すサーバは実在するので、

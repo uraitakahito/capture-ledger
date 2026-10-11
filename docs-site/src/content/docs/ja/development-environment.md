@@ -401,7 +401,7 @@ pnpm run stack:up --profile capture-fixtures
 ```
 
 port は publish していない。`capture-fixtures.capture-ledger:8080` はコンテナからも host からも引ける。
-種にするのは `/links/hub` —— `/links/*` はどれもそのページを 1 か所だけ変えたもので、
+起点にするのは `/links/hub` —— `/links/*` はどれもそのページを 1 か所だけ変えたもので、
 それが「誤った規則を適用しているクローラ」と「単に壊れているクローラ」を分ける。
 
 fixtures はリクエストログも持っていて、**それを使うことがこのフィクスチャの要点**:

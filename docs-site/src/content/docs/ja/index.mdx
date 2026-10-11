@@ -33,10 +33,10 @@ flowchart LR
 
 ## capture-ledger とは
 
-capture-ledger が答えるのは **「どの URL を撮るか」** の一点だけです。呼び出し元が
-クロールを頼むと、capture-ledger は種を決め（明示された一覧か、Postgres の
-`capture_targets` テーブルの `enabled` な行）、辿る範囲を判断し、1 段ずつ
-Windmill の flow に渡します。実際に投げるのはその flow です。
+capture-ledger が答えるのは **「どの URL を撮るか」** の一点だけです。
+呼び出し元がクロールを頼むと、capture-ledger は起点の URL を揃え（明示された一覧か、Postgres の `capture_targets` テーブルの `enabled` な行）、
+辿る範囲を判断し、1 段ずつ Windmill の flow に渡します。
+実際に投げるのはその flow です。
 
 ## capture-ledger の責務ではないこと
 
