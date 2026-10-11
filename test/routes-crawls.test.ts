@@ -173,9 +173,10 @@ const fakeDb = (
       /**
        * 深さ 0 の行は `onConflict(...).returning(...)` で入れる。
        *
-       * **重複排除まで写す。** 本物は `(crawl_id, url_hash)` の unique index が
-       * 落とすので、ここで素通しにすると「同じ URL を 2 つ種に書いても 2 回取る」
-       * という、本物では起きない振る舞いを試験が肯定してしまう。
+       * **重複排除まで写す。**
+       * 本物は `(crawl_id, url_hash)` の unique index が落とすので、
+       * ここで素通しにすると「同じ URL を起点に 2 度書いても 2 回取る」という、
+       * 本物では起きない振る舞いを試験が肯定してしまう。
        */
       onConflict: () => ({
         returning: () => ({
@@ -454,8 +455,8 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
-  it("種を複数受け取り、全部を最初の段に渡す", async () => {
-    // run を畳むための土台。`capture_targets` の一覧はここに複数の種として入る。
+  it("起点を複数受け取り、全部を最初の段に渡す", async () => {
+    // run を畳むための土台。`capture_targets` の一覧はここに複数の起点として入る。
     const sent: { url: string }[][] = [];
     const app = await buildApp(
       depsWith({
@@ -479,9 +480,9 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
-  it("同じ種を 2 度渡しても 1 度しか取らない", async () => {
-    // 本物では `(crawl_id, url_hash)` の unique index が落とす。**種の段にも
-    // 同じ守りが要る** —— 対象一覧に同じ URL が 2 行あることは普通にありうる。
+  it("同じ起点を 2 度渡しても 1 度しか取らない", async () => {
+    // 本物では `(crawl_id, url_hash)` の unique index が落とす。
+    // **起点の段にも同じ守りが要る** —— 対象一覧に同じ URL が 2 行あることは普通にありうる。
     const sent: { url: string }[][] = [];
     const app = await buildApp(
       depsWith({
@@ -502,7 +503,7 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
-  it("読めない種が 1 本でもあれば拒む", async () => {
+  it("読めない起点の URL が 1 本でもあれば拒む", async () => {
     // **黙って落とさない。** 落とすと、投げた側は全部辿ったつもりで結果を読む。
     const app = await buildApp(depsWith({ crawls: [], allowed: true }));
     const res = await app.inject({
@@ -742,7 +743,7 @@ describe("対象一覧から起こす", () => {
     return { res, sent, crawls };
   };
 
-  it("有効な行だけを、自分の組織のぶんだけ種にする", async () => {
+  it("有効な行だけを、自分の組織のぶんだけ起点にする", async () => {
     // **組織で絞る。** 以前の CLI 経路 (run.ts) は「他組織が混じっていたら投げる」
     // していたが、クロールは `org_id` を 1 つ持つ行なので、混ぜると帰属が言えない。
     const { res, sent } = await start({ fromTargets: {} });
@@ -760,18 +761,18 @@ describe("対象一覧から起こす", () => {
   });
 
   it("明示された深さは勝つ", async () => {
-    // 「一覧を種にして 2 段辿る」も書ける。畳んだことで表せる幅が減っていない。
+    // 「一覧を起点にして 2 段辿る」も書ける。畳んだことで表せる幅が減っていない。
     const { crawls } = await start({ fromTargets: {}, maxDepth: 2 });
     expect(crawls[0]?.maxDepth).toBe(2);
   });
 
-  it("max_pages が種の数を下回らない", async () => {
+  it("max_pages が起点の数を下回らない", async () => {
     // 既定の 30 のままだと、対象が 30 件を超えた瞬間に黙って切り落とされる。
     const { crawls } = await start({ fromTargets: {} });
     expect(crawls[0]?.maxPages).toBeGreaterThanOrEqual(2);
   });
 
-  it("limit は種の数を絞る", async () => {
+  it("limit は起点の数を絞る", async () => {
     const { sent } = await start({ fromTargets: { limit: 1 } });
     expect(sent[0]).toHaveLength(1);
   });

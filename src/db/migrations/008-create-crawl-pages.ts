@@ -45,7 +45,7 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     .addColumn("url_hash", sql`bytea`, (col) =>
       col.generatedAlwaysAs(sql`digest(url, 'sha256')`).stored(),
     )
-    // 種が 0。
+    // 起点が 0。
     .addColumn("depth", "integer", (col) => col.notNull())
     // 礼儀の単位。URL から取り出して保存する —— 後から測るときに再計算したくない。
     .addColumn("host", "text", (col) => col.notNull())
@@ -56,7 +56,7 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     // BrowserHive が返した id。台帳の行と繋がる。
     .addColumn("task_id", "text")
     .addColumn("correlation_id", "text")
-    // どのページから見つけたか。木の形はこれで復元できる。種は NULL。
+    // どのページから見つけたか。木の形はこれで復元できる。起点は NULL。
     .addColumn("discovered_from", "bigint", (col) => col.references("crawl_pages.id"))
     // 礼儀の証拠。上の docstring を見ること。
     .addColumn("submitted_at", "timestamptz")

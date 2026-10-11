@@ -6,7 +6,7 @@
  * ## なぜ `runs` と別の表なのか
  *
  * `runs` は「`capture_targets` の有効な行を全部投げる」1 回で、深さも範囲も持たない。
- * クロールは種が 1 つで、そこから広がる。集計の意味も違う —— `runs` の `submitted` は
+ * クロールは起点が 1 つで、そこから広がる。集計の意味も違う —— `runs` の `submitted` は
  * 投げた件数だが、クロールでは「見つけた件数」と「取った件数」が別々に要る。
  *
  * ## なぜ「走行中は 1 本だけ」なのか
@@ -48,7 +48,7 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     .addColumn("per_host_delay_ms", "integer", (col) => col.notNull())
     // 同時に触ってよいホストの数。flow の for-loop の parallelism になる。
     .addColumn("host_parallelism", "integer", (col) => col.notNull())
-    // 誰のために走ったか、誰が頼んだか。`runs` と違い、クロールは種を出した者に紐づく。
+    // 誰のために走ったか、誰が頼んだか。`runs` と違い、クロールは起点を渡した者に紐づく。
     .addColumn("org_id", "text", (col) => col.notNull())
     .addColumn("requested_by", "text", (col) => col.notNull())
     // `running` / `succeeded` / `failed`。CHECK は置かない —— `006` と同じ判断。

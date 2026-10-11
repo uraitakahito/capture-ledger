@@ -178,7 +178,7 @@ export interface CrawlRouteDeps {
 interface CrawlBody {
   seeds?: string[];
   /**
-   * 種を明示せず、`capture_targets` の有効な行から取る。
+   * 起点を明示せず、`capture_targets` の有効な行から取る。
    *
    * これが `runs` を畳んだ先。既定では**辿らない** (`maxDepth: 0`) ので、
    * 「登録済みの URL 一覧を、いま全部取ってこい」がそのまま表せる。
@@ -310,7 +310,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           // 見る —— ajv の `oneOf` は「どちらでもない」と「両方」を同じ 400 にするが、
           // 呼ぶ側にとっては別の間違いなので、言い分を分けたい。
           properties: {
-            // **1 本以上。** 種を持たないクロールは始まりが無いので進みようがなく、
+            // **1 本以上。** 起点を持たないクロールは始まりが無いので進みようがなく、
             // 受理されたのに何も起きない、という形になる (`011` の CHECK と対)。
             seeds: {
               type: "array",
@@ -380,7 +380,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         });
       }
 
-      // 読めない種が 1 本でもあれば拒む。**黙って落とさない** ——
+      // 読めない起点の URL が 1 本でもあれば拒む。**黙って落とさない** ——
       // 落とすと、投げた側は全部辿ったつもりで結果を読むことになる。
       const seeds = rawSeeds.map((raw) => parseHttpUrl(raw));
       if (seeds.some((parsed) => parsed === undefined)) {
@@ -418,9 +418,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         seeds: parsedSeeds.map((parsed) => parsed.normalized),
         scope: body.scope ?? DEFAULT_SCOPE,
         // **対象一覧から取るときは、既定で辿らない。** それが `runs` の意味だった。
-        // 明示された値は勝つので、「一覧を種にして 2 段辿る」も書ける。
+        // 明示された値は勝つので、「一覧を起点にして 2 段辿る」も書ける。
         maxDepth: body.maxDepth ?? (fromTargets === undefined ? DEFAULT_MAX_DEPTH : 0),
-        // 既定の 30 だと対象一覧が切り落とされる。**種の数は下回らせない。**
+        // 既定の 30 だと対象一覧が切り落とされる。**起点の数は下回らせない。**
         maxPages: body.maxPages ?? Math.max(DEFAULT_MAX_PAGES, parsedSeeds.length),
         perHostDelayMs: body.perHostDelayMs ?? DEFAULT_PER_HOST_DELAY_MS,
         hostParallelism: body.hostParallelism ?? DEFAULT_HOST_PARALLELISM,
@@ -458,11 +458,11 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         throw err;
       }
 
-      // 種を最初の行として置く。深さ 0。ここから flow が読む。
+      // 起点を最初の行として置く。深さ 0。ここから flow が読む。
       //
       // **深さ 1 以降と同じ形にしてある** —— 配列で入れ、`onConflict` で重複を
-      // index に落とさせ、`returning` で実際に入った行だけを次に渡す。種が複数に
-      // なると同じ URL が 2 度渡されうるので、ここも同じ守りが要る。
+      // index に落とさせ、`returning` で実際に入った行だけを次に渡す。
+      // 起点が複数になると同じ URL が 2 度渡されうるので、ここも同じ守りが要る。
       const seeded = await db
         .insertInto("crawlPages")
         .values(
@@ -786,7 +786,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           .execute();
       }
 
-      // 種は投入時に検査しているので、読めない行はここに来ない。**それでも
+      // 起点は投入時に検査しているので、読めない行はここに来ない。**それでも
       // 全部を読み直す** —— 範囲の判定に要るのは正規化した形で、行に入っているのは
       // 文字列だから。1 本でも読めなければ行が壊れている。
       const parsedSeeds: ParsedUrl[] = [];
