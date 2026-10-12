@@ -200,11 +200,10 @@ pnpm run stack:up
 until curl -fsS http://localhost:50051/status >/dev/null 2>&1; do sleep 1; done
 ```
 
-**There is no dev container.** container-compose has exactly four subcommands —
-`up`, `down`, `build`, `version` — so there is no `exec` to drop into. It does
-not need one: capture-ledger runs on the host against the containerised stack,
-through the ports that stack publishes on `127.0.0.1`. The connection string comes
-with the template, so the copied `.env` already has it:
+You run capture-ledger's commands from this repo's terminal. capture-ledger runs on the
+host and reaches the containerised stack through the ports the stack publishes on
+`127.0.0.1`. The connection string comes with the template, so the copied `.env`
+already has it:
 
 ```sh
 DATABASE_URL=postgres://capture_ledger:capture_ledger@127.0.0.1:5432/capture_ledger

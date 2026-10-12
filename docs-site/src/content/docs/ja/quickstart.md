@@ -51,9 +51,9 @@ sudo container system dns create crawler-storage   # 共有 store のぶん
 ```
 
 プロジェクト名がそのまま DNS ドメインになります。コンテナは `<service>.capture-ledger`
-という名前になり、**コンテナ間からもホストからも**解決できます — capture-ledger 自身を
-ホストで動かしてこのスタックに繋げられるのはこのためです。登録が無いと
-container-compose は `container exec` で **各コンテナの中の** `/etc/hosts` に
+という名前になり、コンテナどうしはこの名前で呼び合います（たとえば BrowserHive は
+`chromium-1.capture-ledger` に繋ぎます。共有 store も同じ仕組みで `seaweedfs.crawler-storage` です）。
+登録が無いと container-compose は `container exec` で **各コンテナの中の** `/etc/hosts` に
 追記する方式に退行します（お使いの Mac の `/etc/hosts` は触りません）。その
 書き込みはこのスタックの非 root コンテナでは失敗しますが、container-compose は
 終了状態を見ず何も出力しないため、**一部のサービスだけ名前が引けない**という
@@ -116,11 +116,6 @@ Chromium は 2 台とも headless です。描画を見たい場合は、ロー�
 を登録してください。
 
 ## 4. データベースを準備する
-
-**dev コンテナはありません。** capture-ledger はホストで動き、スタックが `127.0.0.1` に
-publish した口を叩きます（接続文字列は `.env` に入っています）。**コンテナの名前
-（`postgres.capture-ledger`）は使いません** —— 名前は引けるのに TCP が届かず、
-`EHOSTUNREACH` になります（[開発環境](/capture-ledger/ja/development-environment/)に詳しく）。
 
 ```sh
 pnpm install         # 初回のみ

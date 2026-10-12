@@ -142,8 +142,8 @@ unchanged: those are written for the caller.
 ## Network layout
 
 The stack runs on Apple Container. The project name is the DNS domain, so every
-service is `<service>.capture-ledger` — resolvable between containers **and from the
-host**, which is why capture-ledger itself needs no container.
+service is `<service>.capture-ledger`, and the containers reach each other by that name.
+capture-ledger itself runs on the host and uses the host ports below (published on `127.0.0.1`).
 
 | Service        | DNS name                       | Container port | Host port |
 | -------------- | ------------------------------ | -------------- | --------- |

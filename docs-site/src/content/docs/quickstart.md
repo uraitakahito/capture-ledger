@@ -52,10 +52,10 @@ sudo container system dns create crawler-storage   # for the shared store
 ```
 
 The project name is the DNS domain: containers become `<service>.capture-ledger`,
-resolvable from each other **and from the host** — which is what lets capture-ledger
-itself run on the host against this stack. Without it, container-compose falls
-back to appending to the `/etc/hosts` **inside each container** via
-`container exec` (your Mac's own `/etc/hosts` is never touched). That write
+and the containers reach each other by that name (BrowserHive, for one, connects to
+`chromium-1.capture-ledger`; the shared store is `seaweedfs.crawler-storage` the same way).
+Without it, container-compose falls back to appending to the `/etc/hosts` **inside each
+container** via `container exec` (your Mac's own `/etc/hosts` is never touched). That write
 fails for the non-root containers here, and container-compose neither checks
 the exit status nor prints anything — so only some services lose name
 resolution, which is a hard symptom to trace back.
@@ -118,12 +118,6 @@ Both Chromiums are headless. To watch one render, open `chrome://inspect` in a
 local Chrome and add `localhost:9222` and `localhost:9223` under _Configure…_.
 
 ## 4. Prepare the database
-
-**There is no dev container.** capture-ledger runs on the host and talks to the ports the
-stack publishes on `127.0.0.1` — `.env` already holds the connection strings. **It does not
-use the container names** (`postgres.capture-ledger`): those resolve but the TCP connection
-never lands, and you get `EHOSTUNREACH`. See
-[Development environment](/capture-ledger/development-environment/).
 
 ```sh
 pnpm install         # first time only

@@ -193,9 +193,8 @@ pnpm run stack:up
 until curl -fsS http://localhost:50051/status >/dev/null 2>&1; do sleep 1; done
 ```
 
-**dev コンテナはありません。** container-compose のサブコマンドは
-`up` / `down` / `build` / `version` の 4 つだけで、入り込むための `exec` が
-そもそもありません。必要もありません — capture-ledger はホストで動かしたまま、
+capture-ledger のコマンドは、この repo の端末でそのまま打ちます。
+capture-ledger はホストで動き、
 スタックが `127.0.0.1` に publish した口を通してコンテナ側に繋がります。
 接続文字列は雛形に入っているので、写した `.env` にそのまま在ります。
 
