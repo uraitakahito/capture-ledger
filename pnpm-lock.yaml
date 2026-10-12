@@ -75,8 +75,8 @@ importers:
         specifier: ^3.9.9
         version: 3.9.9
       puppeteer:
-        specifier: 25.12.0
-        version: 25.12.0
+        specifier: 25.13.0
+        version: 25.13.0
       semver:
         specifier: ^7.8.5
         version: 7.8.5
@@ -1027,8 +1027,8 @@ packages:
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
-  '@puppeteer/browsers@3.2.3':
-    resolution: {integrity: sha512-2Bt3m6dDAJqmZehn0wiXSYyQmuhyiHHZ7FjvrVaS1W2RoFGV6eCK71UvKYkNJjkwC1Q9nobjhvTMhLQztFVINA==}
+  '@puppeteer/browsers@3.2.4':
+    resolution: {integrity: sha512-okJ6yQMc0SBexOKxMi966omwAV1uAPwgF/YMZdb04gZQPXVjWHl9bmXjZYtIcsN1+PN3Bz4iFfGK3g+c6lZJ0Q==}
     engines: {node: '>=22.12.0'}
     hasBin: true
     peerDependencies:
@@ -1625,8 +1625,8 @@ packages:
     resolution: {integrity: sha512-TQMmc3w+5AxjpL8iIiwebF73dRDF4fBIieAqGn9RGCWaEVwQ6Fb2cGe31Yns0RRIzii5goJ1Y7xbMwo1TxMplw==}
     engines: {node: '>= 20.19.0'}
 
-  chromium-bidi@17.0.2:
-    resolution: {integrity: sha512-5v9GQFhTktFvotn/OFNJBmKLKRAb6n9r0bVCwf7sHgWc3/JryK0bj1nn93L3pHFrfgcsu6Be6EWsDi+1XHTGDg==}
+  chromium-bidi@157.0.8090-0:
+    resolution: {integrity: sha512-KJw7IQgqXwxpJgJlEIPg5mr2ZoqA+jkTRtc5EABI7sUJ3bu3cpI7NuEBoj4Gn1AsF78CaT9So5WQWspK3/wYag==}
     engines: {node: '>=20.19.0 <22.0.0 || >=22.12.0'}
     peerDependencies:
       devtools-protocol: '*'
@@ -1929,8 +1929,8 @@ packages:
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
 
-  devtools-protocol@0.0.1687809:
-    resolution: {integrity: sha512-t7kSb+UKYdyxcmqy98U2P86ne6rCve3DIJ4+lp54i/hhClgFuG35JrLj23rO14Jw3sWDsp7i+22QhNU0+/qk8g==}
+  devtools-protocol@0.0.1696802:
+    resolution: {integrity: sha512-FO5/SENfvc2K8wRnWQflKcwuoTH4dBkXCWTQ9ebIWtuX8JM5+ZvCotaEmkfh21pO7TvIKGTM3hG4xFiq9WTwmg==}
 
   diff@9.0.0:
     resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
@@ -2933,12 +2933,12 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
-  puppeteer-core@25.12.0:
-    resolution: {integrity: sha512-z6LQUt5SH7jwGtGA+nMtJuEjZIsqPiwQ+EFHCYuVDQrJpvifNmmGuyDvTzAKPyFzihxgHc5f3aMzu2kn8Ps37A==}
+  puppeteer-core@25.13.0:
+    resolution: {integrity: sha512-cyBS0OEx3e9NS53B5F6+UazXtR7f9Tw0cR1/FbPW59/hV6JPZbkIiMnxK2543IkFp3rsGlLn1iPDLF77TJsJsA==}
     engines: {node: '>=22.12.0'}
 
-  puppeteer@25.12.0:
-    resolution: {integrity: sha512-agM9cYcxbvmU17w9qtF17s7/Vv7Dhbyig6AWwIgvQQLR2dKZdPqNvRPanac7xH4iMPcNYOCfyCkwqCnR4nVOcA==}
+  puppeteer@25.13.0:
+    resolution: {integrity: sha512-vB4KLXTT5QqlikcOQ/xV0RY18bBVtNyLUTfqJ9mW+penHyoM+5DmANYuDCI4jgBtiL0eD9I5ZFSafW6/a6Trpg==}
     engines: {node: '>=22.12.0'}
     hasBin: true
 
@@ -3418,8 +3418,8 @@ packages:
       jsdom:
         optional: true
 
-  webdriver-bidi-protocol@0.4.3:
-    resolution: {integrity: sha512-uuN0goWfxP22B7J/uAgBpOYNPttC+XVseYE+rSY5+rQ+YBeVz/VORw8WbmLVcqW78zNg5A4qnjNXYUWR3il2ig==}
+  webdriver-bidi-protocol@1.0.1:
+    resolution: {integrity: sha512-WXWs/aXF2a6Al1Z2/V/7Gp2oPZOAAmHjJOTmv4KCXRJ122IMj3tSSMc6a4q3K4QOmhQbse/Ahr+oTVJOU2dUiw==}
 
   which@2.0.2:
     resolution: {integrity: sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==}
@@ -3493,9 +3493,6 @@ packages:
   yocto-queue@1.2.2:
     resolution: {integrity: sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ==}
     engines: {node: '>=12.20'}
-
-  zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
   zod@4.6.5:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
@@ -4371,7 +4368,7 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
-  '@puppeteer/browsers@3.2.3':
+  '@puppeteer/browsers@3.2.4':
     dependencies:
       modern-tar: 0.8.5
       yargs: 18.2.0
@@ -5071,11 +5068,11 @@ snapshots:
     dependencies:
       readdirp: 5.1.1
 
-  chromium-bidi@17.0.2(devtools-protocol@0.0.1687809):
+  chromium-bidi@157.0.8090-0(devtools-protocol@0.0.1696802):
     dependencies:
-      devtools-protocol: 0.0.1687809
+      devtools-protocol: 0.0.1696802
       mitt: 3.0.1
-      zod: 3.25.76
+      zod: 4.6.5
 
   ci-info@4.4.0: {}
 
@@ -5385,7 +5382,7 @@ snapshots:
     dependencies:
       dequal: 2.0.3
 
-  devtools-protocol@0.0.1687809: {}
+  devtools-protocol@0.0.1696802: {}
 
   diff@9.0.0: {}
 
@@ -6564,13 +6561,13 @@ snapshots:
 
   punycode@2.3.1: {}
 
-  puppeteer-core@25.12.0:
+  puppeteer-core@25.13.0:
     dependencies:
-      '@puppeteer/browsers': 3.2.3
-      chromium-bidi: 17.0.2(devtools-protocol@0.0.1687809)
-      devtools-protocol: 0.0.1687809
+      '@puppeteer/browsers': 3.2.4
+      chromium-bidi: 157.0.8090-0(devtools-protocol@0.0.1696802)
+      devtools-protocol: 0.0.1696802
       typed-query-selector: 2.12.3
-      webdriver-bidi-protocol: 0.4.3
+      webdriver-bidi-protocol: 1.0.1
       ws: 8.22.0
     transitivePeerDependencies:
       - bufferutil
@@ -6578,13 +6575,13 @@ snapshots:
       - utf-8-validate
       - yauzl
 
-  puppeteer@25.12.0:
+  puppeteer@25.13.0:
     dependencies:
-      '@puppeteer/browsers': 3.2.3
-      chromium-bidi: 17.0.2(devtools-protocol@0.0.1687809)
-      devtools-protocol: 0.0.1687809
+      '@puppeteer/browsers': 3.2.4
+      chromium-bidi: 157.0.8090-0(devtools-protocol@0.0.1696802)
+      devtools-protocol: 0.0.1696802
       lilconfig: 3.1.3
-      puppeteer-core: 25.12.0
+      puppeteer-core: 25.13.0
       typed-query-selector: 2.12.3
     transitivePeerDependencies:
       - bufferutil
@@ -7003,7 +7000,7 @@ snapshots:
     transitivePeerDependencies:
       - msw
 
-  webdriver-bidi-protocol@0.4.3: {}
+  webdriver-bidi-protocol@1.0.1: {}
 
   which@2.0.2:
     dependencies:
@@ -7053,8 +7050,6 @@ snapshots:
   yocto-queue@0.1.0: {}
 
   yocto-queue@1.2.2: {}
-
-  zod@3.25.76: {}
 
   zod@4.6.5: {}
 
