@@ -21,28 +21,32 @@ submodules and `.env` are a one-time thing right after cloning). After that, one
 pnpm run dev:up
 ```
 
-It runs 14 steps in order — the shared store, the stack, the database, the script catalog,
-authorization, Windmill, the issuer, the API, the grants, and finally capture-scheduler's
-`doctor`. **It prints each command before running it**, so reading the output top to bottom
-gives you the same thing §3–§7 spell out. When doctor is all ✓ you can capture (about 75
-seconds from nothing running, measured).
+It brings up the startup steps in order; `pnpm run dev:up --dry-run` lists what each step runs,
+without starting anything. **It prints each command before running it**, so reading the output
+top to bottom gives you the steps §3–§7 spell out. When capture-scheduler's `doctor` is all ✓,
+you can capture.
 
-| Command                      | What it does                                                                 |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| `pnpm run dev:up --dry-run`  | print the 14 lines. **Nothing is started**                                   |
-| `pnpm run dev:up --from api` | resume partway, after fixing whatever step it named when it failed           |
-| `pnpm run dev:status`        | what is up right now. Changes nothing                                        |
-| `pnpm run dev:down`          | the two host processes, then both repos' containers (never the shared store) |
+| Command                      | What it does                                                                |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| `pnpm run dev:up --dry-run`  | print the list of steps. **Nothing is started**                             |
+| `pnpm run dev:up --from api` | resume partway, after fixing whatever step it named when it failed          |
+| `pnpm run dev:status`        | what is up right now. Changes nothing                                       |
+| `pnpm run dev:down`          | what runs on the host, then both repos' containers (never the shared store) |
 
-:::note[Crawling needs capture-scheduler next door]
-Steps 6–9, 13 and 14 run capture-scheduler's own commands in its own repo (**they never write
-files there**). If it is not at `~/projects/crawler/capture-scheduler`, pass `--scheduler <path>`.
-It also needs its DNS domain registered once —
+:::note[Repos to clone next door]
+`dev:up` also runs commands in neighbouring repos (**it never writes files there**):
+capture-scheduler (Windmill and the crawl flow),
+[wacz-validator](https://github.com/uraitakahito/wacz-validator) (the validation daemon) and
+[dashboard](https://github.com/uraitakahito/dashboard) (the screen). In the `--dry-run` list they are
+the lines that start with `cd ../…`. If they are not under `~/projects/crawler/`, pass
+`--scheduler`, `--validator` and `--dashboard` with their paths; a missing one stops `dev:up` at
+its step, by name. capture-scheduler also needs its DNS domain registered once —
 see [capture-scheduler's quickstart](https://uraitakahito.github.io/capture-scheduler/quickstart/).
 :::
 
-**§3 onwards is the same 14 steps done one at a time.** Both roads end in the same place —
-`dev:up` calls the scripts from §3–§7 and has no implementation of its own.
+**§3 onwards is the same steps done one at a time.** `dev:up` calls the scripts from §3–§7 and
+has no implementation of its own. Only the validation daemon and the screen (§8) are started by
+`dev:up` alone.
 
 ## 1. Register the DNS domain (once per machine)
 

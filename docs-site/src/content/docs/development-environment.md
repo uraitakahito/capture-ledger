@@ -29,7 +29,7 @@ pnpm install
 sudo container system dns create capture-ledger   # once per machine
 git submodule update --init --recursive           # upstream sources into .upstream/
 cp -n .env.example .env                           # the settings template, verbatim
-pnpm run check       # audit + typecheck + lint + format:check + env + tests
+pnpm run check       # every check to run before pushing (the list is package.json's check)
 ```
 
 Start the stack with `pnpm run stack:up`, never with `container-compose`
@@ -54,7 +54,8 @@ Emptying it, looking inside, and recreating it are documented in one place,
 The code reads them through three different mechanisms:
 `required()`/`optional()` in `src/config/`, commander's `.env()` (so they also
 show up in `--help`), and plain `process.env[…]` — the last of which reaches
-into `scripts/` too. `pnpm run check-env` counts them. Seven are mandatory.
+into `scripts/` too. `pnpm run check-env` counts them; the mandatory ones are
+`REQUIRED_ENV` in `src/config/env.ts`.
 
 `.env.example` is the single list, and `.env` is a verbatim copy of it
 (`cp -n .env.example .env`); nothing generates `.env`, because a second list
@@ -123,7 +124,7 @@ NAME=value     # pass a value
 #NAME=         # no value until something has run (a tool writes it to .env.local)
 ```
 
-A bare `NAME=` is allowed **only for the seven required variables**, whose
+A bare `NAME=` is allowed **only for the required variables** (`REQUIRED_ENV`), whose
 emptiness is reported as "missing" by `collectEnv`. `check-env.mjs` enforces
 that rule too.
 
@@ -131,9 +132,9 @@ that rule too.
 
 | Command                                   | What it does                                                                                                       |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `pnpm run dev:up`                         | The 16 startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                   |
+| `pnpm run dev:up`                         | The startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                      |
 | `pnpm run dev:status`                     | What is up right now. **Changes nothing.**                                                                         |
-| `pnpm run dev:down`                       | The four host processes, then both repos' containers. Never the shared store.                                      |
+| `pnpm run dev:down`                       | What runs on the host, then both repos' containers. Never the shared store.                                        |
 | `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                    |
 | `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                                                                 |
 | `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                                                                 |
@@ -141,7 +142,7 @@ that rule too.
 | `pnpm run format` / `format:check`        | Prettier. `.prettierignore` skips `dist/` and `src/rpc/generated/`.                                                |
 | `pnpm test` / `test:watch`                | Vitest unit tests under `test/`.                                                                                   |
 | `pnpm run audit`                          | Known vulnerabilities in `pnpm-lock.yaml`. CI also runs it daily.                                                  |
-| `pnpm run check`                          | audit + typecheck + lint + format:check + test. Run before pushing.                                                |
+| `pnpm run check`                          | Every check to run before pushing. The list and order are package.json's `check` (the same as CI's check job).     |
 | `pnpm run db:migrate` / `db:migrate:down` | Kysely migrations against `DATABASE_URL`.                                                                          |
 | `pnpm run db:seed` / `db:seed:down`       | Kysely seeds from `src/db/seeds/`.                                                                                 |
 | `pnpm run targets`                        | Add, list, disable or remove capture targets (`capture_targets`). A dev tool that writes to the database directly. |
@@ -152,7 +153,7 @@ that rule too.
 | `pnpm run site:check`                     | Build the site and verify its references.                                                                          |
 | `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).                                                           |
 
-### Four things run on the host, not in the stack
+### What runs on the host, not in the stack
 
 **`pnpm run oidc:issuer` (9099), `pnpm run api` (7070),
 [wacz-validator](https://github.com/uraitakahito/wacz-validator)'s daemon (7180) and
@@ -183,7 +184,7 @@ and the port is still busy".
 
 ```sh
 pnpm run dev:status   # pid, start time, port; for the validator, the build it runs. Changes nothing
-pnpm run dev:down     # the four host processes, then both repos' containers
+pnpm run dev:down     # what runs on the host, then both repos' containers
 ```
 
 `dev:down` first checks whether **whoever holds the port is ours**: the command line has to be

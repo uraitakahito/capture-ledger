@@ -2,7 +2,7 @@
 /**
  * 開発で 1 本撮れるところまでを、順に起こす。
  *
- *   pnpm run dev:up                # 14 段ぜんぶ
+ *   pnpm run dev:up                # 段をぜんぶ
  *   pnpm run dev:up --dry-run      # 何を打つかだけ出す。**何も起こさない**
  *   pnpm run dev:up --from api     # 途中から (失敗したときの続き)
  *   pnpm run dev:up --scheduler ../elsewhere   # capture-scheduler が横に無いとき
@@ -83,7 +83,7 @@ const dashboard = {
 };
 
 /**
- * 14 段。**この表がそのまま手順書。**
+ * 段の表。**この表がそのまま手順書。**
  *
  * `cwd` が SCHEDULER の段は、向こうの repo で向こうのコマンドを打つ。`waitFor` は
  * 「前の段のコンテナが港を開けるまで」を待つ —— `stack:up` はコンテナを作るところまでで、

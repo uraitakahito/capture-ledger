@@ -609,8 +609,9 @@ condition non_expired_grant(current_time: timestamp, grant_time: timestamp, gran
 
 ### アサーションが守っているもの
 
-`fga/model.fga.yaml` の 7 本は、どれも「誰かが不当に見られる」形の壊れ方を
-指しています。
+`fga/model.fga.yaml` のアサーションは、どれも「通してはいけない人が通る」形の壊れ方を指しています。
+見る側の問いは次のとおりです。起こす側の問い（取り込みを起こせるのは、その組織の submitter と admin だけ）も、
+同じ file に並んでいます。
 
 | #   | 問い                                           |
 | --- | ---------------------------------------------- |
@@ -653,8 +654,8 @@ pnpm run api
 ```
 
 どれも `.env` と `.env.local` をこの順で読みます（`pnpm run` の各スクリプトが
-`--env-file-if-exists` を 2 つ渡しています。**後が勝ちます**）。必須は 7 個で、うち 2 個
-（`CAPTURE_LEDGER_FGA_STORE_ID` と `CAPTURE_LEDGER_FGA_MODEL_ID`）は `fga:deploy` を走らせるまで
+`--env-file-if-exists` を 2 つ渡しています。**後が勝ちます**）。必須のもの（`REQUIRED_ENV`）のうち、
+`CAPTURE_LEDGER_FGA_STORE_ID` と `CAPTURE_LEDGER_FGA_MODEL_ID` は `fga:deploy` を走らせるまで
 存在しません。この手順が `api` より前にあるのはそのためです。`.env.example` が
 実際の読み取りとずれていないかは `scripts/check-env.mjs` が見ています。
 
