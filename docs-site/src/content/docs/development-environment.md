@@ -131,7 +131,7 @@ that rule too.
 
 | Command                                   | What it does                                                                                                       |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `pnpm run dev:up`                         | The 16 startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                   |
+| `pnpm run dev:up`                         | The startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                      |
 | `pnpm run dev:status`                     | What is up right now. **Changes nothing.**                                                                         |
 | `pnpm run dev:down`                       | The four host processes, then both repos' containers. Never the shared store.                                      |
 | `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                    |

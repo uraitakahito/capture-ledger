@@ -21,27 +21,33 @@ repo が共有する 1 つの store で、[seaweedfs](https://github.com/uraitak
 pnpm run dev:up
 ```
 
-14 段を順に起こします —— 共有 store、スタック、DB、目録、認可、Windmill、issuer、API、
-許可、そして最後に capture-scheduler の `doctor`。**打つコマンドを 1 行ずつ印字してから
-走る**ので、出力を上から読めば、下の §3〜§7 と同じものが並んでいます。doctor が全部 ✓ なら
-撮れる状態です（動いていないところから、実測で約 75 秒）。
+立ち上げの段を、上から順に起こします。
+どの段で何を打つかは、`pnpm run dev:up --dry-run` が一覧にします（何も起こしません）。
+**打つコマンドを 1 行ずつ印字してから走る**ので、出力を上から読めば、
+下の §3〜§7 の手順が並んでいます。capture-scheduler の `doctor` が全部 ✓ なら、撮れる状態です。
 
 | 打つもの                     | 何をするか                                                      |
 | ---------------------------- | --------------------------------------------------------------- |
-| `pnpm run dev:up --dry-run`  | 14 行の一覧だけを出す。**何も起こさない**                       |
+| `pnpm run dev:up --dry-run`  | 段の一覧だけを出す。**何も起こさない**                          |
 | `pnpm run dev:up --from api` | 途中から。転んだ段を直したあとに使う（失敗時に名指しされます）  |
 | `pnpm run dev:status`        | いま何が立っているか。何も変えない                              |
 | `pnpm run dev:down`          | ホストの 2 本 → 両 repo のコンテナ（共有 store は落としません） |
 
-:::note[クロールまでやるなら、capture-scheduler も横に要ります]
-`dev:up` の 6〜9・13・14 段目は capture-scheduler の repo でそのコマンドを打ちます
-（**向こうのファイルには書きません**）。`~/projects/crawler/capture-scheduler` に無いなら
-`--scheduler <path>` で場所を渡します。あちらにも DNS ドメインの登録が 1 度だけ要ります
+:::note[隣に clone しておく repo]
+`dev:up` は、隣の repo でもその repo のコマンドを打ちます（**向こうのファイルには書きません**）。
+capture-scheduler（Windmill とクロールの flow）、
+[wacz-validator](https://github.com/uraitakahito/wacz-validator)（検証の daemon）、
+[dashboard](https://github.com/uraitakahito/dashboard)（画面）で、
+`--dry-run` の一覧では `cd ../…` から始まる行です。
+`~/projects/crawler/` の下に無いなら、`--scheduler`・`--validator`・`--dashboard` に場所を渡します。
+無いまま走らせると、その段で名指しして止まります。
+capture-scheduler には DNS ドメインの登録も 1 度だけ要ります
 （[capture-scheduler のクイックスタート](https://uraitakahito.github.io/capture-scheduler/ja/quickstart/)）。
 :::
 
-**下の §3 以降は、その 14 段を 1 つずつ手でやる道です。** どちらでも同じところに着きます
-—— `dev:up` は §3〜§7 の script をそのまま呼んでいるだけで、別の実装を持っていません。
+**下の §3 以降は、同じ段を 1 つずつ手でやる道です。**
+`dev:up` は §3〜§7 の script をそのまま呼んでいるだけで、別の実装を持っていません。
+検証の daemon と画面（§8）だけは、`dev:up` が起こします。
 
 ## 1. DNS ドメインを登録する（マシンごとに 1 回）
 
