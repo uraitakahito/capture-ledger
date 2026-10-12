@@ -657,8 +657,9 @@ behind cannot leave a hole open.
 
 ### What the assertions hold down
 
-Each of the seven in `fga/model.fga.yaml` names a way someone could be let in
-who should not be.
+Each assertion in `fga/model.fga.yaml` names a way someone could be let in who should not be.
+The viewing side asks the questions below; the starting side (only an organization's submitters
+and admins can start a capture, and only for that organization) sits in the same file.
 
 | #   | Question                                                        |
 | --- | --------------------------------------------------------------- |
@@ -702,8 +703,8 @@ pnpm run api
 ```
 
 Everything reads `.env` and then `.env.local` — the `pnpm run` scripts pass two
-`--env-file-if-exists` flags, and **the later one wins**. Seven variables are mandatory and two of them
-(`CAPTURE_LEDGER_FGA_STORE_ID`, `CAPTURE_LEDGER_FGA_MODEL_ID`) do not exist until `fga:deploy`
+`--env-file-if-exists` flags, and **the later one wins**. Of the mandatory variables (`REQUIRED_ENV`),
+`CAPTURE_LEDGER_FGA_STORE_ID` and `CAPTURE_LEDGER_FGA_MODEL_ID` do not exist until `fga:deploy`
 has run, which is why that step comes before `api`. `scripts/check-env.mjs`
 keeps `.env.example` in step with what the code actually reads.
 

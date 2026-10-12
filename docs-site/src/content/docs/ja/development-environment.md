@@ -27,7 +27,7 @@ pnpm install
 sudo container system dns create capture-ledger   # マシンごとに 1 回
 git submodule update --init --recursive           # 上流のソースを .upstream/ に
 cp -n .env.example .env                           # 設定の雛形をそのまま写す
-pnpm run check       # audit + typecheck + lint + format:check + env + テスト
+pnpm run check       # push の前に走らせる検査の全部（中身は package.json の check）
 ```
 
 スタックは `container-compose` を直接叩かず、`pnpm run stack:up` で起動してください。
@@ -52,7 +52,7 @@ sh .upstream/seaweedfs/scripts/stack.sh up
 コードが読む環境変数は、読み取りの仕組みが 3 つに分かれています。
 `src/config/` の `required()`/`optional()`、commander の `.env()`（こちらは
 `--help` にも出ます）、そして素の `process.env[…]`（これは `scripts/` にもあります）。
-数は `pnpm run check-env` が数えて出します。必須は 7 個です。
+数は `pnpm run check-env` が数えて出します。必須のものは `src/config/env.ts` の `REQUIRED_ENV` に並んでいます。
 
 一覧は `.env.example` の 1 か所だけで、`.env` はその写しです（`cp -n .env.example .env`）。
 値を調べて `.env` を作るものはありません —— 一覧が 2 つあれば必ずずれるからです。
@@ -117,7 +117,7 @@ NAME=value     # 値を渡す
 #NAME=         # 起動前には値が決まらないもの（道具が .env.local に書く）
 ```
 
-生の `NAME=` を書けるのは**必須の 7 個だけ**です。必須の空は `collectEnv` が
+生の `NAME=` を書けるのは**必須のもの（`REQUIRED_ENV`）だけ**です。必須の空は `collectEnv` が
 「不足」として報告します。この規則も `check-env.mjs` が検査しています。
 
 ## 日々のコマンド
@@ -134,7 +134,7 @@ NAME=value     # 値を渡す
 | `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。                             |
 | `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                                              |
 | `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                                                |
-| `pnpm run check`                          | audit + typecheck + lint + format:check + test。push 前に実行。                                     |
+| `pnpm run check`                          | push の前に走らせる検査の全部。中身と並びは package.json の `check`（CI の check job と同じ）。     |
 | `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                                   |
 | `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                                                           |
 | `pnpm run targets`                        | 撮る対象（`capture_targets`）を足す・見る・外す・消す。DB に直接書く開発用の道具。                  |
