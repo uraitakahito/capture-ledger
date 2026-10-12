@@ -18,8 +18,9 @@
 #   sudo container system dns create capture-ledger
 # project 名と同じ DNS ドメインがあると、container-compose は real-DNS モードに
 # 入る: コンテナは <service>.capture-ledger という名前になり、プラットフォームの DNS に
-# 登録され、他のコンテナからも **host からも** 引ける —— capture-ledger 自身を host 側で
-# 動かしてこのスタックに繋げられるのは、これのおかげ。
+# 登録され、コンテナどうしがこの名前で呼び合える。host で動く capture-ledger は名前を
+# 使わず、下の ports: が 127.0.0.1 に出した口に繋ぐ —— 名前は host からも引けるが、
+# macOS 26 は node の TCP をコンテナの subnet へ通さない (EHOSTUNREACH)。
 # container_name: を足してはならない —— DNS の命名が抑止され、`container exec` で
 # **各コンテナの中の** /etc/hosts を書き換える方式に落ちる (ホストの /etc/hosts は
 # 触らない)。そしてその書き込みは、ここに居る非 root のコンテナ (browserhive,
