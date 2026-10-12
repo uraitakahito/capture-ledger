@@ -133,7 +133,7 @@ that rule too.
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `pnpm run dev:up`                         | The startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                      |
 | `pnpm run dev:status`                     | What is up right now. **Changes nothing.**                                                                         |
-| `pnpm run dev:down`                       | The four host processes, then both repos' containers. Never the shared store.                                      |
+| `pnpm run dev:down`                       | What runs on the host, then both repos' containers. Never the shared store.                                        |
 | `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                    |
 | `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                                                                 |
 | `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                                                                 |
@@ -152,7 +152,7 @@ that rule too.
 | `pnpm run site:check`                     | Build the site and verify its references.                                                                          |
 | `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).                                                           |
 
-### Four things run on the host, not in the stack
+### What runs on the host, not in the stack
 
 **`pnpm run oidc:issuer` (9099), `pnpm run api` (7070),
 [wacz-validator](https://github.com/uraitakahito/wacz-validator)'s daemon (7180) and
@@ -183,7 +183,7 @@ and the port is still busy".
 
 ```sh
 pnpm run dev:status   # pid, start time, port; for the validator, the build it runs. Changes nothing
-pnpm run dev:down     # the four host processes, then both repos' containers
+pnpm run dev:down     # what runs on the host, then both repos' containers
 ```
 
 `dev:down` first checks whether **whoever holds the port is ours**: the command line has to be

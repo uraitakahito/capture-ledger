@@ -126,7 +126,7 @@ NAME=value     # 値を渡す
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `pnpm run dev:up`                         | 立ち上げの段を順に。`--dry-run` で一覧、`--from <段>` で途中から。                                  |
 | `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                                            |
-| `pnpm run dev:down`                       | ホストの 4 本 → 両 repo のコンテナ。共有 store は落とさない。                                       |
+| `pnpm run dev:down`                       | ホストで動かしたもの → 両 repo のコンテナ。共有 store は落とさない。                                |
 | `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                                     |
 | `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                                                |
 | `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                                     |
@@ -145,9 +145,9 @@ NAME=value     # 値を渡す
 | `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                                                |
 | `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                                              |
 
-### ホストで動くのは 4 本ある
+### ホストで動くもの
 
-スタックに入っていないものが 4 つあります。**`pnpm run oidc:issuer` (9099)・
+スタックに入っていないものがあります。**`pnpm run oidc:issuer` (9099)・
 `pnpm run api` (7070)・[wacz-validator](https://github.com/uraitakahito/wacz-validator) の
 daemon (7180)・[dashboard](https://github.com/uraitakahito/dashboard) の
 `pnpm run dev` (7080) はホストのプロセス**で、コンテナではありません。
@@ -176,7 +176,7 @@ build のまま動き続けます（2026-09-26 に見たとき、v0.28.1 が 2 �
 
 ```sh
 pnpm run dev:status   # pid・起動時刻・port。validator は動いている build も。何も変えない
-pnpm run dev:down     # ホストの 4 本 → 両 repo のコンテナ
+pnpm run dev:down     # ホストで動かしたもの → 両 repo のコンテナ
 ```
 
 `dev:down` は **port を持っている相手が自分のものか** を先に確かめます —— コマンド行が

@@ -26,12 +26,12 @@ without starting anything. **It prints each command before running it**, so read
 top to bottom gives you the steps §3–§7 spell out. When capture-scheduler's `doctor` is all ✓,
 you can capture.
 
-| Command                      | What it does                                                                 |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| `pnpm run dev:up --dry-run`  | print the list of steps. **Nothing is started**                              |
-| `pnpm run dev:up --from api` | resume partway, after fixing whatever step it named when it failed           |
-| `pnpm run dev:status`        | what is up right now. Changes nothing                                        |
-| `pnpm run dev:down`          | the two host processes, then both repos' containers (never the shared store) |
+| Command                      | What it does                                                                |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| `pnpm run dev:up --dry-run`  | print the list of steps. **Nothing is started**                             |
+| `pnpm run dev:up --from api` | resume partway, after fixing whatever step it named when it failed          |
+| `pnpm run dev:status`        | what is up right now. Changes nothing                                       |
+| `pnpm run dev:down`          | what runs on the host, then both repos' containers (never the shared store) |
 
 :::note[Repos to clone next door]
 `dev:up` also runs commands in neighbouring repos (**it never writes files there**):
