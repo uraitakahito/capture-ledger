@@ -295,13 +295,13 @@ WARC のレコードと画像。撮らなかった・撮れなかった記録（
 以下は、その画面が叩いているものを手で確かめる道です。
 
 一覧は台帳（`archives` テーブル）から来ていて、**OpenFGA の `can_view` で
-絞ってあります**。§7 と同じ token で API を直に叩けます。
+絞ってあります**。§7 と同じトークンで API を直に叩けます。
 
 ```sh
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/archives | jq '.archives[0]'
 ```
 
-picker で見るなら、§7 と同じ名乗りのトークンを画面に貼ります。API の設定は変えません。
+picker で見るなら、§7 と同じ名前のトークンを画面に貼ります。API の設定は変えません。
 
 ```sh
 pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy
