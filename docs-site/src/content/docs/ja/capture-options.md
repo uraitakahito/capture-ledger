@@ -85,7 +85,7 @@ behavior も、サイト別の behavior もありません。送らなければ�
 ```sh
 # catalog ごと入れる。何度流しても同じ（同じバイト列は同じ版）
 pnpm run scripts import .upstream/capture-scripts
-pnpm run scripts list                     # scriptIds を書かないクロールが走らせるもの
+pnpm run scripts list                     # scripts を書かないクロールが走らせるもの
 
 # 1 本だけ試す・設定を変えるのは、いまも手で
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
@@ -111,16 +111,21 @@ source・sha256・options —— をクロールの行に書きます。以後�
 目録を引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
 変わりません。
 
-| `scriptIds`   | 走るもの                                                   |
-| ------------- | ---------------------------------------------------------- |
-| 省く          | **有効な**各 id の最新版を、`id` 順で                      |
-| `["b", "a"]`  | そのとおり、**その並びで** —— 並びは指示の一部             |
-| `[]`          | 何も走らない。「既定でよい」と「何も走らせない」は別の意思 |
-| 目録に無い id | **400** で名指し。クロールは立たない                       |
+| `scripts`                                                         | 走るもの                                                   |
+| ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| 省く                                                              | **有効な**各 id の最新版を、`id` 順で                      |
+| `[{"catalog": "b"}, {"catalog": "a"}]`                            | そのとおり、**その並びで** —— 並びは指示の一部             |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた JS を `inline-x`・版 1 で。目録には入らない（下記） |
+| `[]`                                                              | 何も走らない。「既定でよい」と「何も走らせない」は別の意思 |
+| 目録に無い id・同じ id の重ね                                     | **400** で名指し（`ids`）。クロールは立たない              |
 
-`GET /api/crawls/:id` が返すのは身元 —— id・版・phase・sha256 —— だけで、source は
-返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
-`preload/scripts.jsonl`）と目録に在ります。
+要素は、鍵が 1 つの object です（`catalog` か `inline` のどちらか）。
+
+`GET /api/crawls/:id` が返すのは、目録の物は身元 —— id・版・phase・sha256 —— だけで、
+source は返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
+`preload/scripts.jsonl`）と目録に在ります。その場の JS には、頼んだ要素 `inline`
+（`name`・`phase`・`source`）も返します。目録に無く、アーカイブに在るのは変換後の JS なので、
+書いた物を取り戻せるのはここだけです。
 
 最初の段の報告が来ると、各要素に `jsSha256` と `compiledWith`（`{ typescript, hostTypes }`）も
 付きます。その段が走らせた JavaScript の sha256 と、何で・何に向けて変換したか ——
@@ -129,6 +134,30 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 その間を継ぐのがこの値で、台帳が報告から写します。段ごとに同じ hash が来なければ 409 ——
 走行中のクロールの下で変換サービスが替わったということです。報告が来る前はどちらも
 `null` です。
+
+### その場の JS
+
+`scripts` の要素には、目録の名指しのほかに、その場で書いた JS を置けます。
+
+```json
+{ "inline": { "name": "close-banner", "phase": "behavior", "source": "(() => {\n  …\n})();\n" } }
+```
+
+- **目録には入りません。** 台帳はクロールの行の写しにだけ、`inline-<name>`・版 1・options 空で
+  固定します。sha256 は台帳が `source` から打ちます（目録の生成列と同じ値）。写しの形は目録の物と
+  同じなので、flow も変換も BrowserHive も区別しません。
+- **`inline-` は、その場の JS に取ってあります。** 目録の id には使えません（CLI の `add` と
+  `import` が断り、DB の CHECK が最後に断ります）。アーカイブに残るのは id と JS だけなので、
+  id の頭で、目録の物かその場の物かが分かります。
+- **`name` は `^[a-z][a-z0-9-]*$` で、`inline-` と合わせて 64 字まで。** ts-compile-service の id と
+  同じ綴りで、合わなければ `POST` が 400 で断ります。
+- **書けるのは、strict の TypeScript として型が通る JS です。** 段の最初に ts-compile-service が
+  目録の物と一緒に型を検査し、1 本でも誤りがあれば段ごと落ちます（`error` に診断が残ります）。
+  IIFE で包んでください。同じ段の JS は 1 つの program で検査されるので、top-level の名前は
+  ほかの JS や DOM の大域（`name` など）とぶつかります。`export` を書くと型は通りますが、
+  ページでは構文エラーになり、何も走りません。型の検査を外すなら、1 行目に `// @ts-nocheck`
+  （構文は見ます）。
+- **`preload` には受け皿（`__bh`）がありません。** 型の上では見えますが、ページには在りません。
 
 ## capture-ledger がいまも決めないもの
 
@@ -151,6 +180,6 @@ BrowserHive 自身のドキュメントが定義します）。
 | `maxPages`        | 30。ただし起点の数は下回らない | 総ページ数                           |
 | `perHostDelayMs`  | 2000                           | 同じホストのページ間の間隔           |
 | `hostParallelism` | 4                              | 同時に触るホストの数                 |
-| `scriptIds`       | 有効な各 id の最新版           | ページの中で走らせるもの（上記）     |
+| `scripts`         | 有効な各 id の最新版           | ページの中で走らせるもの（上記）     |
 
 知らないキーは黙って落とさず **400** で返します。

@@ -35,7 +35,7 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 | [`fga_outbox`](/capture-ledger/databases/fga-outbox/)                   | Tuples waiting to reach OpenFGA                        |
 | `crawls`                                                                | One row per crawl — its policy, state and stop reason  |
 | `crawl_pages`                                                           | One row per page a crawl reached; also the dedup index |
-| `scripts`                                                               | The JavaScript a crawl runs inside the page            |
+| `scripts`                                                               | The catalog of JavaScript a crawl can name             |
 | `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`               | Kysely's own bookkeeping (below)                       |
 
 ### OpenFGA's database
