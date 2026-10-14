@@ -270,8 +270,9 @@ program
     await withDb(opts.databaseUrl, async (db) => {
       const id = nonEmpty(rawId);
       // 名指しの解決と同じ道を通す —— 「クロールが送るのはこれ」と同じものを見せるため。
-      const resolved = await resolveScripts(db, [id]);
-      if (resolved.kind === "missing") return fail(`目録に無い: ${resolved.ids.join(", ")}`);
+      // 1 本だけ頼むので、重ね (`duplicate`) は起きない。答えの形は missing と同じ。
+      const resolved = await resolveScripts(db, [{ catalog: id }]);
+      if (resolved.kind !== "ok") return fail(`目録に無い: ${resolved.ids.join(", ")}`);
       const script = resolved.scripts[0];
       if (script === undefined) return fail(`目録に無い: ${id}`);
       if (opts.version !== undefined && opts.version !== script.version) {
@@ -290,7 +291,7 @@ const toggle = (name: "enable" | "disable", enabled: boolean): void => {
     .description(
       enabled
         ? "既定の顔ぶれに戻す (版を省くと、その id の全版)"
-        : "既定の顔ぶれから外す (消さない。scriptIds で名指しすれば走る)",
+        : "既定の顔ぶれから外す (消さない。クロールの scripts で名指しすれば走る)",
     )
     .argument("<id...>", "スクリプトの id")
     .addOption(

@@ -12,10 +12,18 @@
  *
  * ## `enabled` が決めるのは「既定に入るか」だけ
  *
- * 無効な版でも、`scriptIds` で名指しすれば走る。名指しは明示なので、既定から外した
- * という意思とは別の話になる。消さずに無効にできる形にしてあるのは、版の履歴を
+ * 無効な版でも、`POST /api/crawls` の `scripts` で名指しすれば走る。名指しは明示なので、
+ * 既定から外したという意思とは別の話になる。消さずに無効にできる形にしてあるのは、版の履歴を
  * 残したまま既定から外せるようにするため。
+ *
+ * ## その場の JS は目録に入らない
+ *
+ * `scripts` の要素には、目録の名指しのほかに、その場で書いた JS（`inline`）を置ける。
+ * 台帳はそれを目録に入れず、クロールの行の写しにだけ固定する（`inlineScript`）。id は
+ * `inline-<name>` で、目録の id には `inline-` を使わせない（`019` の CHECK と CLI）——
+ * アーカイブの id だけで、目録の物か、その場の物かが分かるようにするため。
  */
+import { createHash } from "node:crypto";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import type { CrawlScript, Database, ScriptPhase } from "../db/database.js";
@@ -41,9 +49,30 @@ export interface AddResult {
 export type ChangeResult =
   { kind: "missing"; ids: string[] } | { kind: "ok"; changed: { id: string; version: number }[] };
 
-/** 目録に無い id が在れば、名指しで返す。**黙って落とさない。** */
+/** その場の JS の id の頭。台帳が付け、目録の id には使わせない。 */
+export const INLINE_PREFIX = "inline-";
+
+export const isInlineId = (id: string): boolean => id.startsWith(INLINE_PREFIX);
+
+/** 目録の id として断るなら、その文。DB の CHECK (`019`) より先に、読める文で言う。 */
+export const catalogIdRefusal = (id: string): string | undefined =>
+  isInlineId(id) ? `${id}: ${INLINE_PREFIX} で始まる id は、その場の JS に取ってある` : undefined;
+
+/** その場で書いた JS 1 本 (`POST /api/crawls` の `scripts[].inline`)。 */
+export interface InlineScript {
+  name: string;
+  phase: ScriptPhase;
+  source: string;
+}
+
+/** 要求の 1 要素。目録の名指しか、その場の JS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
+export type RequestedScript = { catalog: string } | { inline: InlineScript };
+
+/** 目録に無い id と、同じ id の重ねが在れば、名指しで返す。**黙って落とさない。** */
 export type ResolveResult =
-  { kind: "missing"; ids: string[] } | { kind: "ok"; scripts: CrawlScript[] };
+  | { kind: "missing"; ids: string[] }
+  | { kind: "duplicate"; ids: string[] }
+  | { kind: "ok"; scripts: CrawlScript[] };
 
 /**
  * 1 本足す。**版は自動で採番する** —— 呼ぶ側に決めさせると、飛んだ番号や
@@ -201,19 +230,22 @@ export const removeScripts = async (
 /**
  * クロールが走らせるものを決める。
  *
- * - `ids` を渡したら**その並びのまま**、各 id の最新版を返す。無効な版でも名指しは通る。
+ * - `requested` を渡したら**その並びのまま**写しを返す。目録の名指しは各 id の最新版
+ *   (無効な版でも名指しは通る)、その場の JS は目録を引かずに写す (`inlineScript`)。
  * - 渡さなければ **有効な各 id の最新版**を `id` 順で返す。
  *
- * 1 つでも見つからなければ、名指しで返して何も返さない —— 黙って落とすと、頼んだ側は
+ * 目録に無い id が 1 つでも在れば、名指しで返して何も返さない —— 黙って落とすと、頼んだ側は
  * 全部走ったつもりで結果を読むことになる (`targets/store.ts` の「読めない URL」と同じ判断)。
+ * 同じ id を 2 度頼んだときも名指しで返す —— 報告 (`id@版`) でも変換 (`/src/<id>.ts`) でも、
+ * 2 本目が 1 本目に黙って畳まれる。
  */
 export const resolveScripts = async (
   db: Kysely<Database>,
-  ids?: readonly string[],
+  requested?: readonly RequestedScript[],
 ): Promise<ResolveResult> => {
   const columns = ["id", "version", "phase", "source", "sha256", "options"] as const;
 
-  if (ids === undefined) {
+  if (requested === undefined) {
     const rows = await db
       .selectFrom("scripts")
       .select(columns)
@@ -225,24 +257,54 @@ export const resolveScripts = async (
     return { kind: "ok", scripts: rows.map(toScript) };
   }
 
-  if (ids.length === 0) return { kind: "ok", scripts: [] };
+  const ids = requested.map(idOf);
+  const twice = ids.filter((id, i) => ids.indexOf(id) !== i);
+  if (twice.length > 0) return { kind: "duplicate", ids: [...new Set(twice)] };
 
-  const rows = await db
-    .selectFrom("scripts")
-    .select(columns)
-    .distinctOn("id")
-    .where("id", "in", [...ids])
-    .orderBy("id")
-    .orderBy("version", "desc")
-    .execute();
+  // **目録を引くのは名指しがあるときだけ。** 空の配列は Kysely が `in ()` に組み、Postgres は
+  // 構文エラーで断る —— その場の JS だけのクロールが 500 になる。
+  const named = requested.flatMap((r) => ("catalog" in r ? [r.catalog] : []));
+  const rows =
+    named.length === 0
+      ? []
+      : await db
+          .selectFrom("scripts")
+          .select(columns)
+          .distinctOn("id")
+          .where("id", "in", named)
+          .orderBy("id")
+          .orderBy("version", "desc")
+          .execute();
 
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const missing = ids.filter((id) => !byId.has(id));
+  const missing = named.filter((id) => !byId.has(id));
   if (missing.length > 0) return { kind: "missing", ids: [...new Set(missing)] };
 
   // **頼まれた並びのまま**返す。behavior は書かれた順に走るので、並びは意味を持つ。
-  return { kind: "ok", scripts: ids.map((id) => toScript(byId.get(id)!)) };
+  return {
+    kind: "ok",
+    scripts: requested.map((r) =>
+      "catalog" in r ? toScript(byId.get(r.catalog)!) : inlineScript(r.inline),
+    ),
+  };
 };
+
+const idOf = (r: RequestedScript): string =>
+  "catalog" in r ? r.catalog : INLINE_PREFIX + r.inline.name;
+
+/**
+ * その場の JS の写し。**形は目録の写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
+ * 目録の物と区別しない。版は 1、options は空。sha256 は台帳が source から打つ (目録の生成列
+ * `encode(digest(source, 'sha256'), 'hex')` と同じ値)。
+ */
+const inlineScript = ({ name, phase, source }: InlineScript): CrawlScript => ({
+  id: INLINE_PREFIX + name,
+  version: 1,
+  phase,
+  source,
+  sha256: createHash("sha256").update(source, "utf8").digest("hex"),
+  options: {},
+});
 
 const toScript = (row: {
   id: string;

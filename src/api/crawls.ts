@@ -41,7 +41,12 @@ import type {
   CrawlState,
   Database,
 } from "../db/database.js";
-import { resolveScripts } from "../scripts/store.js";
+import {
+  INLINE_PREFIX,
+  isInlineId,
+  resolveScripts,
+  type RequestedScript,
+} from "../scripts/store.js";
 import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
@@ -190,12 +195,13 @@ interface CrawlBody {
   perHostDelayMs?: number;
   hostParallelism?: number;
   /**
-   * ページの中で走らせるものを名指しする。**並びがそのまま実行順**。
+   * ページの中で走らせるもの。**並びがそのまま実行順**。要素は目録の名指し (`{ catalog }`) か、
+   * その場で書いた JS (`{ inline }`)。その場の JS は目録に入らず、この行の写しにだけ固定される。
    *
    * 省くと目録の**有効な各 id の最新版**が走る (`017`)。空配列を渡せば何も走らない ——
    * 「既定でよい」と「何も走らせない」は別の意思なので、書き分けられるようにしてある。
    */
-  scriptIds?: string[];
+  scripts?: RequestedScript[];
 }
 
 /** 段の報告 1 件。flow が 1 ページ処理するたびに 1 つ積む。 */
@@ -330,7 +336,34 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             hostParallelism: { type: "integer", minimum: 1, maximum: 32 },
             // **空配列を許す。** 「既定でよい」(省く) と「何も走らせない」([]) を
             // 書き分けられるようにするため。
-            scriptIds: { type: "array", items: { type: "string", minLength: 1 } },
+            //
+            // 要素は**鍵が 1 つの object**。`oneOf` にしないのは、400 の文に別の枝の誤りが
+            // 混ざるため (名前の綴りの誤りに「catalog が要る」が並ぶ)。この形なら誤りの場所だけが出る。
+            scripts: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                minProperties: 1,
+                maxProperties: 1,
+                properties: {
+                  catalog: { type: "string", minLength: 1 },
+                  inline: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["name", "phase", "source"],
+                    properties: {
+                      // `inline-` と合わせて、ts-compile-service の ScriptId
+                      // (`^[a-z][a-z0-9-]*$`・64 字) に収まる綴り。変換の段まで行ってから
+                      // 400 になると、失敗したクロールが残る。
+                      name: { type: "string", pattern: "^[a-z][a-z0-9-]*$", maxLength: 57 },
+                      phase: { type: "string", enum: ["behavior", "preload"] },
+                      source: { type: "string", minLength: 1 },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
       },
@@ -390,23 +423,26 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       // 走らせるものを **いま 1 度だけ** 決める。目録は後から変わりうるが、
       // このクロールが走らせるものは変わらない (`018`)。
-      const resolved = await resolveScripts(db, body.scriptIds);
+      const resolved = await resolveScripts(db, body.scripts);
       if (resolved.kind === "missing") {
-        return reply.code(400).send({ error: "unknown scriptIds", scriptIds: resolved.ids });
+        return reply.code(400).send({ error: "unknown catalog scripts", ids: resolved.ids });
+      }
+      if (resolved.kind === "duplicate") {
+        return reply.code(400).send({ error: "duplicate script ids", ids: resolved.ids });
       }
 
       // **既定を頼まれたのに、既定が空。** 目録を埋め忘れた配備はここで止まる ——
       // 通すと、スクロールも遅延読み込みもしないクロールが「成功」として出ていく。
       // アーカイブは出るし `completeness` も緑なので、**後から見分ける手が無い**。
       //
-      // 明示の `scriptIds: []` は通す: 設定漏れと「何も走らせない」という意思は別物で、
+      // 明示の `scripts: []` は通す: 設定漏れと「何も走らせない」という意思は別物で、
       // 後者を表せなくすると、素の取り込みが欲しい配備が目録を持たされることになる。
-      if (body.scriptIds === undefined && resolved.scripts.length === 0) {
+      if (body.scripts === undefined && resolved.scripts.length === 0) {
         return reply.code(400).send({
           error: "the script catalog is empty",
           hint:
             "pnpm run scripts import .upstream/capture-scripts " +
-            "(run nothing on purpose: send scriptIds: [])",
+            "(run nothing on purpose: send scripts: [])",
         });
       }
 
@@ -648,8 +684,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         pagesDiscovered: crawl.pagesDiscovered,
         pagesCaptured: crawl.pagesCaptured,
         error: crawl.error,
-        // **身元だけ出す。** source は出さない —— 何が走っているかを知るのに要るのは
-        // 「どれの何版か」で、中身は目録 (`pnpm run scripts show`) と archive に在る。
+        // **目録の物は身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
+        // 中身は目録 (`pnpm run scripts show`) と archive に在る。**その場の JS は目録に無く**、
+        // archive に在るのは変換後の JS なので、頼まれた要素 (`inline`) をそのまま返す ——
+        // 直して撮り直すときに、書いた物を取り戻せるのはここだけ。
         // `jsSha256` と `compiledWith` は最初の段の報告で埋まる。それまでは null。
         scripts: crawl.scripts.map((script) => ({
           id: script.id,
@@ -658,6 +696,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           sha256: script.sha256,
           jsSha256: script.jsSha256 ?? null,
           compiledWith: script.compiledWith ?? null,
+          ...(isInlineId(script.id) && {
+            inline: {
+              name: script.id.slice(INLINE_PREFIX.length),
+              phase: script.phase,
+              source: script.source,
+            },
+          }),
         })),
         lastJob:
           crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
