@@ -38,6 +38,7 @@ import { fatal } from "../logger.js";
 import { readAll } from "../targets/input.js";
 import {
   addScript,
+  catalogIdRefusal,
   listScripts,
   removeScripts,
   resolveScripts,
@@ -117,6 +118,9 @@ program
       },
     ) => {
       const id = nonEmpty(rawId);
+      // `inline-` はその場の JS に取ってある。DB の CHECK (`019`) より先に、ファイルを読む前に断る
+      const refused = catalogIdRefusal(id);
+      if (refused !== undefined) return fail(refused);
       const source =
         opts.file === "-"
           ? await readAll(process.stdin)
@@ -187,6 +191,9 @@ const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
     const phase = entry["phase"];
     const file = entry["file"];
     if (typeof id !== "string" || id === "") return `${path}: id が空の項目がある`;
+    // 1 つでも悪ければ何も足さない（下の action）。`inline-` もその 1 つ
+    const refused = catalogIdRefusal(id);
+    if (refused !== undefined) return `${path}: ${refused}`;
     if (phase !== "behavior" && phase !== "preload") {
       return `${path}: ${id} の phase が behavior でも preload でもない (${String(phase)})`;
     }
