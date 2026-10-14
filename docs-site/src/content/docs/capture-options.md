@@ -89,7 +89,7 @@ source cannot say about itself — the `id` and the `phase`.
 ```sh
 # Import the catalog. Idempotent: same bytes, same version.
 pnpm run scripts import .upstream/capture-scripts
-pnpm run scripts list                     # what a crawl with no scriptIds will run
+pnpm run scripts list                     # what a crawl with no scripts will run
 
 # One-offs and tuning still go in by hand.
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
@@ -117,16 +117,22 @@ the result — id, version, phase, source, sha256, options — on the crawl row.
 levels reuse that; the catalog is never consulted again. Adding a version halfway
 through a long crawl therefore cannot change what its later pages run.
 
-| `scriptIds`   | What runs                                                          |
-| ------------- | ------------------------------------------------------------------ |
-| omitted       | The newest version of every **enabled** id, `id`-order             |
-| `["b", "a"]`  | Exactly those, **in that order** — order is the instruction        |
-| `[]`          | Nothing. "Use the default" and "run nothing" are different intents |
-| an unknown id | **400**, naming it; no crawl is started                            |
+| `scripts`                                                         | What runs                                                                       |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| omitted                                                           | The newest version of every **enabled** id, `id`-order                          |
+| `[{"catalog": "b"}, {"catalog": "a"}]`                            | Exactly those, **in that order** — order is the instruction                     |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | The script you wrote, as `inline-x` version 1; never enters the catalog (below) |
+| `[]`                                                              | Nothing. "Use the default" and "run nothing" are different intents              |
+| an unknown id, or the same id twice                               | **400**, naming them (`ids`); no crawl is started                               |
 
-`GET /api/crawls/:id` reports the identity of each — id, version, phase, sha256 —
-and never the source. What ran in bytes is in the archive (`behaviors/custom.jsonl`
-and `preload/scripts.jsonl`) and in the catalog.
+Each element is an object with exactly one key, `catalog` or `inline`.
+
+For catalog entries, `GET /api/crawls/:id` reports the identity — id, version, phase,
+sha256 — and never the source. What ran in bytes is in the archive
+(`behaviors/custom.jsonl` and `preload/scripts.jsonl`) and in the catalog. An inline entry
+also carries the element it was requested as, `inline` (`name`, `phase`, `source`): it is not
+in the catalog, and the archive holds the compiled JavaScript, so this is the one place to get
+back what you wrote.
 
 Once the first level has been reported, each entry also carries `jsSha256` and
 `compiledWith` (`{ typescript, hostTypes }`): the hash of the JavaScript that level ran,
@@ -136,6 +142,31 @@ TypeScript; the archive holds JavaScript; this is the link between them, written
 ledger from the report. Every level must report the same hashes — a different one is
 answered with 409, because it means the compiler changed underneath a running crawl.
 Before the first report both are `null`.
+
+### Inline scripts
+
+Besides naming catalog entries, a `scripts` element can carry a script written on the spot:
+
+```json
+{ "inline": { "name": "close-banner", "phase": "behavior", "source": "(() => {\n  …\n})();\n" } }
+```
+
+- **It never enters the catalog.** The ledger pins it on the crawl row only, as
+  `inline-<name>`, version 1, empty options, with a `sha256` the ledger computes from `source`
+  (the same value the catalog's generated column would hold). The copy has the same shape as a
+  catalog one, so the flow, the compiler and BrowserHive cannot tell them apart.
+- **`inline-` is reserved for these.** Catalog ids may not start with it: the CLI's `add` and
+  `import` refuse it, and a database CHECK refuses it last. The archive keeps only the id and the
+  JavaScript, so the prefix is what says whether a script came from the catalog.
+- **`name` matches `^[a-z][a-z0-9-]*$`, at most 64 characters with the prefix**, which is the id
+  rule of ts-compile-service. Anything else is a 400 from `POST`.
+- **It must type-check as strict TypeScript.** Each level starts with ts-compile-service checking it
+  together with the catalog scripts, and a single error fails the level (the diagnostics end up in
+  `error`). Wrap it in an IIFE: scripts of one level are checked as one program, so top-level names
+  clash with each other and with DOM globals such as `name`. An `export` type-checks but is a syntax
+  error in the page, where nothing then runs. To skip the type check, start with `// @ts-nocheck`
+  (syntax is still checked).
+- **`preload` has no host object (`__bh`).** The types show it; the page does not have it.
 
 ## What capture-ledger still does not decide
 
@@ -158,6 +189,6 @@ Pacing and reach, in the `POST /api/crawls` body — see
 | `maxPages`        | 30, never below the number of seeds | Total pages                        |
 | `perHostDelayMs`  | 2000                                | Gap between pages on one host      |
 | `hostParallelism` | 4                                   | Distinct hosts touched at once     |
-| `scriptIds`       | every enabled id, newest version    | What runs in the page (above)      |
+| `scripts`         | every enabled id, newest version    | What runs in the page (above)      |
 
 An unknown key is **400**, not silently dropped.

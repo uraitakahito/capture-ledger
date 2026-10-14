@@ -35,7 +35,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | [`fga_outbox`](/capture-ledger/ja/databases/fga-outbox/)                   | OpenFGA へ送る予定のタプル                                       |
 | `crawls`                                                                   | クロール 1 本につき 1 行。方針・状態・停止理由                   |
 | `crawl_pages`                                                              | クロールが到達したページ 1 件につき 1 行。重複排除の索引でもある |
-| `scripts`                                                                  | クロールがページの中で走らせる JavaScript の目録                 |
+| `scripts`                                                                  | クロールが名指せる JavaScript の目録                             |
 | `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`                  | Kysely が作る帳簿（下記）                                        |
 
 ### OpenFGA の DB

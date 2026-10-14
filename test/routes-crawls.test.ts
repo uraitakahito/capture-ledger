@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import { registerCrawlRoutes, type CrawlRouteDeps } from "../src/api/crawls.js";
@@ -92,6 +93,51 @@ describe("クロール route の入力検証", () => {
       headers: SUBJECT,
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it("scriptIds はもう受けない —— 知らない鍵として 400", async () => {
+    // 受け口は scripts の 1 列になった。古い呼び手を黙って既定で走らせない
+    expect((await post({ seeds: [SEED], scriptIds: ["autoscroll"] })).statusCode).toBe(400);
+  });
+
+  it("scripts の要素は、鍵が 1 つの object だけを通す", async () => {
+    const said = async (element: unknown) =>
+      (await post({ seeds: [SEED], scripts: [element] })).json<{ message: string }>().message;
+    const inline = { name: "close-banner", phase: "behavior", source: "x;" };
+    expect(await said({ catalog: "autoscroll", inline })).toContain(
+      "must NOT have more than 1 properties",
+    );
+    expect(await said({})).toContain("must NOT have fewer than 1 properties");
+    expect(await said({ id: "autoscroll" })).toContain("must NOT have additional properties");
+    // 形が合えば schema は通し、通った先で deps に触れて落ちる
+    expect((await post({ seeds: [SEED], scripts: [{ catalog: "autoscroll" }] })).statusCode).toBe(
+      500,
+    );
+    expect((await post({ seeds: [SEED], scripts: [{ inline }] })).statusCode).toBe(500);
+  });
+
+  it("その場の JS の名前の綴りが合わなければ 400 で、文は綴りの誤りだけを言う", async () => {
+    // **oneOf にしない理由。** oneOf だと、この文に「catalog が要る」が混ざる
+    const res = await post({
+      seeds: [SEED],
+      scripts: [{ inline: { name: "Close_Banner", phase: "behavior", source: "x;" } }],
+    });
+    expect(res.statusCode).toBe(400);
+    const message = res.json<{ message: string }>().message;
+    expect(message).toContain("/inline/name must match pattern");
+    expect(message).not.toContain("catalog");
+  });
+
+  it("その場の JS の名前は、inline- と合わせて 64 字まで・phase は 2 つだけ", async () => {
+    // ts-compile-service の ScriptId（^[a-z][a-z0-9-]*$・64 字）に収める。変換の段まで行って
+    // 400 になると、失敗したクロールが残る
+    const inline = (name: string, phase = "behavior") => ({
+      seeds: [SEED],
+      scripts: [{ inline: { name, phase, source: "x;" } }],
+    });
+    expect((await post(inline("a".repeat(57)))).statusCode).toBe(500);
+    expect((await post(inline("a".repeat(58)))).statusCode).toBe(400);
+    expect((await post(inline("close", "after-load"))).statusCode).toBe(400);
   });
 });
 
@@ -274,6 +320,12 @@ const fakeDb = (
             scriptQuery([...where, [column, op, value]]),
           orderBy: () => scriptQuery(where),
           execute: async (): Promise<FakeScript[]> => {
+            // **本物の Postgres は空の `in ()` を構文エラーで断る** (Kysely は空の配列を
+            // そのまま `in ()` に組む。2026-10-14 に開発の DB で確かめた)。偽物も断らないと、
+            // 「名指しが無ければ目録を引かない」分岐を外しても、試験は緑のままになる。
+            if (where.some(([, op, value]) => op === "in" && (value as unknown[]).length === 0)) {
+              throw new Error('syntax error at or near ")"');
+            }
             const matched = scripts.filter((s) =>
               where.every(([column, op, value]) =>
                 op === "in"
@@ -942,7 +994,10 @@ describe("走らせるものの解決", () => {
 
   it("名指しした並びが、そのまま実行順になる", async () => {
     // **id 順に並べ替えない。** behavior は書かれた順に走るので、並びは指示の一部。
-    const { sent } = await start({ seeds: [SEED], scriptIds: ["autoscroll", "autofetch"] });
+    const { sent } = await start({
+      seeds: [SEED],
+      scripts: [{ catalog: "autoscroll" }, { catalog: "autofetch" }],
+    });
     expect(sent[0]).toEqual([
       { id: "autoscroll", version: 2 },
       { id: "autofetch", version: 1 },
@@ -951,13 +1006,13 @@ describe("走らせるものの解決", () => {
 
   it("無効にした版でも、名指しすれば走る", async () => {
     // `enabled` が決めるのは「既定に入るか」だけ。名指しは明示なので通す。
-    const { sent } = await start({ seeds: [SEED], scriptIds: ["hide-webdriver"] });
+    const { sent } = await start({ seeds: [SEED], scripts: [{ catalog: "hide-webdriver" }] });
     expect(sent[0]).toEqual([{ id: "hide-webdriver", version: 1 }]);
   });
 
   it("空配列を渡せば、何も走らない", async () => {
     // 「既定でよい」(省く) と「何も走らせない」([]) は別の意思。
-    const { res, sent } = await start({ seeds: [SEED], scriptIds: [] });
+    const { res, sent } = await start({ seeds: [SEED], scripts: [] });
     expect(res.statusCode).toBe(202);
     expect(sent[0]).toEqual([]);
   });
@@ -966,17 +1021,17 @@ describe("走らせるものの解決", () => {
     // **黙って落とさない。** 落とすと、頼んだ側は全部走ったつもりで結果を読む。
     const { res, sent, crawls } = await start({
       seeds: [SEED],
-      scriptIds: ["autoscroll", "typo-scroll"],
+      scripts: [{ catalog: "autoscroll" }, { catalog: "typo-scroll" }],
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: "unknown scriptIds", scriptIds: ["typo-scroll"] });
+    expect(res.json()).toEqual({ error: "unknown catalog scripts", ids: ["typo-scroll"] });
     expect(sent).toEqual([]);
     expect(crawls).toEqual([]);
   });
 
   it("行に固定するのは解決済みの source で、id ではない", async () => {
     // 目録は後から変わりうる。段をまたいで同じコードが走ることの根拠がこれ。
-    const { crawls } = await start({ seeds: [SEED], scriptIds: ["autoscroll"] });
+    const { crawls } = await start({ seeds: [SEED], scripts: [{ catalog: "autoscroll" }] });
     expect(crawls[0]?.scripts).toEqual([
       {
         id: "autoscroll",
@@ -1016,7 +1071,10 @@ describe("走らせるものの解決", () => {
     await app.close();
 
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({ error: "the script catalog is empty" });
+    expect(res.json()).toEqual({
+      error: "the script catalog is empty",
+      hint: "pnpm run scripts import .upstream/capture-scripts (run nothing on purpose: send scripts: [])",
+    });
     // **行を立てない。** 立てると部分 unique index が以後のクロールを全部塞ぐ。
     expect(crawls).toEqual([]);
     expect(sent).toEqual([]);
@@ -1030,7 +1088,7 @@ describe("走らせるものの解決", () => {
       method: "POST",
       url: "/api/crawls",
       headers: SUBJECT,
-      payload: { seeds: [SEED], scriptIds: [] },
+      payload: { seeds: [SEED], scripts: [] },
     });
     await app.close();
 
@@ -1038,9 +1096,9 @@ describe("走らせるものの解決", () => {
     expect(crawls[0]?.scripts).toEqual([]);
   });
 
-  it("GET は身元だけを返す —— source は返さない", async () => {
+  it("GET は目録の物に身元だけを返す —— source は返さない", async () => {
     // 何が走っているかを知るのに要るのは「どれの何版か」。中身は目録と archive に在る。
-    const { crawls } = await start({ seeds: [SEED], scriptIds: ["autoscroll"] });
+    const { crawls } = await start({ seeds: [SEED], scripts: [{ catalog: "autoscroll" }] });
     const app = await buildApp(depsWith({ crawls, allowed: true, scripts: CATALOG }));
     const res = await app.inject({ method: "GET", url: `/api/crawls/${crawls[0]!.id}` });
     await app.close();
@@ -1057,6 +1115,91 @@ describe("走らせるものの解決", () => {
         compiledWith: null,
       },
     ]);
+    expect(res.body).not.toContain("/* v2 */");
+  });
+
+  const INLINE = {
+    name: "close-banner",
+    phase: "preload",
+    source: "(() => {\n  void 0;\n})();\n",
+  } as const;
+  const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+
+  it("その場の JS は inline- の id・版 1・options 空で写り、sha256 は台帳が source から打つ", async () => {
+    const { res, crawls } = await start({ seeds: [SEED], scripts: [{ inline: INLINE }] });
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.scripts).toEqual([
+      {
+        id: "inline-close-banner",
+        version: 1,
+        phase: "preload",
+        source: INLINE.source,
+        sha256: sha256(INLINE.source),
+        options: {},
+      },
+    ]);
+  });
+
+  it("その場の JS と目録の名指しを、頼んだ並びのまま 1 列に写す", async () => {
+    const { sent } = await start({
+      seeds: [SEED],
+      scripts: [{ catalog: "autoscroll" }, { inline: INLINE }, { catalog: "autofetch" }],
+    });
+    expect(sent[0]).toEqual([
+      { id: "autoscroll", version: 2 },
+      { id: "inline-close-banner", version: 1 },
+      { id: "autofetch", version: 1 },
+    ]);
+  });
+
+  it("その場の JS だけなら、目録を引かない", async () => {
+    // 偽の DB は、本物の Postgres と同じく空の in () を断る。引けば 500 になる
+    const { res, sent } = await start({ seeds: [SEED], scripts: [{ inline: INLINE }] });
+    expect(res.statusCode).toBe(202);
+    expect(sent[0]).toEqual([{ id: "inline-close-banner", version: 1 }]);
+  });
+
+  it("同じ id を 2 度頼むと 400 で名指しし、クロールを立てない", async () => {
+    // 報告 (id@版) でも変換 (/src/<id>.ts) でも、2 本目が 1 本目に黙って畳まれる
+    const cases: [unknown[], string[]][] = [
+      [
+        [{ catalog: "autoscroll" }, { catalog: "autofetch" }, { catalog: "autoscroll" }],
+        ["autoscroll"],
+      ],
+      [[{ inline: INLINE }, { inline: { ...INLINE, phase: "behavior" } }], ["inline-close-banner"]],
+    ];
+    for (const [scripts, ids] of cases) {
+      const { res, sent, crawls } = await start({ seeds: [SEED], scripts });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error: "duplicate script ids", ids });
+      expect(sent).toEqual([]);
+      expect(crawls).toEqual([]);
+    }
+  });
+
+  it("GET は、その場の JS にだけ頼んだ要素（inline）を返す", async () => {
+    // その場の JS は目録に無く、archive に在るのは変換後の JS。直して撮り直すときに、
+    // 書いた物を取り戻せるのはここだけ
+    const { crawls } = await start({
+      seeds: [SEED],
+      scripts: [{ inline: INLINE }, { catalog: "autoscroll" }],
+    });
+    const app = await buildApp(depsWith({ crawls, allowed: true, scripts: CATALOG }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${crawls[0]!.id}` });
+    await app.close();
+
+    const body = res.json<{ scripts: Record<string, unknown>[] }>();
+    expect(body.scripts[0]).toEqual({
+      id: "inline-close-banner",
+      version: 1,
+      phase: "preload",
+      sha256: sha256(INLINE.source),
+      jsSha256: null,
+      compiledWith: null,
+      inline: INLINE,
+    });
+    expect(body.scripts[1]).not.toHaveProperty("inline");
+    expect(body.scripts[1]).not.toHaveProperty("source");
     expect(res.body).not.toContain("/* v2 */");
   });
 });
