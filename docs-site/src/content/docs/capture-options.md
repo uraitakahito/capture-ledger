@@ -130,9 +130,12 @@ Each element is an object with exactly one key, `catalog` or `inline`.
 For catalog entries, `GET /api/crawls/:id` reports the identity — id, version, phase,
 sha256 — and never the source. What ran in bytes is in the archive
 (`behaviors/custom.jsonl` and `preload/scripts.jsonl`) and in the catalog. An inline entry
-also carries the element it was requested as, `inline` (`name`, `phase`, `source`): it is not
-in the catalog, and the archive holds the compiled JavaScript, so this is the one place to get
-back what you wrote.
+also carries `inline` (`name`, `phase` and the source's size in UTF-8 `bytes`), still without
+the source: a screen polls a running crawl every few seconds, and the source can be up to a
+mebibyte. The source itself comes from `GET /api/crawls/:id/inline/:name`, as
+`{ name, phase, source, sha256 }`. It is not in the catalog, and the archive holds the compiled
+JavaScript, so that route is the one place to get back what you wrote. Catalog entries answer 404
+there.
 
 Once the first level has been reported, each entry also carries `jsSha256` and
 `compiledWith` (`{ typescript, hostTypes }`): the hash of the JavaScript that level ran,
@@ -166,6 +169,8 @@ Besides naming catalog entries, a `scripts` element can carry a script written o
   clash with each other and with DOM globals such as `name`. An `export` type-checks but is a syntax
   error in the page, where nothing then runs. To skip the type check, start with `// @ts-nocheck`
   (syntax is still checked).
+- **The whole `POST /api/crawls` body is at most 1 MiB.** A larger one is a 413 before
+  anything is checked.
 - **`preload` has no host object (`__bh`).** The types show it; the page does not have it.
 
 ## What capture-ledger still does not decide

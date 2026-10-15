@@ -123,9 +123,12 @@ source・sha256・options —— をクロールの行に書きます。以後�
 
 `GET /api/crawls/:id` が返すのは、目録の物は身元 —— id・版・phase・sha256 —— だけで、
 source は返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
-`preload/scripts.jsonl`）と目録に在ります。その場の JS には、頼んだ要素 `inline`
-（`name`・`phase`・`source`）も返します。目録に無く、アーカイブに在るのは変換後の JS なので、
-書いた物を取り戻せるのはここだけです。
+`preload/scripts.jsonl`）と目録に在ります。その場の JS には `inline`（`name`・`phase`・
+source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。画面は走行中の
+クロールを数秒ごとに引き直し、source は 1 MiB まであり得るからです。source は
+`GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。目録に無く、
+アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこの口だけです。目録の物には 404 を
+返します。
 
 最初の段の報告が来ると、各要素に `jsSha256` と `compiledWith`（`{ typescript, hostTypes }`）も
 付きます。その段が走らせた JavaScript の sha256 と、何で・何に向けて変換したか ——
@@ -157,6 +160,7 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
   ほかの JS や DOM の大域（`name` など）とぶつかります。`export` を書くと型は通りますが、
   ページでは構文エラーになり、何も走りません。型の検査を外すなら、1 行目に `// @ts-nocheck`
   （構文は見ます）。
+- **`POST /api/crawls` の本文は、全体で 1 MiB までです。** 超えると、何かを検査する前に 413 で断ります。
 - **`preload` には受け皿（`__bh`）がありません。** 型の上では見えますが、ページには在りません。
 
 ## capture-ledger がいまも決めないもの

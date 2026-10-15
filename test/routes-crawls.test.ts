@@ -28,9 +28,16 @@ const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organiz
 const UUID = "d272d256-e528-4581-bb4e-8d9477d78196";
 const SEED = "https://example.com/start";
 
-const buildApp = async (deps: CrawlRouteDeps): Promise<FastifyInstance> => {
+const buildApp = async (
+  deps: CrawlRouteDeps,
+  extra: { bodyLimit?: number } = {},
+): Promise<FastifyInstance> => {
   // server.ts と同じ ajv 設定 —— 知らない鍵を落とさずに拒む。
-  const app = Fastify({ logger: false, ajv: { customOptions: { removeAdditional: false } } });
+  const app = Fastify({
+    logger: false,
+    ajv: { customOptions: { removeAdditional: false } },
+    ...extra,
+  });
   app.setErrorHandler((error: FastifyError, _request, reply) => {
     if (error.statusCode !== undefined && error.statusCode < 500) return reply.send(error);
     return reply.code(500).send({ error: "internal error" });
@@ -57,6 +64,32 @@ describe("クロール route の入力検証", () => {
 
   const post = (payload: Record<string, unknown>) =>
     app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+
+  it("本文は 1 MiB まで —— 口が自分で決め、ちょうどは通り、1 バイト超えは 413（dashboard の門と同じ数）", async () => {
+    // 数は直に書く。CRAWL_BODY_LIMIT を読むと、定数ごと変えた日に試験も一緒に動いてしまう
+    const LIMIT = 1024 * 1024;
+    // サーバ全体の上限をわざと 1 KiB にした app で見る。口が自分の上限を書いていなければ、
+    // ちょうど 1 MiB も 413 になる（Fastify の既定も 1 MiB なので、既定の app では区別が付かない）
+    const small = await buildApp(unreachableDeps, { bodyLimit: 1024 });
+    const shell = (source: string) =>
+      JSON.stringify({
+        seeds: [SEED],
+        scripts: [{ inline: { name: "pad", phase: "behavior", source } }],
+      });
+    const body = (bytes: number) => shell("x".repeat(bytes - Buffer.byteLength(shell(""))));
+    const send = (payload: string) =>
+      small.inject({
+        method: "POST",
+        url: "/api/crawls",
+        headers: { ...SUBJECT, "content-type": "application/json" },
+        payload,
+      });
+    expect(Buffer.byteLength(body(LIMIT))).toBe(LIMIT);
+    // ちょうどは検証まで通る（500 は deps に触れた＝検証を通過した証拠）
+    expect((await send(body(LIMIT))).statusCode).toBe(500);
+    expect((await send(body(LIMIT + 1))).statusCode).toBe(413);
+    await small.close();
+  });
 
   it("空の seeds を拒む", async () => {
     // 「どちらか一方」の判定は handler に置いてある (ajv の `oneOf` だと
@@ -1177,9 +1210,8 @@ describe("走らせるものの解決", () => {
     }
   });
 
-  it("GET は、その場の JS にだけ頼んだ要素（inline）を返す", async () => {
-    // その場の JS は目録に無く、archive に在るのは変換後の JS。直して撮り直すときに、
-    // 書いた物を取り戻せるのはここだけ
+  it("GET の inline は名前・口・バイト数だけ —— source は運ばない", async () => {
+    // 走行中の行は画面が 2 秒ごとに引き直す。source を載せると、1 MiB の JS なら 2 秒に 1 MiB
     const { crawls } = await start({
       seeds: [SEED],
       scripts: [{ inline: INLINE }, { catalog: "autoscroll" }],
@@ -1196,11 +1228,61 @@ describe("走らせるものの解決", () => {
       sha256: sha256(INLINE.source),
       jsSha256: null,
       compiledWith: null,
-      inline: INLINE,
+      inline: { name: INLINE.name, phase: INLINE.phase, bytes: Buffer.byteLength(INLINE.source) },
     });
     expect(body.scripts[1]).not.toHaveProperty("inline");
     expect(body.scripts[1]).not.toHaveProperty("source");
+    expect(res.body, "その場の JS の source が詳しい所に在る").not.toContain("void 0");
     expect(res.body).not.toContain("/* v2 */");
+  });
+
+  /** 起こした行を 1 本持つ台帳に、名前の口を 1 回打つ。 */
+  const askInline = async (name: string, opts: { allowed?: boolean; id?: string } = {}) => {
+    const { crawls } = await start({
+      seeds: [SEED],
+      scripts: [{ inline: INLINE }, { catalog: "autoscroll" }],
+    });
+    const app = await buildApp(
+      depsWith({ crawls, allowed: opts.allowed ?? true, scripts: CATALOG }),
+    );
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/crawls/${opts.id ?? crawls[0]!.id}/inline/${name}`,
+    });
+    await app.close();
+    return res;
+  };
+
+  it("その場の JS は、名前の口から source ごと返る（欄に戻すため）", async () => {
+    const res = await askInline("close-banner");
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      name: "close-banner",
+      phase: "preload",
+      source: INLINE.source,
+      sha256: sha256(INLINE.source),
+    });
+  });
+
+  it("目録の物・知らない名前・無いクロールは 404", async () => {
+    // 目録の物は目録と archive に在る。名前の口は、その場の JS だけを返す
+    expect((await askInline("autoscroll")).statusCode).toBe(404);
+    expect((await askInline("nope")).statusCode).toBe(404);
+    expect((await askInline("close-banner", { id: UUID })).statusCode).toBe(404);
+  });
+
+  it("許可の無い名乗りには 404 —— 在るかどうかを言わない", async () => {
+    const res = await askInline("close-banner", { allowed: false });
+    expect(res.statusCode).toBe(404);
+    expect(res.body).not.toContain("void 0");
+  });
+
+  it("名前の綴りが違えば、許可を見る前に 400", async () => {
+    // 受け口と同じ schema。unreachableDeps は触れれば投げるので、400 は deps の手前で断った証拠
+    const app = await buildApp(unreachableDeps);
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}/inline/Close_Banner` });
+    await app.close();
+    expect(res.statusCode).toBe(400);
   });
 });
 
