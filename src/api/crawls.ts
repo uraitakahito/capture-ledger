@@ -81,6 +81,12 @@ const DEFAULT_HOST_PARALLELISM = 4;
 const FAILURES_SHOWN = 5;
 /** 一覧の 1 ページ。`GET /api/archives` と同じ大きさに揃えてある。 */
 const CRAWLS_PAGE = 50;
+/**
+ * `POST /api/crawls` が受ける本文の上限。**dashboard の門（dashboard の src/lib.mjs の WRITE_LIMIT）と
+ * 同じ 1 MiB** —— 片方だけを変えると、画面が通すのに台帳が 413、の形になる。Fastify の既定と同じ値だが、
+ * 既定に頼らずにこの口に書く。その先の BrowserHive は 4 MiB で、変換後の JS と目録の物を足しても収まる。
+ */
+export const CRAWL_BODY_LIMIT = 1024 * 1024;
 
 /**
  * そのクロールから出た WACZ の数。
@@ -306,6 +312,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   app.post<{ Body: CrawlBody | undefined }>(
     "/api/crawls",
     {
+      bodyLimit: CRAWL_BODY_LIMIT,
       schema: {
         body: {
           type: "object",
@@ -685,9 +692,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         pagesCaptured: crawl.pagesCaptured,
         error: crawl.error,
         // **目録の物は身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
-        // 中身は目録 (`pnpm run scripts show`) と archive に在る。**その場の JS は目録に無く**、
-        // archive に在るのは変換後の JS なので、頼まれた要素 (`inline`) をそのまま返す ——
-        // 直して撮り直すときに、書いた物を取り戻せるのはここだけ。
+        // 中身は目録 (`pnpm run scripts show`) と archive に在る。**その場の JS には頼まれた
+        // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は画面が 2 秒ごとに引き直すので、
+        // 1 MiB の JS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
+        // ときだけで、`GET /api/crawls/:id/inline/:name` から取る。
         // `jsSha256` と `compiledWith` は最初の段の報告で埋まる。それまでは null。
         scripts: crawl.scripts.map((script) => ({
           id: script.id,
@@ -700,7 +708,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             inline: {
               name: script.id.slice(INLINE_PREFIX.length),
               phase: script.phase,
-              source: script.source,
+              bytes: Buffer.byteLength(script.source, "utf8"),
             },
           }),
         })),
@@ -711,6 +719,51 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           depth: page.depth,
           reason: page.skipReason,
         })),
+      });
+    },
+  );
+
+  /**
+   * その場の JS 1 本の source。**「欄に戻す」のための口** —— 直して撮り直すときに、書いた物を
+   * 取り戻せるのはここだけ（archive に在るのは変換後の JS）。目録の物は目録と archive に在るので
+   * 返さない（404）。名前の綴りは受け口と同じ schema で、合わなければ許可を見る前に 400。
+   */
+  app.get<{ Params: { id: string; name: string } }>(
+    "/api/crawls/:id/inline/:name",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            name: { type: "string", pattern: "^[a-z][a-z0-9-]*$", maxLength: 57 },
+          },
+          required: ["id", "name"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) {
+        return reply.code(404).send({ error: "not found" });
+      }
+
+      const crawl = await db
+        .selectFrom("crawls")
+        .select(["scripts"])
+        .where("id", "=", request.params.id)
+        .executeTakeFirst();
+      const id = INLINE_PREFIX + request.params.name;
+      const script = crawl?.scripts.find((s) => s.id === id);
+      if (script === undefined) return reply.code(404).send({ error: "not found" });
+
+      return reply.code(200).send({
+        name: request.params.name,
+        phase: script.phase,
+        source: script.source,
+        // 行の scripts[] と同じ値。取り戻した物が、走らせた物と同じかを見比べられる
+        sha256: script.sha256,
       });
     },
   );
