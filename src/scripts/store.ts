@@ -22,6 +22,11 @@
  * 台帳はそれを目録に入れず、クロールの行の写しにだけ固定する（`inlineScript`）。id は
  * `inline-<name>` で、目録の id には `inline-` を使わせない（`019` の CHECK と CLI）——
  * アーカイブの id だけで、目録の物か、その場の物かが分かるようにするため。
+ *
+ * ## 受け皿の型も置く
+ *
+ * `host_types` (`020`) は、目録の source を読む人に見せる受け皿 `__bh` の型の写し。足し方は目録と
+ * 同じで、中身が同じなら版を増やさない。走る JS の型を決めるのは ts-compile-service の pin で、ここではない。
  */
 import { createHash } from "node:crypto";
 import type { Kysely } from "kysely";
@@ -35,6 +40,23 @@ export interface ScriptRow {
   phase: ScriptPhase;
   sha256: string;
   enabled: boolean;
+  bytes: number;
+  /** 取り込んだ時刻。版を並べたときに、どれがいつの物かを言う */
+  createdAt: Date;
+}
+
+/** 目録の 1 版を丸ごと (`readScript`)。一覧の行に、source と渡す値を足した物。 */
+export interface ScriptVersion extends ScriptRow {
+  source: string;
+  options: Record<string, unknown>;
+}
+
+/** 受け皿 `__bh` の型の 1 版 (`readHostTypes`)。読む人に見せる写し (`020`)。 */
+export interface HostTypesRow {
+  version: number;
+  sha256: string;
+  createdAt: Date;
+  source: string;
   bytes: number;
 }
 
@@ -149,7 +171,7 @@ export const addScript = async (
  */
 export const listScripts = async (
   db: Kysely<Database>,
-  input: { allVersions?: boolean } = {},
+  input: { allVersions?: boolean; id?: string } = {},
 ): Promise<ScriptRow[]> => {
   let query = db.selectFrom("scripts").select([
     "id",
@@ -161,12 +183,82 @@ export const listScripts = async (
     // 日本語のコメントを持つスクリプトでは「B」と書いた列が実際のバイト数より
     // 小さく出る (autofetch は 3949 B なのに 3093 と出ていた)。
     sql<number>`octet_length(source)`.as("bytes"),
+    "createdAt",
   ]);
   if (input.allVersions !== true) {
     query = query.distinctOn("id");
   }
+  // 1 つの id の版だけ (`GET /api/scripts/:id/versions` と `list <id>`)
+  if (input.id !== undefined) query = query.where("id", "=", input.id);
   return query.orderBy("id").orderBy("version", "desc").execute();
 };
+
+/**
+ * 目録の 1 版を丸ごと (source を含む)。**有効かどうかは見ない** —— 無効な版も、過去のクロールが
+ * 走らせた物。`GET /api/scripts/:id/versions/:version` と `show --version` の芯。
+ */
+export const readScript = async (
+  db: Kysely<Database>,
+  id: string,
+  version: number,
+): Promise<ScriptVersion | undefined> =>
+  db
+    .selectFrom("scripts")
+    .select([
+      "id",
+      "version",
+      "phase",
+      "sha256",
+      "enabled",
+      sql<number>`octet_length(source)`.as("bytes"), // listScripts と同じく length ではない
+      "createdAt",
+      "source",
+      "options",
+    ])
+    .where("id", "=", id)
+    .where("version", "=", version)
+    .executeTakeFirst();
+
+/**
+ * 受け皿の型を 1 つ足す。**いちばん新しい版と中身が同じなら、版を増やさない** (`addScript` と同じ)
+ * —— `import` を何度流しても、型が変わらなければ何も起きない。
+ */
+export const addHostTypes = async (
+  db: Kysely<Database>,
+  source: string,
+): Promise<{ version: number; sha256: string; reused: boolean }> =>
+  db.transaction().execute(async (trx) => {
+    const latest = await trx
+      .selectFrom("hostTypes")
+      .select(["version", "source", "sha256"])
+      .orderBy("version", "desc")
+      .limit(1)
+      .executeTakeFirst();
+    if (latest?.source === source) {
+      return { version: latest.version, sha256: latest.sha256, reused: true };
+    }
+    const inserted = await trx
+      .insertInto("hostTypes")
+      .values({ version: (latest?.version ?? 0) + 1, source })
+      .returning(["version", "sha256"])
+      .executeTakeFirstOrThrow();
+    return { ...inserted, reused: false };
+  });
+
+/** いちばん新しい受け皿の型。1 度も取り込んでいなければ undefined。 */
+export const readHostTypes = async (db: Kysely<Database>): Promise<HostTypesRow | undefined> =>
+  db
+    .selectFrom("hostTypes")
+    .select([
+      "version",
+      "sha256",
+      "createdAt",
+      "source",
+      sql<number>`octet_length(source)`.as("bytes"),
+    ])
+    .orderBy("version", "desc")
+    .limit(1)
+    .executeTakeFirst();
 
 /**
  * 既定の顔ぶれに入れる / 外す。

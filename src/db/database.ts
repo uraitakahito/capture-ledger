@@ -179,6 +179,19 @@ export interface ScriptsTable {
   createdAt: ColumnType<Date, string | undefined, never>;
 }
 
+/**
+ * 受け皿 `__bh` の型の写し（読む人に見せる物）。`020` を見ること。
+ *
+ * 走る JS の型を決めるのは ts-compile-service の pin で、ここではない。
+ */
+export interface HostTypesTable {
+  version: number;
+  source: string;
+  // GENERATED ALWAYS AS (encode(digest(source, 'sha256'), 'hex')) STORED —— 書くことはない。
+  sha256: GeneratedAlways<string>;
+  createdAt: ColumnType<Date, string | undefined, never>;
+}
+
 export type CrawlState = "running" | "succeeded" | "failed";
 
 /** どこまでを同じ範囲と見なすか。判定は `finalUrl` (リダイレクト後) に対して行う。 */
@@ -222,4 +235,5 @@ export interface Database {
   crawls: CrawlsTable;
   crawlPages: CrawlPagesTable;
   scripts: ScriptsTable;
+  hostTypes: HostTypesTable;
 }
