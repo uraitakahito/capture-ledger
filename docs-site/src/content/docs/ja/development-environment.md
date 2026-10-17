@@ -122,28 +122,29 @@ NAME=value     # 値を渡す
 
 ## 日々のコマンド
 
-| コマンド                                  | 内容                                                                                                |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `pnpm run dev:up`                         | 立ち上げの段を順に。`--dry-run` で一覧、`--from <段>` で途中から。                                  |
-| `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                                            |
-| `pnpm run dev:down`                       | ホストで動かしたもの → 両 repo のコンテナ。共有 store は落とさない。                                |
-| `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                                     |
-| `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                                                |
-| `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                                     |
-| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked)。                                     |
-| `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。                             |
-| `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                                              |
-| `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                                                |
-| `pnpm run check`                          | push の前に走らせる検査の全部。中身と並びは package.json の `check`（CI の check job と同じ）。     |
-| `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                                   |
-| `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                                                           |
-| `pnpm run targets`                        | 撮る対象（`capture_targets`）を足す・見る・外す・消す。DB に直接書く開発用の道具。                  |
-| `pnpm run openapi:generate`               | 固定した submodule から BrowserHive の `openapi.json` を取り直し、型を再生成 (openapi-typescript)。 |
-| `pnpm run openapi:check`                  | 型を再生成して `git diff --exit-code` (CI のドリフト検査)。                                         |
-| `pnpm run openapi:sync`                   | 固定した submodule から `openapi.json` を取り直すだけ。                                             |
-| `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                                            |
-| `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                                                |
-| `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                                              |
+| コマンド                                  | 内容                                                                                                                               |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run dev:up`                         | 立ち上げの段を順に。`--dry-run` で一覧、`--from <段>` で途中から。                                                                 |
+| `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                                                                           |
+| `pnpm run dev:down`                       | ホストで動かしたもの → 両 repo のコンテナ。共有 store は落とさない。                                                               |
+| `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                                                                    |
+| `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                                                                               |
+| `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                                                                    |
+| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked)。                                                                    |
+| `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。                                                            |
+| `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                                                                             |
+| `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                                                                               |
+| `pnpm run check`                          | push の前に走らせる検査の全部。中身と並びは package.json の `check`（CI の check job と同じ）。                                    |
+| `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                                                                  |
+| `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                                                                                          |
+| `pnpm run targets`                        | 撮る対象（`capture_targets`）を足す・見る・外す・消す。DB に直接書く開発用の道具。                                                 |
+| `pnpm run scripts`                        | ページで走らせる JS の目録（`scripts`）を取り込む・足す・見る・読む・外す・消す。受け皿の型（`host_types`）も出す。DB に直接書く。 |
+| `pnpm run openapi:generate`               | 固定した submodule から BrowserHive の `openapi.json` を取り直し、型を再生成 (openapi-typescript)。                                |
+| `pnpm run openapi:check`                  | 型を再生成して `git diff --exit-code` (CI のドリフト検査)。                                                                        |
+| `pnpm run openapi:sync`                   | 固定した submodule から `openapi.json` を取り直すだけ。                                                                            |
+| `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                                                                           |
+| `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                                                                               |
+| `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                                                                             |
 
 ### ホストで動くもの
 

@@ -130,28 +130,29 @@ that rule too.
 
 ## Daily commands
 
-| Command                                   | What it does                                                                                                       |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `pnpm run dev:up`                         | The startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                      |
-| `pnpm run dev:status`                     | What is up right now. **Changes nothing.**                                                                         |
-| `pnpm run dev:down`                       | What runs on the host, then both repos' containers. Never the shared store.                                        |
-| `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                    |
-| `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                                                                 |
-| `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                                                                 |
-| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked).                                                     |
-| `pnpm run format` / `format:check`        | Prettier. `.prettierignore` skips `dist/` and `src/rpc/generated/`.                                                |
-| `pnpm test` / `test:watch`                | Vitest unit tests under `test/`.                                                                                   |
-| `pnpm run audit`                          | Known vulnerabilities in `pnpm-lock.yaml`. CI also runs it daily.                                                  |
-| `pnpm run check`                          | Every check to run before pushing. The list and order are package.json's `check` (the same as CI's check job).     |
-| `pnpm run db:migrate` / `db:migrate:down` | Kysely migrations against `DATABASE_URL`.                                                                          |
-| `pnpm run db:seed` / `db:seed:down`       | Kysely seeds from `src/db/seeds/`.                                                                                 |
-| `pnpm run targets`                        | Add, list, disable or remove capture targets (`capture_targets`). A dev tool that writes to the database directly. |
-| `pnpm run openapi:generate`               | Re-copy BrowserHive's `openapi.json` from the pinned submodule and regenerate its types (openapi-typescript).      |
-| `pnpm run openapi:check`                  | Regenerate the types, then `git diff --exit-code` (CI drift gate).                                                 |
-| `pnpm run openapi:sync`                   | Re-copy the `openapi.json` from the pinned submodule only.                                                         |
-| `pnpm run site:dev` / `site:build`        | This documentation site.                                                                                           |
-| `pnpm run site:check`                     | Build the site and verify its references.                                                                          |
-| `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).                                                           |
+| Command                                   | What it does                                                                                                                                               |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run dev:up`                         | The startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                                                              |
+| `pnpm run dev:status`                     | What is up right now. **Changes nothing.**                                                                                                                 |
+| `pnpm run dev:down`                       | What runs on the host, then both repos' containers. Never the shared store.                                                                                |
+| `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                                                            |
+| `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                                                                                                         |
+| `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                                                                                                         |
+| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked).                                                                                             |
+| `pnpm run format` / `format:check`        | Prettier. `.prettierignore` skips `dist/` and `src/rpc/generated/`.                                                                                        |
+| `pnpm test` / `test:watch`                | Vitest unit tests under `test/`.                                                                                                                           |
+| `pnpm run audit`                          | Known vulnerabilities in `pnpm-lock.yaml`. CI also runs it daily.                                                                                          |
+| `pnpm run check`                          | Every check to run before pushing. The list and order are package.json's `check` (the same as CI's check job).                                             |
+| `pnpm run db:migrate` / `db:migrate:down` | Kysely migrations against `DATABASE_URL`.                                                                                                                  |
+| `pnpm run db:seed` / `db:seed:down`       | Kysely seeds from `src/db/seeds/`.                                                                                                                         |
+| `pnpm run targets`                        | Add, list, disable or remove capture targets (`capture_targets`). A dev tool that writes to the database directly.                                         |
+| `pnpm run scripts`                        | Import, add, list, show, disable or remove the in-page scripts (`scripts`), and show the receptacle types (`host_types`). Writes to the database directly. |
+| `pnpm run openapi:generate`               | Re-copy BrowserHive's `openapi.json` from the pinned submodule and regenerate its types (openapi-typescript).                                              |
+| `pnpm run openapi:check`                  | Regenerate the types, then `git diff --exit-code` (CI drift gate).                                                                                         |
+| `pnpm run openapi:sync`                   | Re-copy the `openapi.json` from the pinned submodule only.                                                                                                 |
+| `pnpm run site:dev` / `site:build`        | This documentation site.                                                                                                                                   |
+| `pnpm run site:check`                     | Build the site and verify its references.                                                                                                                  |
+| `pnpm run docs:shots`                     | Retake the screenshots the docs embed (no stack needed).                                                                                                   |
 
 ### What runs on the host, not in the stack
 
