@@ -692,7 +692,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         pagesCaptured: crawl.pagesCaptured,
         error: crawl.error,
         // **目録の物は身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
-        // 中身は目録 (`pnpm run scripts show`) と archive に在る。**その場の JS には頼まれた
+        // 中身は目録の 1 版の口 (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
+        // archive に在る。**その場の JS には頼まれた
         // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は画面が 2 秒ごとに引き直すので、
         // 1 MiB の JS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
         // ときだけで、`GET /api/crawls/:id/inline/:name` から取る。
