@@ -87,9 +87,12 @@ pinned here as the `.upstream/capture-scripts` submodule. Its `catalog.json` car
 source cannot say about itself — the `id` and the `phase`.
 
 ```sh
-# Import the catalog. Idempotent: same bytes, same version.
+# Import the catalog and the receptacle's types. Idempotent: same bytes, same version.
 pnpm run scripts import .upstream/capture-scripts
 pnpm run scripts list                     # what a crawl with no scripts will run
+pnpm run scripts list autoscroll --all    # every version of one id
+pnpm run scripts show autoscroll --version 1   # one version's source, disabled or not
+pnpm run scripts types                    # the receptacle's (__bh) types, as imported
 
 # One-offs and tuning still go in by hand.
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
@@ -99,6 +102,12 @@ pnpm run scripts disable autofetch        # out of the default set, still nameab
 `import` has **no opinion about options**, so it never replaces a version you tuned by
 hand: same source, whatever the options, is the same version. Passing `--options` is an
 opinion, and that does make a new version.
+
+`import` also copies the catalog directory's `types/host.d.ts` — the types of the receptacle
+`__bh` — into `host_types`, which likewise adds a version only when the bytes change. It is a copy
+for people reading the catalog; the types a crawl compiles against are ts-compile-service's own
+pin, reported as `compiledWith.hostTypes`. A directory without the file is imported without
+types, and `import` says so.
 
 `sha256` is a **generated column**: Postgres computes it from `source` and the
 column cannot be written by hand. BrowserHive checks the two against each other
@@ -129,7 +138,8 @@ Each element is an object with exactly one key, `catalog` or `inline`.
 
 For catalog entries, `GET /api/crawls/:id` reports the identity — id, version, phase,
 sha256 — and never the source. What ran in bytes is in the archive
-(`behaviors/custom.jsonl` and `preload/scripts.jsonl`) and in the catalog. An inline entry
+(`behaviors/custom.jsonl` and `preload/scripts.jsonl`) and in the catalog
+([Reading a version](#reading-a-version)). An inline entry
 also carries `inline` (`name`, `phase` and the source's size in UTF-8 `bytes`), still without
 the source: a screen polls a running crawl every few seconds, and the source can be up to a
 mebibyte. The source itself comes from `GET /api/crawls/:id/inline/:name`, as
@@ -145,6 +155,27 @@ TypeScript; the archive holds JavaScript; this is the link between them, written
 ledger from the report. Every level must report the same hashes — a different one is
 answered with 409, because it means the compiler changed underneath a running crawl.
 Before the first report both are `null`.
+
+### Reading a version
+
+The catalog's sources can be read over HTTP by whoever may start a crawl:
+
+| Route                                    | Answers                                                                                                                     |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/scripts`                       | What a crawl with no `scripts` runs, as identities: `id`, `version`, `phase`, `sha256`                                      |
+| `GET /api/scripts/:id/versions`          | Every version of one id, newest first: `version`, `phase`, `sha256`, `enabled`, `bytes`, `createdAt`. No source             |
+| `GET /api/scripts/:id/versions/:version` | One version whole: the above plus `id`, `source` and `options`. Disabled versions too, since a past crawl may have run them |
+| `GET /api/host-types`                    | The newest receptacle types `import` copied: `version`, `sha256`, `createdAt`, `source`, `bytes`                            |
+
+All four ask the crawl route's question (`can_submit` on one of the caller's organizations). No
+identity is a 401; no permission is a 404, the same answer as an id or version that does not exist.
+A version that is not an integer of 1 or more is a 400 before anything else. `bytes` is the size in
+UTF-8. `pnpm run scripts show --version` reads through the same function as the one-version route.
+
+**Version numbers are reused.** `add` takes the newest version plus one, so removing the newest
+version and adding again gives the same number to different bytes; capture-scheduler's e2e does
+exactly that on every run. To tell whether a version is the one a crawl ran, compare its `sha256`
+with the one on the crawl.
 
 ### Inline scripts
 

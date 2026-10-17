@@ -8,7 +8,7 @@ import { recordingDb } from "./recording-db.js";
  *
  * DB は Kysely に SQL を組ませて記録する代役 (`recording-db.ts`)。だから「許可が無ければ SQL を
  * 1 本も出さない」と「1 版の口は版で絞る」を、組んだ SQL で言える。Postgres で本当に通るかは
- * CI の Postgres に当てる検査が見る。
+ * CI の `scripts/scripts-smoke.mjs` が見る (口と同じ関数を CLI から呼ぶ)。
  */
 const TOUCHED = "fga に訊いた";
 const untouchable = new Proxy(

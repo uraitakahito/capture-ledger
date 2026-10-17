@@ -83,9 +83,12 @@ behavior も、サイト別の behavior もありません。送らなければ�
 ソースが自分では言えないこと —— `id` と `phase` —— を持ちます。
 
 ```sh
-# catalog ごと入れる。何度流しても同じ（同じバイト列は同じ版）
+# catalog と受け皿の型を入れる。何度流しても同じ（同じバイト列は同じ版）
 pnpm run scripts import .upstream/capture-scripts
 pnpm run scripts list                     # scripts を書かないクロールが走らせるもの
+pnpm run scripts list autoscroll --all    # 1 つの id の版の並び
+pnpm run scripts show autoscroll --version 1   # その版の source（無効な版も）
+pnpm run scripts types                    # 受け皿（__bh）の型。import が写した物
 
 # 1 本だけ試す・設定を変えるのは、いまも手で
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
@@ -95,6 +98,11 @@ pnpm run scripts disable autofetch        # 既定から外す。名指しすれ
 `import` は **options について意見を持ちません**。同じ source なら options が何であれ同じ版
 として扱うので、手で調整した版を黙って置き換えることがありません。`--options` を渡すのは
 意見なので、そちらは版を分けます。
+
+`import` は、同じ置き場所の `types/host.d.ts`（受け皿 `__bh` の型）も `host_types` に写します。
+こちらも中身が変わったときだけ版を足します。目録を読む人に見せる写しで、クロールの変換が使う型は
+ts-compile-service の pin です（`compiledWith.hostTypes` に出る）。ファイルの無い置き場所は、型を
+入れずに目録だけを入れ、そう言います。
 
 `sha256` は**生成列**です。Postgres が `source` から数え、手で書き込むことはできません。
 BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGUMENT` で拒みます ——
@@ -123,7 +131,7 @@ source・sha256・options —— をクロールの行に書きます。以後�
 
 `GET /api/crawls/:id` が返すのは、目録の物は身元 —— id・版・phase・sha256 —— だけで、
 source は返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
-`preload/scripts.jsonl`）と目録に在ります。その場の JS には `inline`（`name`・`phase`・
+`preload/scripts.jsonl`）と目録（[版を読む](#版を読む)）に在ります。その場の JS には `inline`（`name`・`phase`・
 source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。画面は走行中の
 クロールを数秒ごとに引き直し、source は 1 MiB まであり得るからです。source は
 `GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。目録に無く、
@@ -137,6 +145,26 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 その間を継ぐのがこの値で、台帳が報告から写します。段ごとに同じ hash が来なければ 409 ——
 走行中のクロールの下で変換サービスが替わったということです。報告が来る前はどちらも
 `null` です。
+
+### 版を読む
+
+目録の source は、クロールを起こせる人が HTTP で読めます。
+
+| 口                                       | 返すもの                                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/scripts`                       | `scripts` を書かないクロールが走らせるものの身元: `id`・`version`・`phase`・`sha256`                               |
+| `GET /api/scripts/:id/versions`          | 1 つの id の版の並び（新しい順）: `version`・`phase`・`sha256`・`enabled`・`bytes`・`createdAt`。source は返さない |
+| `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと: 上に `id`・`source`・`options` を足した物。無効な版も返す（過去のクロールが走らせた物）              |
+| `GET /api/host-types`                    | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                   |
+
+4 本ともクロールの口と同じ問い（呼び出し元の組織のどれかに `can_submit`）を訊きます。名乗りが
+無ければ 401、許可が無ければ 404 で、在らない id や版と同じ答えです。版が 1 以上の整数でなければ、
+何より先に 400 です。`bytes` は UTF-8 の大きさです。`pnpm run scripts show --version` は 1 版の口と
+同じ関数で読みます。
+
+**版の番号は使い回されます。** `add` は最新の版 + 1 を採るので、最新の版を消して足し直すと、同じ番号が
+別の中身になります（capture-scheduler の e2e は毎回これをします）。ある版がクロールの走らせた物かを
+確かめるには、その `sha256` をクロールの物と比べます。
 
 ### その場の JS
 

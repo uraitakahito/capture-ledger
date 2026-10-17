@@ -3,14 +3,17 @@
  * ページの中で走らせる JavaScript の目録 (`scripts`) を足す・見る・切り替える・消す、
  * 開発用の CLI。
  *
- *   pnpm run scripts import .upstream/capture-scripts               # catalog.json ごと
+ *   pnpm run scripts import .upstream/capture-scripts               # catalog.json と受け皿の型
  *   pnpm run scripts add autoscroll --file ./autoscroll.js
  *   pnpm run scripts add autoscroll --file - < ./autoscroll.js      # 標準入力から
  *   pnpm run scripts add hide-webdriver --file ./x.js --phase preload
  *   pnpm run scripts add autoscroll --file ./x.js --options '{"maxSteps":60}'
  *   pnpm run scripts list                                           # 各 id の最新版
  *   pnpm run scripts list --all --json                              # 版を全部、機械向け
+ *   pnpm run scripts list autoscroll --all                          # 1 つの id の版の並び
  *   pnpm run scripts show autoscroll                                # source をそのまま出す
+ *   pnpm run scripts show autoscroll --version 1                    # 古い版 (無効な版も)
+ *   pnpm run scripts types                                          # 受け皿 __bh の型
  *   pnpm run scripts disable autofetch                              # 既定の顔ぶれから外す
  *   pnpm run scripts enable autofetch
  *   pnpm run scripts rm autofetch --version 2
@@ -37,9 +40,12 @@ import { createKyselyClient } from "../db/kysely.js";
 import { fatal } from "../logger.js";
 import { readAll } from "../targets/input.js";
 import {
+  addHostTypes,
   addScript,
   catalogIdRefusal,
   listScripts,
+  readHostTypes,
+  readScript,
   removeScripts,
   resolveScripts,
   setScriptEnabled,
@@ -153,6 +159,9 @@ program
  *
  * 中身が同じものは版が増えない (`addScript`) ので、**何度流しても構わない**。
  * 置き場所を移したあとの流し直しも、目録から見れば何も起きない。
+ *
+ * 同じ置き場所の types/host.d.ts (受け皿 `__bh` の型) も写す (`host_types`・`020`)。目録の source を
+ * 読む人に見せる写しで、走るものではない —— 無ければ言って、目録だけを入れる。
  */
 interface CatalogEntry {
   id: string;
@@ -223,6 +232,10 @@ program
       if (source.trim() === "") return fail(`中身が空: ${join(dir, entry.file)}`);
       sources.push({ entry, source });
     }
+    // 受け皿の型も先に読む。無いのは許す (目録だけの置き場所もある) が、空なら何も足さない
+    const typesPath = join(dir, "types", "host.d.ts");
+    const hostTypes = await readFile(typesPath, "utf-8").catch(() => undefined);
+    if (hostTypes?.trim() === "") return fail(`中身が空: ${typesPath}`);
 
     await withDb(opts.databaseUrl, async (db) => {
       let added = 0;
@@ -238,57 +251,92 @@ program
       process.stdout.write(
         `${dir}: ${String(catalog.length)} 本を読み、${String(added)} 本が新しい版になった\n`,
       );
+      if (hostTypes === undefined) {
+        process.stdout.write(`${typesPath} が無い。受け皿の型は取り込んでいない\n`);
+        return;
+      }
+      const types = await addHostTypes(db, hostTypes);
+      process.stdout.write(
+        `${types.reused ? "=" : "✓"} host.d.ts v${String(types.version)}  ` +
+          `sha256:${types.sha256.slice(0, 12)}…  ` +
+          `${types.reused ? "中身が同じなので、版は増やしていない" : "足した"}\n`,
+      );
     });
   });
 
 const describeRow = (row: ScriptRow): string =>
   `${row.id} v${String(row.version)}  ${row.phase.padEnd(8)}  ${row.enabled ? "有効" : "無効"}  ` +
-  `${String(row.bytes)} B  sha256:${row.sha256.slice(0, 12)}…`;
+  `${String(row.bytes)} B  sha256:${row.sha256.slice(0, 12)}…  ${row.createdAt.toISOString()}`;
 
 program
   .command("list")
   .description("目録を並べる。既定は各 id の最新版だけ")
+  .argument("[id]", "この id だけ (--all と合わせると、その id の版の並び)")
   .option("--all", "版を全部")
   .option("--json", "JSON で出す")
   .addOption(databaseUrlOption)
-  .action(async (opts: { all?: boolean; json?: boolean; databaseUrl: string }) => {
-    await withDb(opts.databaseUrl, async (db) => {
-      const rows = await listScripts(db, { allVersions: opts.all === true });
-      if (opts.json) {
-        process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
-        return;
-      }
-      for (const row of rows) process.stdout.write(`${describeRow(row)}\n`);
-      const enabled = rows.filter((row) => row.enabled).length;
-      process.stdout.write(
-        `${String(rows.length)} 行 (有効 ${String(enabled)}・無効 ${String(rows.length - enabled)})。` +
-          "何も指定しないクロールは、有効な各 id の最新版を走らせる\n",
-      );
-    });
-  });
+  .action(
+    async (
+      rawId: string | undefined,
+      opts: { all?: boolean; json?: boolean; databaseUrl: string },
+    ) => {
+      await withDb(opts.databaseUrl, async (db) => {
+        const id = rawId === undefined ? undefined : nonEmpty(rawId);
+        const rows = await listScripts(db, {
+          allVersions: opts.all === true,
+          ...(id === undefined ? {} : { id }),
+        });
+        // 名指しした id が無いのは誤り (show と同じ)。名指ししない空の目録は、0 行と言う
+        if (id !== undefined && rows.length === 0) return fail(`目録に無い: ${id}`);
+        if (opts.json) {
+          process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
+          return;
+        }
+        for (const row of rows) process.stdout.write(`${describeRow(row)}\n`);
+        const enabled = rows.filter((row) => row.enabled).length;
+        process.stdout.write(
+          `${String(rows.length)} 行 (有効 ${String(enabled)}・無効 ${String(rows.length - enabled)})。` +
+            "何も指定しないクロールは、有効な各 id の最新版を走らせる\n",
+        );
+      });
+    },
+  );
 
 program
   .command("show")
-  .description("source をそのまま出す。版を省くと最新版")
+  .description("source をそのまま出す。版を省くと最新版、書けばその版 (無効な版も)")
   .argument("<id>", "スクリプトの id")
   .addOption(new Option("--version <n>", "この版").argParser(parseVersion))
   .addOption(databaseUrlOption)
   .action(async (rawId: string, opts: { version?: number; databaseUrl: string }) => {
     await withDb(opts.databaseUrl, async (db) => {
       const id = nonEmpty(rawId);
-      // 名指しの解決と同じ道を通す —— 「クロールが送るのはこれ」と同じものを見せるため。
-      // 1 本だけ頼むので、重ね (`duplicate`) は起きない。答えの形は missing と同じ。
+      // 版を省いたときは、名指しの解決と同じ道で版を決める —— 「クロールが送るのはこれ」と
+      // 同じものを見せるため。1 本だけ頼むので、重ね (`duplicate`) は起きない。
       const resolved = await resolveScripts(db, [{ catalog: id }]);
       if (resolved.kind !== "ok") return fail(`目録に無い: ${resolved.ids.join(", ")}`);
-      const script = resolved.scripts[0];
-      if (script === undefined) return fail(`目録に無い: ${id}`);
-      if (opts.version !== undefined && opts.version !== script.version) {
+      const latest = resolved.scripts[0];
+      if (latest === undefined) return fail(`目録に無い: ${id}`);
+      // 読むのは台帳の口 (`GET /api/scripts/:id/versions/:version`) と同じ readScript
+      const script = await readScript(db, id, opts.version ?? latest.version);
+      if (script === undefined) return fail(`${id} に v${String(opts.version)} は無い`);
+      process.stdout.write(script.source.endsWith("\n") ? script.source : `${script.source}\n`);
+    });
+  });
+
+program
+  .command("types")
+  .description("受け皿 __bh の型 (import が写した、いちばん新しい版) をそのまま出す")
+  .addOption(databaseUrlOption)
+  .action(async (opts: { databaseUrl: string }) => {
+    await withDb(opts.databaseUrl, async (db) => {
+      const types = await readHostTypes(db);
+      if (types === undefined) {
         return fail(
-          `最新版は v${String(script.version)}。古い版は \`list --all --json\` で見る ` +
-            "(この口は「いま送られるもの」だけを出す)",
+          "受け皿の型はまだ無い (pnpm run scripts import .upstream/capture-scripts で入る)",
         );
       }
-      process.stdout.write(script.source.endsWith("\n") ? script.source : `${script.source}\n`);
+      process.stdout.write(types.source.endsWith("\n") ? types.source : `${types.source}\n`);
     });
   });
 

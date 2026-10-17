@@ -62,6 +62,8 @@ const ONLY_IN_CI = {
   "Migration round-trip (down then up)": "同上。手元の `check` が DB を要求しないため",
   "Targets CLI against Postgres":
     "同上。撮る対象の CLI を本物の DB に当てる (scripts/targets-smoke.mjs)",
+  "Scripts CLI against Postgres":
+    "同上。目録の CLI と、目録を読む口の関数を本物の DB に当てる (scripts/scripts-smoke.mjs)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

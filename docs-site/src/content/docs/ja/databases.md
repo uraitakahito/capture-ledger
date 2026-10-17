@@ -1,15 +1,15 @@
 ---
 title: データベース
-description: capture-ledger と OpenFGA がそれぞれ持つ Postgres と、その中にある 17 のテーブル。
+description: capture-ledger と OpenFGA がそれぞれ持つ Postgres と、その中のテーブル。
 ---
 
 capture-ledger の開発スタックには **Postgres が 2 つ**あります。別々のものを入れる、
 別々のデータベースです。
 
-| コンテナ                    | 中身                                                         | 誰が SQL で触るか |
-| --------------------------- | ------------------------------------------------------------ | ----------------- |
-| `postgres.capture-ledger`   | `capture_targets` / `archives` / `fga_outbox` ほか **11 表** | capture-ledger    |
-| `openfga-db.capture-ledger` | `tuple` / `authorization_model` ほか **6 表**                | OpenFGA だけ      |
+| コンテナ                    | 中身                                                                                | 誰が SQL で触るか |
+| --------------------------- | ----------------------------------------------------------------------------------- | ----------------- |
+| `postgres.capture-ledger`   | `capture_targets` / `archives` / `fga_outbox` ほか（[下記](#capture-ledger-の-db)） | capture-ledger    |
+| `openfga-db.capture-ledger` | `tuple` / `authorization_model` ほか（[下記](#openfga-の-db)）                      | OpenFGA だけ      |
 
 重なるテーブルは 1 つもありません。資格情報も相互に通らず、`openfga-db` は
 ポートを公開していないので、覗くには `container exec` が要ります。
@@ -36,6 +36,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | `crawls`                                                                   | クロール 1 本につき 1 行。方針・状態・停止理由                   |
 | `crawl_pages`                                                              | クロールが到達したページ 1 件につき 1 行。重複排除の索引でもある |
 | `scripts`                                                                  | クロールが名指せる JavaScript の目録                             |
+| `host_types`                                                               | 受け皿（`__bh`）の型。目録を読む人に見せる写し                   |
 | `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`                  | Kysely が作る帳簿（下記）                                        |
 
 ### OpenFGA の DB

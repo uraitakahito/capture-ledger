@@ -6,7 +6,7 @@ import { recordingDb } from "./recording-db.js";
  * 目録を読む芯 (`src/scripts/store.ts`) が、**実際に組む SQL** を見る。
  *
  * 代役は Kysely 本体に SQL を組ませて記録する (`recording-db.ts`)。版の絞り込みを書き忘れれば、
- * SQL の文字列にそれが出る。Postgres で本当に通るかは、CI の Postgres に当てる検査が見る。
+ * SQL の文字列にそれが出る。Postgres で本当に通るかは、CI の `scripts/scripts-smoke.mjs` が見る。
  */
 describe("目録の 1 版を読む", () => {
   it("id と版で絞り、source と渡す値まで 1 行だけ引く", async () => {
