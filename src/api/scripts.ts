@@ -70,7 +70,13 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
     // 有効な各 id の最新版を全部 (サイト用の台本も)。既定で走るのは、この中の札の無い物と起点に合う物
     const scripts = await enabledLatest(db);
     return reply.code(200).send({
-      scripts: scripts.map(({ id, version, phase, sha256 }) => ({ id, version, phase, sha256 })),
+      scripts: scripts.map(({ id, version, phase, sha256, sites }) => ({
+        id,
+        version,
+        phase,
+        sha256,
+        sites,
+      })),
     });
   });
 
@@ -89,10 +95,11 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
       if (rows.length === 0) return reply.code(404).send({ error: "not found" });
       return reply.code(200).send({
         id: request.params.id,
-        versions: rows.map(({ version, phase, sha256, enabled, bytes, createdAt }) => ({
+        versions: rows.map(({ version, phase, sha256, sites, enabled, bytes, createdAt }) => ({
           version,
           phase,
           sha256,
+          sites,
           enabled,
           bytes,
           createdAt,

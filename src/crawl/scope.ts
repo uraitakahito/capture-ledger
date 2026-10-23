@@ -31,6 +31,8 @@ export interface ParsedUrl {
   /** フラグメントを落とした、比較と保存に使う形。 */
   normalized: string;
   host: string;
+  /** ポートを除いたホスト名。目録の札（`021`）と比べるのはこちら (札にポートは書けない) */
+  hostname: string;
   origin: string;
 }
 
@@ -51,7 +53,7 @@ export const parseHttpUrl = (raw: string): ParsedUrl | undefined => {
   if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
 
   url.hash = "";
-  return { normalized: url.toString(), host: url.host, origin: url.origin };
+  return { normalized: url.toString(), host: url.host, hostname: url.hostname, origin: url.origin };
 };
 
 /**

@@ -73,12 +73,13 @@ describe("目録を読む口の認可", () => {
 });
 
 describe("GET /api/scripts/:id/versions/:version", () => {
-  it("その版を丸ごと（source・バイト数・渡す値・有効か・取り込んだ時刻）返す", async () => {
+  it("その版を丸ごと（source・バイト数・渡す値・札・有効か・取り込んだ時刻）返す", async () => {
     const row = {
       id: "autoscroll",
       version: 1,
       phase: "behavior",
       sha256: "c9956819ffea",
+      sites: ["example.com"],
       enabled: false,
       bytes: 2695,
       createdAt: new Date("2026-10-14T12:26:38.656Z"),
@@ -90,6 +91,7 @@ describe("GET /api/scripts/:id/versions/:version", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ...row, createdAt: "2026-10-14T12:26:38.656Z" });
     expect(queries).toHaveLength(1);
+    expect(queries[0]?.sql).toContain('"sites"');
     expect(queries[0]?.sql).toContain('where "id" = $1 and "version" = $2');
     expect(queries[0]?.parameters).toEqual(["autoscroll", 1]);
   });
@@ -124,6 +126,7 @@ describe("GET /api/scripts/:id/versions", () => {
       version,
       phase: "behavior",
       sha256: `sha-${String(version)}`,
+      sites: version === 2 ? ["example.com"] : [],
       enabled: true,
       bytes: 2695,
       createdAt: new Date(`2026-10-1${String(version + 3)}T00:00:00.000Z`),
@@ -143,8 +146,10 @@ describe("GET /api/scripts/:id/versions", () => {
         "enabled",
         "phase",
         "sha256",
+        "sites",
         "version",
       ]);
+    expect(body.versions.map((v) => v["sites"])).toEqual([["example.com"], []]); // 札は版ごと
     expect(queries[0]?.sql).not.toContain('"source"');
     expect(queries[0]?.parameters).toEqual(["autoscroll"]);
   });
@@ -180,7 +185,7 @@ describe("GET /api/host-types", () => {
 });
 
 describe("GET /api/scripts", () => {
-  it("顔ぶれの身元（id・版・phase・sha256）だけを返す", async () => {
+  it("有効な各 id の最新版を、身元と札（id・版・phase・sha256・sites）だけで返す", async () => {
     const row = {
       id: "autoscroll",
       version: 2,
@@ -188,12 +193,27 @@ describe("GET /api/scripts", () => {
       source: "// a\n",
       sha256: "c9",
       options: {},
+      sites: [],
     };
     const { res } = await get("/api/scripts", { rows: [[row]] });
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      scripts: [{ id: "autoscroll", version: 2, phase: "behavior", sha256: "c9" }],
+      scripts: [{ id: "autoscroll", version: 2, phase: "behavior", sha256: "c9", sites: [] }],
     });
+  });
+
+  it("サイト用の台本も返す（既定で走る物だけではない）。札で絞らない", async () => {
+    const rows = [
+      { id: "autoscroll", version: 2, phase: "behavior", sha256: "c9", sites: [] },
+      { id: "example-title", version: 1, phase: "behavior", sha256: "e1", sites: ["example.com"] },
+    ];
+    const { res, queries } = await get("/api/scripts", { rows: [rows] });
+
+    expect(res.json<{ scripts: unknown[] }>().scripts).toEqual(rows);
+    expect(queries[0]?.sql).toBe(
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites" from "scripts" ' +
+        'where "enabled" = $1 order by "id", "version" desc',
+    );
   });
 });

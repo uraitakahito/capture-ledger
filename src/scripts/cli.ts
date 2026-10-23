@@ -8,9 +8,11 @@
  *   pnpm run scripts add autoscroll --file - < ./autoscroll.js      # 標準入力から
  *   pnpm run scripts add hide-webdriver --file ./x.js --phase preload
  *   pnpm run scripts add autoscroll --file ./x.js --options '{"maxSteps":60}'
+ *   pnpm run scripts add example-title --file ./x.ts --site example.com   # サイト用 (札)。--site は何度でも
  *   pnpm run scripts list                                           # 各 id の最新版
  *   pnpm run scripts list --all --json                              # 版を全部、機械向け
  *   pnpm run scripts list autoscroll --all                          # 1 つの id の版の並び
+ *   pnpm run scripts list --seed https://example.com/               # その起点で既定が走らせる物
  *   pnpm run scripts show autoscroll                                # source をそのまま出す
  *   pnpm run scripts show autoscroll --version 1                    # 古い版 (無効な版も)
  *   pnpm run scripts types                                          # 受け皿 __bh の型
@@ -35,6 +37,7 @@ import { join } from "node:path";
 import { Command, InvalidArgumentError, Option } from "commander";
 import type { Kysely } from "kysely";
 import { databaseUrlOption } from "../cli/database-url-option.js";
+import { parseHttpUrl } from "../crawl/scope.js";
 import type { Database, ScriptPhase } from "../db/database.js";
 import { createKyselyClient } from "../db/kysely.js";
 import { fatal } from "../logger.js";
@@ -49,6 +52,7 @@ import {
   removeScripts,
   resolveScripts,
   setScriptEnabled,
+  sitesRefusal,
   type ScriptRow,
 } from "./store.js";
 
@@ -76,6 +80,13 @@ const parseVersion = (raw: string): number => {
   if (!/^[1-9][0-9]*$/.test(raw)) throw new InvalidArgumentError("版は 1 以上の整数");
   return Number(raw);
 };
+
+/** 何度でも書ける旗 (`--site`・`--seed`) を、書いた順の列に集める */
+const collect = (value: string, previous: string[] = []): string[] => [...previous, value];
+
+/** 札を 1 行の終わりに添える。札の無い台本 (どこでも走る) には何も添えない */
+const sitesNote = (sites: readonly string[]): string =>
+  sites.length === 0 ? "" : `  札:${sites.join(",")}`;
 
 const fail = (message: string): void => {
   process.stderr.write(`${message}\n`);
@@ -112,6 +123,11 @@ program
       .default("behavior"),
   )
   .addOption(new Option("--options <json>", "そのスクリプトに渡す値").argParser(parseOptions))
+  .option(
+    "--site <host>",
+    "札: 起点のどれかがこのホスト名のクロールでだけ走る (何度でも。小文字のホスト名)",
+    collect,
+  )
   .addOption(databaseUrlOption)
   .action(
     async (
@@ -120,10 +136,14 @@ program
         file: string;
         phase: ScriptPhase;
         options?: Record<string, unknown>;
+        site?: string[];
         databaseUrl: string;
       },
     ) => {
       const id = nonEmpty(rawId);
+      // 札は DB の CHECK (`021`) より先に、読める文で断る
+      const sitesRefused = opts.site === undefined ? undefined : sitesRefusal(opts.site);
+      if (sitesRefused !== undefined) return fail(sitesRefused);
       // `inline-` はその場の JS に取ってある。DB の CHECK (`019`) より先に、ファイルを読む前に断る
       const refused = catalogIdRefusal(id);
       if (refused !== undefined) return fail(refused);
@@ -140,11 +160,13 @@ program
           phase: opts.phase,
           source,
           ...(opts.options === undefined ? {} : { options: opts.options }),
+          ...(opts.site === undefined ? {} : { sites: opts.site }),
         });
         process.stdout.write(
           `${result.reused ? "=" : "✓"} ${id} v${String(result.version)}  ${opts.phase}  ` +
             `sha256:${result.sha256.slice(0, 12)}…  ` +
-            `${result.reused ? "中身が同じなので、版は増やしていない" : "足した"}\n`,
+            `${result.reused ? "中身が同じなので、版は増やしていない" : "足した"}` +
+            `${sitesNote(opts.site ?? [])}\n`,
         );
       });
     },
@@ -168,9 +190,12 @@ interface CatalogEntry {
   phase: ScriptPhase;
   file: string;
   summary: string;
+  /** 札 (`021`)。書いていなければ空 (どこでも走る) */
+  sites: string[];
 }
 
-const CATALOG_PROFILE = "capture-scripts/1";
+/** 札 (`sites`) を書ける形。`/1` は断る —— 札を知らない catalog と区別するため */
+const CATALOG_PROFILE = "capture-scripts/2";
 
 /** 読めた catalog か、読めなかった理由。**黙って一部だけ足さない。** */
 const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
@@ -208,7 +233,19 @@ const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
     }
     if (typeof file !== "string" || file === "") return `${path}: ${id} に file が無い`;
     const summary = entry["summary"];
-    out.push({ id, phase, file, summary: typeof summary === "string" ? summary : "" });
+    const sites = entry["sites"] ?? [];
+    if (!Array.isArray(sites) || !sites.every((site) => typeof site === "string")) {
+      return `${path}: ${id} の sites がホスト名の列ではない`;
+    }
+    const sitesRefused = sitesRefusal(sites);
+    if (sitesRefused !== undefined) return `${path}: ${id} の${sitesRefused}`;
+    out.push({
+      id,
+      phase,
+      file,
+      summary: typeof summary === "string" ? summary : "",
+      sites,
+    });
   }
   return out;
 };
@@ -240,12 +277,19 @@ program
     await withDb(opts.databaseUrl, async (db) => {
       let added = 0;
       for (const { entry, source } of sources) {
-        const result = await addScript(db, { id: entry.id, phase: entry.phase, source });
+        // 札は catalog が正なので、必ず意見として渡す (書いていなければ空 = どこでも走る)
+        const result = await addScript(db, {
+          id: entry.id,
+          phase: entry.phase,
+          source,
+          sites: entry.sites,
+        });
         if (!result.reused) added += 1;
         process.stdout.write(
           `${result.reused ? "=" : "✓"} ${entry.id} v${String(result.version)}  ` +
             `${entry.phase.padEnd(8)}  sha256:${result.sha256.slice(0, 12)}…  ` +
-            `${result.reused ? "中身が同じなので、版は増やしていない" : "足した"}\n`,
+            `${result.reused ? "中身が同じなので、版は増やしていない" : "足した"}` +
+            `${sitesNote(entry.sites)}\n`,
         );
       }
       process.stdout.write(
@@ -266,7 +310,8 @@ program
 
 const describeRow = (row: ScriptRow): string =>
   `${row.id} v${String(row.version)}  ${row.phase.padEnd(8)}  ${row.enabled ? "有効" : "無効"}  ` +
-  `${String(row.bytes)} B  sha256:${row.sha256.slice(0, 12)}…  ${row.createdAt.toISOString()}`;
+  `${String(row.bytes)} B  sha256:${row.sha256.slice(0, 12)}…  ${row.createdAt.toISOString()}` +
+  sitesNote(row.sites);
 
 program
   .command("list")
@@ -274,13 +319,50 @@ program
   .argument("[id]", "この id だけ (--all と合わせると、その id の版の並び)")
   .option("--all", "版を全部")
   .option("--json", "JSON で出す")
+  .option(
+    "--seed <url>",
+    "この起点で起こすクロールが、scripts を省いたときに走らせる物を並べる (何度でも)",
+    collect,
+  )
   .addOption(databaseUrlOption)
   .action(
     async (
       rawId: string | undefined,
-      opts: { all?: boolean; json?: boolean; databaseUrl: string },
+      opts: { all?: boolean; json?: boolean; seed?: string[]; databaseUrl: string },
     ) => {
       await withDb(opts.databaseUrl, async (db) => {
+        if (opts.seed !== undefined) {
+          // 起点で選ぶのは各 id の最新版だけなので、id や --all とは一緒に使えない
+          if (rawId !== undefined || opts.all === true)
+            return fail("--seed は id・--all と一緒に使えない");
+          const parsed = opts.seed.map((raw) => parseHttpUrl(raw));
+          if (parsed.some((seed) => seed === undefined))
+            return fail("--seed は http(s) の URL だけ");
+          const hosts = [...new Set(parsed.map((seed) => seed!.hostname))];
+          // POST /api/crawls と同じ関数で選ぶ (札の無い物と、起点に合うサイト用の物)
+          const resolved = await resolveScripts(db, undefined, hosts);
+          const scripts = resolved.kind === "ok" ? resolved.scripts : [];
+          if (opts.json) {
+            const shown = scripts.map(({ id, version, phase, sha256, sites }) => ({
+              id,
+              version,
+              phase,
+              sha256,
+              sites,
+            }));
+            process.stdout.write(`${JSON.stringify(shown, null, 2)}\n`);
+            return;
+          }
+          for (const script of scripts) {
+            process.stdout.write(
+              `${script.id} v${String(script.version)}  ${script.phase.padEnd(8)}${sitesNote(script.sites ?? [])}\n`,
+            );
+          }
+          process.stdout.write(
+            `${String(scripts.length)} 本。起点 ${hosts.join("・")} のクロールが、scripts を省いたときに走らせる物\n`,
+          );
+          return;
+        }
         const id = rawId === undefined ? undefined : nonEmpty(rawId);
         const rows = await listScripts(db, {
           allVersions: opts.all === true,
@@ -296,7 +378,8 @@ program
         const enabled = rows.filter((row) => row.enabled).length;
         process.stdout.write(
           `${String(rows.length)} 行 (有効 ${String(enabled)}・無効 ${String(rows.length - enabled)})。` +
-            "何も指定しないクロールは、有効な各 id の最新版を走らせる\n",
+            "何も指定しないクロールは、有効な各 id の最新版のうち、札の無い物と、起点に合う物を走らせる " +
+            "(--seed で見る)\n",
         );
       });
     },

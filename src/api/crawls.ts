@@ -42,8 +42,10 @@ import type {
   Database,
 } from "../db/database.js";
 import {
+  enabledLatest,
   INLINE_PREFIX,
   isInlineId,
+  offsiteScripts,
   resolveScripts,
   type RequestedScript,
 } from "../scripts/store.js";
@@ -429,13 +431,26 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       const parsedSeeds = seeds as ParsedUrl[];
 
       // 走らせるものを **いま 1 度だけ** 決める。目録は後から変わりうるが、
-      // このクロールが走らせるものは変わらない (`018`)。
-      const resolved = await resolveScripts(db, body.scripts);
+      // このクロールが走らせるものは変わらない (`018`)。札 (`021`) と比べるのは起点のホスト名で、
+      // ポートは見ない —— 省いた頼みでは、札の無い物と、起点に合うサイト用の物が走る
+      const seedHosts = [...new Set(parsedSeeds.map((parsed) => parsed.hostname))];
+      const resolved = await resolveScripts(db, body.scripts, seedHosts);
       if (resolved.kind === "missing") {
         return reply.code(400).send({ error: "unknown catalog scripts", ids: resolved.ids });
       }
       if (resolved.kind === "duplicate") {
         return reply.code(400).send({ error: "duplicate script ids", ids: resolved.ids });
+      }
+
+      // **名指しで入れたサイト用の台本は、起点のどれかがそのサイトにあること。** 通すと、どの頁でも
+      // 冒頭の見分けで何もせずに終わる台本を、走らせたと記録することになる。外す (名指さない) のは自由
+      const offsite = offsiteScripts(resolved.scripts, seedHosts);
+      if (offsite.length > 0) {
+        return reply.code(400).send({
+          error: "site scripts need a seed on their site",
+          ids: offsite.map((script) => script.id),
+          hint: offsite.map((script) => `${script.id}: ${script.sites.join(", ")}`).join(" / "),
+        });
       }
 
       // **既定を頼まれたのに、既定が空。** 目録を埋め忘れた配備はここで止まる ——
@@ -445,6 +460,16 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // 明示の `scripts: []` は通す: 設定漏れと「何も走らせない」という意思は別物で、
       // 後者を表せなくすると、素の取り込みが欲しい配備が目録を持たされることになる。
       if (body.scripts === undefined && resolved.scripts.length === 0) {
+        // 目録は在るのに、全部が別のサイト用 —— 「目録が空」とは言わない (取り込み直しても直らない)
+        const enabled = await enabledLatest(db);
+        if (enabled.length > 0) {
+          return reply.code(400).send({
+            error: "no default scripts for these seeds",
+            hint:
+              enabled.map((script) => `${script.id}: ${script.sites.join(", ")}`).join(" / ") +
+              " (run nothing on purpose: send scripts: [])",
+          });
+        }
         return reply.code(400).send({
           error: "the script catalog is empty",
           hint:
@@ -531,7 +556,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // 辿るつもりが無いなら `links` は要らない。取り出させても相手と S3 に無駄が出る。
         captureFormats: withLinks(capture.formats, crawl.maxDepth > 0),
         signing: capture.signing,
-        scripts: resolved.scripts,
+        // 次の段と同じく `toDispatched` を通す。行の写しには札 (`021`) が在るが、flow には送らない ——
+        // compile の段は scripts をそのまま ts-compile-service に渡すので、知らない欄が届く
+        scripts: resolved.scripts.map(toDispatched),
         ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
       });
 
@@ -703,6 +730,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           version: script.version,
           phase: script.phase,
           sha256: script.sha256,
+          // 札 (`021`)。その場の JS と、札より前に起こしたクロールの行は空
+          sites: script.sites ?? [],
           jsSha256: script.jsSha256 ?? null,
           compiledWith: script.compiledWith ?? null,
           ...(isInlineId(script.id) && {
