@@ -10,7 +10,7 @@ capture-ledger の入力は Postgres のテーブル 1 つだけです。**API �
 
 ## クエリ
 
-`fromTargets` で起こしたクロールが読むのは、これだけです。
+`fromTargets` で始めたクロールが読むのは、これだけです。
 
 ```sql
 SELECT url FROM capture_targets WHERE enabled AND org_id = $1 ORDER BY id ASC [LIMIT $2]
