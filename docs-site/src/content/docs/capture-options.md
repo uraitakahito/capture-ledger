@@ -84,18 +84,20 @@ and pins its resolution onto the crawl.
 
 The sources come from [capture-scripts](https://github.com/uraitakahito/capture-scripts),
 pinned here as the `.upstream/capture-scripts` submodule. Its `catalog.json` carries what a
-source cannot say about itself — the `id` and the `phase`.
+source cannot say about itself — the `id`, the `phase`, and for a site script its `sites`.
 
 ```sh
 # Import the catalog and the receptacle's types. Idempotent: same bytes, same version.
 pnpm run scripts import .upstream/capture-scripts
-pnpm run scripts list                     # what a crawl with no scripts will run
+pnpm run scripts list                     # the newest version of each id, with its sites
+pnpm run scripts list --seed https://example.com/   # what a crawl from that seed runs by default
 pnpm run scripts list autoscroll --all    # every version of one id
 pnpm run scripts show autoscroll --version 1   # one version's source, disabled or not
 pnpm run scripts types                    # the receptacle's (__bh) types, as imported
 
 # One-offs and tuning still go in by hand.
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
+pnpm run scripts add example-title --file ./example-title.ts --site example.com   # a site script
 pnpm run scripts disable autofetch        # out of the default set, still nameable
 ```
 
@@ -119,25 +121,42 @@ after load, in the main frame, once, and can report through the receptacle.
 `preload` runs **before navigation**, in every frame including iframes, on every
 navigation, and **cannot report at all**.
 
+### Site scripts (`sites`)
+
+A catalog entry can carry `sites`: lowercase hostnames, IDN in punycode, with no port, scheme
+or `*`. A script with `sites` is a **site script**, and a crawl runs it only when one of the
+crawl's seeds is on one of those hosts. The seed's hostname is compared exactly and its port is
+ignored, so `example.com` and `www.example.com` are different hosts. A script without `sites`
+runs anywhere, as before. `sites` is part of a version, like `options`: changing it adds a
+version. The catalog format that can carry it is `capture-scripts/2` (capture-scripts v0.3.0);
+`import` refuses `capture-scripts/1`, and refuses a malformed hostname before touching the database.
+
+The rule is decided per crawl, from its seeds. A site script still runs on every page of a crawl
+it was chosen for, including pages on other hosts the crawl reaches by following links. So a site
+script checks `location.hostname` itself and does nothing elsewhere; capture-scripts' check
+makes sure each hostname appears in the source.
+
 ### What a crawl pins
 
 `POST /api/crawls` resolves the catalog **once**, when the crawl starts, and stores
-the result — id, version, phase, source, sha256, options — on the crawl row. Later
+the result — id, version, phase, source, sha256, options, sites — on the crawl row. Later
 levels reuse that; the catalog is never consulted again. Adding a version halfway
 through a long crawl therefore cannot change what its later pages run.
 
-| `scripts`                                                         | What runs                                                                       |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| omitted                                                           | The newest version of every **enabled** id, `id`-order                          |
-| `[{"catalog": "b"}, {"catalog": "a"}]`                            | Exactly those, **in that order** — order is the instruction                     |
-| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | The script you wrote, as `inline-x` version 1; never enters the catalog (below) |
-| `[]`                                                              | Nothing. "Use the default" and "run nothing" are different intents              |
-| an unknown id, or the same id twice                               | **400**, naming them (`ids`); no crawl is started                               |
+| `scripts`                                                            | What runs                                                                                                                               |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| omitted                                                              | The newest version of every **enabled** id, `id`-order, keeping those without `sites` and those whose `sites` include a seed's hostname |
+| `[{"catalog": "b"}, {"catalog": "a"}]`                               | Exactly those, **in that order** — order is the instruction                                                                             |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]`    | The script you wrote, as `inline-x` version 1; never enters the catalog (below)                                                         |
+| `[]`                                                                 | Nothing. "Use the default" and "run nothing" are different intents                                                                      |
+| an unknown id, or the same id twice                                  | **400**, naming them (`ids`); no crawl is started                                                                                       |
+| a site script whose `sites` include no seed's hostname               | **400** `site scripts need a seed on their site`, naming them (`ids`, with their sites in `hint`); no crawl is started                  |
+| omitted, while every enabled script is a site script for other hosts | **400** `no default scripts for these seeds` (`hint` lists them), not "the catalog is empty"                                            |
 
 Each element is an object with exactly one key, `catalog` or `inline`.
 
 For catalog entries, `GET /api/crawls/:id` reports the identity — id, version, phase,
-sha256 — and never the source. What ran in bytes is in the archive
+sha256 — and the `sites`, and never the source. What ran in bytes is in the archive
 (`behaviors/custom.jsonl` and `preload/scripts.jsonl`) and in the catalog
 ([Reading a version](#reading-a-version)). An inline entry
 also carries `inline` (`name`, `phase` and the source's size in UTF-8 `bytes`), still without
@@ -160,12 +179,12 @@ Before the first report both are `null`.
 
 The catalog's sources can be read over HTTP by whoever may start a crawl:
 
-| Route                                    | Answers                                                                                                                     |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/scripts`                       | What a crawl with no `scripts` runs, as identities: `id`, `version`, `phase`, `sha256`                                      |
-| `GET /api/scripts/:id/versions`          | Every version of one id, newest first: `version`, `phase`, `sha256`, `enabled`, `bytes`, `createdAt`. No source             |
-| `GET /api/scripts/:id/versions/:version` | One version whole: the above plus `id`, `source` and `options`. Disabled versions too, since a past crawl may have run them |
-| `GET /api/host-types`                    | The newest receptacle types `import` copied: `version`, `sha256`, `createdAt`, `source`, `bytes`                            |
+| Route                                    | Answers                                                                                                                                                                                        |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/scripts`                       | The newest version of every enabled id, site scripts included: `id`, `version`, `phase`, `sha256`, `sites`. A crawl with no `scripts` runs those without `sites` and those on its seeds' hosts |
+| `GET /api/scripts/:id/versions`          | Every version of one id, newest first: `version`, `phase`, `sha256`, `sites`, `enabled`, `bytes`, `createdAt`. No source                                                                       |
+| `GET /api/scripts/:id/versions/:version` | One version whole: the above plus `id`, `source` and `options`. Disabled versions too, since a past crawl may have run them                                                                    |
+| `GET /api/host-types`                    | The newest receptacle types `import` copied: `version`, `sha256`, `createdAt`, `source`, `bytes`                                                                                               |
 
 All four ask the crawl route's question (`can_submit` on one of the caller's organizations). No
 identity is a 401; no permission is a 404, the same answer as an id or version that does not exist.
@@ -218,13 +237,13 @@ server is configured to do, which is what BrowserHive's own documentation descri
 Pacing and reach, in the `POST /api/crawls` body — see
 [Archive ledger](/capture-ledger/archive-ledger/#following-links):
 
-| Field             | Default                             | Meaning                            |
-| ----------------- | ----------------------------------- | ---------------------------------- |
-| `scope`           | `same-origin`                       | `same-host` relaxes it to the host |
-| `maxDepth`        | 2, or 0 with `fromTargets`          | How far to follow                  |
-| `maxPages`        | 30, never below the number of seeds | Total pages                        |
-| `perHostDelayMs`  | 2000                                | Gap between pages on one host      |
-| `hostParallelism` | 4                                   | Distinct hosts touched at once     |
-| `scripts`         | every enabled id, newest version    | What runs in the page (above)      |
+| Field             | Default                                                                       | Meaning                            |
+| ----------------- | ----------------------------------------------------------------------------- | ---------------------------------- |
+| `scope`           | `same-origin`                                                                 | `same-host` relaxes it to the host |
+| `maxDepth`        | 2, or 0 with `fromTargets`                                                    | How far to follow                  |
+| `maxPages`        | 30, never below the number of seeds                                           | Total pages                        |
+| `perHostDelayMs`  | 2000                                                                          | Gap between pages on one host      |
+| `hostParallelism` | 4                                                                             | Distinct hosts touched at once     |
+| `scripts`         | every enabled id, newest version, unless it is a site script for another host | What runs in the page (above)      |
 
 An unknown key is **400**, not silently dropped.
