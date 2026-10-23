@@ -59,7 +59,7 @@ describe("GET /api/me", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("名前と組織と、クロールを起こせるかを返す", async () => {
+  it("名前と組織と、クロールを始められるかを返す", async () => {
     const { fga } = fgaAnswering(true);
     const res = await me({
       fga: fga as unknown as MeRouteDeps["fga"],

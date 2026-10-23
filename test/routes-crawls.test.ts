@@ -5,7 +5,7 @@ import { registerCrawlRoutes, type CrawlRouteDeps } from "../src/api/crawls.js";
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
 
 /**
- * クロールを起こす口の検査。
+ * クロールを始める口の検査。
  *
  * 2 層で見る。入口の検証は張りぼて deps で、認可と単一実行は
  * 偽の DB で見る。**認可そのものを見ているのではない** —— fga は「false を返せ」と
@@ -806,7 +806,7 @@ describe("クロール route の認可と単一実行", () => {
   });
 });
 
-describe("対象一覧から起こす", () => {
+describe("対象一覧から始める", () => {
   const targets: FakeTarget[] = [
     { url: "https://a.example.com/1", enabled: true, orgId: "acme" },
     { url: "https://b.example.com/2", enabled: true, orgId: "acme" },
@@ -954,7 +954,7 @@ describe("落ちた段を受けて締める", () => {
 });
 
 /**
- * **何を走らせるかは、クロールを起こした時点で決まる。**
+ * **何を走らせるかは、クロールを始めた時点で決まる。**
  *
  * BrowserHive v11.0.0 から、サーバは走らせるものの顔ぶれを持たない。送らなければ
  * ページでは何も走らず、それでも取り込みは成功して archive も出る —— 送り忘れが
@@ -1247,7 +1247,7 @@ describe("走らせるものの解決", () => {
     expect(res.body).not.toContain("/* v2 */");
   });
 
-  /** 起こした行を 1 本持つ台帳に、名前の口を 1 回打つ。 */
+  /** 始めた行を 1 本持つ台帳に、名前の口を 1 回打つ。 */
   const askInline = async (name: string, opts: { allowed?: boolean; id?: string } = {}) => {
     const { crawls } = await start({
       seeds: [SEED],

@@ -321,7 +321,7 @@ program
   .option("--json", "JSON で出す")
   .option(
     "--seed <url>",
-    "この起点で起こすクロールが、scripts を省いたときに走らせる物を並べる (何度でも)",
+    "この起点で始めるクロールが、scripts を省いたときに走らせる物を並べる (何度でも)",
     collect,
   )
   .addOption(databaseUrlOption)

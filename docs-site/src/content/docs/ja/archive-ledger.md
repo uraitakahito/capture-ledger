@@ -171,10 +171,10 @@ S3 は署名しか見ないので、URL を署名した瞬間に判断は確定�
 一覧はそうしません。一覧に出ること自体は何の権限も与えず、
 実際に取得するには上の強整合な Check を通る必要があるからです。
 
-## クロールを起こす
+## クロールを始める
 
 **いつ**取り込むかを決める仕事は capture-ledger の外 —— スケジューラのもの。**何を**
-**どう**投げるかはここに残る。だから境界は、クロールを起こす口と、その様子を返す口の 2 つ。
+**どう**投げるかはここに残る。だから境界は、クロールを始める口と、その様子を返す口の 2 つ。
 
 以前はもう 1 組ありました。`POST /api/runs` と `GET /api/runs/:id` —— 「`capture_targets`
 の有効な行を全部 1 回取る」ための口です。**それは今、`fromTargets` で深さ 0 のクロール**
@@ -187,7 +187,7 @@ curl -X POST http://localhost:7070/api/crawls \
      -d '{"seeds":["https://example.com/"],"maxDepth":2}'
 # → 202 { "crawlId": "9072b625-…" }
 
-# 対象一覧から起こす形。以前の run がしていたのはこれ。
+# 対象一覧から始める形。以前の run がしていたのはこれ。
 curl -X POST http://localhost:7070/api/crawls \
      -H 'content-type: application/json' -d '{"fromTargets":{"limit":5}}'
 
@@ -207,7 +207,7 @@ curl http://localhost:7070/api/crawls/9072b625-…
 書き込む値であっても `status` のままが正しい。
 :::
 
-### 対象一覧から起こす
+### 対象一覧から始める
 
 `fromTargets` は[`capture_targets`](/capture-ledger/ja/databases/capture-targets/)の有効な行を起点にする。
 `limit` を渡せば先頭 n 件。他とは 2 点だけ違う:
@@ -237,7 +237,7 @@ run をクロールに畳んだ帰結が 2 つ。最初の定期実行の前に�
 
 ### クロールは同時に 1 本
 
-走行中に 2 本目を起こすと **409**。担保はアプリの旗ではなく、部分 unique index:
+走行中に 2 本目を始めようとすると **409**。担保はアプリの旗ではなく、部分 unique index:
 
 ```sql
 CREATE UNIQUE INDEX crawls_single_active_idx ON crawls ((true)) WHERE state = 'running'
@@ -296,12 +296,12 @@ body が取り込む形式を受けないのも、`fromTargets` の対象が呼�
   失敗した取り込みを成功として報告する。
 
 クロールを動かすということは JWT で動かすということ —— flow は段ごとの報告を Bearer で
-持ってくるので、手で起こしたクロールでも同じ。`CAPTURE_LEDGER_OIDC_ISSUER` を立てると
+持ってくるので、手で始めたクロールでも同じ。`CAPTURE_LEDGER_OIDC_ISSUER` を立てると
 JWT の resolver が優先され、dev ヘッダは効かなくなる。JWT が dev ヘッダより強いのは狙いどおり
 （両方設定された配備で弱いほうへ落ちないため）。ブラウザの picker もそれに合わせ、
 JWT の設定ではトークンを貼る欄を出す（[アーカイブを見る](/capture-ledger/ja/picker/)）。
 
-### 誰が起こしてよいか
+### 誰が始めてよいか
 
 組織に対する `can_submit`。取り消しが即座に効くよう `HIGHER_CONSISTENCY` で訊く。
 許されていない呼び出し元には **404** —— アーカイブの route と同じ理由。
@@ -310,13 +310,13 @@ JWT の設定ではトークンを貼る欄を出す（[アーカイブを見る
 
 ```sh
 pnpm run fga:grant submitter alice acme
-# alice は acme のクロールを起こせます (書いた: user:alice submitter organization:acme)
+# alice は acme のクロールを始められます (書いた: user:alice submitter organization:acme)
 pnpm run fga:revoke submitter alice acme
-# alice は acme のクロールを起こせません (消した: user:alice submitter organization:acme)
+# alice は acme のクロールを始められません (消した: user:alice submitter organization:acme)
 ```
 
 最後の 1 文は、書いた・消した後に API と同じ問い（`can_submit`）で訊き直した答え。書いた内容から
-推した答えではない —— `submitter` を消しても `admin` が残っていれば「起こせます」と言い、括弧の中に
+推した答えではない —— `submitter` を消しても `admin` が残っていれば「始められます」と言い、括弧の中に
 「ほかの関係で許されています」と添える。
 
 呼び出し元の側から確かめるには `GET /api/me` を訊く。答えるのは呼び出し元自身のことだけで、名前と
@@ -339,7 +339,7 @@ subject に 202 が出た。
 **何をしてよいか**を言うのは OpenFGA なので保存する。`grant` が `member` を書くことを拒む
 のは、まさにこのため —— 1 つの事実に住処が 2 つあると、食い違ったとき答えが無くなる。
 
-許可が 1 つあればクロールは起こせる。クロールは呼び出し元の身元の**先頭の**組織に
+許可が 1 つあればクロールは始められる。クロールは呼び出し元の身元の**先頭の**組織に
 帰属し、`fromTargets` が読むのもその組織の行だけ —— `submitter` が他のテナントの
 対象を自分のクロールに引き込むことはできない。
 
@@ -610,7 +610,7 @@ condition non_expired_grant(current_time: timestamp, grant_time: timestamp, gran
 ### アサーションが守っているもの
 
 `fga/model.fga.yaml` のアサーションは、どれも「通してはいけない人が通る」形の壊れ方を指しています。
-見る側の問いは次のとおりです。起こす側の問い（取り込みを起こせるのは、その組織の submitter と admin だけ）も、
+見る側の問いは次のとおりです。始める側の問い（取り込みを始められるのは、その組織の submitter と admin だけ）も、
 同じ file に並んでいます。
 
 | #   | 問い                                           |

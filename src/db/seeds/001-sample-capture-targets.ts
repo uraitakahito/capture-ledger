@@ -19,7 +19,7 @@ export const up = async (db: Kysely<Database>): Promise<void> => {
   await db
     .insertInto("captureTargets")
     .values([
-      // `orgId` は列の既定 ("default") に任せない。対象一覧からクロールを起こす経路
+      // `orgId` は列の既定 ("default") に任せない。対象一覧からクロールを始める経路
       // (`POST /api/crawls` の `fromTargets`) は `data/url-source.ts` の
       // `loadTargets` を通り、そこが **呼んだ人の組織で絞る** —— 別の組織の対象を
       // 混ぜると、クロールが持つ 1 つの `org_id` では帰属が言えなくなるから。

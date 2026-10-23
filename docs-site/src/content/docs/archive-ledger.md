@@ -333,15 +333,15 @@ The grant is **stored**, and that is the whole point:
 
 ```sh
 pnpm run fga:grant submitter alice acme
-# alice は acme のクロールを起こせます (書いた: user:alice submitter organization:acme)
+# alice は acme のクロールを始められます (書いた: user:alice submitter organization:acme)
 pnpm run fga:revoke submitter alice acme
-# alice は acme のクロールを起こせません (消した: user:alice submitter organization:acme)
+# alice は acme のクロールを始められません (消した: user:alice submitter organization:acme)
 ```
 
-The last line says whether that user may now start crawls for that organization (起こせます, yes;
-起こせません, no). It is the answer to the same question the API asks (`can_submit`), asked again
+The last line says whether that user may now start crawls for that organization (始められます, yes;
+始められません, no). It is the answer to the same question the API asks (`can_submit`), asked again
 after the write — not inferred from what was written. Revoking `submitter` from someone who also
-holds `admin` still says 起こせます, and adds ほかの関係で許されています ("another relation allows it")
+holds `admin` still says 始められます, and adds ほかの関係で許されています ("another relation allows it")
 in the parentheses, which otherwise say what was written (書いた) or deleted (消した).
 
 To check from the caller's side, ask `GET /api/me`. It answers only about the caller: the name and

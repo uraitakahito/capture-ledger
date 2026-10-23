@@ -1,6 +1,6 @@
 ---
 title: クイックスタート
-description: Compose スタックを立ち上げ、capture_targets を seed し、最初のクロールを起こすまで。
+description: Compose スタックを立ち上げ、capture_targets を seed し、最初のクロールを始めるまで。
 ---
 
 スタックは capture-ledger に必要なものを一式立ち上げます — Postgres、
@@ -192,7 +192,7 @@ open http://127.0.0.1:7070/
 :::
 
 開いたら、`subject` に自分の名前（`whoami` の出力）、
-`organizations` に `acme`（§7 でクロールを起こすときに名乗る組織）を入れて、「読み込む」を押します。
+`organizations` に `acme`（§7 でクロールを始めるときに名乗る組織）を入れて、「読み込む」を押します。
 **この時点では「見えるアーカイブが無い」と出るのが正常です** ——
 一覧に行が増えるのは §7 のクロールの後です。画面の部品と、出る文の意味は、
 [アーカイブを見る](/capture-ledger/ja/picker/)にあります。
@@ -200,9 +200,9 @@ open http://127.0.0.1:7070/
 欄が無く「この API には名乗りの設定が無く…（全員 401）」とだけ出るなら、`.env` の
 `CAPTURE_LEDGER_DEV_IDENTITY=1` を確かめてください。無いと resolver が誰も通しません。
 
-## 7. クロールを起こす
+## 7. クロールを始める
 
-取り込みはクロールとして起こします。段取りを決めるのは capture-ledger で、実際に撮るのは
+取り込みはクロールとして始めます。段取りを決めるのは capture-ledger で、実際に撮るのは
 [capture-scheduler](https://github.com/uraitakahito/capture-scheduler) の Windmill の flow です。
 **ここから先は capture-scheduler が要ります** —— ここより前の段はそれ無しで動きますが、
 取り込みだけは動きません。
@@ -239,7 +239,7 @@ capture-scheduler のクイックスタートの最後にある `pnpm run doctor
 つないだ後は、毎日 04:00（日本時間）にも Windmill が `acme` の有効な行を全部撮ります
 （[いつ走るか](https://uraitakahito.github.io/capture-scheduler/ja/schedule/)）。
 
-### 起こす
+### 始める
 
 JWT で名乗ります。§6 のヘッダは、JWT の設定の API には効きません。
 
@@ -271,7 +271,7 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<craw
 本文が `Route POST:/api/crawls not found` なら route が無い（webhook の 2 行が無い）、
 `{"error":"not found"}` なら呼び出し元に `can_submit` が無い（`fga:grant submitter` が無い）です。
 同じトークンで `GET /api/me` を訊くと、`canSubmit` がその答えです。
-[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#誰が起こしてよいか)を参照。
+[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#誰が始めてよいか)を参照。
 :::
 
 ## 8. 結果を見る

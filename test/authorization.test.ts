@@ -47,7 +47,7 @@ describe("unique 違反の見分け", () => {
   });
 });
 
-describe("取り込みを起こしてよいか", () => {
+describe("取り込みを始めてよいか", () => {
   const fga = (allowed: boolean | boolean[]): OpenFgaClient => {
     const answers = Array.isArray(allowed) ? [...allowed] : null;
     return {
@@ -68,7 +68,7 @@ describe("取り込みを起こしてよいか", () => {
   });
 
   it("allows when any one organization allows it", async () => {
-    // 1 つ許されていれば起こせる。**その 1 つの許可で他の組織の対象も投げられる**ので、
+    // 1 つ許されていれば始められる。**その 1 つの許可で他の組織の対象も投げられる**ので、
     // 付与は組織を跨いで信頼できる相手にだけ。
     await expect(
       maySubmit(fga([false, true]), { subject: "alice", organizations: ["a", "b"] }),

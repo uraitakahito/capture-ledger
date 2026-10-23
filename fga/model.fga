@@ -7,7 +7,7 @@ type organization
   relations
     define member: [user]
     define admin: [user]
-    # 取り込みを起こしてよい者。**保存する**。
+    # 取り込みを始めてよい者。**保存する**。
     #
     # `member` を含めてはならない。所属は保存せず、呼び出し元のトークンから組んだ
     # contextual tuple として届く —— つまり `member` は **呼び出し元の申告**そのもの。
@@ -18,7 +18,7 @@ type organization
     # **何をしてよいか**は OpenFGA が決める (だから保存する)。
     define submitter: [user]
 
-    # 取り込みの実行を起こしてよいか。`archive` 側ではなく組織に載るのは、**まだ job が
+    # 取り込みの実行を始めてよいか。`archive` 側ではなく組織に載るのは、**まだ job が
     # 無い時点の問い**だから —— 訊く相手の object が他に無い。
     #
     # 保存された関係だけで決まる。object は呼び出し元が名乗った組織でよい ——

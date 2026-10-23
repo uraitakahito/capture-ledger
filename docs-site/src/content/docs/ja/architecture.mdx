@@ -112,7 +112,7 @@ flowchart LR
 | モジュール                      | 責務                                                                                                                                                              |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src/api/server.ts`             | 唯一の入口。取り込みの設定を起動時に 1 度読み、route を登録し、outbox をタイマーで掃き出す。                                                                      |
-| `src/api/crawls.ts`             | クロールを起こす / 段を受ける / 次の段を返す。認可・方針・記録。                                                                                                  |
+| `src/api/crawls.ts`             | クロールを始める / 段を受ける / 次の段を返す。認可・方針・記録。                                                                                                  |
 | `src/crawl/`                    | 範囲、上限、段の台帳登録、Windmill への dispatch。                                                                                                                |
 | `src/config/capture-formats.ts` | `CAPTURE_LEDGER_CAPTURE_FORMATS` / `_SIGNING` を、毎回載せる `captureFormats` にする。                                                                            |
 | `src/data/url-source.ts`        | 唯一の SQL クエリ。`capture_targets` から、頼んだ組織のぶんだけ `{ url }[]` を返す。                                                                              |
