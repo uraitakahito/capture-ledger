@@ -1,8 +1,8 @@
 /**
- * リンクを辿る取り込みを、外から起こすための口。
+ * リンクを辿る取り込みを、外から始めるための口。
  *
  * 実行そのものは Windmill の flow が回し、BrowserHive を直接呼ぶ。ここに残るのは
- * **認可・方針・記録** の 3 つ —— つまり「誰が起こしてよいか」「どこまで辿るか」
+ * **認可・方針・記録** の 3 つ —— つまり「誰が始めてよいか」「どこまで辿るか」
  * 「何が起きたか」。走らせる段取りは持たない。
  *
  * ## なぜ判断がここに集まるのか
@@ -307,7 +307,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   };
 
   /**
-   * クロールを 1 本起こす。
+   * クロールを 1 本始める。
    *
    * 完了は待たない —— 段を重ねるので、待てる呼び出し元が居ない。受理したことだけを
    * 202 で返し、続きは `crawls` の行が語る。
@@ -567,7 +567,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         {
           subject: identity.subject,
           crawlId,
-          // **何を走らせるかは、起こしたときにしか見えない。** 版まで出す ——
+          // **何を走らせるかは、始めたときにしか見えない。** 版まで出す ——
           // id だけだと、後から目録を書き換えたときに「何が走ったのか」を
           // このログから言えなくなる。
           scripts: resolved.scripts.map((script) => `${script.id}@${String(script.version)}`),
@@ -584,9 +584,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    *
    * ## 絞りは `:id` と同じ `maySubmit`
    *
-   * `can_submit` は「取り込みを起こしてよい者」で、モデルはそれを **組織を跨ぐ信頼**
+   * `can_submit` は「取り込みを始めてよい者」で、モデルはそれを **組織を跨ぐ信頼**
    * として定義している (`fga/model.fga` の `submitter`: 「その 1 つの許可で他の組織の
-   * 対象も投げられる」)。読みだけを狭める規則は増やさない —— 起こせるのに見えない、
+   * 対象も投げられる」)。読みだけを狭める規則は増やさない —— 始められるのに見えない、
    * という食い違いのほうが説明しにくい。
    *
    * 代わりに `orgId` を必ず行に出す。**見えている範囲を、画面が言えるようにするため。**
@@ -731,7 +731,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           version: script.version,
           phase: script.phase,
           sha256: script.sha256,
-          // 札 (`021`)。その場の JS と、札より前に起こしたクロールの行は空
+          // 札 (`021`)。その場の JS と、札より前に始めたクロールの行は空
           sites: script.sites ?? [],
           jsSha256: script.jsSha256 ?? null,
           compiledWith: script.compiledWith ?? null,
@@ -1170,7 +1170,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    *
    * flow が段の途中で落ちると `POST /pages` に辿り着かないので、**ledger は何も
    * 知らされない**。行は `running` のまま残り、部分 unique index が以後のクロールを
-   * 全部塞ぐ。実測で踏んだ: BrowserHive を止めてクロールを起こすと、`crawl_host` が
+   * 全部塞ぐ。実測で踏んだ: BrowserHive を止めてクロールを始めると、`crawl_host` が
    * `UNAVAILABLE` で落ちて flow ごと失敗し、行は永久に走行中になった。
    *
    * 以前 (`runs`) は同じ状況で「全ページ失敗の**成功した**実行」になっていた ——

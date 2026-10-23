@@ -34,7 +34,7 @@ const DEFAULT_PORT = 7070;
 const DEFAULT_DRAIN_INTERVAL_MS = 5_000;
 /**
  * 待ち受けるアドレス。既定はループバックのまま —— 外に出すのは配備の判断で、
- * このプロセスは取り込みを起こせる口を持つ(`api/crawls.ts`)。既定で広げない。
+ * このプロセスは取り込みを始められる口を持つ(`api/crawls.ts`)。既定で広げない。
  */
 const DEFAULT_HOST = "127.0.0.1";
 
@@ -111,7 +111,7 @@ const start = async (options: ServerOptions): Promise<void> => {
   registerRoutes(app, { db, fga, s3, resolveIdentity });
   registerMeRoute(app, { fga, resolveIdentity });
   // 何が走るかを、**頼む前に**訊ける口。webhook の設定が無い配備でも出す ——
-  // 目録が空であることは、クロールを起こせるかどうかとは別の問いなので。
+  // 目録が空であることは、クロールを始められるかどうかとは別の問いなので。
   registerScriptsRoute(app, { db, fga, resolveIdentity });
 
   // 成果物の受け口。**BrowserHive が保管庫を持たずに済むための口。**

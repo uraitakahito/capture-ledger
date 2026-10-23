@@ -64,12 +64,15 @@ describe("目録を読む口の認可", () => {
     expect(queries).toEqual([]);
   });
 
-  it.each(ROUTES)("起こせない呼び出し元には、在っても 404 で、SQL を出さない: %s", async (url) => {
-    const { res, queries } = await get(url, { fga: fgaAnswering(false) });
-    expect(res.statusCode).toBe(404);
-    expect(res.json()).toEqual({ error: "not found" });
-    expect(queries).toEqual([]);
-  });
+  it.each(ROUTES)(
+    "始められない呼び出し元には、在っても 404 で、SQL を出さない: %s",
+    async (url) => {
+      const { res, queries } = await get(url, { fga: fgaAnswering(false) });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ error: "not found" });
+      expect(queries).toEqual([]);
+    },
+  );
 });
 
 describe("GET /api/scripts/:id/versions/:version", () => {

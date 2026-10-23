@@ -31,11 +31,11 @@ export const unauthorized = (reply: FastifyReply): FastifyReply =>
   reply.code(401).send({ error: "unauthenticated" });
 
 /**
- * この呼び出し元が、**どれか 1 つでも**自分の組織で取り込みを起こしてよいか。
+ * この呼び出し元が、**どれか 1 つでも**自分の組織で取り込みを始めてよいか。
  *
  * 取り込みは組織ごとではなく全体に効く(`capture_targets` の enabled な行をすべて投げ、
  * クロールは起点から辿れる範囲を辿る)ので、「どの組織について訊くか」を選べない。
- * 許されている組織がどこかに 1 つあれば起こせる、とする —— **その 1 つの許可で、
+ * 許されている組織がどこかに 1 つあれば始められる、とする —— **その 1 つの許可で、
  * 他の組織の対象も投げられる**。組織を跨いで信頼できる相手にだけ `submitter` を
  * 与えること。
  *
@@ -62,7 +62,7 @@ export const maySubmit = async (fga: OpenFgaClient, identity: Identity): Promise
           object: `organization:${org}`,
         },
         {
-          // 取り消しが即座に効くべき側。古い許可で取り込みを起こさせない。
+          // 取り消しが即座に効くべき側。古い許可で取り込みを始めさせない。
           consistency: ConsistencyPreference.HigherConsistency,
         },
       );

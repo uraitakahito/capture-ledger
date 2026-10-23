@@ -18,18 +18,18 @@
  * 目録が空だと、クロールはページの中で何も走らせない —— スクロールも遅延読み込みも
  * 起きないまま、`complete: true` のアーカイブが出る。`POST /api/crawls` はそれを
  * 400 で止めるが、**止まるのは頼んだ後**。capture-scheduler の `doctor` は
- * 「全部 ✓ なら、クロールを起こせば最後まで走る設定になっている」と名乗っているので、
+ * 「全部 ✓ なら、クロールを始めれば最後まで走る設定になっている」と名乗っているので、
  * 頼む前に空かどうかを言えなければ、その約束が嘘になる。
  *
  * 一覧は `enabledLatest(db)` —— 有効な各 id の最新版を、サイト用の台本（札のある物。`021`）も含めて返す。
- * 既定で走るのは、この中の札の無い物と、起点に合う物で、選ぶのはクロールを起こすときの
- * `resolveScripts`（起点を見る）。画面はこの一覧で札を見せ、起こす面で同じ決まりのとおりに選ぶ。
+ * 既定で走るのは、この中の札の無い物と、起点に合う物で、選ぶのはクロールを始めるときの
+ * `resolveScripts`（起点を見る）。画面はこの一覧で札を見せ、新しいクロールの面で同じ決まりのとおりに選ぶ。
  * 札のある物しか無い目録では、一覧が空でなくても、起点によっては既定が空になる（クロールは 400
  * `no default scripts for these seeds`）—— この口で頼む前に言えるのは「空でない」まで。
  *
  * ## 認可
  *
- * 4 本とも `POST /api/crawls` と同じ `maySubmit` —— **起こせる者だけが、何が走るかを見られる。**
+ * 4 本とも `POST /api/crawls` と同じ `maySubmit` —— **始められる者だけが、何が走るかを見られる。**
  * 許可が無ければ 404 で、クロールの口と同じ答え方をする (在ることを漏らさない)。
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -52,7 +52,7 @@ const ID = { type: "string", minLength: 1 } as const;
 export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDeps): void => {
   const { db, fga, resolveIdentity } = deps;
 
-  /** 名乗りが無ければ 401、起こせなければ 404 を返して false。 */
+  /** 名乗りが無ければ 401、始められなければ 404 を返して false。 */
   const allowed = async (request: FastifyRequest, reply: FastifyReply): Promise<boolean> => {
     const identity = await resolveIdentity(request);
     if (!identity) {
