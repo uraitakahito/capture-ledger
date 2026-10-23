@@ -213,6 +213,8 @@ interface FakeScript {
   source: string;
   sha256: string;
   options: Record<string, unknown>;
+  /** 札（`021`）。解決は引いた後に JS で絞るので、偽物も持っていればよい */
+  sites: string[];
   enabled: boolean;
 }
 
@@ -473,6 +475,7 @@ const DEFAULT_CATALOG: FakeScript[] = [
     sha256: "f".repeat(64),
     options: {},
     enabled: true,
+    sites: [],
   },
 ];
 
@@ -742,6 +745,7 @@ describe("クロール route の認可と単一実行", () => {
           sha256: "c".repeat(64),
           options: {},
           enabled: true,
+          sites: [],
         },
       ],
     };
@@ -966,6 +970,7 @@ describe("走らせるものの解決", () => {
       sha256: "a".repeat(64),
       options: {},
       enabled: true,
+      sites: [],
     },
     {
       id: "autoscroll",
@@ -975,6 +980,7 @@ describe("走らせるものの解決", () => {
       sha256: "b".repeat(64),
       options: {},
       enabled: true,
+      sites: [],
     },
     {
       id: "autoscroll",
@@ -984,6 +990,7 @@ describe("走らせるものの解決", () => {
       sha256: "c".repeat(64),
       options: { maxSteps: 60 },
       enabled: true,
+      sites: [],
     },
     {
       id: "hide-webdriver",
@@ -993,6 +1000,7 @@ describe("走らせるものの解決", () => {
       sha256: "d".repeat(64),
       options: {},
       enabled: false,
+      sites: [],
     },
   ];
 
@@ -1073,6 +1081,7 @@ describe("走らせるものの解決", () => {
         source: "(async () => { /* v2 */ })();",
         sha256: "c".repeat(64),
         options: { maxSteps: 60 },
+        sites: [],
       },
     ]);
   });
@@ -1144,6 +1153,7 @@ describe("走らせるものの解決", () => {
         version: 2,
         phase: "behavior",
         sha256: "c".repeat(64),
+        sites: [],
         jsSha256: null,
         compiledWith: null,
       },
@@ -1226,6 +1236,7 @@ describe("走らせるものの解決", () => {
       version: 1,
       phase: "preload",
       sha256: sha256(INLINE.source),
+      sites: [],
       jsSha256: null,
       compiledWith: null,
       inline: { name: INLINE.name, phase: INLINE.phase, bytes: Buffer.byteLength(INLINE.source) },
@@ -1418,5 +1429,97 @@ describe("クロールの一覧", () => {
   it("起こしていない段の run は null", async () => {
     const res = await list(depsWith({ crawls: [NEW], allowed: true }));
     expect(res.json<{ crawls: ListedCrawl[] }>().crawls[0]?.lastJob).toBeNull();
+  });
+});
+
+describe("札（サイト用の台本）と起点", () => {
+  const base = { phase: "behavior" as const, source: "(() => {})();", options: {}, enabled: true };
+  const SITED: FakeScript[] = [
+    { ...base, id: "autoscroll", version: 1, sha256: "a".repeat(64), sites: [] },
+    { ...base, id: "example-title", version: 1, sha256: "b".repeat(64), sites: ["example.com"] },
+    {
+      ...base,
+      id: "google-results",
+      version: 1,
+      sha256: "c".repeat(64),
+      sites: ["www.google.com"],
+    },
+  ];
+
+  const startWith = async (scripts: FakeScript[], payload: Record<string, unknown>) => {
+    const crawls: FakeCrawl[] = [];
+    const dispatched: Record<string, unknown>[][] = [];
+    const app = await buildApp(
+      depsWith({
+        crawls,
+        allowed: true,
+        scripts,
+        dispatch: (crawl) => {
+          dispatched.push(crawl.scripts as unknown as Record<string, unknown>[]);
+          return Promise.resolve(undefined);
+        },
+      }),
+    );
+    const res = await app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+    await app.close();
+    return { res, crawls, dispatched, ids: dispatched[0]?.map((script) => script["id"]) };
+  };
+
+  it("省いた頼みには、札の無い物と、起点のホスト名に合う物が走る（id 順）", async () => {
+    const { res, ids } = await startWith(SITED, { seeds: [SEED] });
+    expect(res.statusCode).toBe(202);
+    expect(ids).toEqual(["autoscroll", "example-title"]);
+  });
+
+  it("起点のポートは見ない（:8080 の起点も札のホスト名に合う）", async () => {
+    const { ids } = await startWith(SITED, { seeds: ["http://example.com:8080/x"] });
+    expect(ids).toEqual(["autoscroll", "example-title"]);
+  });
+
+  it("www の有無は別のホスト（起点が www.example.com なら、example.com 用は入らない）", async () => {
+    const { ids } = await startWith(SITED, { seeds: ["https://www.example.com/"] });
+    expect(ids).toEqual(["autoscroll"]);
+  });
+
+  it("起点に合わないサイト用の台本を名指すと 400 で名指し、クロールは立たない", async () => {
+    const { res, crawls } = await startWith(SITED, {
+      seeds: [SEED],
+      scripts: [{ catalog: "autoscroll" }, { catalog: "google-results" }],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "site scripts need a seed on their site",
+      ids: ["google-results"],
+      hint: "google-results: www.google.com",
+    });
+    expect(crawls).toHaveLength(0);
+  });
+
+  it("起点に合うサイト用の台本は名指せる。合う物を名指さない（外す）のも自由", async () => {
+    const named = await startWith(SITED, {
+      seeds: [SEED],
+      scripts: [{ catalog: "example-title" }],
+    });
+    expect(named.res.statusCode).toBe(202);
+    const without = await startWith(SITED, { seeds: [SEED], scripts: [{ catalog: "autoscroll" }] });
+    expect(without.ids).toEqual(["autoscroll"]);
+  });
+
+  it("目録が全部別のサイト用なら、省いた頼みは「この起点で走る物が無い」で断る（目録が空とは言わない）", async () => {
+    const { res } = await startWith(
+      SITED.filter((script) => script.sites.length > 0),
+      { seeds: ["https://other.example/"] },
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "no default scripts for these seeds",
+      hint: "example-title: example.com / google-results: www.google.com (run nothing on purpose: send scripts: [])",
+    });
+  });
+
+  it("クロールの行の写しには札が入り、flow へ送る scripts には入らない（最初の段も）", async () => {
+    const { crawls, dispatched } = await startWith(SITED, { seeds: [SEED] });
+    expect(crawls[0]?.scripts.map((script) => script.sites)).toEqual([[], ["example.com"]]);
+    expect(dispatched[0]?.every((script) => !("sites" in script))).toBe(true);
   });
 });

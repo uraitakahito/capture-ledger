@@ -80,18 +80,20 @@ behavior も、サイト別の behavior もありません。送らなければ�
 
 ソースの出どころは [capture-scripts](https://github.com/uraitakahito/capture-scripts) で、
 `.upstream/capture-scripts` の submodule として固定しています。あちらの `catalog.json` が、
-ソースが自分では言えないこと —— `id` と `phase` —— を持ちます。
+ソースが自分では言えないこと —— `id` と `phase`、サイト用の台本なら `sites` —— を持ちます。
 
 ```sh
 # catalog と受け皿の型を入れる。何度流しても同じ（同じバイト列は同じ版）
 pnpm run scripts import .upstream/capture-scripts
-pnpm run scripts list                     # scripts を書かないクロールが走らせるもの
+pnpm run scripts list                     # 各 id の最新版（札つき）
+pnpm run scripts list --seed https://example.com/   # その起点のクロールが、scripts を書かないと走らせるもの
 pnpm run scripts list autoscroll --all    # 1 つの id の版の並び
 pnpm run scripts show autoscroll --version 1   # その版の source（無効な版も）
 pnpm run scripts types                    # 受け皿（__bh）の型。import が写した物
 
 # 1 本だけ試す・設定を変えるのは、いまも手で
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
+pnpm run scripts add example-title --file ./example-title.ts --site example.com   # サイト用の台本
 pnpm run scripts disable autofetch        # 既定から外す。名指しすれば走る
 ```
 
@@ -112,24 +114,41 @@ BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGU
 主フレーム・1 回で、受け皿を通して報告できます。`preload` は**遷移の前**・iframe を含む
 全フレーム・遷移のたびに走り、**報告する手段を持ちません**。
 
+### サイト用の台本（`sites`）
+
+目録の 1 本は `sites`（札）を持てます。小文字のホスト名の列で、IDN は punycode で書き、ポート・
+scheme・`*` は書けません。札のある台本は**サイト用の台本**で、クロールの起点のどれかがそのホストに
+あるときだけ走ります。照らすのは起点のホスト名との完全一致で、ポートは見ません。`example.com` と
+`www.example.com` は別のホストです。札の無い台本は、今までどおりどこでも走ります。札は版の一部で、
+`options` と同じく、変えたら版が足されます。札を書ける catalog の形は `capture-scripts/2`
+（capture-scripts v0.3.0）で、`import` は `capture-scripts/1` を断ります。形の悪いホスト名も、DB に
+触る前に断ります。
+
+決まりはクロールの単位で、起点で決まります。選ばれたサイト用の台本は、そのクロールの全部の頁で
+走ります。リンクを辿って別のホストへ出た頁でもです。だからサイト用の台本は、冒頭で
+`location.hostname` を見て、ほかの頁では何もせずに終わります（capture-scripts の check が、札の
+ホスト名が source に出てくることを見ます）。
+
 ### クロールが固定するもの
 
 `POST /api/crawls` は目録を**始めるときに 1 度だけ**解決し、その結果 —— id・版・phase・
-source・sha256・options —— をクロールの行に書きます。以後の段はそれをそのまま使い、
+source・sha256・options・札 —— をクロールの行に書きます。以後の段はそれをそのまま使い、
 目録を引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
 変わりません。
 
-| `scripts`                                                         | 走るもの                                                   |
-| ----------------------------------------------------------------- | ---------------------------------------------------------- |
-| 省く                                                              | **有効な**各 id の最新版を、`id` 順で                      |
-| `[{"catalog": "b"}, {"catalog": "a"}]`                            | そのとおり、**その並びで** —— 並びは指示の一部             |
-| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた JS を `inline-x`・版 1 で。目録には入らない（下記） |
-| `[]`                                                              | 何も走らない。「既定でよい」と「何も走らせない」は別の意思 |
-| 目録に無い id・同じ id の重ね                                     | **400** で名指し（`ids`）。クロールは立たない              |
+| `scripts`                                                         | 走るもの                                                                                            |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| 省く                                                              | **有効な**各 id の最新版のうち、札の無い物と、札が起点のホスト名を含む物を、`id` 順で               |
+| `[{"catalog": "b"}, {"catalog": "a"}]`                            | そのとおり、**その並びで** —— 並びは指示の一部                                                      |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた JS を `inline-x`・版 1 で。目録には入らない（下記）                                          |
+| `[]`                                                              | 何も走らない。「既定でよい」と「何も走らせない」は別の意思                                          |
+| 目録に無い id・同じ id の重ね                                     | **400** で名指し（`ids`）。クロールは立たない                                                       |
+| 札が起点のどのホスト名も含まないサイト用の台本                    | **400** `site scripts need a seed on their site` で名指し（`ids`、札は `hint`）。クロールは立たない |
+| 省いたのに、有効な台本が全部ほかのホスト用                        | **400** `no default scripts for these seeds`（`hint` に並べる）。「目録が空」とは言わない           |
 
 要素は、鍵が 1 つの object です（`catalog` か `inline` のどちらか）。
 
-`GET /api/crawls/:id` が返すのは、目録の物は身元 —— id・版・phase・sha256 —— だけで、
+`GET /api/crawls/:id` が返すのは、目録の物は身元 —— id・版・phase・sha256 —— と札だけで、
 source は返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
 `preload/scripts.jsonl`）と目録（[版を読む](#版を読む)）に在ります。その場の JS には `inline`（`name`・`phase`・
 source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。画面は走行中の
@@ -150,12 +169,12 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 
 目録の source は、クロールを起こせる人が HTTP で読めます。
 
-| 口                                       | 返すもの                                                                                                           |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/scripts`                       | `scripts` を書かないクロールが走らせるものの身元: `id`・`version`・`phase`・`sha256`                               |
-| `GET /api/scripts/:id/versions`          | 1 つの id の版の並び（新しい順）: `version`・`phase`・`sha256`・`enabled`・`bytes`・`createdAt`。source は返さない |
-| `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと: 上に `id`・`source`・`options` を足した物。無効な版も返す（過去のクロールが走らせた物）              |
-| `GET /api/host-types`                    | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                   |
+| 口                                       | 返すもの                                                                                                                                                                      |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/scripts`                       | 有効な各 id の最新版（サイト用の台本も）: `id`・`version`・`phase`・`sha256`・`sites`。`scripts` を書かないクロールが走らせるのは、この中の札の無い物と、起点のホストに合う物 |
+| `GET /api/scripts/:id/versions`          | 1 つの id の版の並び（新しい順）: `version`・`phase`・`sha256`・`sites`・`enabled`・`bytes`・`createdAt`。source は返さない                                                   |
+| `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと: 上に `id`・`source`・`options` を足した物。無効な版も返す（過去のクロールが走らせた物）                                                                         |
+| `GET /api/host-types`                    | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                                                                              |
 
 4 本ともクロールの口と同じ問い（呼び出し元の組織のどれかに `can_submit`）を訊きます。名乗りが
 無ければ 401、許可が無ければ 404 で、在らない id や版と同じ答えです。版が 1 以上の整数でなければ、
@@ -205,13 +224,13 @@ BrowserHive 自身のドキュメントが定義します）。
 相手への当たり方と範囲を、`POST /api/crawls` のボディで渡せます
 （[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#リンクを辿る)を参照）。
 
-| フィールド        | 既定                           | 意味                                 |
-| ----------------- | ------------------------------ | ------------------------------------ |
-| `scope`           | `same-origin`                  | `same-host` にするとホスト単位に緩む |
-| `maxDepth`        | 2。`fromTargets` のときは 0    | どこまで辿るか                       |
-| `maxPages`        | 30。ただし起点の数は下回らない | 総ページ数                           |
-| `perHostDelayMs`  | 2000                           | 同じホストのページ間の間隔           |
-| `hostParallelism` | 4                              | 同時に触るホストの数                 |
-| `scripts`         | 有効な各 id の最新版           | ページの中で走らせるもの（上記）     |
+| フィールド        | 既定                                                         | 意味                                 |
+| ----------------- | ------------------------------------------------------------ | ------------------------------------ |
+| `scope`           | `same-origin`                                                | `same-host` にするとホスト単位に緩む |
+| `maxDepth`        | 2。`fromTargets` のときは 0                                  | どこまで辿るか                       |
+| `maxPages`        | 30。ただし起点の数は下回らない                               | 総ページ数                           |
+| `perHostDelayMs`  | 2000                                                         | 同じホストのページ間の間隔           |
+| `hostParallelism` | 4                                                            | 同時に触るホストの数                 |
+| `scripts`         | 有効な各 id の最新版（ほかのホスト用のサイト用の台本を除く） | ページの中で走らせるもの（上記）     |
 
 知らないキーは黙って落とさず **400** で返します。

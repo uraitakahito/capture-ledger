@@ -40,6 +40,11 @@ if (!existsSync(CLI)) {
 
 const id = `smoke-${String(process.pid)}`;
 const imported = `${id}-import`;
+// 札 (`021`) の CHECK を DB に直に当てる行。取り込みと CLI は同じ式で先に断るので、DB の守りはここでしか見えない
+const sited = `${id}-site`;
+// CLI で札を付けて足す 2 本 (起点で選ばれる物と、選ばれない物)
+const onExample = `${id}-ex`;
+const onOther = `${id}-other`;
 // 中身の違う 2 本。古い版を読めたかを、中身で区別する
 const A = `// ${id} の v1\nglobalThis.__bh.report("${id}", { v: 1 });\n`;
 const B = `// ${id} の v2\nglobalThis.__bh.report("${id}", { v: 2 });\n`;
@@ -79,6 +84,32 @@ try {
     first.status === 0 && first.stdout.includes(`${id} v1`) && run.stdout.includes(`${id} v2`),
     `${why(first)} / ${why(run)}`,
   );
+
+  // 021: 札を書かずに足した版の札は空。CHECK は形を見る
+  const sitesOf = await pool.query("SELECT sites FROM scripts WHERE id = $1 AND version = 1", [id]);
+  check(
+    "021: 札を書かずに足した版の札は空",
+    Array.isArray(sitesOf.rows[0]?.sites) && sitesOf.rows[0].sites.length === 0,
+    JSON.stringify(sitesOf.rows),
+  );
+  let siteVersion = 0;
+  /** 札だけを変えて 1 行足す。断られたら Postgres の誤りの code (23514 は CHECK) */
+  const insertSites = (sites) =>
+    pool
+      .query(
+        "INSERT INTO scripts (id, version, phase, source, sites) VALUES ($1, $2, 'behavior', 'x;', $3)",
+        [sited, (siteVersion += 1), sites],
+      )
+      .then(
+        () => "ok",
+        (err) => String(err.code),
+      );
+  let said = await insertSites(["Google.com"]);
+  check("021: 札の CHECK は大文字のホスト名を断る", said === "23514", said);
+  said = await insertSites(["google.com:443"]);
+  check("021: 札の CHECK はポートを断る", said === "23514", said);
+  said = await insertSites(["xn--wgv71a.jp", "capture-fixtures.capture-ledger"]);
+  check("021: 札の CHECK は punycode と開発のホスト名を通す", said === "ok", said);
 
   run = cli(["show", id, "--version", "1"]);
   check("show --version 1 は古い版の中身を出す", run.status === 0 && run.stdout === A, why(run));
@@ -133,8 +164,16 @@ try {
   writeFileSync(
     join(dir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/1",
-      scripts: [{ id: imported, phase: "behavior", file: "scripts/x.ts", summary: "smoke" }],
+      profile: "capture-scripts/2",
+      scripts: [
+        {
+          id: imported,
+          phase: "behavior",
+          file: "scripts/x.ts",
+          summary: "smoke",
+          sites: ["example.com"],
+        },
+      ],
     }),
   );
   writeFileSync(join(dir, "scripts", "x.ts"), A);
@@ -164,10 +203,97 @@ try {
   ]);
   check("型の行は 1 つだけ", rows[0].n === 1, `行=${String(rows[0].n)}`);
 
+  const importedSites = await pool.query("SELECT sites FROM scripts WHERE id = $1", [imported]);
+  check(
+    "import は catalog の札を版に入れる",
+    JSON.stringify(importedSites.rows.map((row) => row.sites)) ===
+      JSON.stringify([["example.com"]]),
+    JSON.stringify(importedSites.rows),
+  );
+
+  // 札の形が悪い catalog は、1 本も足さずに断る
+  const badDir = join(work, "bad-scripts");
+  mkdirSync(join(badDir, "scripts"), { recursive: true });
+  writeFileSync(
+    join(badDir, "catalog.json"),
+    JSON.stringify({
+      profile: "capture-scripts/2",
+      scripts: [
+        {
+          id: `${id}-bad`,
+          phase: "behavior",
+          file: "scripts/x.ts",
+          summary: "smoke",
+          sites: ["Example.com"],
+        },
+      ],
+    }),
+  );
+  writeFileSync(join(badDir, "scripts", "x.ts"), A);
+  run = cli(["import", badDir]);
+  check(
+    "import は札の形が悪い catalog を断る (大文字のホスト名)",
+    run.status === 1 && run.stderr.includes("Example.com"),
+    why(run),
+  );
+
+  run = cli([
+    "add",
+    onExample,
+    "--file",
+    write("ex.ts", A),
+    "--site",
+    "example.com",
+    "--site",
+    "www.example.com",
+  ]);
+  check(
+    "add --site は札つきの版を足す (何度でも書ける)",
+    run.status === 0 && run.stdout.includes("札:example.com,www.example.com"),
+    why(run),
+  );
+  run = cli(["add", onOther, "--file", write("other.ts", B), "--site", "other.example"]);
+  run = cli(["add", `${id}-bad`, "--file", write("bad.ts", A), "--site", "example.com:8080"]);
+  check("add --site はポートつきの札を断る", run.status === 1, why(run));
+
+  run = cli(["list", "--seed", "http://example.com:8080/a", "--json"]);
+  let chosen = [];
+  try {
+    chosen = JSON.parse(run.stdout).map((script) => script.id);
+  } catch {
+    // 読めなければ空のまま
+  }
+  check(
+    "list --seed は札の無い物と、起点に合う物を選ぶ (ポートは見ない)",
+    run.status === 0 &&
+      chosen.includes(id) &&
+      chosen.includes(onExample) &&
+      !chosen.includes(onOther),
+    `${why(run)} ${JSON.stringify(chosen).slice(0, 200)}`,
+  );
+
+  run = cli(["list", "--seed", "https://other.example/", "--json"]);
+  try {
+    chosen = JSON.parse(run.stdout).map((script) => script.id);
+  } catch {
+    chosen = [];
+  }
+  check(
+    "list --seed は別の起点なら、その起点に合う物に入れ替わる",
+    run.status === 0 && chosen.includes(onOther) && !chosen.includes(onExample),
+    `${why(run)} ${JSON.stringify(chosen).slice(0, 200)}`,
+  );
+
   run = cli(["rm", id, imported]);
   check("rm で消せる", run.status === 0, why(run));
 } finally {
-  await pool.query("DELETE FROM scripts WHERE id IN ($1, $2)", [id, imported]);
+  await pool.query("DELETE FROM scripts WHERE id IN ($1, $2, $3, $4, $5)", [
+    id,
+    imported,
+    sited,
+    onExample,
+    onOther,
+  ]);
   await pool.query("DELETE FROM host_types WHERE source = $1", [TYPES]);
   await pool.end();
   rmSync(work, { recursive: true, force: true });

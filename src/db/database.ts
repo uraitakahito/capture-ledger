@@ -145,6 +145,11 @@ export interface CrawlScript {
   sha256: string;
   options: Record<string, unknown>;
   /**
+   * 札（どのサイト用か。`021`）。目録の物だけが持つ写しで、その場の JS には無い。古いクロールの行にも
+   * 無い（無ければ空と読む）。flow へは渡さない（`toDispatched`）—— 選ぶための物で、走らせる側には要らない。
+   */
+  sites?: string[];
+  /**
    * 変換サービスが返した JS の sha256。段の報告 (`POST /api/crawls/:id/pages` の `compiled`) から
    * 写す (`crawl/compiled.ts`)。無ければまだ 1 段も報告が来ていない。archive の
    * `behaviors/custom.jsonl` に残る JS はこの hash の物。flow へは渡さない。
@@ -175,6 +180,8 @@ export interface ScriptsTable {
   // GENERATED ALWAYS AS (encode(digest(source, 'sha256'), 'hex')) STORED —— 書くことはない。
   sha256: GeneratedAlways<string>;
   options: ColumnType<Record<string, unknown>, string | undefined, string>;
+  /** 札（どのサイト用か。`021`）。空ならどこでも走る。小文字のホスト名で、CHECK が形を見る */
+  sites: ColumnType<string[], string[] | undefined, string[]>;
   enabled: ColumnType<boolean, boolean | undefined, boolean>;
   createdAt: ColumnType<Date, string | undefined, never>;
 }

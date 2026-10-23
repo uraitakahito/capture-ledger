@@ -3,13 +3,13 @@
  *
  * | 口 | 返すもの |
  * | --- | --- |
- * | `GET /api/scripts` | 何も指定しないクロールが走らせる顔ぶれ (有効な各 id の最新版) の身元 |
+ * | `GET /api/scripts` | 有効な各 id の最新版の身元と札 (サイト用の台本も。何も指定しないクロールが走らせるのは、札の無い物と起点に合う物) |
  * | `GET /api/scripts/:id/versions` | 1 つの id の版の並び (新しい順)。**source は返さない** |
- * | `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと (source・渡す値・有効か・取り込んだ時刻) |
+ * | `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと (source・渡す値・札・有効か・取り込んだ時刻) |
  * | `GET /api/host-types` | 受け皿 `__bh` の型のいちばん新しい版 (読む人に見せる写し。`020`) |
  *
- * 一覧が身元 (`id` / `version` / `phase` / `sha256`) だけなのは、何が走るかを知るのに要るのが
- * 「どれの何版か」だから。中身は 1 版の口・`pnpm run scripts show`・アーカイブ (`behaviors/custom.jsonl`。
+ * 一覧が身元と札 (`id` / `version` / `phase` / `sha256` / `sites`) だけなのは、何が走るかを知るのに
+ * 要るのが「どれの何版か」と「どの起点で走るか」だから。中身は 1 版の口・`pnpm run scripts show`・アーカイブ (`behaviors/custom.jsonl`。
  * こちらは変換後の JS) に在る。1 版の口は**有効かどうかを見ない** —— 無効な版も、過去のクロールが
  * 走らせた物で、読み返す相手になる。
  *
@@ -21,8 +21,11 @@
  * 「全部 ✓ なら、クロールを起こせば最後まで走る設定になっている」と名乗っているので、
  * 頼む前に空かどうかを言えなければ、その約束が嘘になる。
  *
- * 顔ぶれの解決は `resolveScripts(db)` をそのまま呼ぶ。クロールが走らせるものを決めるのと
- * **同じ関数**で、写しを作らない —— 2 つになれば、いつか食い違う。
+ * 一覧は `enabledLatest(db)` —— 有効な各 id の最新版を、サイト用の台本（札のある物。`021`）も含めて返す。
+ * 既定で走るのは、この中の札の無い物と、起点に合う物で、選ぶのはクロールを起こすときの
+ * `resolveScripts`（起点を見る）。画面はこの一覧で札を見せ、起こす面で同じ決まりのとおりに選ぶ。
+ * 札のある物しか無い目録では、一覧が空でなくても、起点によっては既定が空になる（クロールは 400
+ * `no default scripts for these seeds`）—— この口で頼む前に言えるのは「空でない」まで。
  *
  * ## 認可
  *
@@ -35,7 +38,7 @@ import type { Kysely } from "kysely";
 import type { Database } from "../db/database.js";
 import type { IdentityResolver } from "./identity.js";
 import { maySubmit, unauthorized } from "./authorization.js";
-import { listScripts, readHostTypes, readScript, resolveScripts } from "../scripts/store.js";
+import { enabledLatest, listScripts, readHostTypes, readScript } from "../scripts/store.js";
 
 export interface ScriptsRouteDeps {
   db: Kysely<Database>;
@@ -66,11 +69,16 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
   app.get("/api/scripts", async (request, reply) => {
     if (!(await allowed(request, reply))) return reply;
 
-    const resolved = await resolveScripts(db);
-    // `resolveScripts` は id を渡さなければ必ず ok を返す (見つからない id が無いので)。
-    const scripts = resolved.kind === "ok" ? resolved.scripts : [];
+    // 有効な各 id の最新版を全部 (サイト用の台本も)。既定で走るのは、この中の札の無い物と起点に合う物
+    const scripts = await enabledLatest(db);
     return reply.code(200).send({
-      scripts: scripts.map(({ id, version, phase, sha256 }) => ({ id, version, phase, sha256 })),
+      scripts: scripts.map(({ id, version, phase, sha256, sites }) => ({
+        id,
+        version,
+        phase,
+        sha256,
+        sites,
+      })),
     });
   });
 
@@ -89,10 +97,11 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
       if (rows.length === 0) return reply.code(404).send({ error: "not found" });
       return reply.code(200).send({
         id: request.params.id,
-        versions: rows.map(({ version, phase, sha256, enabled, bytes, createdAt }) => ({
+        versions: rows.map(({ version, phase, sha256, sites, enabled, bytes, createdAt }) => ({
           version,
           phase,
           sha256,
+          sites,
           enabled,
           bytes,
           createdAt,
