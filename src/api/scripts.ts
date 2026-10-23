@@ -21,8 +21,9 @@
  * 「全部 ✓ なら、クロールを起こせば最後まで走る設定になっている」と名乗っているので、
  * 頼む前に空かどうかを言えなければ、その約束が嘘になる。
  *
- * 顔ぶれの解決は `resolveScripts(db)` をそのまま呼ぶ。クロールが走らせるものを決めるのと
- * **同じ関数**で、写しを作らない —— 2 つになれば、いつか食い違う。
+ * 一覧は `enabledLatest(db)` —— 有効な各 id の最新版を、サイト用の台本（札のある物。`021`）も含めて返す。
+ * 既定で走るのは、この中の札の無い物と、起点に合う物で、選ぶのはクロールを起こすときの
+ * `resolveScripts`（起点を見る）。画面はこの一覧で札を見せ、起こす面で同じ決まりのとおりに選ぶ。
  *
  * ## 認可
  *
@@ -35,7 +36,7 @@ import type { Kysely } from "kysely";
 import type { Database } from "../db/database.js";
 import type { IdentityResolver } from "./identity.js";
 import { maySubmit, unauthorized } from "./authorization.js";
-import { listScripts, readHostTypes, readScript, resolveScripts } from "../scripts/store.js";
+import { enabledLatest, listScripts, readHostTypes, readScript } from "../scripts/store.js";
 
 export interface ScriptsRouteDeps {
   db: Kysely<Database>;
@@ -66,9 +67,8 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
   app.get("/api/scripts", async (request, reply) => {
     if (!(await allowed(request, reply))) return reply;
 
-    const resolved = await resolveScripts(db);
-    // `resolveScripts` は id を渡さなければ必ず ok を返す (見つからない id が無いので)。
-    const scripts = resolved.kind === "ok" ? resolved.scripts : [];
+    // 有効な各 id の最新版を全部 (サイト用の台本も)。既定で走るのは、この中の札の無い物と起点に合う物
+    const scripts = await enabledLatest(db);
     return reply.code(200).send({
       scripts: scripts.map(({ id, version, phase, sha256 }) => ({ id, version, phase, sha256 })),
     });

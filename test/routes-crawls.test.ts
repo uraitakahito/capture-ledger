@@ -213,6 +213,8 @@ interface FakeScript {
   source: string;
   sha256: string;
   options: Record<string, unknown>;
+  /** 札（`021`）。解決は引いた後に JS で絞るので、偽物も持っていればよい */
+  sites: string[];
   enabled: boolean;
 }
 
@@ -473,6 +475,7 @@ const DEFAULT_CATALOG: FakeScript[] = [
     sha256: "f".repeat(64),
     options: {},
     enabled: true,
+    sites: [],
   },
 ];
 
@@ -742,6 +745,7 @@ describe("クロール route の認可と単一実行", () => {
           sha256: "c".repeat(64),
           options: {},
           enabled: true,
+          sites: [],
         },
       ],
     };
@@ -966,6 +970,7 @@ describe("走らせるものの解決", () => {
       sha256: "a".repeat(64),
       options: {},
       enabled: true,
+      sites: [],
     },
     {
       id: "autoscroll",
@@ -975,6 +980,7 @@ describe("走らせるものの解決", () => {
       sha256: "b".repeat(64),
       options: {},
       enabled: true,
+      sites: [],
     },
     {
       id: "autoscroll",
@@ -984,6 +990,7 @@ describe("走らせるものの解決", () => {
       sha256: "c".repeat(64),
       options: { maxSteps: 60 },
       enabled: true,
+      sites: [],
     },
     {
       id: "hide-webdriver",
@@ -993,6 +1000,7 @@ describe("走らせるものの解決", () => {
       sha256: "d".repeat(64),
       options: {},
       enabled: false,
+      sites: [],
     },
   ];
 
@@ -1073,6 +1081,7 @@ describe("走らせるものの解決", () => {
         source: "(async () => { /* v2 */ })();",
         sha256: "c".repeat(64),
         options: { maxSteps: 60 },
+        sites: [],
       },
     ]);
   });

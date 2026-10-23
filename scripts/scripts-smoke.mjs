@@ -40,6 +40,8 @@ if (!existsSync(CLI)) {
 
 const id = `smoke-${String(process.pid)}`;
 const imported = `${id}-import`;
+// 札 (`021`) の CHECK を DB に直に当てる行。取り込みと CLI は同じ式で先に断るので、DB の守りはここでしか見えない
+const sited = `${id}-site`;
 // 中身の違う 2 本。古い版を読めたかを、中身で区別する
 const A = `// ${id} の v1\nglobalThis.__bh.report("${id}", { v: 1 });\n`;
 const B = `// ${id} の v2\nglobalThis.__bh.report("${id}", { v: 2 });\n`;
@@ -79,6 +81,32 @@ try {
     first.status === 0 && first.stdout.includes(`${id} v1`) && run.stdout.includes(`${id} v2`),
     `${why(first)} / ${why(run)}`,
   );
+
+  // 021: 札を書かずに足した版の札は空。CHECK は形を見る
+  const sitesOf = await pool.query("SELECT sites FROM scripts WHERE id = $1 AND version = 1", [id]);
+  check(
+    "021: 札を書かずに足した版の札は空",
+    Array.isArray(sitesOf.rows[0]?.sites) && sitesOf.rows[0].sites.length === 0,
+    JSON.stringify(sitesOf.rows),
+  );
+  let siteVersion = 0;
+  /** 札だけを変えて 1 行足す。断られたら Postgres の誤りの code (23514 は CHECK) */
+  const insertSites = (sites) =>
+    pool
+      .query(
+        "INSERT INTO scripts (id, version, phase, source, sites) VALUES ($1, $2, 'behavior', 'x;', $3)",
+        [sited, (siteVersion += 1), sites],
+      )
+      .then(
+        () => "ok",
+        (err) => String(err.code),
+      );
+  let said = await insertSites(["Google.com"]);
+  check("021: 札の CHECK は大文字のホスト名を断る", said === "23514", said);
+  said = await insertSites(["google.com:443"]);
+  check("021: 札の CHECK はポートを断る", said === "23514", said);
+  said = await insertSites(["xn--wgv71a.jp", "capture-fixtures.capture-ledger"]);
+  check("021: 札の CHECK は punycode と開発のホスト名を通す", said === "ok", said);
 
   run = cli(["show", id, "--version", "1"]);
   check("show --version 1 は古い版の中身を出す", run.status === 0 && run.stdout === A, why(run));
@@ -167,7 +195,7 @@ try {
   run = cli(["rm", id, imported]);
   check("rm で消せる", run.status === 0, why(run));
 } finally {
-  await pool.query("DELETE FROM scripts WHERE id IN ($1, $2)", [id, imported]);
+  await pool.query("DELETE FROM scripts WHERE id IN ($1, $2, $3)", [id, imported, sited]);
   await pool.query("DELETE FROM host_types WHERE source = $1", [TYPES]);
   await pool.end();
   rmSync(work, { recursive: true, force: true });

@@ -23,6 +23,13 @@
  * `inline-<name>` で、目録の id には `inline-` を使わせない（`019` の CHECK と CLI）——
  * アーカイブの id だけで、目録の物か、その場の物かが分かるようにするため。
  *
+ * ## 札（`sites`）は起点で効く
+ *
+ * 札のある台本は、クロールの起点のどれかがそのサイトにあるときだけ走る（`021`）。`scripts` を省いた
+ * 頼みでは、有効な各 id の最新版を選んでから、札の無い物と起点に合う物を残す（`resolveScripts`）。
+ * 名指しで起点に合わない物を入れるのは、頼む側が断る（`offsiteScripts`）。**最新版を選ぶのが先** ——
+ * 札で絞ってから版を選ぶと、札の無い古い版が既定に出てくる（開発の Postgres で確かめた）。
+ *
  * ## 受け皿の型も置く
  *
  * `host_types` (`020`) は、目録の source を読む人に見せる受け皿 `__bh` の型の写し。足し方は目録と
@@ -39,6 +46,8 @@ export interface ScriptRow {
   version: number;
   phase: ScriptPhase;
   sha256: string;
+  /** 札（`021`）。空ならどこでも走る */
+  sites: string[];
   enabled: boolean;
   bytes: number;
   /** 取り込んだ時刻。版を並べたときに、どれがいつの物かを言う */
@@ -70,6 +79,32 @@ export interface AddResult {
 
 export type ChangeResult =
   { kind: "missing"; ids: string[] } | { kind: "ok"; changed: { id: string; version: number }[] };
+
+/** 札の形。小文字の ASCII のホスト名 (IDN は punycode)。`021` の CHECK と capture-scripts の check と同じ式 */
+const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
+
+/** 札として断るなら、その文。DB の CHECK (`021`) より先に、読める文で言う。 */
+export const sitesRefusal = (sites: readonly string[]): string | undefined => {
+  const bad = sites.filter((site) => !HOSTNAME.test(site));
+  if (bad.length > 0) {
+    return `札は小文字のホスト名だけ (ポート・scheme・* は書けない): ${bad.join(", ")}`;
+  }
+  if (new Set(sites).size !== sites.length) return "札に同じホスト名が 2 度ある";
+  return undefined;
+};
+
+/** その札の台本を、この起点で走らせてよいか。札が無ければどこでも。起点はホスト名 (ポートは見ない) */
+export const onSeed = (sites: readonly string[], seedHosts: readonly string[]): boolean =>
+  sites.length === 0 || sites.some((site) => seedHosts.includes(site));
+
+/** 起点のどれもそのサイトに無い、サイト用の台本 (名指しで入れたもの)。その場の JS は札を持たない */
+export const offsiteScripts = (
+  scripts: readonly CrawlScript[],
+  seedHosts: readonly string[],
+): { id: string; sites: string[] }[] =>
+  scripts.flatMap((script) =>
+    onSeed(script.sites ?? [], seedHosts) ? [] : [{ id: script.id, sites: script.sites ?? [] }],
+  );
 
 /** その場の JS の id の頭。台帳が付け、目録の id には使わせない。 */
 export const INLINE_PREFIX = "inline-";
@@ -108,6 +143,9 @@ export type ResolveResult =
  * `options` を省いた呼び出しは「渡す値について意見が無い」であって「`{}` にしろ」では
  * ない —— 区別しないと、`import` が運用側で付けた設定を**黙って捨てた新しい版**を作り、
  * それが既定になる (目録は id ごとに最新版を選ぶため)。
+ *
+ * **札 (`sites`) も同じ扱い。** 渡したときだけ最新版と比べ、違えば版を足す。`import` は catalog の札を
+ * 必ず渡す (書いていなければ空) —— catalog が札の正なので、意見として渡す。
  */
 export const addScript = async (
   db: Kysely<Database>,
@@ -116,6 +154,7 @@ export const addScript = async (
     phase: ScriptPhase;
     source: string;
     options?: Record<string, unknown>;
+    sites?: readonly string[];
   },
 ): Promise<AddResult> => {
   const options = input.options ?? {};
@@ -124,7 +163,7 @@ export const addScript = async (
   return db.transaction().execute(async (trx) => {
     const latest = await trx
       .selectFrom("scripts")
-      .select(["version", "source", "sha256", "options"])
+      .select(["version", "source", "sha256", "options", "sites"])
       .where("id", "=", input.id)
       .orderBy("version", "desc")
       .limit(1)
@@ -132,7 +171,8 @@ export const addScript = async (
 
     if (
       latest?.source === input.source &&
-      (!opinionated || JSON.stringify(latest.options) === JSON.stringify(options))
+      (!opinionated || JSON.stringify(latest.options) === JSON.stringify(options)) &&
+      (input.sites === undefined || latest.sites.join(" ") === input.sites.join(" "))
     ) {
       return {
         kind: "ok" as const,
@@ -151,6 +191,7 @@ export const addScript = async (
         phase: input.phase,
         source: input.source,
         options: JSON.stringify(options),
+        sites: [...(input.sites ?? [])],
       })
       .returning(["version", "sha256"])
       .executeTakeFirstOrThrow();
@@ -178,6 +219,7 @@ export const listScripts = async (
     "version",
     "phase",
     "sha256",
+    "sites",
     "enabled",
     // **`length` ではなく `octet_length`。** `length` は文字数を数えるので、
     // 日本語のコメントを持つスクリプトでは「B」と書いた列が実際のバイト数より
@@ -209,6 +251,7 @@ export const readScript = async (
       "version",
       "phase",
       "sha256",
+      "sites",
       "enabled",
       sql<number>`octet_length(source)`.as("bytes"), // listScripts と同じく length ではない
       "createdAt",
@@ -320,11 +363,33 @@ export const removeScripts = async (
 };
 
 /**
+ * 有効な各 id の最新版を、札つきで (`GET /api/scripts`)。**サイト用の台本も入れる** —— 画面はこれで
+ * 札を見せ、起こす面で起点に合う物を選ぶ。既定で走るのは、この中の札の無い物と起点に合う物。
+ */
+export const enabledLatest = async (
+  db: Kysely<Database>,
+): Promise<
+  { id: string; version: number; phase: ScriptPhase; sha256: string; sites: string[] }[]
+> =>
+  db
+    .selectFrom("scripts")
+    .select(["id", "version", "phase", "sha256", "sites"])
+    .distinctOn("id")
+    .where("enabled", "=", true)
+    .orderBy("id")
+    .orderBy("version", "desc")
+    .execute();
+
+/**
  * クロールが走らせるものを決める。
  *
  * - `requested` を渡したら**その並びのまま**写しを返す。目録の名指しは各 id の最新版
  *   (無効な版でも名指しは通る)、その場の JS は目録を引かずに写す (`inlineScript`)。
- * - 渡さなければ **有効な各 id の最新版**を `id` 順で返す。
+ * - 渡さなければ **有効な各 id の最新版**のうち、札の無い物と、札のどれかが起点のホストにある物を
+ *   `id` 順で返す。**最新版を選んでから札で絞る** —— SQL で札を絞ってから `distinct on` すると、
+ *   札の合わない最新版の代わりに、札の無い古い版が出てくる。絞るのは引いた後で、JS で。
+ *
+ * 名指しの札が起点に合うかは、ここでは見ない (`offsiteScripts`)。
  *
  * 目録に無い id が 1 つでも在れば、名指しで返して何も返さない —— 黙って落とすと、頼んだ側は
  * 全部走ったつもりで結果を読むことになる (`targets/store.ts` の「読めない URL」と同じ判断)。
@@ -334,8 +399,9 @@ export const removeScripts = async (
 export const resolveScripts = async (
   db: Kysely<Database>,
   requested?: readonly RequestedScript[],
+  seedHosts: readonly string[] = [],
 ): Promise<ResolveResult> => {
-  const columns = ["id", "version", "phase", "source", "sha256", "options"] as const;
+  const columns = ["id", "version", "phase", "source", "sha256", "options", "sites"] as const;
 
   if (requested === undefined) {
     const rows = await db
@@ -346,7 +412,10 @@ export const resolveScripts = async (
       .orderBy("id")
       .orderBy("version", "desc")
       .execute();
-    return { kind: "ok", scripts: rows.map(toScript) };
+    return {
+      kind: "ok",
+      scripts: rows.filter((row) => onSeed(row.sites, seedHosts)).map(toScript),
+    };
   }
 
   const ids = requested.map(idOf);
@@ -405,6 +474,7 @@ const toScript = (row: {
   source: string;
   sha256: string;
   options: Record<string, unknown>;
+  sites: string[];
 }): CrawlScript => ({
   id: row.id,
   version: row.version,
@@ -412,6 +482,7 @@ const toScript = (row: {
   source: row.source,
   sha256: row.sha256,
   options: row.options,
+  sites: row.sites,
 });
 
 /** 指定された版 (無ければ最新版) を id ごとに 1 つ引く。見つからない id は名指しで返す。 */
