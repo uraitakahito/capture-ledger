@@ -139,14 +139,14 @@ const STEPS = [
   },
   { id: "token", run: "pnpm run windmill:capture-ledger-token", cwd: SCHEDULER },
   { id: "doctor", run: "pnpm run doctor", cwd: SCHEDULER },
-  // **検証の daemon は画面より前。** 先に画面が立つと、「検証」を押した人が
+  // **検証の daemon は dashboard より前。** 先に dashboard が立つと、「検証」を押した人が
   // daemon の不在を踏む。
   {
     id: "validator",
     daemon: validator,
     ready: `http://127.0.0.1:${String(validator.port)}/healthz`,
   },
-  // **画面は最後。** API が答えるより先に開いても、何も見えない。
+  // **dashboard は最後。** API が答えるより先に開いても、何も見えない。
   {
     id: "dashboard",
     daemon: dashboard,
@@ -333,7 +333,7 @@ for (const [index, step] of STEPS.entries()) {
 }
 
 process.stdout.write(
-  `\n全段おわり。画面: http://127.0.0.1:${String(dashboard.port)}/\n` +
+  `\n全段おわり。dashboard: http://127.0.0.1:${String(dashboard.port)}/\n` +
     "\n撮ってみるなら:\n" +
     "  cd ../capture-scheduler && pnpm run smoke\n" +
     "\nいま何が立っているか: pnpm run dev:status   ／   片付け: pnpm run dev:down\n" +

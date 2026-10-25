@@ -37,7 +37,7 @@ you can capture.
 `dev:up` also runs commands in neighbouring repos (**it never writes files there**):
 capture-scheduler (Windmill and the crawl flow),
 [wacz-validator](https://github.com/uraitakahito/wacz-validator) (the validation daemon) and
-[dashboard](https://github.com/uraitakahito/dashboard) (the screen). In the `--dry-run` list they are
+[dashboard](https://github.com/uraitakahito/dashboard). In the `--dry-run` list they are
 the lines that start with `cd ../…`. If they are not under `~/projects/crawler/`, pass
 `--scheduler`, `--validator` and `--dashboard` with their paths; a missing one stops `dev:up` at
 its step, by name. capture-scheduler also needs its DNS domain registered once —

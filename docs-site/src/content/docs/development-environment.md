@@ -168,12 +168,12 @@ that the two tools below could not find it, since both look an owner up by port.
 
 The daemon **does not rebuild itself**. Releasing wacz-validator leaves 7180 running the build
 it was started from (on 2026-09-26 it was still v0.28.1 after two days, and none of the rules
-from v0.29.0 or v0.30.0, both released in the meantime, had reached the screen).
+from v0.29.0 or v0.30.0, both released in the meantime, had reached the dashboard).
 `pnpm run dev:status` compares the running build — the commit `/healthz` names — with the HEAD
 of the wacz-validator checkout. When they differ, it says whether the checkout has moved on past
 the running build (an old build) or not (a different one), and prints the line that restarts it.
 
-The screen is on **7080 rather than 7000** because macOS's ControlCenter (AirPlay Receiver)
+The dashboard is on **7080 rather than 7000** because macOS's ControlCenter (AirPlay Receiver)
 holds `*:7000` (measured). Binding `127.0.0.1:7000` still succeeds, which is what makes it
 easy to miss — but the tools below, which look up an owner by port, would then say "something
 else holds it" on every run.

@@ -37,7 +37,7 @@ pnpm run dev:up
 `dev:up` は、隣の repo でもその repo のコマンドを打ちます（**向こうのファイルには書きません**）。
 capture-scheduler（Windmill とクロールの flow）、
 [wacz-validator](https://github.com/uraitakahito/wacz-validator)（検証の daemon）、
-[dashboard](https://github.com/uraitakahito/dashboard)（画面）で、
+[dashboard](https://github.com/uraitakahito/dashboard) で、
 `--dry-run` の一覧では `cd ../…` から始まる行です。
 `~/projects/crawler/` の下に無いなら、`--scheduler`・`--validator`・`--dashboard` に場所を渡します。
 無いまま走らせると、その段で名指しして止まります。
@@ -47,7 +47,7 @@ capture-scheduler には DNS ドメインの登録も 1 度だけ要ります
 
 **下の §3 以降は、同じ段を 1 つずつ手でやる道です。**
 `dev:up` は §3〜§7 の script をそのまま呼んでいるだけで、別の実装を持っていません。
-検証の daemon と画面（§8）だけは、`dev:up` が起こします。
+検証の daemon と dashboard（§8）だけは、`dev:up` が起こします。
 
 ## 1. DNS ドメインを登録する（マシンごとに 1 回）
 
@@ -276,7 +276,7 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<craw
 
 ## 8. 結果を見る
 
-いちばん早いのは画面です。`dev:up` が最後に起こしているので、開くだけ:
+いちばん早いのは dashboard です。`dev:up` が最後に起こしているので、開くだけ:
 
 ```sh
 open http://127.0.0.1:7080/
@@ -284,7 +284,7 @@ open http://127.0.0.1:7080/
 
 [dashboard](https://github.com/uraitakahito/dashboard) は **1 行 = 1 本のクロール**で、
 状態・撮れた数・WACZ の数と、run（Windmill）と replay への行き先が並びます。
-アーカイブの面では、行の「検証」から **撮れたものが WACZ の仕様どおりか**を見られます
+アーカイブの画面では、行の「検証」から **撮れたものが WACZ の仕様どおりか**を見られます
 （[wacz-validator](https://github.com/uraitakahito/wacz-validator) が答えます。
 台帳が署名した URL を渡すので、**store の鍵はどこにも増えません**）。
 行の「開く」で **WACZ の中身**も見られます —— ファイルの木、行、field に割った 1 行、
@@ -292,7 +292,7 @@ WARC のレコードと画像。撮らなかった・撮れなかった記録（
 **トークンを貼る必要はありません** —— あちらが開発用 issuer から自分で取ります
 （そのぶん境界ではありません。issuer は頼まれれば誰の名前でも出します）。
 
-以下は、その画面が叩いているものを手で確かめる道です。
+以下は、その dashboard が叩いているものを手で確かめる道です。
 
 一覧は台帳（`archives` テーブル）から来ていて、**OpenFGA の `can_view` で
 絞ってあります**。§7 と同じトークンで API を直に叩けます。

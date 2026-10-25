@@ -37,7 +37,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-/** 画面は隣の repo で走る。**cwd が違うので、根も 1 本ごとに持たせる。** */
+/** dashboard は隣の repo で走る。**cwd が違うので、根も 1 本ごとに持たせる。** */
 const DASHBOARD = fileURLToPath(new URL("../../dashboard/", import.meta.url));
 /** WACZ を検証する daemon も隣の repo。 */
 const VALIDATOR = fileURLToPath(new URL("../../wacz-validator/", import.meta.url));
@@ -47,7 +47,7 @@ const VALIDATOR = fileURLToPath(new URL("../../wacz-validator/", import.meta.url
  *
  * **末尾の `/` の有無で比べない。** `fileURLToPath(new URL("..", …))` は `/` 付きを
  * 返し、`resolve()` は付けない —— 文字列のまま比べると、同じ場所なのに一致しない。
- * dev:up が `--dashboard` の既定を `resolve()` で作った日に、動いている画面が
+ * dev:up が `--dashboard` の既定を `resolve()` で作った日に、動いている dashboard が
  * **「別のものが握っている」**と報告された (実測)。`resolve` で両側を揃える。
  */
 const sameDir = (a, b) => a !== undefined && resolve(a) === resolve(b);
@@ -83,7 +83,7 @@ export const HOST_PROCESSES = [
     run: "pnpm --filter @wacz-validator/daemon... build && node packages/daemon/dist/cli.js --port 7180",
     // **動いている build が名乗る口。** daemon は自分で建て直らない —— wacz-validator を
     // 出しても、:7180 は起こした時の build のまま動き続ける (2026-09-26 に見たとき、
-    // v0.28.1 が 2 日動いていて、その間に出た v0.29.0・v0.30.0 の rule はどれも画面に
+    // v0.28.1 が 2 日動いていて、その間に出た v0.29.0・v0.30.0 の rule はどれも dashboard に
     // 出ていなかった)。dev:status は、ここで訊いた `gitSha` を根の checkout と比べる。
     identity: "/healthz",
   },
