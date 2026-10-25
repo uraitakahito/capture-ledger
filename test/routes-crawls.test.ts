@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import { registerCrawlRoutes, type CrawlRouteDeps } from "../src/api/crawls.js";
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
+import type { CrawlRule } from "../src/db/database.js";
 
 /**
  * クロールを始める口の検査。
@@ -102,9 +103,24 @@ describe("クロール route の入力検証", () => {
     expect((await post({ seeds: [SEED], signing: true })).statusCode).toBe(400);
   });
 
-  it("rejects a scope it does not know", async () => {
-    // 範囲は挙動を決めるので、綴りの誤りを通すと黙って別の範囲になる。
-    expect((await post({ seeds: [SEED], scope: "same-site" })).statusCode).toBe(400);
+  it("scope はもう受けない —— 知らない鍵として 400（範囲は rules で書く）", async () => {
+    // 黙って既定の規則で走らせると、頼んだ範囲と違うクロールが成功として出ていく
+    expect((await post({ seeds: [SEED], scope: "same-host" })).statusCode).toBe(400);
+  });
+
+  it("規則の形が違えば schema の 400 —— 鍵が 0 か 2 つ・知らない動き・空・33 本・2049 字", async () => {
+    const status = async (rules: unknown) => (await post({ seeds: [SEED], rules })).statusCode;
+    expect(await status([{}])).toBe(400);
+    expect(await status([{ follow: "same-host", skip: "ads.example.com" }])).toBe(400);
+    expect(await status([{ crawl: "same-host" }])).toBe(400);
+    expect(await status([{ follow: "" }])).toBe(400);
+    expect(await status([])).toBe(400);
+    expect(await status(Array.from({ length: 33 }, () => ({ follow: "same-host" })))).toBe(400);
+    // https://example.com/ は 20 字
+    expect(await status([{ skip: `https://example.com/${"a".repeat(2049 - 20)}` }])).toBe(400);
+    // ちょうどの数と長さは schema を通る（500 は deps に触れた＝検証を通過した証拠）
+    expect(await status(Array.from({ length: 32 }, () => ({ follow: "same-host" })))).toBe(500);
+    expect(await status([{ skip: `https://example.com/${"a".repeat(2048 - 20)}` }])).toBe(500);
   });
 
   it("rejects limits outside their range", async () => {
@@ -178,7 +194,7 @@ describe("クロール route の入力検証", () => {
 interface FakeCrawl {
   id: string;
   seeds: string[];
-  scope: string;
+  rules: CrawlRule[];
   state: string;
   maxDepth: number;
   maxPages: number;
@@ -278,9 +294,11 @@ const fakeDb = (
           err.constraint = "crawls_single_active_idx";
           throw err;
         }
-        const inserting = row as unknown as FakeCrawl & { scripts: unknown };
+        const inserting = row as unknown as FakeCrawl & { scripts: unknown; rules: unknown };
         crawls.push({
           ...inserting,
+          rules:
+            typeof inserting.rules === "string" ? (JSON.parse(inserting.rules) as CrawlRule[]) : [],
           // **jsonb は文字列で書いて、配列で読む。** 本物は node-pg が戻すので、
           // ここで写さないと「書いた形のまま読める」という、本物では起きない
           // 振る舞いを試験が肯定する。
@@ -623,7 +641,7 @@ describe("クロール route の認可と単一実行", () => {
     const app = await buildApp(depsWith({ crawls, allowed: true }));
     await app.inject({ method: "POST", url: "/api/crawls", payload: { seeds: [SEED] } });
     expect(crawls[0]).toMatchObject({
-      scope: "same-origin",
+      rules: [{ follow: "same-origin" }],
       maxDepth: 2,
       maxPages: 30,
       perHostDelayMs: 2000,
@@ -720,7 +738,7 @@ describe("クロール route の認可と単一実行", () => {
     const crawl: FakeCrawl = {
       id: UUID,
       seeds: [SEED],
-      scope: "same-origin",
+      rules: [{ follow: "same-origin" }],
       state: "succeeded",
       maxDepth: 0,
       maxPages: 30,
@@ -769,6 +787,7 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({
+      rules: [{ follow: "same-origin" }],
       lastJob: { id: "0193b6a1-3c1d-7a2e-9f00-1234567890ab", depth: 0 },
       failures: [
         { url: "https://nonexistent.invalid/", depth: 0, reason: "net::ERR_NAME_NOT_RESOLVED" },
@@ -781,7 +800,7 @@ describe("クロール route の認可と単一実行", () => {
     const crawl = {
       id: UUID,
       seeds: [SEED],
-      scope: "same-origin",
+      rules: [{ follow: "same-origin" }],
       state: "running",
       maxDepth: 0,
       maxPages: 30,
@@ -1310,7 +1329,7 @@ describe("走らせるものの解決", () => {
 describe("クロールの一覧", () => {
   const row = (over: Partial<FakeCrawl> & { id: string; startedAt: Date }): FakeCrawl => ({
     seeds: [SEED],
-    scope: "same-origin",
+    rules: [{ follow: "same-origin" }],
     state: "succeeded",
     maxDepth: 2,
     maxPages: 30,
@@ -1521,5 +1540,74 @@ describe("札（サイト用のスクリプト）と起点", () => {
     const { crawls, dispatched } = await startWith(SITED, { seeds: [SEED] });
     expect(crawls[0]?.scripts.map((script) => script.sites)).toEqual([[], ["example.com"]]);
     expect(dispatched[0]?.every((script) => !("sites" in script))).toBe(true);
+  });
+});
+
+describe("規則の並びで始める", () => {
+  const start = async (payload: Record<string, unknown>) => {
+    const crawls: FakeCrawl[] = [];
+    const app = await buildApp(depsWith({ crawls, allowed: true }));
+    const res = await app.inject({ method: "POST", url: "/api/crawls", payload });
+    await app.close();
+    return { status: res.statusCode, body: res.json<Record<string, unknown>>(), crawls };
+  };
+  const www = "https://www.example.com/";
+
+  it("読んだ形で固定する —— 前方一致は正規化した URL、ドメインと範囲は書いたまま", async () => {
+    const { status, crawls } = await start({
+      seeds: [www],
+      rules: [
+        { skip: "HTTPS://WWW.Example.com:443/search" },
+        { skip: "ads.example.com" },
+        { follow: "same-site" },
+        { capture: "any" },
+      ],
+    });
+    expect(status).toBe(202);
+    expect(crawls[0]?.rules).toEqual([
+      { skip: "https://www.example.com/search" },
+      { skip: "ads.example.com" },
+      { follow: "same-site" },
+      { capture: "any" },
+    ]);
+  });
+
+  it("読めない当てる物は 400 で、番号と頼まれた当てる物を名指し、クロールを立てない", async () => {
+    const { status, body, crawls } = await start({
+      seeds: [SEED],
+      rules: [{ follow: "same-host" }, { skip: "ADS.example.com" }],
+    });
+    expect(status).toBe(400);
+    expect(body).toEqual({
+      error: "invalid rule patterns",
+      rules: [{ rule: 2, pattern: "ADS.example.com" }],
+    });
+    expect(crawls).toEqual([]);
+  });
+
+  it("前の規則に覆われた規則は 400 で、覆っている規則の番号と一緒に名指す", async () => {
+    const { status, body, crawls } = await start({
+      seeds: [www],
+      rules: [{ follow: "same-site" }, { skip: "ads.example.com" }],
+    });
+    expect(status).toBe(400);
+    expect(body).toEqual({
+      error: "rules that can never match",
+      rules: [{ rule: 2, coveredBy: 1 }],
+    });
+    expect(crawls).toEqual([]);
+  });
+
+  it("起点を撮って辿らない並びは 400 で、その起点を名指す", async () => {
+    const { status, body, crawls } = await start({
+      seeds: [www, "https://ads.example.com/"],
+      rules: [{ skip: "ads.example.com" }, { follow: "same-site" }],
+    });
+    expect(status).toBe(400);
+    expect(body).toEqual({
+      error: "seeds the rules do not follow",
+      seeds: ["https://ads.example.com/"],
+    });
+    expect(crawls).toEqual([]);
   });
 });

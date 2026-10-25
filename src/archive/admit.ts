@@ -12,7 +12,7 @@
  * 使われる。行を書くだけの操作が、なぜ誰が投げたかを知る必要があるのか、
  * 「登録」では説明できない。
  *
- * `accept` は使えない (`crawl/scope.ts` の `acceptLinks` と `runs.accepted` で
+ * `accept` は使えない (`crawl/rules.ts` の `acceptLinks` と `runs.accepted` で
  * 別の意味に取られている)。`admit` は**入れる**と**通す**の両方を含む。
  *
  * この 2 つの書き込みは、それだけでは 1 つの原子的な操作にできない: アーカイブの

@@ -7,10 +7,10 @@
  *
  * ## なぜ判断がここに集まるのか
  *
- * 範囲の絞り込みも重複排除も上限の判定も、**flow ではなくこちら**で行う。方針は
- * `crawls` の行に在り、重複排除は `crawl_pages` の unique index が持っているので、
+ * 規則でリンクを分けるのも重複排除も上限の判定も、**flow ではなくこちら**で行う。方針
+ * (規則の並び) は `crawls` の行に在り、重複排除は `crawl_pages` の unique index が持っているので、
  * 判断材料が両方ここに在る。flow 側に写すと、2 つの場所が食い違ったときにどちらが
- * 正しいのか言えなくなる。
+ * 正しいのか言えなくなる。規則が決めたことも、決めたここで `crawl_decisions` に残す。
  *
  * flow がすることは「見つけたものを全部報告し、次に取るものを受け取る」だけ。
  *
@@ -35,7 +35,8 @@ import type { S3Client } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
 import type {
   CaptureSubmissionsTable,
-  CrawlScope,
+  CrawlRule,
+  CrawlRuleAction,
   CrawlScript,
   CrawlsTable,
   CrawlState,
@@ -52,7 +53,25 @@ import {
 import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
-import { acceptLinks, parseHttpUrl, type DiscoveredLink, type ParsedUrl } from "../crawl/scope.js";
+import {
+  HOSTNAME,
+  parseHttpUrl,
+  siteOf,
+  type DiscoveredLink,
+  type ParsedUrl,
+} from "../crawl/scope.js";
+import {
+  acceptLinks,
+  checkRules,
+  compileRules,
+  decideLinks,
+  DEFAULT_RULES,
+  ruleOf,
+  ruleParts,
+  takeLinksFrom,
+  type DecidedLink,
+} from "../crawl/rules.js";
+import { aggregateDecisions, SAMPLES } from "../crawl/decisions.js";
 import { planNextLevel } from "../crawl/budget.js";
 import { getJsonObject } from "../archive/s3.js";
 import { manifestOutcome } from "../archive/manifest.js";
@@ -74,7 +93,6 @@ const log = createChildLogger({ module: "api" });
  * `PER_HOST_DELAY_MS` は 1 回の取り込みが 1 リクエストではないことを踏まえた値。
  * ブラウザはサブリソースまで取るので、1 ページが相手には数十本のバーストに見える。
  */
-const DEFAULT_SCOPE: CrawlScope = "same-origin";
 const DEFAULT_MAX_DEPTH = 2;
 const DEFAULT_MAX_PAGES = 30;
 const DEFAULT_PER_HOST_DELAY_MS = 2000;
@@ -83,6 +101,12 @@ const DEFAULT_HOST_PARALLELISM = 4;
 const FAILURES_SHOWN = 5;
 /** 一覧の 1 ページ。`GET /api/archives` と同じ大きさに揃えてある。 */
 const CRAWLS_PAGE = 50;
+/** `GET /api/decisions` が返す行の上限。超えたら `truncated` で言う (`com` のような広いドメインのため)。 */
+const DECISIONS_SHOWN = 500;
+/** 規則の当てる物の長さの上限。始める口と確かめの口で同じ数。 */
+const RULE_PATTERN_MAX = 2048;
+/** 規則の本数の上限。始める口と確かめの口で同じ数。 */
+const RULES_MAX = 32;
 /**
  * `POST /api/crawls` が受ける本文の上限。**dashboard の門（dashboard の src/lib.mjs の WRITE_LIMIT）と
  * 同じ 1 MiB** —— 片方だけを変えると、dashboard が通すのに台帳が 413、の形になる。Fastify の既定と同じ値だが、
@@ -197,7 +221,11 @@ interface CrawlBody {
    * 「登録済みの URL 一覧を、いま全部取ってこい」がそのまま表せる。
    */
   fromTargets?: { limit?: number };
-  scope?: CrawlScope;
+  /**
+   * どのリンクを撮って辿り、撮るだけにし、落とすか。**上から当て、最初に当たった規則が勝つ** (`crawl/rules.ts`)。
+   * 省くと `[{ follow: "same-origin" }]` (起点と同じ origin を辿り、外は落とす)。
+   */
+  rules?: CrawlRule[];
   maxDepth?: number;
   maxPages?: number;
   perHostDelayMs?: number;
@@ -338,7 +366,24 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               additionalProperties: false,
               properties: { limit: { type: "integer", minimum: 1 } },
             },
-            scope: { type: "string", enum: ["same-origin", "same-host"] },
+            // **鍵が 1 つの object** の並び (下の `scripts` の要素と同じ形。誤りの場所だけが 400 に出る)。
+            // 当てる物の読み方・前の規則との覆い・起点を辿るかは handler で見て、400 で名指す。
+            rules: {
+              type: "array",
+              minItems: 1,
+              maxItems: RULES_MAX,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                minProperties: 1,
+                maxProperties: 1,
+                properties: {
+                  follow: { type: "string", minLength: 1, maxLength: RULE_PATTERN_MAX },
+                  capture: { type: "string", minLength: 1, maxLength: RULE_PATTERN_MAX },
+                  skip: { type: "string", minLength: 1, maxLength: RULE_PATTERN_MAX },
+                },
+              },
+            },
             maxDepth: { type: "integer", minimum: 0, maximum: 10 },
             maxPages: { type: "integer", minimum: 1, maximum: 10000 },
             // 0 を許すのは、試験で意図的に間隔を外せるようにするため。
@@ -431,6 +476,25 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       }
       const parsedSeeds = seeds as ParsedUrl[];
 
+      // **規則を確かめる。** 読めない・前の規則に覆われて二度と当たらない・起点を辿らない、のどれも 400 で
+      // 名指す —— 通すと、効いているつもりの規則でクロールが走る。確かめの口と同じ関数で見る。
+      const checked = checkRules(body.rules ?? DEFAULT_RULES, parsedSeeds);
+      if (checked.invalid.length > 0) {
+        return reply.code(400).send({ error: "invalid rule patterns", rules: checked.invalid });
+      }
+      if (checked.covered.length > 0) {
+        return reply
+          .code(400)
+          .send({ error: "rules that can never match", rules: checked.covered });
+      }
+      if (checked.unfollowedSeeds.length > 0) {
+        return reply
+          .code(400)
+          .send({ error: "seeds the rules do not follow", seeds: checked.unfollowedSeeds });
+      }
+      // 読んだ形で固定する (前方一致は正規化した URL)。報告のたびにこれを読み直して当てる
+      const rules = checked.read.filter((rule) => rule !== undefined).map(ruleOf);
+
       // 走らせるものを **いま 1 度だけ** 決める。台帳のスクリプトは後から変わりうるが、
       // このクロールが走らせるものは変わらない (`018`)。札 (`021`) と比べるのは起点のホスト名で、
       // ポートは見ない —— 省いた頼みでは、札の無い物と、起点に合うサイト用の物が走る
@@ -485,7 +549,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       const crawl: Insertable<CrawlsTable> = {
         id: crawlId,
         seeds: parsedSeeds.map((parsed) => parsed.normalized),
-        scope: body.scope ?? DEFAULT_SCOPE,
+        rules: JSON.stringify(rules),
         // **対象一覧から取るときは、既定で辿らない。** それが `runs` の意味だった。
         // 明示された値は勝つので、「一覧を起点にして 2 段辿る」も書ける。
         maxDepth: body.maxDepth ?? (fromTargets === undefined ? DEFAULT_MAX_DEPTH : 0),
@@ -707,7 +771,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       return reply.code(200).send({
         crawlId: crawl.id,
         seeds: crawl.seeds,
-        scope: crawl.scope,
+        // 固定した規則。`GET /api/crawls/:id/decisions` の `rule` の番号はこの並びの 1 から
+        rules: crawl.rules,
         state: crawl.state,
         stopReason: crawl.stopReason,
         maxDepth: crawl.maxDepth,
@@ -800,10 +865,245 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
+   * クロール 1 本で、規則がリンクをどう決めたか。**固定した規則と、段 × 規則 × ホスト名の数と、
+   * robots.txt で取らなかったページ**を 1 度に返す —— 「なぜ取らなかったか」を 1 か所で読めるように。
+   *
+   * `decisions` の `rule` は `rules` の並びの番号 (1 から) で、0 はどれにも当たらずに落とした物。
+   * 撮るだけのページのリンクは見ていないので、ここには来ない。認可と 404 は `GET /api/crawls/:id` と同じ。
+   */
+  app.get<{ Params: { id: string } }>(
+    "/api/crawls/:id/decisions",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: { id: { type: "string", format: "uuid" } },
+          required: ["id"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) {
+        return reply.code(404).send({ error: "not found" });
+      }
+
+      const crawl = await db
+        .selectFrom("crawls")
+        .select(["id", "rules"])
+        .where("id", "=", request.params.id)
+        .executeTakeFirst();
+      if (!crawl) return reply.code(404).send({ error: "not found" });
+
+      const decisions = await db
+        .selectFrom("crawlDecisions")
+        .select(["depth", "rule", "action", "hostname", "links", "samples"])
+        .where("crawlId", "=", crawl.id)
+        .orderBy("depth")
+        .orderBy("rule")
+        .orderBy("hostname")
+        .execute();
+
+      // robots.txt で取らなかったページ。plan の段が見送り、報告が `skipped` と理由 `robots` で閉じた
+      // `crawl_pages` の行。ホスト名は `crawl_decisions` と揃えてポートを外す (`crawl_pages.host` は含む)。
+      // `count` は int8 で、node-pg は文字列で返すので int に倒す (`waczCount` と同じ)。
+      const robots = await sql<{ hostname: string; pages: number; samples: string[] }>`
+        select regexp_replace(host, ':[0-9]+$', '') as hostname,
+               count(*)::int as pages,
+               (array_agg(url order by id))[1:${sql.lit(SAMPLES)}] as samples
+          from crawl_pages
+         where crawl_id = ${crawl.id} and state = 'skipped' and skip_reason = 'robots'
+         group by 1
+         order by 1`.execute(db);
+
+      return reply.code(200).send({
+        crawlId: crawl.id,
+        rules: crawl.rules,
+        decisions,
+        robots: robots.rows,
+      });
+    },
+  );
+
+  /**
+   * そのドメイン (と、その下のサブドメイン) で規則が決めたこと。**クロールを跨いで**、新しい順。
+   * 「このドメインを落としたことはあるか。どのクロールの、どの規則で」に答える。
+   *
+   * ラベルの境目で照らす —— `ads.example.com` で `badads.example.com` は出ない。`domain` は規則の
+   * ドメインと同じ式で確かめてから SQL に渡すので、LIKE の特別な字 (`%`・`_`) を含まない。
+   * `links` は段ごとの別々の URL を足した数 (同じ URL を 2 つの段で見つければ 2)。
+   *
+   * 権限が無ければ空。一覧 (`GET /api/crawls`) と同じ作法で、「在るが見せない」と「無い」を区別させない。
+   */
+  app.get<{ Querystring: { domain: string; days?: number; action?: CrawlRuleAction } }>(
+    "/api/decisions",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          required: ["domain"],
+          properties: {
+            domain: { type: "string" },
+            days: { type: "integer", minimum: 1, maximum: 3650 },
+            action: { type: "string", enum: ["follow", "capture", "skip"] },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { domain, days = 90, action = "skip" } = request.query;
+      // 許可を見る前に断る (`GET /api/crawls/:id/inline/:name` の名前と同じ)。式が規則のドメインと
+      // 同じなので、規則に書けるドメインはここでも引ける
+      if (!HOSTNAME.test(domain)) return reply.code(400).send({ error: "invalid domain" });
+
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) {
+        return reply.code(200).send({ decisions: [], truncated: false });
+      }
+
+      // 行の上限より 1 本多く引き、超えたかどうかを言う。クロールの列は id で束ねる (主キーなので、
+      // 同じ行の started_at・seeds・rules も選べる)
+      const result = await sql<{
+        crawlId: string;
+        startedAt: Date;
+        seeds: string[];
+        rules: CrawlRule[];
+        rule: number;
+        action: CrawlRuleAction;
+        hostname: string;
+        links: number;
+      }>`
+        select c.id as crawl_id, c.started_at, c.seeds, c.rules,
+               d.rule, d.action, d.hostname, sum(d.links)::int as links
+          from crawl_decisions d
+          join crawls c on c.id = d.crawl_id
+         where d.action = ${action}
+           and (d.hostname = ${domain} or d.hostname like ${`%.${domain}`})
+           and c.started_at >= now() - make_interval(days => ${days})
+         group by c.id, d.rule, d.action, d.hostname
+         order by c.started_at desc, d.rule, d.hostname
+         limit ${sql.lit(DECISIONS_SHOWN + 1)}`.execute(db);
+
+      const rows = result.rows.slice(0, DECISIONS_SHOWN);
+      return reply.code(200).send({
+        decisions: rows.map((row) => {
+          // 当たった規則の当てる物。0 (どれにも当たらない) には無い
+          const matched = row.rule === 0 ? undefined : row.rules[row.rule - 1];
+          return {
+            crawlId: row.crawlId,
+            startedAt: row.startedAt,
+            seeds: row.seeds,
+            rule: row.rule,
+            action: row.action,
+            pattern: matched === undefined ? null : ruleParts(matched).raw,
+            hostname: row.hostname,
+            links: row.links,
+          };
+        }),
+        truncated: result.rows.length > DECISIONS_SHOWN,
+      });
+    },
+  );
+
+  /**
+   * 規則の並びを、始める前に確かめる。**書かない口なので GET** —— dashboard は GET の `/api/*` を
+   * そのまま通すので、書く口を増やさずに載る。何度呼んでも何も変わらない。
+   *
+   * 規則は `rule=動き:当てる物` を並べる (当てる物の URL の `:` は、最初の 1 つで切るので構わない)。
+   * 判定は始める口の 400 と同じ関数 (`checkRules`)。行ごとに読めたか・覆われているか、起点ごとに
+   * 撮って辿るかを返す。認可は始める口と同じ。
+   */
+  app.get<{ Querystring: { seed?: string[]; rule?: string[] } }>(
+    "/api/crawl-rules/check",
+    {
+      schema: {
+        querystring: {
+          type: "object",
+          properties: {
+            // 1 本だけなら文字列で届くが、ajv が配列に直す (fastify の既定の `coerceTypes: "array"`)
+            seed: { type: "array", items: { type: "string", minLength: 1 } },
+            rule: {
+              type: "array",
+              maxItems: RULES_MAX,
+              items: {
+                type: "string",
+                pattern: "^(follow|capture|skip):",
+                maxLength: "capture:".length + RULE_PATTERN_MAX,
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) {
+        return reply.code(404).send({ error: "not found" });
+      }
+
+      const rawSeeds = request.query.seed ?? [];
+      const parsedSeeds = rawSeeds
+        .map((raw) => parseHttpUrl(raw))
+        .filter((seed) => seed !== undefined);
+      const asked = (request.query.rule ?? []).map((text): CrawlRule => {
+        const at = text.indexOf(":");
+        const pattern = text.slice(at + 1);
+        switch (text.slice(0, at)) {
+          case "follow":
+            return { follow: pattern };
+          case "capture":
+            return { capture: pattern };
+          default:
+            return { skip: pattern };
+        }
+      });
+      const checked = checkRules(asked, parsedSeeds);
+      const coveredBy = new Map(checked.covered.map((c) => [c.rule, c.coveredBy]));
+      const unfollowed = new Set(checked.unfollowedSeeds);
+
+      const seeds = rawSeeds.map((raw) => {
+        const parsed = parseHttpUrl(raw);
+        return parsed === undefined
+          ? { url: raw, valid: false }
+          : {
+              url: parsed.normalized,
+              valid: true,
+              site: siteOf(parsed.hostname),
+              followed: !unfollowed.has(parsed.normalized),
+            };
+      });
+      const rules = asked.map((rule, i) => {
+        const read = checked.read[i];
+        const by = coveredBy.get(i + 1);
+        return {
+          rule: i + 1,
+          action: ruleParts(rule).action,
+          kind: read === undefined ? "invalid" : read.pattern.kind,
+          // 読めた物は書き残す形で (前方一致は正規化した URL)。読めない物は頼まれたまま
+          pattern: read === undefined ? ruleParts(rule).raw : ruleParts(ruleOf(read)).raw,
+          ...(by === undefined ? {} : { coveredBy: by }),
+        };
+      });
+
+      return reply.code(200).send({
+        seeds,
+        rules,
+        ok:
+          checked.invalid.length === 0 &&
+          checked.covered.length === 0 &&
+          seeds.every((seed) => seed.valid && seed.followed === true),
+      });
+    },
+  );
+
+  /**
    * 1 段ぶんの報告を受け、次の段を返す。
    *
-   * **この 1 往復に判断が全部入っている。** 報告を記録し、帰属を書き、見つけたリンクを
-   * 範囲で絞り、重複を index に落とさせ、上限を当て、残ったものを返す。
+   * **この 1 往復に判断が全部入っている。** 報告を記録し、帰属を書き、見つけたリンクに
+   * 規則を当てて決めたことを残し、重複を index に落とさせ、上限を当て、残ったものを返す。
    *
    * 重複排除を `ON CONFLICT DO NOTHING` + `returning` で行うのが肝 ——
    * 「入った行」がそのまま「次に取るもの」になるので、記録と決定がずれようがない。
@@ -915,8 +1215,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           .execute();
       }
 
-      // 起点は投入時に検査しているので、読めない行はここに来ない。**それでも
-      // 全部を読み直す** —— 範囲の判定に要るのは正規化した形で、行に入っているのは
+      // 起点と規則は投入時に検査しているので、読めない行はここに来ない。**それでも
+      // 全部を読み直す** —— 規則を当てるのに要るのは読んだ形で、行に入っているのは
       // 文字列だから。1 本でも読めなければ行が壊れている。
       const parsedSeeds: ParsedUrl[] = [];
       for (const raw of crawl.seeds) {
@@ -926,10 +1226,16 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         }
         parsedSeeds.push(parsed);
       }
+      const rules = compileRules(crawl.rules);
+      if (rules === undefined) {
+        return reply.code(500).send({ error: "a crawl rule is not readable" });
+      }
 
       // ── 1. 報告された行を閉じる ────────────────────────────────────────
+      // 閉じた行の id は、そのページで見つけたリンクの `discovered_from` に書く (木の形を後から辿れる)。
+      const idOf = new Map<string, string>();
       for (const page of results) {
-        await db
+        const closed = await db
           .updateTable("crawlPages")
           .set({
             state: page.status,
@@ -941,7 +1247,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           })
           .where("crawlId", "=", crawlId)
           .where("url", "=", page.url)
-          .execute();
+          .returning("id")
+          .executeTakeFirst();
+        if (closed !== undefined) idOf.set(page.url, closed.id);
       }
 
       // ── 2. 帰属を書く ────────────────────────────────────────────────
@@ -1029,17 +1337,31 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         }
       }
 
-      // ── 3. 見つけたリンクを読み、絞る ────────────────────────────────
-      const links: DiscoveredLink[] = [];
+      // ── 3. 見つけたリンクを読み、規則を当てる ────────────────────────
+      // **ページごとに読む。** リンク元が「撮って辿る」でなければ、そのページのリンクは見ない ——
+      // 撮るだけの先は辿らない。段の links は段ごとに取る (`withLinks`) ので撮るだけのページにも
+      // 在るが、取って読まない。
+      const pages: { from: string | null; links: DecidedLink[] }[] = [];
       for (const page of results) {
         if (page.linksLocation === undefined || page.linksLocation === "") continue;
+        const from = parseHttpUrl(page.url);
+        if (from === undefined || !takeLinksFrom(from, rules, parsedSeeds)) continue;
         // `s3://bucket/key` から鍵だけを取り出す。bucket はこちらの設定を使う ——
         // 報告に入っていた bucket を信じると、報告する側が読み先を選べることになる。
         const key = page.linksLocation.replace(/^s3:\/\/[^/]+\//, "");
         const raw = await getJsonObject(deps.s3, deps.bucket, key);
         if (raw === null || typeof raw !== "object") continue;
+        // **リダイレクトの後のページでも決める。** 頼んだ URL が辿る範囲でも、外へ跳ばされた先は
+        // 辿るページではない —— 読むと、撮るだけのはずの外のページのリンクが次の段に入る。
+        // `finalUrl` は BrowserHive が links の JSON に必ず書く (無い古い形なら頼んだ URL で決める)。
+        const finalUrl = (raw as { finalUrl?: unknown }).finalUrl;
+        if (typeof finalUrl === "string") {
+          const landed = parseHttpUrl(finalUrl);
+          if (landed === undefined || !takeLinksFrom(landed, rules, parsedSeeds)) continue;
+        }
         const parsed = (raw as { links?: unknown }).links;
         if (!Array.isArray(parsed)) continue;
+        const links: DiscoveredLink[] = [];
         for (const item of parsed) {
           if (
             typeof item === "object" &&
@@ -1049,12 +1371,37 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             links.push(item as DiscoveredLink);
           }
         }
+        pages.push({
+          from: idOf.get(page.url) ?? null,
+          links: decideLinks(links, rules, parsedSeeds),
+        });
       }
 
-      const discovered = acceptLinks(links, parsedSeeds, crawl.scope);
+      const discovered = acceptLinks(pages);
+      const nextDepth = depth + 1;
+
+      // ── 3b. 決めたことを残す ──────────────────────────────────────────
+      // 規則 × ホスト名で、別々の URL を数える (`crawl/decisions.ts`)。**同じ段の報告をやり直したら
+      // 置き換える** —— 足すと、やり直しのたびに数が増える。
+      const decisions = aggregateDecisions(
+        pages.flatMap((page) => page.links),
+        nextDepth,
+      );
+      if (decisions.length > 0) {
+        await db
+          .insertInto("crawlDecisions")
+          .values(decisions.map((row) => ({ crawlId, ...row })))
+          .onConflict((oc) =>
+            oc.columns(["crawlId", "depth", "rule", "hostname"]).doUpdateSet((eb) => ({
+              action: eb.ref("excluded.action"),
+              links: eb.ref("excluded.links"),
+              samples: eb.ref("excluded.samples"),
+            })),
+          )
+          .execute();
+      }
 
       // ── 4. 上限を当てる ──────────────────────────────────────────────
-      const nextDepth = depth + 1;
       const { count } = await db
         .selectFrom("crawlPages")
         .select((eb) => eb.fn.countAll<string>().as("count"))
@@ -1080,6 +1427,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                   url: link.url,
                   depth: nextDepth,
                   host: link.host,
+                  discoveredFrom: link.discoveredFrom,
                   state: "pending" as const,
                 })),
               )

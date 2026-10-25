@@ -39,6 +39,7 @@ import { createHash } from "node:crypto";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import type { CrawlScript, Database, ScriptPhase } from "../db/database.js";
+import { HOSTNAME } from "../crawl/scope.js";
 
 /** `scripts` の 1 行 (source は含めない —— 一覧で読むものではない)。 */
 export interface ScriptRow {
@@ -79,9 +80,6 @@ export interface AddResult {
 
 export type ChangeResult =
   { kind: "missing"; ids: string[] } | { kind: "ok"; changed: { id: string; version: number }[] };
-
-/** 札の形。小文字の ASCII のホスト名 (IDN は punycode)。`021` の CHECK と capture-scripts の check と同じ式 */
-const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 
 /** 札として断るなら、その文。DB の CHECK (`021`) より先に、読める文で言う。 */
 export const sitesRefusal = (sites: readonly string[]): string | undefined => {
