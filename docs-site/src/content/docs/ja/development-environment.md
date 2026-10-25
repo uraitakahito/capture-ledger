@@ -138,7 +138,7 @@ NAME=value     # 値を渡す
 | `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                                                                  |
 | `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                                                                                          |
 | `pnpm run targets`                        | 撮る対象（`capture_targets`）を足す・見る・外す・消す。DB に直接書く開発用の道具。                                                 |
-| `pnpm run scripts`                        | ページで走らせる JS の目録（`scripts`）を取り込む・足す・見る・読む・外す・消す。受け皿の型（`host_types`）も出す。DB に直接書く。 |
+| `pnpm run scripts`                        | ページで走らせるスクリプト（`scripts`）を取り込む・足す・見る・読む・外す・消す。受け皿の型（`host_types`）も出す。DB に直接書く。 |
 | `pnpm run openapi:generate`               | 固定した submodule から BrowserHive の `openapi.json` を取り直し、型を再生成 (openapi-typescript)。                                |
 | `pnpm run openapi:check`                  | 型を再生成して `git diff --exit-code` (CI のドリフト検査)。                                                                        |
 | `pnpm run openapi:sync`                   | 固定した submodule から `openapi.json` を取り直すだけ。                                                                            |

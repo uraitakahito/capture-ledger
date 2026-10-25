@@ -1,5 +1,5 @@
 /**
- * ページの中で走らせる JavaScript の目録 (`scripts`) を足す・見る・切り替える・消す。
+ * ページの中で走らせるスクリプト (`scripts`) を足す・見る・切り替える・消す。
  * `pnpm run scripts` の芯で、クロールを始めるときの解決もここが持つ。
  *
  * **開発用の道具の中身で、認可は通らない。** DB に直接書く (`targets/store.ts` と同じ)。
@@ -16,23 +16,23 @@
  * 既定から外したという意思とは別の話になる。消さずに無効にできる形にしてあるのは、版の履歴を
  * 残したまま既定から外せるようにするため。
  *
- * ## その場の JS は目録に入らない
+ * ## その場の JS は台帳に登録しない
  *
- * `scripts` の要素には、目録の名指しのほかに、その場で書いた JS（`inline`）を置ける。
- * 台帳はそれを目録に入れず、クロールの行の写しにだけ固定する（`inlineScript`）。id は
- * `inline-<name>` で、目録の id には `inline-` を使わせない（`019` の CHECK と CLI）——
- * アーカイブの id だけで、目録の物か、その場の物かが分かるようにするため。
+ * `scripts` の要素には、台帳のスクリプトの名指しのほかに、その場で書いた JS（`inline`）を置ける。
+ * 台帳はそれを登録せず、クロールの行の写しにだけ固定する（`inlineScript`）。id は
+ * `inline-<name>` で、台帳のスクリプトの id には `inline-` を使わせない（`019` の CHECK と CLI）——
+ * アーカイブの id だけで、台帳のスクリプトか、その場の物かが分かるようにするため。
  *
  * ## 札（`sites`）は起点で効く
  *
- * 札のある台本は、クロールの起点のどれかがそのサイトにあるときだけ走る（`021`）。`scripts` を省いた
+ * 札のあるスクリプトは、クロールの起点のどれかがそのサイトにあるときだけ走る（`021`）。`scripts` を省いた
  * 頼みでは、有効な各 id の最新版を選んでから、札の無い物と起点に合う物を残す（`resolveScripts`）。
  * 名指しで起点に合わない物を入れるのは、頼む側が断る（`offsiteScripts`）。**最新版を選ぶのが先** ——
  * 札で絞ってから版を選ぶと、札の無い古い版が既定に出てくる（開発の Postgres で確かめた）。
  *
  * ## 受け皿の型も置く
  *
- * `host_types` (`020`) は、目録の source を読む人に見せる受け皿 `__bh` の型の写し。足し方は目録と
+ * `host_types` (`020`) は、スクリプトの source を読む人に見せる受け皿 `__bh` の型の写し。足し方はスクリプトと
  * 同じで、中身が同じなら版を増やさない。走る JS の型を決めるのは ts-compile-service の pin で、ここではない。
  */
 import { createHash } from "node:crypto";
@@ -40,7 +40,7 @@ import type { Kysely } from "kysely";
 import { sql } from "kysely";
 import type { CrawlScript, Database, ScriptPhase } from "../db/database.js";
 
-/** 目録の 1 行 (source は含めない —— 一覧で読むものではない)。 */
+/** `scripts` の 1 行 (source は含めない —— 一覧で読むものではない)。 */
 export interface ScriptRow {
   id: string;
   version: number;
@@ -54,7 +54,7 @@ export interface ScriptRow {
   createdAt: Date;
 }
 
-/** 目録の 1 版を丸ごと (`readScript`)。一覧の行に、source と渡す値を足した物。 */
+/** スクリプトの 1 版を丸ごと (`readScript`)。一覧の行に、source と渡す値を足した物。 */
 export interface ScriptVersion extends ScriptRow {
   source: string;
   options: Record<string, unknown>;
@@ -93,11 +93,11 @@ export const sitesRefusal = (sites: readonly string[]): string | undefined => {
   return undefined;
 };
 
-/** その札の台本を、この起点で走らせてよいか。札が無ければどこでも。起点はホスト名 (ポートは見ない) */
+/** その札のスクリプトを、この起点で走らせてよいか。札が無ければどこでも。起点はホスト名 (ポートは見ない) */
 export const onSeed = (sites: readonly string[], seedHosts: readonly string[]): boolean =>
   sites.length === 0 || sites.some((site) => seedHosts.includes(site));
 
-/** 起点のどれもそのサイトに無い、サイト用の台本 (名指しで入れたもの)。その場の JS は札を持たない */
+/** 起点のどれもそのサイトに無い、サイト用のスクリプト (名指しで入れたもの)。その場の JS は札を持たない */
 export const offsiteScripts = (
   scripts: readonly CrawlScript[],
   seedHosts: readonly string[],
@@ -106,12 +106,12 @@ export const offsiteScripts = (
     onSeed(script.sites ?? [], seedHosts) ? [] : [{ id: script.id, sites: script.sites ?? [] }],
   );
 
-/** その場の JS の id の頭。台帳が付け、目録の id には使わせない。 */
+/** その場の JS の id の頭。台帳が付け、台帳のスクリプトの id には使わせない。 */
 export const INLINE_PREFIX = "inline-";
 
 export const isInlineId = (id: string): boolean => id.startsWith(INLINE_PREFIX);
 
-/** 目録の id として断るなら、その文。DB の CHECK (`019`) より先に、読める文で言う。 */
+/** 台帳のスクリプトの id として断るなら、その文。DB の CHECK (`019`) より先に、読める文で言う。 */
 export const catalogIdRefusal = (id: string): string | undefined =>
   isInlineId(id) ? `${id}: ${INLINE_PREFIX} で始まる id は、その場の JS に取ってある` : undefined;
 
@@ -122,10 +122,10 @@ export interface InlineScript {
   source: string;
 }
 
-/** 要求の 1 要素。目録の名指しか、その場の JS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
+/** 要求の 1 要素。台帳のスクリプトの名指しか、その場の JS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
 export type RequestedScript = { catalog: string } | { inline: InlineScript };
 
-/** 目録に無い id と、同じ id の重ねが在れば、名指しで返す。**黙って落とさない。** */
+/** 台帳に無い id と、同じ id の重ねが在れば、名指しで返す。**黙って落とさない。** */
 export type ResolveResult =
   | { kind: "missing"; ids: string[] }
   | { kind: "duplicate"; ids: string[] }
@@ -142,7 +142,7 @@ export type ResolveResult =
  * ページで起きることは違うので、`options` を明示した呼び出しは版を分ける。一方
  * `options` を省いた呼び出しは「渡す値について意見が無い」であって「`{}` にしろ」では
  * ない —— 区別しないと、`import` が運用側で付けた設定を**黙って捨てた新しい版**を作り、
- * それが既定になる (目録は id ごとに最新版を選ぶため)。
+ * それが既定になる (台帳は id ごとに最新版を選ぶため)。
  *
  * **札 (`sites`) も同じ扱い。** 渡したときだけ最新版と比べ、違えば版を足す。`import` は catalog の札を
  * 必ず渡す (書いていなければ空) —— catalog が札の正なので、意見として渡す。
@@ -207,7 +207,7 @@ export const addScript = async (
 };
 
 /**
- * 目録を読む。既定では**各 id の最新版だけ**を返す —— 一覧で知りたいのは
+ * スクリプトを読む。既定では**各 id の最新版だけ**を返す —— 一覧で知りたいのは
  * 「いま何が走るか」で、版の history はそれを聞いてから読むもの。
  */
 export const listScripts = async (
@@ -236,7 +236,7 @@ export const listScripts = async (
 };
 
 /**
- * 目録の 1 版を丸ごと (source を含む)。**有効かどうかは見ない** —— 無効な版も、過去のクロールが
+ * スクリプトの 1 版を丸ごと (source を含む)。**有効かどうかは見ない** —— 無効な版も、過去のクロールが
  * 走らせた物。`GET /api/scripts/:id/versions/:version` と `show --version` の芯。
  */
 export const readScript = async (
@@ -315,7 +315,7 @@ export const readHostTypes = async (db: Kysely<Database>): Promise<HostTypesRow 
  * 版を指定したときだけ、その 1 つに効く —— 「v3 が悪かったので v2 に戻す」はこちら。
  *
  * **消さずに外せること**が要点。消すと、過去のクロールが何を走らせたのかを
- * 目録の側から辿れなくなる。
+ * 台帳の側から辿れなくなる。
  */
 export const setScriptEnabled = async (
   db: Kysely<Database>,
@@ -363,7 +363,7 @@ export const removeScripts = async (
 };
 
 /**
- * 有効な各 id の最新版を、札つきで (`GET /api/scripts`)。**サイト用の台本も入れる** —— dashboard はこれで
+ * 有効な各 id の最新版を、札つきで (`GET /api/scripts`)。**サイト用のスクリプトも入れる** —— dashboard はこれで
  * 札を見せ、新しいクロールの画面で起点に合う物を選ぶ。既定で走るのは、この中の札の無い物と起点に合う物。
  */
 export const enabledLatest = async (
@@ -383,15 +383,15 @@ export const enabledLatest = async (
 /**
  * クロールが走らせるものを決める。
  *
- * - `requested` を渡したら**その並びのまま**写しを返す。目録の名指しは各 id の最新版
- *   (無効な版でも名指しは通る)、その場の JS は目録を引かずに写す (`inlineScript`)。
+ * - `requested` を渡したら**その並びのまま**写しを返す。台帳のスクリプトの名指しは各 id の最新版
+ *   (無効な版でも名指しは通る)、その場の JS は台帳のスクリプトを引かずに写す (`inlineScript`)。
  * - 渡さなければ **有効な各 id の最新版**のうち、札の無い物と、札のどれかが起点のホストにある物を
  *   `id` 順で返す。**最新版を選んでから札で絞る** —— SQL で札を絞ってから `distinct on` すると、
  *   札の合わない最新版の代わりに、札の無い古い版が出てくる。絞るのは引いた後で、JS で。
  *
  * 名指しの札が起点に合うかは、ここでは見ない (`offsiteScripts`)。
  *
- * 目録に無い id が 1 つでも在れば、名指しで返して何も返さない —— 黙って落とすと、頼んだ側は
+ * 台帳に無い id が 1 つでも在れば、名指しで返して何も返さない —— 黙って落とすと、頼んだ側は
  * 全部走ったつもりで結果を読むことになる (`targets/store.ts` の「読めない URL」と同じ判断)。
  * 同じ id を 2 度頼んだときも名指しで返す —— 報告 (`id@版`) でも変換 (`/src/<id>.ts`) でも、
  * 2 本目が 1 本目に黙って畳まれる。
@@ -422,7 +422,7 @@ export const resolveScripts = async (
   const twice = ids.filter((id, i) => ids.indexOf(id) !== i);
   if (twice.length > 0) return { kind: "duplicate", ids: [...new Set(twice)] };
 
-  // **目録を引くのは名指しがあるときだけ。** 空の配列は Kysely が `in ()` に組み、Postgres は
+  // **台帳のスクリプトを引くのは名指しがあるときだけ。** 空の配列は Kysely が `in ()` に組み、Postgres は
   // 構文エラーで断る —— その場の JS だけのクロールが 500 になる。
   const named = requested.flatMap((r) => ("catalog" in r ? [r.catalog] : []));
   const rows =
@@ -454,8 +454,8 @@ const idOf = (r: RequestedScript): string =>
   "catalog" in r ? r.catalog : INLINE_PREFIX + r.inline.name;
 
 /**
- * その場の JS の写し。**形は目録の写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
- * 目録の物と区別しない。版は 1、options は空。sha256 は台帳が source から打つ (目録の生成列
+ * その場の JS の写し。**形は台帳のスクリプトの写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
+ * 台帳のスクリプトと区別しない。版は 1、options は空。sha256 は台帳が source から打つ (`scripts` の生成列
  * `encode(digest(source, 'sha256'), 'hex')` と同じ値)。
  */
 const inlineScript = ({ name, phase, source }: InlineScript): CrawlScript => ({

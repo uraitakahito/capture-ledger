@@ -150,9 +150,9 @@ jobs:
       - name: Targets CLI against Postgres
         run: node scripts/targets-smoke.mjs
 
-      # 目録の CLI (pnpm run scripts) を、本物の Postgres に当てる。
+      # スクリプトの CLI (pnpm run scripts) を、本物の Postgres に当てる。
       #
-      # 目録を読む口と同じ関数 (readScript・listScripts の id・受け皿の型) が Postgres で本当に
+      # スクリプトを読む口と同じ関数 (readScript・listScripts の id・受け皿の型) が Postgres で本当に
       # 通るか、版を本当に絞るか、`020` の表が版を足すかを見るのは、ここだけ。自分の id
       # (smoke-<pid>) の行と、自分で足した型だけを足して、最後に消す。
       - name: Scripts CLI against Postgres

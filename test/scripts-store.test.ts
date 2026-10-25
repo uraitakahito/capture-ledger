@@ -14,12 +14,12 @@ import {
 import { recordingDb } from "./recording-db.js";
 
 /**
- * 目録を読む芯 (`src/scripts/store.ts`) が、**実際に組む SQL** を見る。
+ * スクリプトを読む芯 (`src/scripts/store.ts`) が、**実際に組む SQL** を見る。
  *
  * 代役は Kysely 本体に SQL を組ませて記録する (`recording-db.ts`)。版の絞り込みを書き忘れれば、
  * SQL の文字列にそれが出る。Postgres で本当に通るかは、CI の `scripts/scripts-smoke.mjs` が見る。
  */
-describe("目録の 1 版を読む", () => {
+describe("スクリプトの 1 版を読む", () => {
   it("id と版で絞り、source と渡す値まで 1 行だけ引く", async () => {
     const row = { id: "autoscroll", version: 1, source: "// a\n" };
     const { db, queries } = recordingDb([[row]]);
@@ -54,7 +54,7 @@ describe("目録の 1 版を読む", () => {
   });
 });
 
-describe("目録を並べる", () => {
+describe("スクリプトを並べる", () => {
   it("id を渡せば、その id だけに絞る（版を全部なら distinct on を付けない）", async () => {
     const { db, queries } = recordingDb([[]]);
 
@@ -166,7 +166,7 @@ describe("起点で選べるか", () => {
     expect(onSeed(["www.google.com"], [])).toBe(false);
   });
 
-  it("名指しで入れたサイト用の台本のうち、起点に合わない物を札つきで返す（その場の JS は札を持たない）", () => {
+  it("名指しで入れたサイト用のスクリプトのうち、起点に合わない物を札つきで返す（その場の JS は札を持たない）", () => {
     const script = {
       version: 1,
       phase: "behavior" as const,
@@ -247,7 +247,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
 });
 
 describe("有効な各 id の最新版（GET /api/scripts）", () => {
-  it("札つきで、サイト用の台本も入れる（source は引かない）", async () => {
+  it("札つきで、サイト用のスクリプトも入れる（source は引かない）", async () => {
     const { db, queries } = recordingDb([[]]);
 
     await enabledLatest(db);
