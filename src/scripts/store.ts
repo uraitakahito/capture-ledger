@@ -363,8 +363,8 @@ export const removeScripts = async (
 };
 
 /**
- * 有効な各 id の最新版を、札つきで (`GET /api/scripts`)。**サイト用の台本も入れる** —— 画面はこれで
- * 札を見せ、新しいクロールの面で起点に合う物を選ぶ。既定で走るのは、この中の札の無い物と起点に合う物。
+ * 有効な各 id の最新版を、札つきで (`GET /api/scripts`)。**サイト用の台本も入れる** —— dashboard はこれで
+ * 札を見せ、新しいクロールの画面で起点に合う物を選ぶ。既定で走るのは、この中の札の無い物と起点に合う物。
  */
 export const enabledLatest = async (
   db: Kysely<Database>,

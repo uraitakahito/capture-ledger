@@ -151,7 +151,7 @@ source・sha256・options・札 —— をクロールの行に書きます。�
 `GET /api/crawls/:id` が返すのは、目録の物は身元 —— id・版・phase・sha256 —— と札だけで、
 source は返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
 `preload/scripts.jsonl`）と目録（[版を読む](#版を読む)）に在ります。その場の JS には `inline`（`name`・`phase`・
-source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。画面は走行中の
+source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。dashboard は走行中の
 クロールを数秒ごとに引き直し、source は 1 MiB まであり得るからです。source は
 `GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。目録に無く、
 アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこの口だけです。目録の物には 404 を

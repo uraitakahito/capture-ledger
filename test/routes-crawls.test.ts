@@ -1221,7 +1221,7 @@ describe("走らせるものの解決", () => {
   });
 
   it("GET の inline は名前・口・バイト数だけ —— source は運ばない", async () => {
-    // 走行中の行は画面が 2 秒ごとに引き直す。source を載せると、1 MiB の JS なら 2 秒に 1 MiB
+    // 走行中の行は dashboard が 2 秒ごとに引き直す。source を載せると、1 MiB の JS なら 2 秒に 1 MiB
     const { crawls } = await start({
       seeds: [SEED],
       scripts: [{ inline: INLINE }, { catalog: "autoscroll" }],
@@ -1406,7 +1406,7 @@ describe("クロールの一覧", () => {
 
   it("state だけでは足りない欄を、行に載せる", async () => {
     // 打ち切り (`max_depth`) と完走 (`completed`) は state が同じ。org と run の行き先も、
-    // 画面が「どこまで見えているか」を言うのに要る。
+    // dashboard が「どこまで見えているか」を言うのに要る。
     const truncated = row({
       id: "44444444-4444-4444-8444-444444444444",
       startedAt: new Date(4),

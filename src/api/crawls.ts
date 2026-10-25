@@ -85,7 +85,7 @@ const FAILURES_SHOWN = 5;
 const CRAWLS_PAGE = 50;
 /**
  * `POST /api/crawls` が受ける本文の上限。**dashboard の門（dashboard の src/lib.mjs の WRITE_LIMIT）と
- * 同じ 1 MiB** —— 片方だけを変えると、画面が通すのに台帳が 413、の形になる。Fastify の既定と同じ値だが、
+ * 同じ 1 MiB** —— 片方だけを変えると、dashboard が通すのに台帳が 413、の形になる。Fastify の既定と同じ値だが、
  * 既定に頼らずにこの口に書く。その先の BrowserHive は 4 MiB で、変換後の JS と目録の物を足しても収まる。
  */
 export const CRAWL_BODY_LIMIT = 1024 * 1024;
@@ -579,7 +579,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
-   * クロールの一覧。**画面のためではなく資源として返す** —— 並べ方も、どの列を
+   * クロールの一覧。**dashboard のためではなく資源として返す** —— 並べ方も、どの列を
    * 見せるかも、呼ぶ側が決める。doctor も smoke も CLI も同じ口を使える。
    *
    * ## 絞りは `:id` と同じ `maySubmit`
@@ -589,7 +589,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 対象も投げられる」)。読みだけを狭める規則は増やさない —— 始められるのに見えない、
    * という食い違いのほうが説明しにくい。
    *
-   * 代わりに `orgId` を必ず行に出す。**見えている範囲を、画面が言えるようにするため。**
+   * 代わりに `orgId` を必ず行に出す。**見えている範囲を、dashboard が言えるようにするため。**
    * 組織ごとに絞る必要が出たら、そのときは `crawl` 型を認可モデルに足して
    * `archives` と同じ `batchCheck` で絞ることになる (モデルの変更なので、
    * `fga:deploy` と assertion が一緒に動く)。
@@ -722,7 +722,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // **目録の物は身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
         // 中身は目録の 1 版の口 (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
         // archive に在る。**その場の JS には頼まれた
-        // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は画面が 2 秒ごとに引き直すので、
+        // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は dashboard が 2 秒ごとに引き直すので、
         // 1 MiB の JS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
         // ときだけで、`GET /api/crawls/:id/inline/:name` から取る。
         // `jsSha256` と `compiledWith` は最初の段の報告で埋まる。それまでは null。
