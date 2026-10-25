@@ -11,7 +11,7 @@ flowchart LR
   PG[("Postgres<br/>capture_targets / crawls / crawl_pages")] <--> W
   subgraph W["capture-ledger (Node 24 / TypeScript)"]
     direction TB
-    API["api/crawls.ts<br/>scope, dedup, budget"]
+    API["api/crawls.ts<br/>rules, dedup, budget"]
     DIS["crawl/dispatch.ts<br/>one webhook POST"]
     API --> DIS
   end

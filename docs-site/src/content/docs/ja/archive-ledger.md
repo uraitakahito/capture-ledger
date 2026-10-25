@@ -261,7 +261,7 @@ dispatch が途中で死んだクロールの行も `running` のまま残り、
 
 `seeds`（1 本以上の配列）か `fromTargets` の **どちらか一方**。**両方でも 400、
 どちらも無くても 400** で、この 2 つは別の間違いなので言い分を分けてある。ほかに
-`scope` / `maxDepth` / `maxPages` / `perHostDelayMs` / `hostParallelism`。
+`rules` / `maxDepth` / `maxPages` / `perHostDelayMs` / `hostParallelism`。
 知らない鍵は**黙って落とさず** **400**。
 
 取り込む形式は意図して受けない —— それは「この配備が何をするか」の一部であって、
@@ -346,7 +346,7 @@ subject に 202 が出た。
 ## リンクを辿る
 
 同じ口に深さを 1 以上で渡すと、起点からリンクを辿る。辿る作業は Windmill が回し、
-**範囲・既読・打ち切り**を決めるのは capture-ledger。
+**どのリンクを取るか・既読・打ち切り**を決めるのは capture-ledger。
 
 ```sh
 curl -X POST http://localhost:7070/api/crawls \
@@ -402,13 +402,70 @@ WINDOW w AS (PARTITION BY host ORDER BY submitted_at);
 終わったクロールが「全部辿った」のか「切られた」のかを言えない。既定の 30 ページでは
 **`max_pages` で止まるのが普通** —— 上限が日常的に見えているほうがよいので、そう選んである。
 
-`pagesDiscovered` と `pagesCaptured` は別々に持つ。差が「範囲・robots・上限で落としたぶん」。
+`pagesDiscovered` と `pagesCaptured` は別々に持つ。差が「規則・robots・上限で落としたぶん」。
 
 ### 何を辿るか
 
-既定は起点と同じ origin（`scope: "same-host"` にするとホスト単位に緩む）。判定は
-リダイレクト後の **最終 URL** に対して行う。`rel="nofollow"` は尊重し、`http(s)` 以外は
-辿らない。フラグメントは落とす —— `#section` はページの中の位置であって別のページではない
+クロールは**規則の並び**を受ける。規則は鍵が 1 つの object で、鍵が動き、値が当てる物。
+
+```json
+"rules": [
+  { "skip": "ads.example.com" },
+  { "skip": "https://www.example.com/search" },
+  { "follow": "same-site" },
+  { "capture": "any" }
+]
+```
+
+| 動き      | 当たったリンクは                         |
+| --------- | ---------------------------------------- |
+| `follow`  | 撮って辿る（そのページのリンクも読む）   |
+| `capture` | 撮るだけ（そのページのリンクは読まない） |
+| `skip`    | 落とす（撮らない）                       |
+
+| 当てる物                                       | 当たる URL                                                                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `same-origin`・`same-host`・`same-site`・`any` | 起点と比べて、同じ origin・同じホスト（ポートまで）・同じ登録ドメイン・全部                                                                                    |
+| 小文字のホスト名（`ads.example.com`）          | そのホストと、その下のサブドメイン。ラベルの境目で照らす（`badads.example.com` には当たらない）                                                                |
+| `http(s)` の URL                               | 正規化（ホストは小文字、既定の port は外す）した URL がそれで始まる物。文字列の前方一致なので `/search` は `/searching` にも当たる（境目が要るなら末尾に `/`） |
+
+**上から当て、最初に当たった規則が決める。どれにも当たらないリンクは落とす。** 規則の番号は
+画面の行と同じく 1 から数える。`rules` を省くと `[{ "follow": "same-origin" }]` ——
+起点と同じ origin を辿り、外は落とす。規則は読んだ形でクロールの行に固定する（URL の前方一致は
+正規化した形）。
+
+`same-site` は lockfile が固定する `tldts` の版の Public Suffix List で決まり、**私的な区画も
+見る** —— `foo.github.io` と `bar.github.io` は別のサイト。IP アドレスと `localhost` は、
+それ自身が 1 つのサイト。
+
+書いたとおりに動かない並びは、クロールを始める前に **400** で、どこが悪いかを名指して断る。
+
+| `error`                         | とき                                                    | 名指す物                       |
+| ------------------------------- | ------------------------------------------------------- | ------------------------------ |
+| `invalid rule patterns`         | 当てる物が 3 種類のどれにも読めない                     | `rules: [{ rule, pattern }]`   |
+| `rules that can never match`    | 前の規則が、後ろの規則の当たる URL を全部含む           | `rules: [{ rule, coveredBy }]` |
+| `seeds the rules do not follow` | 起点が `capture`・`skip` に当たるか、どれにも当たらない | `seeds: [url]`                 |
+
+形（1〜32 本・鍵が 1 つ・当てる物は 2048 字まで）は schema の 400。「二度と当たらない」は
+言い切れるときだけ言う: `any` は全部を含む。`same-site` は `same-host` を、`same-host` は
+`same-origin` を含む。ドメインはその下のドメインを含み、`same-site` は起点のサイトにある
+ドメインを含む。URL の前方一致は、それより短い前方一致と、その URL 自身が当たる範囲や
+ドメインに含まれる。正しい並びを断るほうが、死んだ規則を通すより悪い。
+
+`GET /api/crawl-rules/check` は、何も始めずに同じ検査をする。書かない口なので `GET`。
+
+```sh
+curl 'http://localhost:7070/api/crawl-rules/check?seed=https://www.example.com/&rule=follow:same-site&rule=skip:ads.example.com'
+# → { "seeds": [{ "url": "https://www.example.com/", "valid": true, "site": "example.com", "followed": true }],
+#     "rules": [{ "rule": 1, "action": "follow", "kind": "scope", "pattern": "same-site" },
+#               { "rule": 2, "action": "skip", "kind": "domain", "pattern": "ads.example.com", "coveredBy": 1 }],
+#     "ok": false }
+```
+
+規則を当てる前に、`rel="nofollow"` は尊重し、`http(s)` 以外は見ない。`follow` でない
+ページのリンクは読みもしない。ページは頼んだ URL と、リダイレクトの後に居た **最終 URL** の
+両方で決める —— 外へ跳ぶリンクから範囲が広がらないように。
+フラグメントは落とす —— `#section` はページの中の位置であって別のページではない
 —— が、それ以外は正規化しない。クエリを並べ替えると別のページを返すサーバは実在するので、
 取りこぼしより取り違えのほうが悪い。
 
@@ -417,6 +474,31 @@ WINDOW w AS (PARTITION BY host ORDER BY submitted_at);
 **実際に入った行がそのまま次の段になる** —— 記録と決定がずれようがない。BrowserHive の
 `rejectDuplicateUrls` は代わりにならない: pending と processing しか見ておらず、完了した
 URL を忘れる。
+
+### 規則が何を決めたか
+
+段の報告のたびに、規則ごと・ホストごとに、別々の URL を何本決めたかを残す ——
+`crawl_decisions`。段 × 規則 × ホスト名で 1 行。同じ段の報告をやり直したら、足さずに
+置き換える。`follow` でないページのリンクは読まないので、数にも入らない。
+
+```sh
+curl http://localhost:7070/api/crawls/9072b625-…/decisions
+# → { "rules": [ …クロールに固定した規則… ],
+#     "decisions": [{ "depth": 1, "rule": 1, "action": "skip", "hostname": "ads.example.com",
+#                     "links": 12, "samples": ["https://ads.example.com/…", …] }, …],
+#     "robots": [{ "hostname": "www.example.com", "pages": 1, "samples": ["https://www.example.com/private"] }] }
+
+curl 'http://localhost:7070/api/decisions?domain=ads.example.com&days=90&action=skip'
+# → { "decisions": [{ "crawlId": "…", "startedAt": "…", "seeds": [ … ], "rule": 1, "action": "skip",
+#                     "pattern": "ads.example.com", "hostname": "ads.example.com", "links": 12 }, …],
+#     "truncated": false }
+```
+
+規則 `0` は、どの規則にも当たらなかったリンク。`robots` は robots.txt のために取らなかった
+ページで、「なぜ撮らなかったか」を 1 か所で読める。ホスト名はポートを外す。ドメインの口は、
+そのホストとその下をラベルの境目で照らし、新しいクロールから並べる。`days` の既定は 90、
+`action` の既定は `skip` で、500 行で切ったときは `truncated` が言う。Windmill は run の中身を
+最長 30 日で消すが、この行はクロールの行がある限り残る。
 
 ## 全文検索
 
