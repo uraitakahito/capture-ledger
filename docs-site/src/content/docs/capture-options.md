@@ -237,13 +237,13 @@ server is configured to do, which is what BrowserHive's own documentation descri
 Pacing and reach, in the `POST /api/crawls` body — see
 [Archive ledger](/capture-ledger/archive-ledger/#following-links):
 
-| Field             | Default                                                                       | Meaning                            |
-| ----------------- | ----------------------------------------------------------------------------- | ---------------------------------- |
-| `scope`           | `same-origin`                                                                 | `same-host` relaxes it to the host |
-| `maxDepth`        | 2, or 0 with `fromTargets`                                                    | How far to follow                  |
-| `maxPages`        | 30, never below the number of seeds                                           | Total pages                        |
-| `perHostDelayMs`  | 2000                                                                          | Gap between pages on one host      |
-| `hostParallelism` | 4                                                                             | Distinct hosts touched at once     |
-| `scripts`         | every enabled id, newest version, unless it is a site script for another host | What runs in the page (above)      |
+| Field             | Default                                                                       | Meaning                                |
+| ----------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
+| `rules`           | `[{ "follow": "same-origin" }]`                                               | Which links to follow, capture or skip |
+| `maxDepth`        | 2, or 0 with `fromTargets`                                                    | How far to follow                      |
+| `maxPages`        | 30, never below the number of seeds                                           | Total pages                            |
+| `perHostDelayMs`  | 2000                                                                          | Gap between pages on one host          |
+| `hostParallelism` | 4                                                                             | Distinct hosts touched at once         |
+| `scripts`         | every enabled id, newest version, unless it is a site script for another host | What runs in the page (above)          |
 
 An unknown key is **400**, not silently dropped.

@@ -43,7 +43,7 @@ const fakeDb = {
             state: "running",
             maxPages: 10,
             maxDepth: 2,
-            scope: "same-host",
+            rules: [{ follow: "same-host" }],
             seeds: [PAGE],
             perHostDelayMs: 0,
             hostParallelism: 1,
@@ -59,7 +59,11 @@ const fakeDb = {
     set: () => ({
       where: () => ({
         execute: () => Promise.resolve(),
-        where: () => ({ execute: () => Promise.resolve() }),
+        // 報告した行を閉じるときは id を返させる (`discovered_from` に書く)。この偽物は行を持たない
+        where: () => ({
+          execute: () => Promise.resolve(),
+          returning: () => ({ executeTakeFirst: () => Promise.resolve(undefined) }),
+        }),
       }),
     }),
   }),

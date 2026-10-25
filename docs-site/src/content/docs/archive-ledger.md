@@ -280,7 +280,7 @@ one. `GET` returns `startedAt` so you can judge; clearing it is a manual act.
 
 Exactly one of `seeds` (a non-empty array) or `fromTargets` — **both is 400 and
 neither is 400**, with the two reported differently, because they are different
-mistakes. Alongside them: `scope`, `maxDepth`, `maxPages`, `perHostDelayMs`,
+mistakes. Alongside them: `rules`, `maxDepth`, `maxPages`, `perHostDelayMs`,
 `hostParallelism`. An unknown key is **400**, not silently dropped.
 
 Capture formats are deliberately not accepted from the caller: they are part of
@@ -376,7 +376,7 @@ a crawl of their own.
 ## Following links
 
 The same endpoint, with a depth above 0, walks the links out from its seeds.
-Windmill runs the walking; capture-ledger decides what is in scope, what has been seen,
+Windmill runs the walking; capture-ledger decides which links to take, what has been seen,
 and when to stop.
 
 ```sh
@@ -438,13 +438,75 @@ default of 30 pages, `max_pages` is the ordinary outcome — that is deliberate,
 limit is visible in normal use rather than a surprise.
 
 `pagesDiscovered` and `pagesCaptured` are separate counts. The difference is what
-scope, robots, and the caps threw away.
+the rules, robots, and the caps threw away.
 
 ### What gets followed
 
-Same origin as the seed by default (`scope: "same-host"` relaxes it to the host).
-Judged against the **final** URL, after redirects. `rel="nofollow"` is honoured, and
-only `http(s)` links are considered. Fragments are dropped — `#section` is a position
+A crawl takes a list of **rules**. Each rule is an object with one key — the action —
+whose value is what it matches:
+
+```json
+"rules": [
+  { "skip": "ads.example.com" },
+  { "skip": "https://www.example.com/search" },
+  { "follow": "same-site" },
+  { "capture": "any" }
+]
+```
+
+| Action    | A link it matches is                 |
+| --------- | ------------------------------------ |
+| `follow`  | captured, and its own links are read |
+| `capture` | captured; its links are not read     |
+| `skip`    | not captured                         |
+
+| Pattern                                        | Matches                                                                                                                                                              |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `same-origin`, `same-host`, `same-site`, `any` | Compared with the seeds: the same origin, the same host (port included), the same registrable domain, or everything                                                  |
+| A lower-case host name (`ads.example.com`)     | That host and every subdomain under it, at a label boundary — not `badads.example.com`                                                                               |
+| An `http(s)` URL                               | Every URL that starts with it once normalised (lower-case host, no default port). A plain prefix: `/search` matches `/searching` too; end it with `/` for a boundary |
+
+**Rules are tried from the top, and the first one that matches decides. A link no rule
+matches is skipped.** Rules are numbered from 1, as a screen numbers its rows. Leave
+`rules` out and the crawl gets `[{ "follow": "same-origin" }]` — same origin as a seed,
+nothing outside it. The rules are fixed on the crawl as read: a URL pattern is stored
+normalised.
+
+`same-site` is decided by the Public Suffix List in the `tldts` version the lockfile
+pins, **private section included**, so `foo.github.io` and `bar.github.io` are different
+sites. An IP address or `localhost` is a site of its own.
+
+A rule list that would do something other than what it says is refused before the crawl
+starts, with a **400** that names the problem:
+
+| `error`                         | When                                                | Names                          |
+| ------------------------------- | --------------------------------------------------- | ------------------------------ |
+| `invalid rule patterns`         | A pattern is none of the three kinds                | `rules: [{ rule, pattern }]`   |
+| `rules that can never match`    | An earlier rule matches every URL a later one would | `rules: [{ rule, coveredBy }]` |
+| `seeds the rules do not follow` | A seed lands on `capture`, `skip` or no rule at all | `seeds: [url]`                 |
+
+The shape — 1 to 32 rules, one key each, a pattern of at most 2048 characters — is the
+schema's 400. "Can never match" is only claimed when it is certain: `any` covers
+everything; `same-site` covers `same-host`, which covers `same-origin`; a domain covers its
+subdomains, and `same-site` covers a domain on a seed's site; a URL prefix is covered by a
+shorter prefix, or by a scope or domain its own URL falls in. Refusing a correct list
+would be worse than letting a dead rule through.
+
+`GET /api/crawl-rules/check` runs the same checks without starting anything — a `GET`,
+because it writes nothing:
+
+```sh
+curl 'http://localhost:7070/api/crawl-rules/check?seed=https://www.example.com/&rule=follow:same-site&rule=skip:ads.example.com'
+# → { "seeds": [{ "url": "https://www.example.com/", "valid": true, "site": "example.com", "followed": true }],
+#     "rules": [{ "rule": 1, "action": "follow", "kind": "scope", "pattern": "same-site" },
+#               { "rule": 2, "action": "skip", "kind": "domain", "pattern": "ads.example.com", "coveredBy": 1 }],
+#     "ok": false }
+```
+
+Before any rule is tried, `rel="nofollow"` is honoured and only `http(s)` links are
+considered. Links on a page that is not `follow` are not read at all — and a page is
+judged both by the URL it was asked for and by the **final** URL it landed on after
+redirects, so a link that redirects off-site cannot widen the crawl. Fragments are dropped — `#section` is a position
 inside a page, not another page — but nothing else is normalised: a reordered query
 string is a different URL to plenty of real servers, and taking the wrong page is
 worse than taking one twice.
@@ -455,6 +517,33 @@ inserted with `ON CONFLICT DO NOTHING` and **the rows that actually landed becom
 next level** — so recording and deciding cannot drift apart. BrowserHive's
 `rejectDuplicateUrls` is not a substitute: it only knows about pending and processing
 tasks and forgets completed URLs.
+
+### What the rules decided
+
+Each level's report records how many distinct URLs every rule took on every host —
+`crawl_decisions`, one row per depth, rule and host name. Reporting the same level again
+replaces its rows instead of adding to them. Links on a page that is not `follow` are
+not read, so they are not counted.
+
+```sh
+curl http://localhost:7070/api/crawls/9072b625-…/decisions
+# → { "rules": [ …as fixed on the crawl… ],
+#     "decisions": [{ "depth": 1, "rule": 1, "action": "skip", "hostname": "ads.example.com",
+#                     "links": 12, "samples": ["https://ads.example.com/…", …] }, …],
+#     "robots": [{ "hostname": "www.example.com", "pages": 1, "samples": ["https://www.example.com/private"] }] }
+
+curl 'http://localhost:7070/api/decisions?domain=ads.example.com&days=90&action=skip'
+# → { "decisions": [{ "crawlId": "…", "startedAt": "…", "seeds": [ … ], "rule": 1, "action": "skip",
+#                     "pattern": "ads.example.com", "hostname": "ads.example.com", "links": 12 }, …],
+#     "truncated": false }
+```
+
+Rule `0` is a link no rule matched. `robots` lists the pages robots.txt kept the crawl from
+taking, so "why was this not captured" has one place to look. Host names drop the port.
+The domain query covers the host and its subdomains at a label boundary, newest crawl
+first; `days` defaults to 90 and `action` to `skip`, and `truncated` says when the answer
+was cut at 500 rows. Windmill keeps a run's details for 30 days at most; these rows last as
+long as the crawl does.
 
 ## Full-text search
 

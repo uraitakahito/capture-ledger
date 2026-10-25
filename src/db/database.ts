@@ -82,9 +82,15 @@ export interface CaptureSubmissionsTable {
  */
 export interface CrawlsTable {
   id: string;
-  /** 出発点。1 本以上。範囲はこのどれかに入るかで決まる (`crawl/scope.ts`)。 */
+  /** 出発点。1 本以上。起点からの範囲は、このどれかと比べて決まる (`crawl/scope.ts`)。 */
   seeds: string[];
-  scope: CrawlScope;
+  /**
+   * どのリンクを辿り、撮り、落とすか。**上から当て、最初に当たった規則が勝つ** (`crawl/rules.ts`・`022`)。
+   * 始めたときに読んだ形 (前方一致は正規化した URL) で固定し、後から書き換えない。
+   *
+   * 書くときは JSON の文字列 (`scripts` と同じ扱い)。
+   */
+  rules: ColumnType<CrawlRule[], string, never>;
   maxDepth: number;
   maxPages: number;
   perHostDelayMs: number;
@@ -201,8 +207,14 @@ export interface HostTypesTable {
 
 export type CrawlState = "running" | "succeeded" | "failed";
 
-/** どこまでを同じ範囲と見なすか。判定は `finalUrl` (リダイレクト後) に対して行う。 */
-export type CrawlScope = "same-origin" | "same-host";
+/** 規則の動き。撮って辿る・撮るだけ・落とす。 */
+export type CrawlRuleAction = "follow" | "capture" | "skip";
+
+/**
+ * 規則 1 本。**鍵が 1 つの object** で、鍵が動き、値が当てる物 (`{ "skip": "ads.example.com" }`)。
+ * 当てる物の読み方は `crawl/rules.ts` の `parsePattern`。
+ */
+export type CrawlRule = { follow: string } | { capture: string } | { skip: string };
 
 /** なぜ終わったか。これが無いと「全部辿った」と「上限で切った」が区別できない。 */
 export type CrawlStopReason = "completed" | "max_depth" | "max_pages" | "failed";
@@ -234,6 +246,27 @@ export interface CrawlPagesTable {
 
 export type CrawlPageState = "pending" | "captured" | "failed" | "skipped";
 
+/**
+ * 規則でリンクをどう決めたか。段 × 規則 × ホスト名で 1 行 (`023`)。
+ *
+ * 数えるのは**その段で見つけた、別々の URL** で、同じ段の報告をやり直しても置き換えるだけなので増えない。
+ * 撮るだけのページのリンクは見ていないので、ここには来ない。
+ */
+export interface CrawlDecisionsTable {
+  crawlId: string;
+  /** リンク先の深さ (見つけたページの深さ + 1)。 */
+  depth: number;
+  /** 当たった規則の番号。1 から数え、0 はどれにも当たらなかった (落とした)。 */
+  rule: number;
+  action: CrawlRuleAction;
+  /** リンク先のホスト名。**ポートは外す** —— ドメインの規則も、ドメインで引く口も、ホスト名で照らす。 */
+  hostname: string;
+  /** 別々の URL の数。1 以上。 */
+  links: number;
+  /** 例の URL。見つけた順に `SAMPLES` 本まで (`crawl/decisions.ts`)。 */
+  samples: string[];
+}
+
 export interface Database {
   captureTargets: CaptureTargetsTable;
   archives: ArchivesTable;
@@ -241,6 +274,7 @@ export interface Database {
   captureSubmissions: CaptureSubmissionsTable;
   crawls: CrawlsTable;
   crawlPages: CrawlPagesTable;
+  crawlDecisions: CrawlDecisionsTable;
   scripts: ScriptsTable;
   hostTypes: HostTypesTable;
 }

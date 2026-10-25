@@ -27,17 +27,18 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 
 ### capture-ledger's database
 
-| Table                                                                   | Role                                                   |
-| ----------------------------------------------------------------------- | ------------------------------------------------------ |
-| [`capture_targets`](/capture-ledger/databases/capture-targets/)         | What to capture                                        |
-| [`capture_submissions`](/capture-ledger/databases/capture-submissions/) | What was submitted; the only source of organizations   |
-| [`archives`](/capture-ledger/databases/archives/)                       | The ledger — captures that produced an archive         |
-| [`fga_outbox`](/capture-ledger/databases/fga-outbox/)                   | Tuples waiting to reach OpenFGA                        |
-| `crawls`                                                                | One row per crawl — its policy, state and stop reason  |
-| `crawl_pages`                                                           | One row per page a crawl reached; also the dedup index |
-| `scripts`                                                               | The scripts a crawl can name                           |
-| `host_types`                                                            | The receptacle (`__bh`) types, shown to script readers |
-| `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`               | Kysely's own bookkeeping (below)                       |
+| Table                                                                   | Role                                                        |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------- |
+| [`capture_targets`](/capture-ledger/databases/capture-targets/)         | What to capture                                             |
+| [`capture_submissions`](/capture-ledger/databases/capture-submissions/) | What was submitted; the only source of organizations        |
+| [`archives`](/capture-ledger/databases/archives/)                       | The ledger — captures that produced an archive              |
+| [`fga_outbox`](/capture-ledger/databases/fga-outbox/)                   | Tuples waiting to reach OpenFGA                             |
+| `crawls`                                                                | One row per crawl — its policy, state and stop reason       |
+| `crawl_pages`                                                           | One row per page a crawl reached; also the dedup index      |
+| `crawl_decisions`                                                       | What a crawl's rules decided, per depth, rule and host name |
+| `scripts`                                                               | The scripts a crawl can name                                |
+| `host_types`                                                            | The receptacle (`__bh`) types, shown to script readers      |
+| `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`               | Kysely's own bookkeeping (below)                            |
 
 ### OpenFGA's database
 

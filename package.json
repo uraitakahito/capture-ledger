@@ -143,6 +143,7 @@
     "kysely": "^0.29.6",
     "pg": "^8.23.1",
     "pino": "^10.4.0",
+    "tldts": "^7.4.19",
     "yauzl-promise": "^4.0.0"
   },
   "devDependencies": {
