@@ -111,7 +111,7 @@ const start = async (options: ServerOptions): Promise<void> => {
   registerRoutes(app, { db, fga, s3, resolveIdentity });
   registerMeRoute(app, { fga, resolveIdentity });
   // 何が走るかを、**頼む前に**訊ける口。webhook の設定が無い配備でも出す ——
-  // 目録が空であることは、クロールを始められるかどうかとは別の問いなので。
+  // 台帳にスクリプトが無いことは、クロールを始められるかどうかとは別の問いなので。
   registerScriptsRoute(app, { db, fga, resolveIdentity });
 
   // 成果物の受け口。**BrowserHive が保管庫を持たずに済むための口。**

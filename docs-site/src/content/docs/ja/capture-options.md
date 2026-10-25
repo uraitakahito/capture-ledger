@@ -74,16 +74,16 @@ behavior も、サイト別の behavior もありません。送らなければ�
 受け皿すら注入されません。それでも取り込みは成功し、アーカイブも出ます ——
 スクロールも遅延読み込みも起きていない、というだけです。
 
-**だから目録がここに在ります。** 既定を持てるのは「このクロールは何を走らせるか」を
+**だからスクリプトがここに在ります。** 既定を持てるのは「このクロールは何を走らせるか」を
 決める側だけなので、capture-ledger が `scripts` 表を持ち、解決した結果をクロールの行に
 固定します。
 
 ソースの出どころは [capture-scripts](https://github.com/uraitakahito/capture-scripts) で、
 `.upstream/capture-scripts` の submodule として固定しています。あちらの `catalog.json` が、
-ソースが自分では言えないこと —— `id` と `phase`、サイト用の台本なら `sites` —— を持ちます。
+ソースが自分では言えないこと —— `id` と `phase`、サイト用のスクリプトなら `sites` —— を持ちます。
 
 ```sh
-# catalog と受け皿の型を入れる。何度流しても同じ（同じバイト列は同じ版）
+# スクリプト（catalog.json）と受け皿の型を入れる。何度流しても同じ（同じバイト列は同じ版）
 pnpm run scripts import .upstream/capture-scripts
 pnpm run scripts list                     # 各 id の最新版（札つき）
 pnpm run scripts list --seed https://example.com/   # その起点のクロールが、scripts を書かないと走らせるもの
@@ -93,7 +93,7 @@ pnpm run scripts types                    # 受け皿（__bh）の型。import �
 
 # 1 本だけ試す・設定を変えるのは、いまも手で
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
-pnpm run scripts add example-title --file ./example-title.ts --site example.com   # サイト用の台本
+pnpm run scripts add example-title --file ./example-title.ts --site example.com   # サイト用のスクリプト
 pnpm run scripts disable autofetch        # 既定から外す。名指しすれば走る
 ```
 
@@ -102,9 +102,9 @@ pnpm run scripts disable autofetch        # 既定から外す。名指しすれ
 意見なので、そちらは版を分けます。
 
 `import` は、同じ置き場所の `types/host.d.ts`（受け皿 `__bh` の型）も `host_types` に写します。
-こちらも中身が変わったときだけ版を足します。目録を読む人に見せる写しで、クロールの変換が使う型は
+こちらも中身が変わったときだけ版を足します。スクリプトを読む人に見せる写しで、クロールの変換が使う型は
 ts-compile-service の pin です（`compiledWith.hostTypes` に出る）。ファイルの無い置き場所は、型を
-入れずに目録だけを入れ、そう言います。
+入れずにスクリプトだけを入れ、そう言います。
 
 `sha256` は**生成列**です。Postgres が `source` から数え、手で書き込むことはできません。
 BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGUMENT` で拒みます ——
@@ -114,67 +114,67 @@ BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGU
 主フレーム・1 回で、受け皿を通して報告できます。`preload` は**遷移の前**・iframe を含む
 全フレーム・遷移のたびに走り、**報告する手段を持ちません**。
 
-### サイト用の台本（`sites`）
+### サイト用のスクリプト（`sites`）
 
-目録の 1 本は `sites`（札）を持てます。小文字のホスト名の列で、IDN は punycode で書き、ポート・
-scheme・`*` は書けません。札のある台本は**サイト用の台本**で、クロールの起点のどれかがそのホストに
+スクリプトは 1 本ずつ `sites`（札）を持てます。小文字のホスト名の列で、IDN は punycode で書き、ポート・
+scheme・`*` は書けません。札のあるスクリプトは**サイト用のスクリプト**で、クロールの起点のどれかがそのホストに
 あるときだけ走ります。照らすのは起点のホスト名との完全一致で、ポートは見ません。`example.com` と
-`www.example.com` は別のホストです。札の無い台本は、今までどおりどこでも走ります。札は版の一部で、
-`options` と同じく、変えたら版が足されます。札を書ける catalog の形は `capture-scripts/2`
+`www.example.com` は別のホストです。札の無いスクリプトは、今までどおりどこでも走ります。札は版の一部で、
+`options` と同じく、変えたら版が足されます。札を書ける `catalog.json` の形は `capture-scripts/2`
 （capture-scripts v0.3.0）で、`import` は `capture-scripts/1` を断ります。形の悪いホスト名も、DB に
 触る前に断ります。
 
-決まりはクロールの単位で、起点で決まります。選ばれたサイト用の台本は、そのクロールの全部の頁で
-走ります。リンクを辿って別のホストへ出た頁でもです。だからサイト用の台本は、冒頭で
+決まりはクロールの単位で、起点で決まります。選ばれたサイト用のスクリプトは、そのクロールの全部の頁で
+走ります。リンクを辿って別のホストへ出た頁でもです。だからサイト用のスクリプトは、冒頭で
 `location.hostname` を見て、ほかの頁では何もせずに終わります（capture-scripts の check が、札の
 ホスト名が source に出てくることを見ます）。
 
 ### クロールが固定するもの
 
-`POST /api/crawls` は目録を**始めるときに 1 度だけ**解決し、その結果 —— id・版・phase・
+`POST /api/crawls` はスクリプトを**始めるときに 1 度だけ**解決し、その結果 —— id・版・phase・
 source・sha256・options・札 —— をクロールの行に書きます。以後の段はそれをそのまま使い、
-目録を引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
+台帳のスクリプトを引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
 変わりません。
 
 | `scripts`                                                         | 走るもの                                                                                            |
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | 省く                                                              | **有効な**各 id の最新版のうち、札の無い物と、札が起点のホスト名を含む物を、`id` 順で               |
 | `[{"catalog": "b"}, {"catalog": "a"}]`                            | そのとおり、**その並びで** —— 並びは指示の一部                                                      |
-| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた JS を `inline-x`・版 1 で。目録には入らない（下記）                                          |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた JS を `inline-x`・版 1 で。台帳には登録されない（下記）                                      |
 | `[]`                                                              | 何も走らない。「既定でよい」と「何も走らせない」は別の意思                                          |
-| 目録に無い id・同じ id の重ね                                     | **400** で名指し（`ids`）。クロールは立たない                                                       |
-| 札が起点のどのホスト名も含まないサイト用の台本                    | **400** `site scripts need a seed on their site` で名指し（`ids`、札は `hint`）。クロールは立たない |
-| 省いたのに、有効な台本が全部ほかのホスト用                        | **400** `no default scripts for these seeds`（`hint` に並べる）。「目録が空」とは言わない           |
+| 台帳に無い id・同じ id の重ね                                     | **400** で名指し（`ids`）。クロールは立たない                                                       |
+| 札が起点のどのホスト名も含まないサイト用のスクリプト              | **400** `site scripts need a seed on their site` で名指し（`ids`、札は `hint`）。クロールは立たない |
+| 省いたのに、有効なスクリプトが全部ほかのホスト用                  | **400** `no default scripts for these seeds`（`hint` に並べる）。「スクリプトが無い」とは言わない   |
 
 要素は、鍵が 1 つの object です（`catalog` か `inline` のどちらか）。
 
-`GET /api/crawls/:id` が返すのは、目録の物は身元 —— id・版・phase・sha256 —— と札だけで、
+`GET /api/crawls/:id` が返すのは、台帳のスクリプトは身元 —— id・版・phase・sha256 —— と札だけで、
 source は返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
-`preload/scripts.jsonl`）と目録（[版を読む](#版を読む)）に在ります。その場の JS には `inline`（`name`・`phase`・
+`preload/scripts.jsonl`）と台帳（[版を読む](#版を読む)）に在ります。その場の JS には `inline`（`name`・`phase`・
 source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。dashboard は走行中の
 クロールを数秒ごとに引き直し、source は 1 MiB まであり得るからです。source は
-`GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。目録に無く、
-アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこの口だけです。目録の物には 404 を
+`GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。台帳に登録されず、
+アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこの口だけです。台帳のスクリプトには 404 を
 返します。
 
 最初の段の報告が来ると、各要素に `jsSha256` と `compiledWith`（`{ typescript, hostTypes }`）も
 付きます。その段が走らせた JavaScript の sha256 と、何で・何に向けて変換したか ——
 ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の `compiled`）で
-運んだ物です。目録の `sha256` は TypeScript に打たれ、アーカイブに残るのは JavaScript。
+運んだ物です。台帳のスクリプトの `sha256` は TypeScript に打たれ、アーカイブに残るのは JavaScript。
 その間を継ぐのがこの値で、台帳が報告から写します。段ごとに同じ hash が来なければ 409 ——
 走行中のクロールの下で変換サービスが替わったということです。報告が来る前はどちらも
 `null` です。
 
 ### 版を読む
 
-目録の source は、クロールを始められる人が HTTP で読めます。
+スクリプトの source は、クロールを始められる人が HTTP で読めます。
 
-| 口                                       | 返すもの                                                                                                                                                                      |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/scripts`                       | 有効な各 id の最新版（サイト用の台本も）: `id`・`version`・`phase`・`sha256`・`sites`。`scripts` を書かないクロールが走らせるのは、この中の札の無い物と、起点のホストに合う物 |
-| `GET /api/scripts/:id/versions`          | 1 つの id の版の並び（新しい順）: `version`・`phase`・`sha256`・`sites`・`enabled`・`bytes`・`createdAt`。source は返さない                                                   |
-| `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと: 上に `id`・`source`・`options` を足した物。無効な版も返す（過去のクロールが走らせた物）                                                                         |
-| `GET /api/host-types`                    | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                                                                              |
+| 口                                       | 返すもの                                                                                                                                                                            |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/scripts`                       | 有効な各 id の最新版（サイト用のスクリプトも）: `id`・`version`・`phase`・`sha256`・`sites`。`scripts` を書かないクロールが走らせるのは、この中の札の無い物と、起点のホストに合う物 |
+| `GET /api/scripts/:id/versions`          | 1 つの id の版の並び（新しい順）: `version`・`phase`・`sha256`・`sites`・`enabled`・`bytes`・`createdAt`。source は返さない                                                         |
+| `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと: 上に `id`・`source`・`options` を足した物。無効な版も返す（過去のクロールが走らせた物）                                                                               |
+| `GET /api/host-types`                    | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                                                                                    |
 
 4 本ともクロールの口と同じ問い（呼び出し元の組織のどれかに `can_submit`）を訊きます。名乗りが
 無ければ 401、許可が無ければ 404 で、在らない id や版と同じ答えです。版が 1 以上の整数でなければ、
@@ -187,22 +187,22 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 
 ### その場の JS
 
-`scripts` の要素には、目録の名指しのほかに、その場で書いた JS を置けます。
+`scripts` の要素には、台帳のスクリプトの名指しのほかに、その場で書いた JS を置けます。
 
 ```json
 { "inline": { "name": "close-banner", "phase": "behavior", "source": "(() => {\n  …\n})();\n" } }
 ```
 
-- **目録には入りません。** 台帳はクロールの行の写しにだけ、`inline-<name>`・版 1・options 空で
-  固定します。sha256 は台帳が `source` から打ちます（目録の生成列と同じ値）。写しの形は目録の物と
+- **台帳には登録されません。** 台帳はクロールの行の写しにだけ、`inline-<name>`・版 1・options 空で
+  固定します。sha256 は台帳が `source` から打ちます（`scripts` の生成列と同じ値）。写しの形は台帳のスクリプトと
   同じなので、flow も変換も BrowserHive も区別しません。
-- **`inline-` は、その場の JS に取ってあります。** 目録の id には使えません（CLI の `add` と
+- **`inline-` は、その場の JS に取ってあります。** 台帳のスクリプトの id には使えません（CLI の `add` と
   `import` が断り、DB の CHECK が最後に断ります）。アーカイブに残るのは id と JS だけなので、
-  id の頭で、目録の物かその場の物かが分かります。
+  id の頭で、台帳のスクリプトかその場の物かが分かります。
 - **`name` は `^[a-z][a-z0-9-]*$` で、`inline-` と合わせて 64 字まで。** ts-compile-service の id と
   同じ綴りで、合わなければ `POST` が 400 で断ります。
 - **書けるのは、strict の TypeScript として型が通る JS です。** 段の最初に ts-compile-service が
-  目録の物と一緒に型を検査し、1 本でも誤りがあれば段ごと落ちます（`error` に診断が残ります）。
+  台帳のスクリプトと一緒に型を検査し、1 本でも誤りがあれば段ごと落ちます（`error` に診断が残ります）。
   IIFE で包んでください。同じ段の JS は 1 つの program で検査されるので、top-level の名前は
   ほかの JS や DOM の大域（`name` など）とぶつかります。`export` を書くと型は通りますが、
   ページでは構文エラーになり、何も走りません。型の検査を外すなら、1 行目に `// @ts-nocheck`
@@ -224,13 +224,13 @@ BrowserHive 自身のドキュメントが定義します）。
 相手への当たり方と範囲を、`POST /api/crawls` のボディで渡せます
 （[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#リンクを辿る)を参照）。
 
-| フィールド        | 既定                                                         | 意味                                 |
-| ----------------- | ------------------------------------------------------------ | ------------------------------------ |
-| `scope`           | `same-origin`                                                | `same-host` にするとホスト単位に緩む |
-| `maxDepth`        | 2。`fromTargets` のときは 0                                  | どこまで辿るか                       |
-| `maxPages`        | 30。ただし起点の数は下回らない                               | 総ページ数                           |
-| `perHostDelayMs`  | 2000                                                         | 同じホストのページ間の間隔           |
-| `hostParallelism` | 4                                                            | 同時に触るホストの数                 |
-| `scripts`         | 有効な各 id の最新版（ほかのホスト用のサイト用の台本を除く） | ページの中で走らせるもの（上記）     |
+| フィールド        | 既定                                                               | 意味                                 |
+| ----------------- | ------------------------------------------------------------------ | ------------------------------------ |
+| `scope`           | `same-origin`                                                      | `same-host` にするとホスト単位に緩む |
+| `maxDepth`        | 2。`fromTargets` のときは 0                                        | どこまで辿るか                       |
+| `maxPages`        | 30。ただし起点の数は下回らない                                     | 総ページ数                           |
+| `perHostDelayMs`  | 2000                                                               | 同じホストのページ間の間隔           |
+| `hostParallelism` | 4                                                                  | 同時に触るホストの数                 |
+| `scripts`         | 有効な各 id の最新版（ほかのホスト用のサイト用のスクリプトを除く） | ページの中で走らせるもの（上記）     |
 
 知らないキーは黙って落とさず **400** で返します。

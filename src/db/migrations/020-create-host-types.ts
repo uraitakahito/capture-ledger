@@ -1,13 +1,13 @@
 /**
  * 020-create-host-types
  *
- * 受け皿 `__bh` の型（capture-scripts の types/host.d.ts）の写し。目録の source を読む人が、
+ * 受け皿 `__bh` の型（capture-scripts の types/host.d.ts）の写し。スクリプトの source を読む人が、
  * `globalThis.__bh` が何かを同じ所で読めるようにする。走る JS の型を決めるのは ts-compile-service の
  * pin で、ここは**読む人に見せる写し**。
  *
  * ## 版は足す（`017` と同じ）
  *
- * `scripts import` が目録と同じ置き場所から読み、中身が変わったときだけ版を足す。見せるのは
+ * `scripts import` がスクリプトと同じ置き場所から読み、中身が変わったときだけ版を足す。見せるのは
  * いちばん新しい版。上書きしないのは、いつどの型を見せていたかを後から言えるようにするため。
  *
  * ## `sha256` は DB が数える（`017` と同じ）

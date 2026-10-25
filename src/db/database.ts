@@ -93,7 +93,7 @@ export interface CrawlsTable {
   requestedBy: string;
   /**
    * このクロールがページの中で走らせるもの。**解決済み・並びが実行順**で、
-   * 目録 (`scripts`) を引き直すことはしない —— 途中で版が足されても、同じクロールの
+   * 台帳のスクリプト (`scripts`) を引き直すことはしない —— 途中で版が足されても、同じクロールの
    * 前半と後半で違うコードが走ることは無い (`018` を見ること)。
    *
    * 書くときは JSON の文字列 (`fgaOutbox.payload` と同じ扱い)。
@@ -131,10 +131,10 @@ export interface CrawlsTable {
 }
 
 /**
- * 走らせるもの 1 本。**目録の行から解決した写し**で、`crawls.scripts` と、そこから
+ * 走らせるもの 1 本。**`scripts` の行から解決した写し**で、`crawls.scripts` と、そこから
  * flow へ渡す本文に、同じ形で出る。
  *
- * `sha256` は目録の生成列をそのまま運ぶ。BrowserHive が `source` と照合して、
+ * `sha256` は `scripts` の生成列をそのまま運ぶ。BrowserHive が `source` と照合して、
  * 食い違えば `INVALID_ARGUMENT` で拒む —— 運ぶ途中で入れ替わっていないか、だけを見る。
  */
 export interface CrawlScript {
@@ -145,7 +145,7 @@ export interface CrawlScript {
   sha256: string;
   options: Record<string, unknown>;
   /**
-   * 札（どのサイト用か。`021`）。目録の物だけが持つ写しで、その場の JS には無い。古いクロールの行にも
+   * 札（どのサイト用か。`021`）。台帳のスクリプトだけが持つ写しで、その場の JS には無い。古いクロールの行にも
    * 無い（無ければ空と読む）。flow へは渡さない（`toDispatched`）—— 選ぶための物で、走らせる側には要らない。
    */
   sites?: string[];
@@ -168,7 +168,7 @@ export interface CrawlScript {
 export type ScriptPhase = "preload" | "behavior";
 
 /**
- * ページの中で走らせる JavaScript の目録。`017` を見ること。
+ * ページの中で走らせるスクリプト。`017` を見ること。
  *
  * BrowserHive は顔ぶれを持たないので、**ここが「何を走らせるか」の唯一の出どころ**。
  */

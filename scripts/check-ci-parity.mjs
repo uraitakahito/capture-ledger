@@ -63,7 +63,7 @@ const ONLY_IN_CI = {
   "Targets CLI against Postgres":
     "同上。撮る対象の CLI を本物の DB に当てる (scripts/targets-smoke.mjs)",
   "Scripts CLI against Postgres":
-    "同上。目録の CLI と、目録を読む口の関数を本物の DB に当てる (scripts/scripts-smoke.mjs)",
+    "同上。スクリプトの CLI と、スクリプトを読む口の関数を本物の DB に当てる (scripts/scripts-smoke.mjs)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

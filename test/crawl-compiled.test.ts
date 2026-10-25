@@ -3,7 +3,7 @@ import { mergeCompiled } from "../src/crawl/compiled.js";
 import type { CrawlScript } from "../src/db/database.js";
 
 /**
- * 段の報告が運んだ JS の hash を、クロールが固定した目録に写す判断。
+ * 段の報告が運んだ JS の hash を、クロールが固定したスクリプトに写す判断。
  *
  * route (`POST /api/crawls/:id/pages`) はこの答えをそのまま status にするだけ。DB を使う試験は
  * この repo に無いので、断る条件は全部ここで見る。
@@ -27,7 +27,7 @@ const report = (scripts: { id: string; version?: number; sha256?: string }[]) =>
   scripts: scripts.map((s) => ({ id: s.id, version: s.version ?? 1, sha256: s.sha256 ?? JS })),
 });
 
-describe("報告の JS の hash を目録に写す", () => {
+describe("報告の JS の hash を、固定したスクリプトに写す", () => {
   it("全部揃っていれば、1 本ずつに jsSha256 と compiledWith を写す", () => {
     const merged = mergeCompiled(
       [ts("autoscroll"), ts("autofetch")],
@@ -42,7 +42,7 @@ describe("報告の JS の hash を目録に写す", () => {
     });
   });
 
-  it("目録の 1 本の hash が報告に無ければ 400 —— 載せ忘れた flow を黙って通さない", () => {
+  it("スクリプト 1 本の hash が報告に無ければ 400 —— 載せ忘れた flow を黙って通さない", () => {
     const merged = mergeCompiled(
       [ts("autoscroll"), ts("autofetch")],
       report([{ id: "autoscroll" }]),
@@ -50,7 +50,7 @@ describe("報告の JS の hash を目録に写す", () => {
     expect(merged).toMatchObject({ status: 400, scriptId: "autofetch@1" });
   });
 
-  it("目録に無い id が報告に在れば 400 —— 台帳では確かめようが無い主張", () => {
+  it("固定したスクリプトに無い id が報告に在れば 400 —— 台帳では確かめようが無い主張", () => {
     const merged = mergeCompiled([ts("autoscroll")], report([{ id: "autoscroll" }, { id: "x" }]));
     expect(merged).toMatchObject({ status: 400, scriptId: "x@1" });
   });
@@ -77,7 +77,7 @@ describe("報告の JS の hash を目録に写す", () => {
     });
   });
 
-  it("目録が空で報告も空なら、写す物が無い", () => {
+  it("固定したスクリプトが空で報告も空なら、写す物が無い", () => {
     expect(mergeCompiled([], report([]))).toEqual({ changed: false, scripts: [] });
   });
 });

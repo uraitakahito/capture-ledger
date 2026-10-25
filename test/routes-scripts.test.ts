@@ -4,7 +4,7 @@ import { registerScriptsRoute, type ScriptsRouteDeps } from "../src/api/scripts.
 import { recordingDb } from "./recording-db.js";
 
 /**
- * 目録を読む口 (`src/api/scripts.ts`) の検査。
+ * スクリプトを読む口 (`src/api/scripts.ts`) の検査。
  *
  * DB は Kysely に SQL を組ませて記録する代役 (`recording-db.ts`)。だから「許可が無ければ SQL を
  * 1 本も出さない」と「1 版の口は版で絞る」を、組んだ SQL で言える。Postgres で本当に通るかは
@@ -54,7 +54,7 @@ const ROUTES = [
   "/api/host-types",
 ];
 
-describe("目録を読む口の認可", () => {
+describe("スクリプトを読む口の認可", () => {
   it.each(ROUTES)("名乗りが無ければ 401 で、OpenFGA には訊かない: %s", async (url) => {
     const { res, queries } = await get(url, {
       fga: untouchable,
@@ -157,7 +157,7 @@ describe("GET /api/scripts/:id/versions", () => {
     expect(queries[0]?.parameters).toEqual(["autoscroll"]);
   });
 
-  it("目録に無い id は 404", async () => {
+  it("台帳に無い id は 404", async () => {
     const { res } = await get("/api/scripts/nothing/versions", { rows: [[]] });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: "not found" });
@@ -206,7 +206,7 @@ describe("GET /api/scripts", () => {
     });
   });
 
-  it("サイト用の台本も返す（既定で走る物だけではない）。札で絞らない", async () => {
+  it("サイト用のスクリプトも返す（既定で走る物だけではない）。札で絞らない", async () => {
     const rows = [
       { id: "autoscroll", version: 2, phase: "behavior", sha256: "c9", sites: [] },
       { id: "example-title", version: 1, phase: "behavior", sha256: "e1", sites: ["example.com"] },

@@ -78,7 +78,7 @@ built-in behaviors and no site-specific ones. Send nothing and nothing runs insi
 the page — not even the receptacle. A capture still succeeds and still produces an
 archive; it just never scrolled and never triggered lazy loading.
 
-**That is why the catalog lives here.** The only place that can hold a default is
+**That is why the scripts live here.** The only place that can hold a default is
 the side that decides what a crawl runs, so capture-ledger keeps a `scripts` table
 and pins its resolution onto the crawl.
 
@@ -87,7 +87,7 @@ pinned here as the `.upstream/capture-scripts` submodule. Its `catalog.json` car
 source cannot say about itself — the `id`, the `phase`, and for a site script its `sites`.
 
 ```sh
-# Import the catalog and the receptacle's types. Idempotent: same bytes, same version.
+# Import the scripts (catalog.json) and the receptacle's types. Idempotent: same bytes, same version.
 pnpm run scripts import .upstream/capture-scripts
 pnpm run scripts list                     # the newest version of each id, with its sites
 pnpm run scripts list --seed https://example.com/   # what a crawl from that seed runs by default
@@ -105,9 +105,9 @@ pnpm run scripts disable autofetch        # out of the default set, still nameab
 hand: same source, whatever the options, is the same version. Passing `--options` is an
 opinion, and that does make a new version.
 
-`import` also copies the catalog directory's `types/host.d.ts` — the types of the receptacle
+`import` also copies `types/host.d.ts` from the same directory — the types of the receptacle
 `__bh` — into `host_types`, which likewise adds a version only when the bytes change. It is a copy
-for people reading the catalog; the types a crawl compiles against are ts-compile-service's own
+for people reading the scripts; the types a crawl compiles against are ts-compile-service's own
 pin, reported as `compiledWith.hostTypes`. A directory without the file is imported without
 types, and `import` says so.
 
@@ -123,12 +123,12 @@ navigation, and **cannot report at all**.
 
 ### Site scripts (`sites`)
 
-A catalog entry can carry `sites`: lowercase hostnames, IDN in punycode, with no port, scheme
+A script can carry `sites`: lowercase hostnames, IDN in punycode, with no port, scheme
 or `*`. A script with `sites` is a **site script**, and a crawl runs it only when one of the
 crawl's seeds is on one of those hosts. The seed's hostname is compared exactly and its port is
 ignored, so `example.com` and `www.example.com` are different hosts. A script without `sites`
 runs anywhere, as before. `sites` is part of a version, like `options`: changing it adds a
-version. The catalog format that can carry it is `capture-scripts/2` (capture-scripts v0.3.0);
+version. The `catalog.json` format that can carry it is `capture-scripts/2` (capture-scripts v0.3.0);
 `import` refuses `capture-scripts/1`, and refuses a malformed hostname before touching the database.
 
 The rule is decided per crawl, from its seeds. A site script still runs on every page of a crawl
@@ -138,38 +138,38 @@ makes sure each hostname appears in the source.
 
 ### What a crawl pins
 
-`POST /api/crawls` resolves the catalog **once**, when the crawl starts, and stores
+`POST /api/crawls` resolves the scripts **once**, when the crawl starts, and stores
 the result — id, version, phase, source, sha256, options, sites — on the crawl row. Later
-levels reuse that; the catalog is never consulted again. Adding a version halfway
+levels reuse that; the registered scripts are never consulted again. Adding a version halfway
 through a long crawl therefore cannot change what its later pages run.
 
 | `scripts`                                                            | What runs                                                                                                                               |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | omitted                                                              | The newest version of every **enabled** id, `id`-order, keeping those without `sites` and those whose `sites` include a seed's hostname |
 | `[{"catalog": "b"}, {"catalog": "a"}]`                               | Exactly those, **in that order** — order is the instruction                                                                             |
-| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]`    | The script you wrote, as `inline-x` version 1; never enters the catalog (below)                                                         |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]`    | The script you wrote, as `inline-x` version 1; never registered (below)                                                                 |
 | `[]`                                                                 | Nothing. "Use the default" and "run nothing" are different intents                                                                      |
 | an unknown id, or the same id twice                                  | **400**, naming them (`ids`); no crawl is started                                                                                       |
 | a site script whose `sites` include no seed's hostname               | **400** `site scripts need a seed on their site`, naming them (`ids`, with their sites in `hint`); no crawl is started                  |
-| omitted, while every enabled script is a site script for other hosts | **400** `no default scripts for these seeds` (`hint` lists them), not "the catalog is empty"                                            |
+| omitted, while every enabled script is a site script for other hosts | **400** `no default scripts for these seeds` (`hint` lists them), not `no scripts are registered`                                       |
 
 Each element is an object with exactly one key, `catalog` or `inline`.
 
-For catalog entries, `GET /api/crawls/:id` reports the identity — id, version, phase,
+For registered scripts, `GET /api/crawls/:id` reports the identity — id, version, phase,
 sha256 — and the `sites`, and never the source. What ran in bytes is in the archive
-(`behaviors/custom.jsonl` and `preload/scripts.jsonl`) and in the catalog
+(`behaviors/custom.jsonl` and `preload/scripts.jsonl`) and in the ledger
 ([Reading a version](#reading-a-version)). An inline entry
 also carries `inline` (`name`, `phase` and the source's size in UTF-8 `bytes`), still without
 the source: the dashboard polls a running crawl every few seconds, and the source can be up to a
 mebibyte. The source itself comes from `GET /api/crawls/:id/inline/:name`, as
-`{ name, phase, source, sha256 }`. It is not in the catalog, and the archive holds the compiled
-JavaScript, so that route is the one place to get back what you wrote. Catalog entries answer 404
+`{ name, phase, source, sha256 }`. It is never registered, and the archive holds the compiled
+JavaScript, so that route is the one place to get back what you wrote. Registered scripts answer 404
 there.
 
 Once the first level has been reported, each entry also carries `jsSha256` and
 `compiledWith` (`{ typescript, hostTypes }`): the hash of the JavaScript that level ran,
 and what produced it, as ts-compile-service answered and the flow reported
-(`POST /api/crawls/:id/pages`, `compiled`). The catalog's `sha256` is over the
+(`POST /api/crawls/:id/pages`, `compiled`). A registered script's `sha256` is over the
 TypeScript; the archive holds JavaScript; this is the link between them, written by the
 ledger from the report. Every level must report the same hashes — a different one is
 answered with 409, because it means the compiler changed underneath a running crawl.
@@ -177,7 +177,7 @@ Before the first report both are `null`.
 
 ### Reading a version
 
-The catalog's sources can be read over HTTP by whoever may start a crawl:
+The registered scripts' sources can be read over HTTP by whoever may start a crawl:
 
 | Route                                    | Answers                                                                                                                                                                                        |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -198,23 +198,23 @@ with the one on the crawl.
 
 ### Inline scripts
 
-Besides naming catalog entries, a `scripts` element can carry a script written on the spot:
+Besides naming registered scripts, a `scripts` element can carry a script written on the spot:
 
 ```json
 { "inline": { "name": "close-banner", "phase": "behavior", "source": "(() => {\n  …\n})();\n" } }
 ```
 
-- **It never enters the catalog.** The ledger pins it on the crawl row only, as
+- **It is never registered.** The ledger pins it on the crawl row only, as
   `inline-<name>`, version 1, empty options, with a `sha256` the ledger computes from `source`
-  (the same value the catalog's generated column would hold). The copy has the same shape as a
-  catalog one, so the flow, the compiler and BrowserHive cannot tell them apart.
-- **`inline-` is reserved for these.** Catalog ids may not start with it: the CLI's `add` and
+  (the same value the `scripts` table's generated column would hold). The copy has the same shape as a
+  registered one, so the flow, the compiler and BrowserHive cannot tell them apart.
+- **`inline-` is reserved for these.** Registered ids may not start with it: the CLI's `add` and
   `import` refuse it, and a database CHECK refuses it last. The archive keeps only the id and the
-  JavaScript, so the prefix is what says whether a script came from the catalog.
+  JavaScript, so the prefix is what says whether a script was registered or written on the spot.
 - **`name` matches `^[a-z][a-z0-9-]*$`, at most 64 characters with the prefix**, which is the id
   rule of ts-compile-service. Anything else is a 400 from `POST`.
 - **It must type-check as strict TypeScript.** Each level starts with ts-compile-service checking it
-  together with the catalog scripts, and a single error fails the level (the diagnostics end up in
+  together with the registered scripts, and a single error fails the level (the diagnostics end up in
   `error`). Wrap it in an IIFE: scripts of one level are checked as one program, so top-level names
   clash with each other and with DOM globals such as `name`. An `export` type-checks but is a syntax
   error in the page, where nothing then runs. To skip the type check, start with `// @ts-nocheck`

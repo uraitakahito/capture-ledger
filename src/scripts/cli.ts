@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ページの中で走らせる JavaScript の目録 (`scripts`) を足す・見る・切り替える・消す、
+ * ページの中で走らせるスクリプト (`scripts`) を足す・見る・切り替える・消す、
  * 開発用の CLI。
  *
  *   pnpm run scripts import .upstream/capture-scripts               # catalog.json と受け皿の型
@@ -22,7 +22,7 @@
  *
  * **DB に直接書く開発用の道具で、認可は通らない** (`targets` と同じ)。中身は `store.ts`。
  *
- * ## なぜ台帳が目録を持つのか
+ * ## なぜ台帳がスクリプトを持つのか
  *
  * BrowserHive v11.0.0 で、サーバは走らせるものの顔ぶれを持たなくなった。送らなければ
  * ページでは何も走らない —— そして **それは成功した取り込みと見分けが付かない**。
@@ -84,7 +84,7 @@ const parseVersion = (raw: string): number => {
 /** 何度でも書ける旗 (`--site`・`--seed`) を、書いた順の列に集める */
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value];
 
-/** 札を 1 行の終わりに添える。札の無い台本 (どこでも走る) には何も添えない */
+/** 札を 1 行の終わりに添える。札の無いスクリプト (どこでも走る) には何も添えない */
 const sitesNote = (sites: readonly string[]): string =>
   sites.length === 0 ? "" : `  札:${sites.join(",")}`;
 
@@ -108,7 +108,7 @@ const withDb = async (
 const program = new Command()
   .name("scripts")
   .description(
-    "ページで走らせる JavaScript の目録 (scripts) を足す・見る・切り替える・消す。DB に直接書く開発用の道具で、認可は通らない",
+    "ページで走らせるスクリプト (表 scripts) を足す・見る・切り替える・消す。DB に直接書く開発用の道具で、認可は通らない",
   )
   .showHelpAfterError(true);
 
@@ -180,10 +180,10 @@ program
  * 遷移の前に入れるはずのコードが読み込みの後に 1 回だけ走り、**しかも成功する**。
  *
  * 中身が同じものは版が増えない (`addScript`) ので、**何度流しても構わない**。
- * 置き場所を移したあとの流し直しも、目録から見れば何も起きない。
+ * 置き場所を移したあとの流し直しも、台帳から見れば何も起きない。
  *
- * 同じ置き場所の types/host.d.ts (受け皿 `__bh` の型) も写す (`host_types`・`020`)。目録の source を
- * 読む人に見せる写しで、走るものではない —— 無ければ言って、目録だけを入れる。
+ * 同じ置き場所の types/host.d.ts (受け皿 `__bh` の型) も写す (`host_types`・`020`)。スクリプトの source を
+ * 読む人に見せる写しで、走るものではない —— 無ければ言って、スクリプトだけを入れる。
  */
 interface CatalogEntry {
   id: string;
@@ -261,7 +261,7 @@ program
     if (catalog.length === 0) return fail(`${dir}/catalog.json に 1 本も書かれていない`);
 
     // **先に全部読む。** 1 本でも読めなければ、1 本も足さない ——
-    // 途中まで入った目録は、入れた人から見ると「入った」と区別が付かない。
+    // 途中まで入ったスクリプトは、入れた人から見ると「入った」と区別が付かない。
     const sources: { entry: CatalogEntry; source: string }[] = [];
     for (const entry of catalog) {
       const source = await readFile(join(dir, entry.file), "utf-8").catch(() => undefined);
@@ -269,7 +269,7 @@ program
       if (source.trim() === "") return fail(`中身が空: ${join(dir, entry.file)}`);
       sources.push({ entry, source });
     }
-    // 受け皿の型も先に読む。無いのは許す (目録だけの置き場所もある) が、空なら何も足さない
+    // 受け皿の型も先に読む。無いのは許す (スクリプトだけの置き場所もある) が、空なら何も足さない
     const typesPath = join(dir, "types", "host.d.ts");
     const hostTypes = await readFile(typesPath, "utf-8").catch(() => undefined);
     if (hostTypes?.trim() === "") return fail(`中身が空: ${typesPath}`);
@@ -315,7 +315,7 @@ const describeRow = (row: ScriptRow): string =>
 
 program
   .command("list")
-  .description("目録を並べる。既定は各 id の最新版だけ")
+  .description("スクリプトを並べる。既定は各 id の最新版だけ")
   .argument("[id]", "この id だけ (--all と合わせると、その id の版の並び)")
   .option("--all", "版を全部")
   .option("--json", "JSON で出す")
@@ -368,8 +368,8 @@ program
           allVersions: opts.all === true,
           ...(id === undefined ? {} : { id }),
         });
-        // 名指しした id が無いのは誤り (show と同じ)。名指ししない空の目録は、0 行と言う
-        if (id !== undefined && rows.length === 0) return fail(`目録に無い: ${id}`);
+        // 名指しした id が無いのは誤り (show と同じ)。名指ししないときは、スクリプトが無くても 0 行と言う
+        if (id !== undefined && rows.length === 0) return fail(`台帳に無い: ${id}`);
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
           return;
@@ -397,9 +397,9 @@ program
       // 版を省いたときは、名指しの解決と同じ道で版を決める —— 「クロールが送るのはこれ」と
       // 同じものを見せるため。1 本だけ頼むので、重ね (`duplicate`) は起きない。
       const resolved = await resolveScripts(db, [{ catalog: id }]);
-      if (resolved.kind !== "ok") return fail(`目録に無い: ${resolved.ids.join(", ")}`);
+      if (resolved.kind !== "ok") return fail(`台帳に無い: ${resolved.ids.join(", ")}`);
       const latest = resolved.scripts[0];
-      if (latest === undefined) return fail(`目録に無い: ${id}`);
+      if (latest === undefined) return fail(`台帳に無い: ${id}`);
       // 読むのは台帳の口 (`GET /api/scripts/:id/versions/:version`) と同じ readScript
       const script = await readScript(db, id, opts.version ?? latest.version);
       if (script === undefined) return fail(`${id} に v${String(opts.version)} は無い`);
@@ -447,7 +447,7 @@ const toggle = (name: "enable" | "disable", enabled: boolean): void => {
           ...(opts.version === undefined ? {} : { version: opts.version }),
         });
         if (result.kind === "missing") {
-          return fail(`目録に無い: ${result.ids.join(", ")}。何も変えていない`);
+          return fail(`台帳に無い: ${result.ids.join(", ")}。何も変えていない`);
         }
         for (const row of result.changed) {
           process.stdout.write(
@@ -473,7 +473,7 @@ program
         ...(opts.version === undefined ? {} : { version: opts.version }),
       });
       if (result.kind === "missing") {
-        return fail(`目録に無い: ${result.ids.join(", ")}。何も消していない`);
+        return fail(`台帳に無い: ${result.ids.join(", ")}。何も消していない`);
       }
       for (const row of result.changed) {
         process.stdout.write(

@@ -31,7 +31,7 @@ export interface ParsedUrl {
   /** フラグメントを落とした、比較と保存に使う形。 */
   normalized: string;
   host: string;
-  /** ポートを除いたホスト名。目録の札（`021`）と比べるのはこちら (札にポートは書けない) */
+  /** ポートを除いたホスト名。スクリプトの札（`021`）と比べるのはこちら (札にポートは書けない) */
   hostname: string;
   origin: string;
 }

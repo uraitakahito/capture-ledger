@@ -20,13 +20,13 @@ export type MergeResult =
 const keyOf = (s: { id: string; version: number }): string => `${s.id}@${String(s.version)}`;
 
 /**
- * 報告の JS の hash を、クロールが固定した目録の各要素に写す。
+ * 報告の JS の hash を、クロールが固定したスクリプトの各要素に写す。
  *
  * **入出力を持たない。** この repo に DB の試験は無いので、判断はここに置いて単体で見る
  * (`test/crawl-compiled.test.ts`)。route はこの答えをそのまま status にする。
  *
- * - 目録の 1 本ごとに、同じ id と版の報告が要る。無ければ 400 —— 載せ忘れた flow を黙って通さない
- * - 報告にだけ在る id も 400。目録に無い物が走ったという主張は、台帳では確かめようが無い
+ * - スクリプト 1 本ごとに、同じ id と版の報告が要る。無ければ 400 —— 載せ忘れた flow を黙って通さない
+ * - 報告にだけ在る id も 400。固定したスクリプトに無い物が走ったという主張は、台帳では確かめようが無い
  * - 前の段で写した値と違えば 409。同じクロールの中で JS が変わるのは、変換サービスが途中で
  *   替わったということ。黙って上書きすると「どの JS が走ったか」を台帳が言えなくなる
  * - 全部が前の段と同じなら `changed: false` (書き直す物が無い)
@@ -39,7 +39,11 @@ export const mergeCompiled = (
   const known = new Set(scripts.map(keyOf));
   for (const key of reported.keys()) {
     if (!known.has(key)) {
-      return { status: 400, error: `${key} は、このクロールが固定した目録に無い`, scriptId: key };
+      return {
+        status: 400,
+        error: `${key} は、このクロールが固定したスクリプトに無い`,
+        scriptId: key,
+      };
     }
   }
 

@@ -86,7 +86,7 @@ const CRAWLS_PAGE = 50;
 /**
  * `POST /api/crawls` が受ける本文の上限。**dashboard の門（dashboard の src/lib.mjs の WRITE_LIMIT）と
  * 同じ 1 MiB** —— 片方だけを変えると、dashboard が通すのに台帳が 413、の形になる。Fastify の既定と同じ値だが、
- * 既定に頼らずにこの口に書く。その先の BrowserHive は 4 MiB で、変換後の JS と目録の物を足しても収まる。
+ * 既定に頼らずにこの口に書く。その先の BrowserHive は 4 MiB で、変換後の JS と台帳のスクリプトを足しても収まる。
  */
 export const CRAWL_BODY_LIMIT = 1024 * 1024;
 
@@ -203,10 +203,10 @@ interface CrawlBody {
   perHostDelayMs?: number;
   hostParallelism?: number;
   /**
-   * ページの中で走らせるもの。**並びがそのまま実行順**。要素は目録の名指し (`{ catalog }`) か、
-   * その場で書いた JS (`{ inline }`)。その場の JS は目録に入らず、この行の写しにだけ固定される。
+   * ページの中で走らせるもの。**並びがそのまま実行順**。要素は台帳のスクリプトの名指し (`{ catalog }`) か、
+   * その場で書いた JS (`{ inline }`)。その場の JS は台帳に登録されず、この行の写しにだけ固定される。
    *
-   * 省くと目録の**有効な各 id の最新版**のうち、札の無い物と、起点に合うサイト用の物が走る
+   * 省くと台帳の**有効な各 id の最新版**のうち、札の無い物と、起点に合うサイト用の物が走る
    * (`017`・`021`)。空配列を渡せば何も走らない ——
    * 「既定でよい」と「何も走らせない」は別の意思なので、書き分けられるようにしてある。
    */
@@ -431,20 +431,20 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       }
       const parsedSeeds = seeds as ParsedUrl[];
 
-      // 走らせるものを **いま 1 度だけ** 決める。目録は後から変わりうるが、
+      // 走らせるものを **いま 1 度だけ** 決める。台帳のスクリプトは後から変わりうるが、
       // このクロールが走らせるものは変わらない (`018`)。札 (`021`) と比べるのは起点のホスト名で、
       // ポートは見ない —— 省いた頼みでは、札の無い物と、起点に合うサイト用の物が走る
       const seedHosts = [...new Set(parsedSeeds.map((parsed) => parsed.hostname))];
       const resolved = await resolveScripts(db, body.scripts, seedHosts);
       if (resolved.kind === "missing") {
-        return reply.code(400).send({ error: "unknown catalog scripts", ids: resolved.ids });
+        return reply.code(400).send({ error: "unknown script ids", ids: resolved.ids });
       }
       if (resolved.kind === "duplicate") {
         return reply.code(400).send({ error: "duplicate script ids", ids: resolved.ids });
       }
 
-      // **名指しで入れたサイト用の台本は、起点のどれかがそのサイトにあること。** 通すと、どの頁でも
-      // 冒頭の見分けで何もせずに終わる台本を、走らせたと記録することになる。外す (名指さない) のは自由
+      // **名指しで入れたサイト用のスクリプトは、起点のどれかがそのサイトにあること。** 通すと、どの頁でも
+      // 冒頭の見分けで何もせずに終わるスクリプトを、走らせたと記録することになる。外す (名指さない) のは自由
       const offsite = offsiteScripts(resolved.scripts, seedHosts);
       if (offsite.length > 0) {
         return reply.code(400).send({
@@ -454,14 +454,14 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         });
       }
 
-      // **既定を頼まれたのに、既定が空。** 目録を埋め忘れた配備はここで止まる ——
+      // **既定を頼まれたのに、既定が空。** 台帳にスクリプトを入れ忘れた配備はここで止まる ——
       // 通すと、スクロールも遅延読み込みもしないクロールが「成功」として出ていく。
       // アーカイブは出るし `completeness` も緑なので、**後から見分ける手が無い**。
       //
       // 明示の `scripts: []` は通す: 設定漏れと「何も走らせない」という意思は別物で、
-      // 後者を表せなくすると、素の取り込みが欲しい配備が目録を持たされることになる。
+      // 後者を表せなくすると、素の取り込みが欲しい配備が台帳にスクリプトを入れさせられることになる。
       if (body.scripts === undefined && resolved.scripts.length === 0) {
-        // 目録は在るのに、全部が別のサイト用 —— 「目録が空」とは言わない (取り込み直しても直らない)
+        // スクリプトは在るのに、全部が別のサイト用 —— 「スクリプトが無い」とは言わない (取り込み直しても直らない)
         const enabled = await enabledLatest(db);
         if (enabled.length > 0) {
           return reply.code(400).send({
@@ -472,7 +472,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           });
         }
         return reply.code(400).send({
-          error: "the script catalog is empty",
+          error: "no scripts are registered",
           hint:
             "pnpm run scripts import .upstream/capture-scripts " +
             "(run nothing on purpose: send scripts: [])",
@@ -568,7 +568,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           subject: identity.subject,
           crawlId,
           // **何を走らせるかは、始めたときにしか見えない。** 版まで出す ——
-          // id だけだと、後から目録を書き換えたときに「何が走ったのか」を
+          // id だけだと、後から台帳のスクリプトを書き換えたときに「何が走ったのか」を
           // このログから言えなくなる。
           scripts: resolved.scripts.map((script) => `${script.id}@${String(script.version)}`),
         },
@@ -719,8 +719,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         pagesDiscovered: crawl.pagesDiscovered,
         pagesCaptured: crawl.pagesCaptured,
         error: crawl.error,
-        // **目録の物は身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
-        // 中身は目録の 1 版の口 (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
+        // **台帳のスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
+        // 中身はスクリプトの 1 版の口 (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
         // archive に在る。**その場の JS には頼まれた
         // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は dashboard が 2 秒ごとに引き直すので、
         // 1 MiB の JS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
@@ -756,7 +756,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
   /**
    * その場の JS 1 本の source。**「欄に戻す」のための口** —— 直して撮り直すときに、書いた物を
-   * 取り戻せるのはここだけ（archive に在るのは変換後の JS）。目録の物は目録と archive に在るので
+   * 取り戻せるのはここだけ（archive に在るのは変換後の JS）。台帳のスクリプトは台帳と archive に在るので
    * 返さない（404）。名前の綴りは受け口と同じ schema で、合わなければ許可を見る前に 400。
    */
   app.get<{ Params: { id: string; name: string } }>(
@@ -898,7 +898,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       const { depth, results, compiled } = request.body;
 
-      // ── 0. 走った JS の hash を、固定した目録に写す ──────────────────
+      // ── 0. 走った JS の hash を、固定したスクリプトに写す ────────────
       // 台帳の `sha256` は TS の物で、archive に残るのは JS。その間を継ぐ JS の hash は
       // 報告にしか無い。揃っていなければ断る (400/409) —— **台帳と flow の片方だけを新しく
       // すると 1 段目でここに当たる。** 黙って通すより、報告の形が違うことを最初に言う。
@@ -1150,7 +1150,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           hostParallelism: crawl.hostParallelism,
           captureFormats: withLinks(capture.formats, crawl.maxDepth > nextDepth),
           signing: capture.signing,
-          // 目録は引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
+          // 台帳のスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
           scripts: crawl.scripts.map(toDispatched),
           ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
         });

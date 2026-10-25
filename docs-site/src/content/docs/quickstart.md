@@ -130,8 +130,8 @@ pnpm run db:seed     # load the five sample URLs
 pnpm run scripts import .upstream/capture-scripts  # what runs inside the page
 ```
 
-:::caution[Do not leave the catalog empty]
-BrowserHive has **no roster of its own**. With an empty catalog a crawl runs nothing inside
+:::caution[Do not forget the scripts]
+BrowserHive has **no roster of its own**. With no scripts in the ledger, a crawl runs nothing inside
 the page — no scrolling, no lazy loading — and still **produces a successful archive**.
 `pnpm run scripts list` says what is in there.
 :::

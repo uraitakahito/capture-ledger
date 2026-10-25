@@ -205,7 +205,7 @@ interface FakeCrawl {
   scripts: FakeScript[];
 }
 
-/** 目録の 1 行。解決の並びと、見つからない id の扱いを見るのに要る欄だけ。 */
+/** `scripts` の 1 行。解決の並びと、見つからない id の扱いを見るのに要る欄だけ。 */
 interface FakeScript {
   id: string;
   version: number;
@@ -357,7 +357,7 @@ const fakeDb = (
           execute: async (): Promise<FakeScript[]> => {
             // **本物の Postgres は空の `in ()` を構文エラーで断る** (Kysely は空の配列を
             // そのまま `in ()` に組む。2026-10-14 に開発の DB で確かめた)。偽物も断らないと、
-            // 「名指しが無ければ目録を引かない」分岐を外しても、試験は緑のままになる。
+            // 「名指しが無ければ台帳のスクリプトを引かない」分岐を外しても、試験は緑のままになる。
             if (where.some(([, op, value]) => op === "in" && (value as unknown[]).length === 0)) {
               throw new Error('syntax error at or near ")"');
             }
@@ -462,8 +462,8 @@ const fakeDb = (
 });
 
 /**
- * 既定の目録。**空にしない** —— 目録が空の配備は `POST /api/crawls` が 400 で止めるので、
- * 空を既定にすると、この試験の大半が「目録が空だから 400」を見ることになる。
+ * 既定のスクリプト。**空にしない** —— 台帳にスクリプトが無い配備は `POST /api/crawls` が 400 で止めるので、
+ * 空を既定にすると、この試験の大半が「スクリプトが無いから 400」を見ることになる。
  * 空そのものを見る試験は `scripts: []` と明示する。
  */
 const DEFAULT_CATALOG: FakeScript[] = [
@@ -1058,20 +1058,20 @@ describe("走らせるものの解決", () => {
     expect(sent[0]).toEqual([]);
   });
 
-  it("目録に無い id は 400 で名指しし、クロールを立てない", async () => {
+  it("台帳に無い id は 400 で名指しし、クロールを立てない", async () => {
     // **黙って落とさない。** 落とすと、頼んだ側は全部走ったつもりで結果を読む。
     const { res, sent, crawls } = await start({
       seeds: [SEED],
       scripts: [{ catalog: "autoscroll" }, { catalog: "typo-scroll" }],
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: "unknown catalog scripts", ids: ["typo-scroll"] });
+    expect(res.json()).toEqual({ error: "unknown script ids", ids: ["typo-scroll"] });
     expect(sent).toEqual([]);
     expect(crawls).toEqual([]);
   });
 
   it("行に固定するのは解決済みの source で、id ではない", async () => {
-    // 目録は後から変わりうる。段をまたいで同じコードが走ることの根拠がこれ。
+    // 台帳のスクリプトは後から変わりうる。段をまたいで同じコードが走ることの根拠がこれ。
     const { crawls } = await start({ seeds: [SEED], scripts: [{ catalog: "autoscroll" }] });
     expect(crawls[0]?.scripts).toEqual([
       {
@@ -1087,10 +1087,10 @@ describe("走らせるものの解決", () => {
   });
 
   /**
-   * **目録が空の配備は、ここで止まる。** 通すと、スクロールも遅延読み込みもしない
+   * **台帳にスクリプトが無い配備は、ここで止まる。** 通すと、スクロールも遅延読み込みもしない
    * クロールが「成功」として出ていく —— アーカイブは出るので、後から見分ける手が無い。
    */
-  it("既定を頼まれたのに目録が空なら、400 で止めてクロールを立てない", async () => {
+  it("既定を頼まれたのに台帳にスクリプトが無いなら、400 で止めてクロールを立てない", async () => {
     const crawls: FakeCrawl[] = [];
     const sent: unknown[] = [];
     const app = await buildApp(
@@ -1114,7 +1114,7 @@ describe("走らせるものの解決", () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({
-      error: "the script catalog is empty",
+      error: "no scripts are registered",
       hint: "pnpm run scripts import .upstream/capture-scripts (run nothing on purpose: send scripts: [])",
     });
     // **行を立てない。** 立てると部分 unique index が以後のクロールを全部塞ぐ。
@@ -1122,7 +1122,7 @@ describe("走らせるものの解決", () => {
     expect(sent).toEqual([]);
   });
 
-  it("目録が空でも、[] と明示すれば通る", async () => {
+  it("台帳にスクリプトが無くても、[] と明示すれば通る", async () => {
     // 設定漏れと「何も走らせない」という意思は別物。後者を表せなくしない。
     const crawls: FakeCrawl[] = [];
     const app = await buildApp(depsWith({ crawls, allowed: true, scripts: [] }));
@@ -1138,8 +1138,8 @@ describe("走らせるものの解決", () => {
     expect(crawls[0]?.scripts).toEqual([]);
   });
 
-  it("GET は目録の物に身元だけを返す —— source は返さない", async () => {
-    // 何が走っているかを知るのに要るのは「どれの何版か」。中身は目録と archive に在る。
+  it("GET は台帳のスクリプトに身元だけを返す —— source は返さない", async () => {
+    // 何が走っているかを知るのに要るのは「どれの何版か」。中身は台帳と archive に在る。
     const { crawls } = await start({ seeds: [SEED], scripts: [{ catalog: "autoscroll" }] });
     const app = await buildApp(depsWith({ crawls, allowed: true, scripts: CATALOG }));
     const res = await app.inject({ method: "GET", url: `/api/crawls/${crawls[0]!.id}` });
@@ -1183,7 +1183,7 @@ describe("走らせるものの解決", () => {
     ]);
   });
 
-  it("その場の JS と目録の名指しを、頼んだ並びのまま 1 列に写す", async () => {
+  it("その場の JS と台帳のスクリプトの名指しを、頼んだ並びのまま 1 列に写す", async () => {
     const { sent } = await start({
       seeds: [SEED],
       scripts: [{ catalog: "autoscroll" }, { inline: INLINE }, { catalog: "autofetch" }],
@@ -1195,7 +1195,7 @@ describe("走らせるものの解決", () => {
     ]);
   });
 
-  it("その場の JS だけなら、目録を引かない", async () => {
+  it("その場の JS だけなら、台帳のスクリプトを引かない", async () => {
     // 偽の DB は、本物の Postgres と同じく空の in () を断る。引けば 500 になる
     const { res, sent } = await start({ seeds: [SEED], scripts: [{ inline: INLINE }] });
     expect(res.statusCode).toBe(202);
@@ -1275,8 +1275,8 @@ describe("走らせるものの解決", () => {
     });
   });
 
-  it("目録の物・知らない名前・無いクロールは 404", async () => {
-    // 目録の物は目録と archive に在る。名前の口は、その場の JS だけを返す
+  it("台帳のスクリプト・知らない名前・無いクロールは 404", async () => {
+    // 台帳のスクリプトは台帳と archive に在る。名前の口は、その場の JS だけを返す
     expect((await askInline("autoscroll")).statusCode).toBe(404);
     expect((await askInline("nope")).statusCode).toBe(404);
     expect((await askInline("close-banner", { id: UUID })).statusCode).toBe(404);
@@ -1432,7 +1432,7 @@ describe("クロールの一覧", () => {
   });
 });
 
-describe("札（サイト用の台本）と起点", () => {
+describe("札（サイト用のスクリプト）と起点", () => {
   const base = { phase: "behavior" as const, source: "(() => {})();", options: {}, enabled: true };
   const SITED: FakeScript[] = [
     { ...base, id: "autoscroll", version: 1, sha256: "a".repeat(64), sites: [] },
@@ -1481,7 +1481,7 @@ describe("札（サイト用の台本）と起点", () => {
     expect(ids).toEqual(["autoscroll"]);
   });
 
-  it("起点に合わないサイト用の台本を名指すと 400 で名指し、クロールは立たない", async () => {
+  it("起点に合わないサイト用のスクリプトを名指すと 400 で名指し、クロールは立たない", async () => {
     const { res, crawls } = await startWith(SITED, {
       seeds: [SEED],
       scripts: [{ catalog: "autoscroll" }, { catalog: "google-results" }],
@@ -1495,7 +1495,7 @@ describe("札（サイト用の台本）と起点", () => {
     expect(crawls).toHaveLength(0);
   });
 
-  it("起点に合うサイト用の台本は名指せる。合う物を名指さない（外す）のも自由", async () => {
+  it("起点に合うサイト用のスクリプトは名指せる。合う物を名指さない（外す）のも自由", async () => {
     const named = await startWith(SITED, {
       seeds: [SEED],
       scripts: [{ catalog: "example-title" }],
@@ -1505,7 +1505,7 @@ describe("札（サイト用の台本）と起点", () => {
     expect(without.ids).toEqual(["autoscroll"]);
   });
 
-  it("目録が全部別のサイト用なら、省いた頼みは「この起点で走る物が無い」で断る（目録が空とは言わない）", async () => {
+  it("台帳のスクリプトが全部別のサイト用なら、省いた頼みは「この起点で走る物が無い」で断る（スクリプトが無いとは言わない）", async () => {
     const { res } = await startWith(
       SITED.filter((script) => script.sites.length > 0),
       { seeds: ["https://other.example/"] },
