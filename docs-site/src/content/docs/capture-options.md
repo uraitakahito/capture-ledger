@@ -90,14 +90,14 @@ source cannot say about itself — the `id`, the `phase`, and for a site script 
 # Import the scripts (catalog.json) and the receptacle's types. Idempotent: same bytes, same version.
 pnpm run scripts import .upstream/capture-scripts
 pnpm run scripts list                     # the newest version of each id, with its sites
-pnpm run scripts list --seed https://example.com/   # what a crawl from that seed runs by default
+pnpm run scripts list --seed https://laws.e-gov.go.jp/   # what a crawl from that seed runs by default (egov-law-search from capture-scripts included)
 pnpm run scripts list autoscroll --all    # every version of one id
 pnpm run scripts show autoscroll --version 1   # one version's source, disabled or not
 pnpm run scripts types                    # the receptacle's (__bh) types, as imported
 
 # One-offs and tuning still go in by hand.
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
-pnpm run scripts add example-title --file ./example-title.ts --site example.com   # a site script
+pnpm run scripts add my-search --file ./my-search.ts --site www.example.com   # a site script
 pnpm run scripts disable autofetch        # out of the default set, still nameable
 ```
 
@@ -130,6 +130,10 @@ ignored, so `example.com` and `www.example.com` are different hosts. A script wi
 runs anywhere, as before. `sites` is part of a version, like `options`: changing it adds a
 version. The `catalog.json` format that can carry it is `capture-scripts/2` (capture-scripts v0.3.0);
 `import` refuses `capture-scripts/1`, and refuses a malformed hostname before touching the database.
+
+The example site script in capture-scripts is `egov-law-search`, for `laws.e-gov.go.jp` (from v0.4.0). On
+[e-Gov Law Search](https://laws.e-gov.go.jp/) it searches law titles for 「セキュリティ」 (security) within the page
+and reports how many laws it found and their titles. Only a crawl seeded on e-Gov Law Search runs it by default.
 
 The rule is decided per crawl, from its seeds. A site script still runs on every page of a crawl
 it was chosen for, including pages on other hosts the crawl reaches by following links. So a site

@@ -8,7 +8,7 @@
  *   pnpm run scripts add autoscroll --file - < ./autoscroll.js      # 標準入力から
  *   pnpm run scripts add hide-webdriver --file ./x.js --phase preload
  *   pnpm run scripts add autoscroll --file ./x.js --options '{"maxSteps":60}'
- *   pnpm run scripts add example-title --file ./x.ts --site example.com   # サイト用 (札)。--site は何度でも
+ *   pnpm run scripts add my-search --file ./x.ts --site www.example.com   # サイト用 (札)。--site は何度でも
  *   pnpm run scripts list                                           # 各 id の最新版
  *   pnpm run scripts list --all --json                              # 版を全部、機械向け
  *   pnpm run scripts list autoscroll --all                          # 1 つの id の版の並び
