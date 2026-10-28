@@ -257,6 +257,10 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 `seeds` names the starting pages. Seeds follow links two levels deep by default; `maxDepth: 0` takes
 the page alone.
 
+To try a site script, seed `https://laws.e-gov.go.jp/`. Without `scripts`, the registered script `egov-law-search`
+(for `laws.e-gov.go.jp`, from capture-scripts) joins the default set and searches law titles for 「セキュリティ」 within the page
+(see "Site scripts" in [Capture options](/capture-ledger/capture-options/)).
+
 To seed from the rows §4 loaded, send `-d '{"fromTargets":{}}'`. It defaults to depth 0 — take them,
 follow nothing. That is what the old `POST /api/runs` did. The rows are taken in insertion (`id`)
 order, so `{"fromTargets":{"limit":1}}` is always the first sample row, not the URL you added in §4.

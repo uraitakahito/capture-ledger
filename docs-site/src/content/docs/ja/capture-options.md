@@ -86,14 +86,14 @@ behavior も、サイト別の behavior もありません。送らなければ�
 # スクリプト（catalog.json）と受け皿の型を入れる。何度流しても同じ（同じバイト列は同じ版）
 pnpm run scripts import .upstream/capture-scripts
 pnpm run scripts list                     # 各 id の最新版（札つき）
-pnpm run scripts list --seed https://example.com/   # その起点のクロールが、scripts を書かないと走らせるもの
+pnpm run scripts list --seed https://laws.e-gov.go.jp/   # その起点のクロールが、scripts を書かないと走らせるもの（capture-scripts の egov-law-search も入る）
 pnpm run scripts list autoscroll --all    # 1 つの id の版の並び
 pnpm run scripts show autoscroll --version 1   # その版の source（無効な版も）
 pnpm run scripts types                    # 受け皿（__bh）の型。import が写した物
 
 # 1 本だけ試す・設定を変えるのは、いまも手で
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
-pnpm run scripts add example-title --file ./example-title.ts --site example.com   # サイト用のスクリプト
+pnpm run scripts add my-search --file ./my-search.ts --site www.example.com   # サイト用のスクリプト
 pnpm run scripts disable autofetch        # 既定から外す。名指しすれば走る
 ```
 
@@ -123,6 +123,10 @@ scheme・`*` は書けません。札のあるスクリプトは**サイト用�
 `options` と同じく、変えたら版が足されます。札を書ける `catalog.json` の形は `capture-scripts/2`
 （capture-scripts v0.3.0）で、`import` は `capture-scripts/1` を断ります。形の悪いホスト名も、DB に
 触る前に断ります。
+
+capture-scripts のサイト用のスクリプトの見本は `egov-law-search`（札 `laws.e-gov.go.jp`・v0.4.0 から）です。
+[e-Gov 法令検索](https://laws.e-gov.go.jp/)の頁の中で法令名を「セキュリティ」で引き、件数と法令名を報告します。
+起点が e-Gov 法令検索のクロールだけが既定で走らせ、ほかの起点では選ばれません。
 
 決まりはクロールの単位で、起点で決まります。選ばれたサイト用のスクリプトは、そのクロールの全部の頁で
 走ります。リンクを辿って別のホストへ出た頁でもです。だからサイト用のスクリプトは、冒頭で
