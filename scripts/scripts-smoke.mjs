@@ -164,7 +164,7 @@ try {
   writeFileSync(
     join(dir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/2",
+      profile: "capture-scripts/3",
       scripts: [
         {
           id: imported,
@@ -211,13 +211,60 @@ try {
     JSON.stringify(importedSites.rows),
   );
 
+  // default: false の id は、取り込むと全版が無効になる (古い版を既定に昇格させない)
+  const offDir = join(work, "off-scripts");
+  mkdirSync(join(offDir, "scripts"), { recursive: true });
+  writeFileSync(
+    join(offDir, "catalog.json"),
+    JSON.stringify({
+      profile: "capture-scripts/3",
+      scripts: [
+        {
+          id: imported,
+          phase: "behavior",
+          file: "scripts/x.ts",
+          summary: "smoke",
+          sites: ["example.com"],
+          default: false,
+        },
+      ],
+    }),
+  );
+  writeFileSync(join(offDir, "scripts", "x.ts"), A);
+  run = cli(["import", offDir]);
+  check(
+    "import は default: false を言う",
+    run.status === 0 && run.stdout.includes("既定に入らない"),
+    why(run),
+  );
+  const off = await pool.query("SELECT bool_or(enabled) AS any FROM scripts WHERE id = $1", [
+    imported,
+  ]);
+  check("default: false の id は全版が無効", off.rows[0].any === false, JSON.stringify(off.rows));
+  run = cli(["list", "--seed", "https://example.com/", "--json"]);
+  check(
+    "default: false の id は、起点に合っても既定に入らない",
+    run.status === 0 && !run.stdout.includes(imported),
+    why(run),
+  );
+  // default を省いた catalog を取り込み直すと、取り込んだ版が有効に戻る (カタログが正)
+  run = cli(["import", dir]);
+  const on = await pool.query("SELECT bool_or(enabled) AS any FROM scripts WHERE id = $1", [
+    imported,
+  ]);
+  check(
+    "default を省いた import で、取り込んだ版が有効に戻る",
+    run.status === 0 && on.rows[0].any === true,
+    JSON.stringify(on.rows),
+  );
+
   // 札の形が悪い catalog は、1 本も足さずに断る
   const badDir = join(work, "bad-scripts");
   mkdirSync(join(badDir, "scripts"), { recursive: true });
   writeFileSync(
     join(badDir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/2",
+      profile: "capture-scripts/3",
       scripts: [
         {
           id: `${id}-bad`,

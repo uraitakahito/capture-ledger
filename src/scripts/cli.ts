@@ -16,9 +16,9 @@
  *   pnpm run scripts show autoscroll                                # source をそのまま出す
  *   pnpm run scripts show autoscroll --version 1                    # 古い版 (無効な版も)
  *   pnpm run scripts types                                          # 受け皿 __bh の型
- *   pnpm run scripts disable autofetch                              # 既定の顔ぶれから外す
- *   pnpm run scripts enable autofetch
- *   pnpm run scripts rm autofetch --version 2
+ *   pnpm run scripts disable autoscroll                             # 既定の顔ぶれから外す (次の import でカタログの default に戻る)
+ *   pnpm run scripts enable autoscroll
+ *   pnpm run scripts rm autoscroll --version 2
  *
  * **DB に直接書く開発用の道具で、認可は通らない** (`targets` と同じ)。中身は `store.ts`。
  *
@@ -182,6 +182,11 @@ program
  * 中身が同じものは版が増えない (`addScript`) ので、**何度流しても構わない**。
  * 置き場所を移したあとの流し直しも、台帳から見れば何も起きない。
  *
+ * **既定に入るか (`enabled`) もカタログが正。** `default: false` の id は全版を無効にする —— 最新版だけを
+ * 無効にすると、既定は「有効な版の中の最新」を選ぶので古い版が昇格する (`setScriptEnabled` を見ること)。
+ * `default` が真 (省いた) なら、取り込んだ版を有効にする。CLI の `enable`・`disable` で手で替えた物も、
+ * 次の import でカタログに戻る。
+ *
  * 同じ置き場所の types/host.d.ts (受け皿 `__bh` の型) も写す (`host_types`・`020`)。スクリプトの source を
  * 読む人に見せる写しで、走るものではない —— 無ければ言って、スクリプトだけを入れる。
  */
@@ -192,10 +197,12 @@ interface CatalogEntry {
   summary: string;
   /** 札 (`021`)。書いていなければ空 (どこでも走る) */
   sites: string[];
+  /** 既定に入るか。書いていなければ真。台帳の `enabled` に写す */
+  default: boolean;
 }
 
-/** 札 (`sites`) を書ける形。`/1` は断る —— 札を知らない catalog と区別するため */
-const CATALOG_PROFILE = "capture-scripts/2";
+/** 札 (`sites`) と既定 (`default`) を書ける形。`/2` は断る —— `default` を知らない catalog と区別するため */
+const CATALOG_PROFILE = "capture-scripts/3";
 
 /** 読めた catalog か、読めなかった理由。**黙って一部だけ足さない。** */
 const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
@@ -239,12 +246,15 @@ const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
     }
     const sitesRefused = sitesRefusal(sites);
     if (sitesRefused !== undefined) return `${path}: ${id} の${sitesRefused}`;
+    const isDefault = entry["default"] ?? true;
+    if (typeof isDefault !== "boolean") return `${path}: ${id} の default が真偽値ではない`;
     out.push({
       id,
       phase,
       file,
       summary: typeof summary === "string" ? summary : "",
       sites,
+      default: isDefault,
     });
   }
   return out;
@@ -285,11 +295,18 @@ program
           sites: entry.sites,
         });
         if (!result.reused) added += 1;
+        // 既定に入るかはカタログが正 (上の説明)。外すなら全版、入れるなら取り込んだ版
+        await setScriptEnabled(
+          db,
+          entry.default
+            ? { ids: [entry.id], version: result.version, enabled: true }
+            : { ids: [entry.id], enabled: false },
+        );
         process.stdout.write(
           `${result.reused ? "=" : "✓"} ${entry.id} v${String(result.version)}  ` +
             `${entry.phase.padEnd(8)}  sha256:${result.sha256.slice(0, 12)}…  ` +
             `${result.reused ? "中身が同じなので、版は増やしていない" : "足した"}` +
-            `${sitesNote(entry.sites)}\n`,
+            `${sitesNote(entry.sites)}${entry.default ? "" : "  既定に入らない (全版を無効にした)"}\n`,
         );
       }
       process.stdout.write(

@@ -361,8 +361,8 @@ export const removeScripts = async (
 };
 
 /**
- * 有効な各 id の最新版を、札つきで (`GET /api/scripts`)。**サイト用のスクリプトも入れる** —— dashboard はこれで
- * 札を見せ、新しいクロールの画面で起点に合う物を選ぶ。既定で走るのは、この中の札の無い物と起点に合う物。
+ * 有効な各 id の最新版を、札つきで。**サイト用のスクリプトも入れる**。既定で走るのは、この中の札の無い物と
+ * 起点に合う物。`POST /api/crawls` が、既定が空のときに「スクリプトはあるが起点に合わない」を言うのに使う。
  */
 export const enabledLatest = async (
   db: Kysely<Database>,
@@ -375,6 +375,33 @@ export const enabledLatest = async (
     .distinctOn("id")
     .where("enabled", "=", true)
     .orderBy("id")
+    .orderBy("version", "desc")
+    .execute();
+
+/**
+ * 選べるスクリプト (`GET /api/scripts`)。各 id に 1 行で、**既定で走る版があればそれ** (有効な版の中の最新)、
+ * 無ければ最新版を `enabled: false` で返す。既定に入らないスクリプト (カタログの `default: false`) も、
+ * 名指しすれば走るので見せる —— dashboard はこれで新しいクロールの画面のチェックを並べ、`enabled` で
+ * 初めのチェックを決める。並べ替えの `enabled desc` が「有効な版を先に」で、`distinct on` がその先頭を取る。
+ */
+export const pickable = async (
+  db: Kysely<Database>,
+): Promise<
+  {
+    id: string;
+    version: number;
+    phase: ScriptPhase;
+    sha256: string;
+    sites: string[];
+    enabled: boolean;
+  }[]
+> =>
+  db
+    .selectFrom("scripts")
+    .select(["id", "version", "phase", "sha256", "sites", "enabled"])
+    .distinctOn("id")
+    .orderBy("id")
+    .orderBy("enabled", "desc")
     .orderBy("version", "desc")
     .execute();
 
