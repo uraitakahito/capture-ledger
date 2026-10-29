@@ -188,7 +188,7 @@ describe("GET /api/host-types", () => {
 });
 
 describe("GET /api/scripts", () => {
-  it("有効な各 id の最新版を、身元と札（id・版・phase・sha256・sites）だけで返す", async () => {
+  it("各 id の 1 行を、身元と札と既定に入るか（id・版・phase・sha256・sites・enabled）だけで返す", async () => {
     const row = {
       id: "autoscroll",
       version: 2,
@@ -197,26 +197,50 @@ describe("GET /api/scripts", () => {
       sha256: "c9",
       options: {},
       sites: [],
+      enabled: true,
     };
     const { res } = await get("/api/scripts", { rows: [[row]] });
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      scripts: [{ id: "autoscroll", version: 2, phase: "behavior", sha256: "c9", sites: [] }],
+      scripts: [
+        { id: "autoscroll", version: 2, phase: "behavior", sha256: "c9", sites: [], enabled: true },
+      ],
     });
+  });
+
+  it("既定に入らないスクリプトも enabled: false で返す（名指しすれば走るので）", async () => {
+    const row = {
+      id: "autofetch",
+      version: 1,
+      phase: "behavior",
+      sha256: "6a",
+      sites: [],
+      enabled: false,
+    };
+    const { res } = await get("/api/scripts", { rows: [[row]] });
+
+    expect(res.json<{ scripts: unknown[] }>().scripts).toEqual([row]);
   });
 
   it("サイト用のスクリプトも返す（既定で走る物だけではない）。札で絞らない", async () => {
     const rows = [
-      { id: "autoscroll", version: 2, phase: "behavior", sha256: "c9", sites: [] },
-      { id: "example-title", version: 1, phase: "behavior", sha256: "e1", sites: ["example.com"] },
+      { id: "autoscroll", version: 2, phase: "behavior", sha256: "c9", sites: [], enabled: true },
+      {
+        id: "example-title",
+        version: 1,
+        phase: "behavior",
+        sha256: "e1",
+        sites: ["example.com"],
+        enabled: true,
+      },
     ];
     const { res, queries } = await get("/api/scripts", { rows: [rows] });
 
     expect(res.json<{ scripts: unknown[] }>().scripts).toEqual(rows);
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "sha256", "sites" from "scripts" ' +
-        'where "enabled" = $1 order by "id", "version" desc',
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "enabled" from "scripts" ' +
+        'order by "id", "enabled" desc, "version" desc',
     );
   });
 });

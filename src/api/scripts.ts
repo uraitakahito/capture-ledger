@@ -21,11 +21,12 @@
  * 「全部 ✓ なら、クロールを始めれば最後まで走る設定になっている」と名乗っているので、
  * 頼む前に空かどうかを言えなければ、その約束が嘘になる。
  *
- * 一覧は `enabledLatest(db)` —— 有効な各 id の最新版を、サイト用のスクリプト（札のある物。`021`）も含めて返す。
- * 既定で走るのは、この中の札の無い物と、起点に合う物で、選ぶのはクロールを始めるときの
- * `resolveScripts`（起点を見る）。dashboard はこの一覧で札を見せ、新しいクロールの画面で同じ決まりのとおりに選ぶ。
- * 札のある物しか無い台帳では、一覧が空でなくても、起点によっては既定が空になる（クロールは 400
- * `no default scripts for these seeds`）—— この口で頼む前に言えるのは「空でない」まで。
+ * 一覧は `pickable(db)` —— 各 id に 1 行、既定で走る版（有効な版の中の最新）か、無ければ最新版を、
+ * サイト用のスクリプト（札のある物。`021`）も含めて返す。`enabled` が既定に入るかで、既定に入らない物
+ * （カタログの `default: false`）も名指しすれば走るので載せる。既定で走るのは `enabled` の物のうち札の無い物と、
+ * 起点に合う物で、選ぶのはクロールを始めるときの `resolveScripts`（起点を見る）。dashboard はこの一覧で札と
+ * `enabled` を見せ、新しいクロールの画面で同じ決まりのとおりに選ぶ。`enabled` の物が 1 つも無い台帳や、札のある
+ * 物しか無い台帳では、一覧が空でなくても既定が空になる（クロールは 400）—— 頼む前に言えるのは「`enabled` の物が在る」まで。
  *
  * ## 認可
  *
@@ -38,7 +39,7 @@ import type { Kysely } from "kysely";
 import type { Database } from "../db/database.js";
 import type { IdentityResolver } from "./identity.js";
 import { maySubmit, unauthorized } from "./authorization.js";
-import { enabledLatest, listScripts, readHostTypes, readScript } from "../scripts/store.js";
+import { listScripts, pickable, readHostTypes, readScript } from "../scripts/store.js";
 
 export interface ScriptsRouteDeps {
   db: Kysely<Database>;
@@ -69,15 +70,16 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
   app.get("/api/scripts", async (request, reply) => {
     if (!(await allowed(request, reply))) return reply;
 
-    // 有効な各 id の最新版を全部 (サイト用のスクリプトも)。既定で走るのは、この中の札の無い物と起点に合う物
-    const scripts = await enabledLatest(db);
+    // 各 id に 1 行 (サイト用のスクリプトも、既定に入らない物も)。既定で走るのは enabled の物のうち、札の無い物と起点に合う物
+    const scripts = await pickable(db);
     return reply.code(200).send({
-      scripts: scripts.map(({ id, version, phase, sha256, sites }) => ({
+      scripts: scripts.map(({ id, version, phase, sha256, sites, enabled }) => ({
         id,
         version,
         phase,
         sha256,
         sites,
+        enabled,
       })),
     });
   });

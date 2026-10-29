@@ -3,6 +3,7 @@ import {
   addHostTypes,
   addScript,
   enabledLatest,
+  pickable,
   listScripts,
   offsiteScripts,
   onSeed,
@@ -246,7 +247,20 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
   });
 });
 
-describe("有効な各 id の最新版（GET /api/scripts）", () => {
+describe("選べるスクリプト（GET /api/scripts）", () => {
+  it("各 id に 1 行。有効な版があればその最新、無ければ最新版（既定に入らない物も載せる）", async () => {
+    const { db, queries } = recordingDb([[]]);
+
+    await pickable(db);
+
+    expect(queries[0]?.sql).toBe(
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "enabled" from "scripts" ' +
+        'order by "id", "enabled" desc, "version" desc',
+    );
+  });
+});
+
+describe("有効な各 id の最新版（既定が空のときの 400 が使う）", () => {
   it("札つきで、サイト用のスクリプトも入れる（source は引かない）", async () => {
     const { db, queries } = recordingDb([[]]);
 

@@ -84,7 +84,8 @@ and pins its resolution onto the crawl.
 
 The sources come from [capture-scripts](https://github.com/uraitakahito/capture-scripts),
 pinned here as the `.upstream/capture-scripts` submodule. Its `catalog.json` carries what a
-source cannot say about itself — the `id`, the `phase`, and for a site script its `sites`.
+source cannot say about itself — the `id`, the `phase`, for a site script its `sites`, and whether it
+runs by default (`default`).
 
 ```sh
 # Import the scripts (catalog.json) and the receptacle's types. Idempotent: same bytes, same version.
@@ -98,12 +99,18 @@ pnpm run scripts types                    # the receptacle's (__bh) types, as im
 # One-offs and tuning still go in by hand.
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
 pnpm run scripts add my-search --file ./my-search.ts --site www.example.com   # a site script
-pnpm run scripts disable autofetch        # out of the default set, still nameable
+pnpm run scripts disable autoscroll       # out of the default set, still nameable (the next import restores the catalog)
 ```
 
 `import` has **no opinion about options**, so it never replaces a version you tuned by
 hand: same source, whatever the options, is the same version. Passing `--options` is an
 opinion, and that does make a new version.
+
+**Whether a script runs by default is the catalog’s call.** An entry with `"default": false` is
+kept out of the default set: `import` disables every version of that id, so an older version cannot
+step in as the default. An entry without `default` (or with `true`) has the imported version enabled.
+`enable` and `disable` by hand last until the next `import`. Today only `autofetch` is out of the
+default set (capture-scripts v0.5.0): name it in `scripts` to run it.
 
 `import` also copies `types/host.d.ts` from the same directory — the types of the receptacle
 `__bh` — into `host_types`, which likewise adds a version only when the bytes change. It is a copy
@@ -128,8 +135,8 @@ or `*`. A script with `sites` is a **site script**, and a crawl runs it only whe
 crawl's seeds is on one of those hosts. The seed's hostname is compared exactly and its port is
 ignored, so `example.com` and `www.example.com` are different hosts. A script without `sites`
 runs anywhere, as before. `sites` is part of a version, like `options`: changing it adds a
-version. The `catalog.json` format that can carry it is `capture-scripts/2` (capture-scripts v0.3.0);
-`import` refuses `capture-scripts/1`, and refuses a malformed hostname before touching the database.
+version. The `catalog.json` format `import` reads is `capture-scripts/3` (capture-scripts v0.5.0, which
+added `default`); `import` refuses older formats, and refuses a malformed hostname before touching the database.
 
 The example site script in capture-scripts is `egov-law-search`, for `laws.e-gov.go.jp` (from v0.4.0). On
 [e-Gov Law Search](https://laws.e-gov.go.jp/) it searches law titles for 「セキュリティ」 (security) within the page
@@ -183,12 +190,12 @@ Before the first report both are `null`.
 
 The registered scripts' sources can be read over HTTP by whoever may start a crawl:
 
-| Route                                    | Answers                                                                                                                                                                                        |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/scripts`                       | The newest version of every enabled id, site scripts included: `id`, `version`, `phase`, `sha256`, `sites`. A crawl with no `scripts` runs those without `sites` and those on its seeds' hosts |
-| `GET /api/scripts/:id/versions`          | Every version of one id, newest first: `version`, `phase`, `sha256`, `sites`, `enabled`, `bytes`, `createdAt`. No source                                                                       |
-| `GET /api/scripts/:id/versions/:version` | One version whole: the above plus `id`, `source` and `options`. Disabled versions too, since a past crawl may have run them                                                                    |
-| `GET /api/host-types`                    | The newest receptacle types `import` copied: `version`, `sha256`, `createdAt`, `source`, `bytes`                                                                                               |
+| Route                                    | Answers                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/scripts`                       | One row per id, site scripts and non-default scripts included: the version that runs by default (the newest enabled one), or else the newest version with `enabled: false`. `id`, `version`, `phase`, `sha256`, `sites`, `enabled`. A crawl with no `scripts` runs the `enabled` ones without `sites` and those on its seeds' hosts |
+| `GET /api/scripts/:id/versions`          | Every version of one id, newest first: `version`, `phase`, `sha256`, `sites`, `enabled`, `bytes`, `createdAt`. No source                                                                                                                                                                                                            |
+| `GET /api/scripts/:id/versions/:version` | One version whole: the above plus `id`, `source` and `options`. Disabled versions too, since a past crawl may have run them                                                                                                                                                                                                         |
+| `GET /api/host-types`                    | The newest receptacle types `import` copied: `version`, `sha256`, `createdAt`, `source`, `bytes`                                                                                                                                                                                                                                    |
 
 All four ask the crawl route's question (`can_submit` on one of the caller's organizations). No
 identity is a 401; no permission is a 404, the same answer as an id or version that does not exist.

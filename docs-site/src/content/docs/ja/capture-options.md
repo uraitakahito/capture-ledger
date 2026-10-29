@@ -80,7 +80,7 @@ behavior も、サイト別の behavior もありません。送らなければ�
 
 ソースの出どころは [capture-scripts](https://github.com/uraitakahito/capture-scripts) で、
 `.upstream/capture-scripts` の submodule として固定しています。あちらの `catalog.json` が、
-ソースが自分では言えないこと —— `id` と `phase`、サイト用のスクリプトなら `sites` —— を持ちます。
+ソースが自分では言えないこと —— `id` と `phase`、サイト用のスクリプトなら `sites`、既定に入るか（`default`）—— を持ちます。
 
 ```sh
 # スクリプト（catalog.json）と受け皿の型を入れる。何度流しても同じ（同じバイト列は同じ版）
@@ -94,12 +94,17 @@ pnpm run scripts types                    # 受け皿（__bh）の型。import �
 # 1 本だけ試す・設定を変えるのは、いまも手で
 pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
 pnpm run scripts add my-search --file ./my-search.ts --site www.example.com   # サイト用のスクリプト
-pnpm run scripts disable autofetch        # 既定から外す。名指しすれば走る
+pnpm run scripts disable autoscroll       # 既定から外す。名指しすれば走る（次の import でカタログに戻る）
 ```
 
 `import` は **options について意見を持ちません**。同じ source なら options が何であれ同じ版
 として扱うので、手で調整した版を黙って置き換えることがありません。`--options` を渡すのは
 意見なので、そちらは版を分けます。
+
+**既定に入るかは、カタログが決めます。** `"default": false` の項目は既定に入りません。`import` はその id の
+全版を無効にします（最新版だけを無効にすると、古い版が既定に出てくるため）。`default` を省いた（`true` の）
+項目は、取り込んだ版を有効にします。`enable`・`disable` で手で替えた物は、次の `import` まで効きます。
+いま既定に入らないのは `autofetch` だけです（capture-scripts v0.5.0）。走らせるには `scripts` で名指しします。
 
 `import` は、同じ置き場所の `types/host.d.ts`（受け皿 `__bh` の型）も `host_types` に写します。
 こちらも中身が変わったときだけ版を足します。スクリプトを読む人に見せる写しで、クロールの変換が使う型は
@@ -120,8 +125,8 @@ BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGU
 scheme・`*` は書けません。札のあるスクリプトは**サイト用のスクリプト**で、クロールの起点のどれかがそのホストに
 あるときだけ走ります。照らすのは起点のホスト名との完全一致で、ポートは見ません。`example.com` と
 `www.example.com` は別のホストです。札の無いスクリプトは、今までどおりどこでも走ります。札は版の一部で、
-`options` と同じく、変えたら版が足されます。札を書ける `catalog.json` の形は `capture-scripts/2`
-（capture-scripts v0.3.0）で、`import` は `capture-scripts/1` を断ります。形の悪いホスト名も、DB に
+`options` と同じく、変えたら版が足されます。`import` が読む `catalog.json` の形は `capture-scripts/3`
+（capture-scripts v0.5.0 で `default` が入った）で、`import` はそれより前の形を断ります。形の悪いホスト名も、DB に
 触る前に断ります。
 
 capture-scripts のサイト用のスクリプトの見本は `egov-law-search`（札 `laws.e-gov.go.jp`・v0.4.0 から）です。
@@ -173,12 +178,12 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 
 スクリプトの source は、クロールを始められる人が HTTP で読めます。
 
-| 口                                       | 返すもの                                                                                                                                                                            |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/scripts`                       | 有効な各 id の最新版（サイト用のスクリプトも）: `id`・`version`・`phase`・`sha256`・`sites`。`scripts` を書かないクロールが走らせるのは、この中の札の無い物と、起点のホストに合う物 |
-| `GET /api/scripts/:id/versions`          | 1 つの id の版の並び（新しい順）: `version`・`phase`・`sha256`・`sites`・`enabled`・`bytes`・`createdAt`。source は返さない                                                         |
-| `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと: 上に `id`・`source`・`options` を足した物。無効な版も返す（過去のクロールが走らせた物）                                                                               |
-| `GET /api/host-types`                    | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                                                                                    |
+| 口                                       | 返すもの                                                                                                                                                                                                                                                                                            |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/scripts`                       | 各 id に 1 行（サイト用のスクリプトも、既定に入らない物も）: 既定で走る版（有効な版の中の最新）か、無ければ最新版を `enabled: false` で。`id`・`version`・`phase`・`sha256`・`sites`・`enabled`。`scripts` を書かないクロールが走らせるのは、`enabled` の物のうち札の無い物と、起点のホストに合う物 |
+| `GET /api/scripts/:id/versions`          | 1 つの id の版の並び（新しい順）: `version`・`phase`・`sha256`・`sites`・`enabled`・`bytes`・`createdAt`。source は返さない                                                                                                                                                                         |
+| `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと: 上に `id`・`source`・`options` を足した物。無効な版も返す（過去のクロールが走らせた物）                                                                                                                                                                                               |
+| `GET /api/host-types`                    | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                                                                                                                                                                                                    |
 
 4 本ともクロールの口と同じ問い（呼び出し元の組織のどれかに `can_submit`）を訊きます。名乗りが
 無ければ 401、許可が無ければ 404 で、在らない id や版と同じ答えです。版が 1 以上の整数でなければ、
