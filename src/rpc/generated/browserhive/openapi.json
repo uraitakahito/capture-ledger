@@ -110,6 +110,7 @@
                                                     "totalSkippedUrlPolicy": 0,
                                                     "totalTruncatedTooLarge": 0,
                                                     "totalTruncatedTaskCap": 0,
+                                                    "totalNotIntercepted": 0,
                                                     "totalFailed": 0,
                                                     "totalIncomplete": 0,
                                                     "totalBodyBytes": 187342
@@ -117,6 +118,7 @@
                                                 "completeness": {
                                                     "bodylessUrls": [],
                                                     "truncatedUrls": [],
+                                                    "uninterceptedUrls": [],
                                                     "complete": true
                                                 },
                                                 "settle": {
@@ -177,6 +179,7 @@
                                                     "totalSkippedUrlPolicy": 0,
                                                     "totalTruncatedTooLarge": 0,
                                                     "totalTruncatedTaskCap": 0,
+                                                    "totalNotIntercepted": 0,
                                                     "totalFailed": 0,
                                                     "totalIncomplete": 0,
                                                     "totalBodyBytes": 20431
@@ -184,6 +187,7 @@
                                                 "completeness": {
                                                     "bodylessUrls": [],
                                                     "truncatedUrls": [],
+                                                    "uninterceptedUrls": [],
                                                     "complete": true
                                                 },
                                                 "settle": {
@@ -1226,7 +1230,14 @@
                     },
                     "complete": {
                         "type": "boolean",
-                        "description": "2 つの一覧がどちらも空なら true。"
+                        "description": "3 つの一覧 (`bodylessUrls`・`truncatedUrls`・`uninterceptedUrls`) がどれも空なら true。"
+                    },
+                    "uninterceptedUrls": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "本文は届いたのに、BrowserHive がバイト列として得られなかった URL。文字から組み直した本文で\n埋めないので、archive は本文を持たない。取り込みの失敗で、リクエストの設定をどう変えても戻らない。\n整列済み、常に在る。後から足した欄なので最後に置く (並びを変えると smithy diff が危険と言う)。"
                     }
                 },
                 "required": [
@@ -1330,6 +1341,11 @@
                         "type": "number",
                         "default": 0,
                         "description": "URL の方針 (`no-body`) に当たり、本文を取らずに記録した応答。content-type の方針にも\n当たったものはこちらに数える —— 先に決まるのが URL の方針だから。後から足した欄なので\n最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。JSON Schema の側では\n`required` のままで、この欄を持たない古い server の manifest は検証に通らない。"
+                    },
+                    "totalNotIntercepted": {
+                        "type": "number",
+                        "default": 0,
+                        "description": "本文は届いたのに、バイト列として得られなかったので、本文を持たずに記録した応答 (要求の関所が\n応答の段で読めなかった・読み取りが失敗した)。WARC には `truncated: not-intercepted` の metadata が\n1 つずつ残り、URL は `completeness.uninterceptedUrls` に載る。上限を上げても戻らない。\n後から足した欄なので最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。"
                     }
                 },
                 "required": [
@@ -1338,6 +1354,7 @@
                     "totalDenied",
                     "totalFailed",
                     "totalIncomplete",
+                    "totalNotIntercepted",
                     "totalRecorded",
                     "totalSkippedContentType",
                     "totalSkippedUrlPolicy",
