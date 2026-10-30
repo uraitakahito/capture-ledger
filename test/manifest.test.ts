@@ -65,6 +65,46 @@ describe("readManifest", () => {
     expect(report.waczStats?.totalSkippedUrlPolicy).toBe(0);
   });
 
+  /**
+   * v20.0.0 で `waczStats.totalNotIntercepted`（本文をバイト列で読めなかった応答の数）が required
+   * （既定 0）になった。それより前の server の manifest は持たないので、既定の 0 として読む。
+   * `completeness.uninterceptedUrls` は任意の欄なので、無くても通る。
+   */
+  /** v12.2.0〜v19 の server が書いた `waczStats`。`totalNotIntercepted` を持たない。 */
+  const v19Stats = {
+    totalRecorded: 2,
+    totalBlocked: 0,
+    totalDenied: 0,
+    totalSkippedContentType: 0,
+    totalSkippedUrlPolicy: 0,
+    totalTruncatedTooLarge: 0,
+    totalTruncatedTaskCap: 0,
+    totalFailed: 0,
+    totalIncomplete: 0,
+    totalBodyBytes: 187,
+  };
+
+  it("v20.0.0 より前の manifest（totalNotIntercepted も uninterceptedUrls も無い）を読み、数は既定の 0 とする", () => {
+    const report = readManifest({ ...v12Manifest, waczStats: v19Stats });
+    expect(report.waczStats?.totalNotIntercepted).toBe(0);
+    expect(report.completeness?.uninterceptedUrls).toBeUndefined();
+  });
+
+  it("v20.0.0 の manifest（読めなかった本文が在る）を読む", () => {
+    const report = readManifest({
+      ...v12Manifest,
+      waczStats: { ...v19Stats, totalNotIntercepted: 1 },
+      completeness: {
+        complete: false,
+        bodylessUrls: [],
+        truncatedUrls: [],
+        uninterceptedUrls: ["https://example.com/feed"],
+      },
+    });
+    expect(report.waczStats?.totalNotIntercepted).toBe(1);
+    expect(report.completeness?.uninterceptedUrls).toEqual(["https://example.com/feed"]);
+  });
+
   /** v17 はページから作るものを撮った文書を名乗る。形式を伏せた取り込みも success のまま。 */
   it("v17 の manifest（形式を伏せ、document が理由を名乗る）を読む", () => {
     const report = readManifest({

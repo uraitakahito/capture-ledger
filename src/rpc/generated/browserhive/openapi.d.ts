@@ -715,8 +715,14 @@ export interface components {
              *     大きさに関係なくここに載らない —— 呼ぶ側が自分で省いたもので、失ったものではない。
              */
             truncatedUrls?: string[];
-            /** @description 2 つの一覧がどちらも空なら true。 */
+            /** @description 3 つの一覧 (`bodylessUrls`・`truncatedUrls`・`uninterceptedUrls`) がどれも空なら true。 */
             complete: boolean;
+            /**
+             * @description 本文は届いたのに、BrowserHive がバイト列として得られなかった URL。文字から組み直した本文で
+             *     埋めないので、archive は本文を持たない。取り込みの失敗で、リクエストの設定をどう変えても戻らない。
+             *     整列済み、常に在る。後から足した欄なので最後に置く (並びを変えると smithy diff が危険と言う)。
+             */
+            uninterceptedUrls?: string[];
         };
         /**
          * @description wacz-auth の署名の結末。署名が必須だった取り込みが WACZ を作って成功したときだけ入る ——
@@ -812,6 +818,14 @@ export interface components {
              * @default 0
              */
             totalSkippedUrlPolicy: number;
+            /**
+             * @description 本文は届いたのに、バイト列として得られなかったので、本文を持たずに記録した応答 (要求の関所が
+             *     応答の段で読めなかった・読み取りが失敗した)。WARC には `truncated: not-intercepted` の metadata が
+             *     1 つずつ残り、URL は `completeness.uninterceptedUrls` に載る。上限を上げても戻らない。
+             *     後から足した欄なので最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。
+             * @default 0
+             */
+            totalNotIntercepted: number;
         };
     };
     responses: never;
