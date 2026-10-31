@@ -27,7 +27,7 @@ const unreachableDeps = {
 
 const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organizations": "acme" };
 const UUID = "d272d256-e528-4581-bb4e-8d9477d78196";
-const SEED = "https://example.com/start";
+const SEED = "https://site.test/start";
 
 const buildApp = async (
   deps: CrawlRouteDeps,
@@ -111,16 +111,17 @@ describe("クロール route の入力検証", () => {
   it("規則の形が違えば schema の 400 —— 鍵が 0 か 2 つ・知らない動き・空・33 本・2049 字", async () => {
     const status = async (rules: unknown) => (await post({ seeds: [SEED], rules })).statusCode;
     expect(await status([{}])).toBe(400);
-    expect(await status([{ follow: "same-host", skip: "ads.example.com" }])).toBe(400);
+    expect(await status([{ follow: "same-host", skip: "ads.site.test" }])).toBe(400);
     expect(await status([{ crawl: "same-host" }])).toBe(400);
     expect(await status([{ follow: "" }])).toBe(400);
     expect(await status([])).toBe(400);
     expect(await status(Array.from({ length: 33 }, () => ({ follow: "same-host" })))).toBe(400);
-    // https://example.com/ は 20 字
-    expect(await status([{ skip: `https://example.com/${"a".repeat(2049 - 20)}` }])).toBe(400);
+    const pattern = (length: number) =>
+      `https://site.test/${"a".repeat(length - "https://site.test/".length)}`;
+    expect(await status([{ skip: pattern(2049) }])).toBe(400);
     // ちょうどの数と長さは schema を通る（500 は deps に触れた＝検証を通過した証拠）
     expect(await status(Array.from({ length: 32 }, () => ({ follow: "same-host" })))).toBe(500);
-    expect(await status([{ skip: `https://example.com/${"a".repeat(2048 - 20)}` }])).toBe(500);
+    expect(await status([{ skip: pattern(2048) }])).toBe(500);
   });
 
   it("rejects limits outside their range", async () => {
@@ -555,7 +556,7 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
-      payload: { seeds: ["ftp://example.com/x"] },
+      payload: { seeds: ["ftp://site.test/x"] },
     });
     expect(res.statusCode).toBe(400);
     await app.close();
@@ -577,12 +578,9 @@ describe("クロール route の認可と単一実行", () => {
     await app.inject({
       method: "POST",
       url: "/api/crawls",
-      payload: { seeds: ["https://a.example.com/1", "https://b.example.com/2"] },
+      payload: { seeds: ["https://a.site.test/1", "https://b.site.test/2"] },
     });
-    expect(sent[0]?.map((f) => f.url)).toEqual([
-      "https://a.example.com/1",
-      "https://b.example.com/2",
-    ]);
+    expect(sent[0]?.map((f) => f.url)).toEqual(["https://a.site.test/1", "https://b.site.test/2"]);
     await app.close();
   });
 
@@ -615,7 +613,7 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
-      payload: { seeds: [SEED, "ftp://example.com/x"] },
+      payload: { seeds: [SEED, "ftp://site.test/x"] },
     });
     expect(res.statusCode).toBe(400);
     await app.close();
@@ -656,9 +654,9 @@ describe("クロール route の認可と単一実行", () => {
     await app.inject({
       method: "POST",
       url: "/api/crawls",
-      payload: { seeds: ["https://example.com/start#top"] },
+      payload: { seeds: ["https://site.test/start#top"] },
     });
-    expect(crawls[0]?.seeds?.[0]).toBe("https://example.com/start");
+    expect(crawls[0]?.seeds?.[0]).toBe("https://site.test/start");
     await app.close();
   });
 
@@ -770,7 +768,7 @@ describe("クロール route の認可と単一実行", () => {
     const pages: FakePage[] = [
       {
         crawlId: UUID,
-        url: "https://example.com/ok",
+        url: "https://site.test/ok",
         depth: 0,
         state: "captured",
         skipReason: null,
@@ -827,10 +825,10 @@ describe("クロール route の認可と単一実行", () => {
 
 describe("対象一覧から始める", () => {
   const targets: FakeTarget[] = [
-    { url: "https://a.example.com/1", enabled: true, orgId: "acme" },
-    { url: "https://b.example.com/2", enabled: true, orgId: "acme" },
-    { url: "https://c.example.com/3", enabled: false, orgId: "acme" },
-    { url: "https://d.example.com/4", enabled: true, orgId: "other" },
+    { url: "https://a.site.test/1", enabled: true, orgId: "acme" },
+    { url: "https://b.site.test/2", enabled: true, orgId: "acme" },
+    { url: "https://c.site.test/3", enabled: false, orgId: "acme" },
+    { url: "https://d.site.test/4", enabled: true, orgId: "other" },
   ];
 
   const start = async (payload: Record<string, unknown>, crawls: FakeCrawl[] = []) => {
@@ -856,10 +854,7 @@ describe("対象一覧から始める", () => {
     // していたが、クロールは `org_id` を 1 つ持つ行なので、混ぜると帰属が言えない。
     const { res, sent } = await start({ fromTargets: {} });
     expect(res.statusCode).toBe(202);
-    expect(sent[0]?.map((f) => f.url)).toEqual([
-      "https://a.example.com/1",
-      "https://b.example.com/2",
-    ]);
+    expect(sent[0]?.map((f) => f.url)).toEqual(["https://a.site.test/1", "https://b.site.test/2"]);
   });
 
   it("既定では辿らない（max_depth = 0）", async () => {
@@ -1455,7 +1450,7 @@ describe("札（サイト用のスクリプト）と起点", () => {
   const base = { phase: "behavior" as const, source: "(() => {})();", options: {}, enabled: true };
   const SITED: FakeScript[] = [
     { ...base, id: "autoscroll", version: 1, sha256: "a".repeat(64), sites: [] },
-    { ...base, id: "example-title", version: 1, sha256: "b".repeat(64), sites: ["example.com"] },
+    { ...base, id: "example-title", version: 1, sha256: "b".repeat(64), sites: ["site.test"] },
     {
       ...base,
       id: "google-results",
@@ -1491,12 +1486,12 @@ describe("札（サイト用のスクリプト）と起点", () => {
   });
 
   it("起点のポートは見ない（:8080 の起点も札のホスト名に合う）", async () => {
-    const { ids } = await startWith(SITED, { seeds: ["http://example.com:8080/x"] });
+    const { ids } = await startWith(SITED, { seeds: ["http://site.test:8080/x"] });
     expect(ids).toEqual(["autoscroll", "example-title"]);
   });
 
-  it("www の有無は別のホスト（起点が www.example.com なら、example.com 用は入らない）", async () => {
-    const { ids } = await startWith(SITED, { seeds: ["https://www.example.com/"] });
+  it("www の有無は別のホスト（起点が www.site.test なら、site.test 用は入らない）", async () => {
+    const { ids } = await startWith(SITED, { seeds: ["https://www.site.test/"] });
     expect(ids).toEqual(["autoscroll"]);
   });
 
@@ -1527,18 +1522,18 @@ describe("札（サイト用のスクリプト）と起点", () => {
   it("台帳のスクリプトが全部別のサイト用なら、省いた頼みは「この起点で走る物が無い」で断る（スクリプトが無いとは言わない）", async () => {
     const { res } = await startWith(
       SITED.filter((script) => script.sites.length > 0),
-      { seeds: ["https://other.example/"] },
+      { seeds: ["https://other.test/"] },
     );
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({
       error: "no default scripts for these seeds",
-      hint: "example-title: example.com / google-results: www.google.com (run nothing on purpose: send scripts: [])",
+      hint: "example-title: site.test / google-results: www.google.com (run nothing on purpose: send scripts: [])",
     });
   });
 
   it("クロールの行の写しには札が入り、flow へ送る scripts には入らない（最初の段も）", async () => {
     const { crawls, dispatched } = await startWith(SITED, { seeds: [SEED] });
-    expect(crawls[0]?.scripts.map((script) => script.sites)).toEqual([[], ["example.com"]]);
+    expect(crawls[0]?.scripts.map((script) => script.sites)).toEqual([[], ["site.test"]]);
     expect(dispatched[0]?.every((script) => !("sites" in script))).toBe(true);
   });
 });
@@ -1551,22 +1546,22 @@ describe("規則の並びで始める", () => {
     await app.close();
     return { status: res.statusCode, body: res.json<Record<string, unknown>>(), crawls };
   };
-  const www = "https://www.example.com/";
+  const www = "https://www.site.test/";
 
   it("読んだ形で固定する —— 前方一致は正規化した URL、ドメインと範囲は書いたまま", async () => {
     const { status, crawls } = await start({
       seeds: [www],
       rules: [
-        { skip: "HTTPS://WWW.Example.com:443/search" },
-        { skip: "ads.example.com" },
+        { skip: "HTTPS://WWW.Site.test:443/search" },
+        { skip: "ads.site.test" },
         { follow: "same-site" },
         { capture: "any" },
       ],
     });
     expect(status).toBe(202);
     expect(crawls[0]?.rules).toEqual([
-      { skip: "https://www.example.com/search" },
-      { skip: "ads.example.com" },
+      { skip: "https://www.site.test/search" },
+      { skip: "ads.site.test" },
       { follow: "same-site" },
       { capture: "any" },
     ]);
@@ -1575,12 +1570,12 @@ describe("規則の並びで始める", () => {
   it("読めない当てる物は 400 で、番号と頼まれた当てる物を名指し、クロールを立てない", async () => {
     const { status, body, crawls } = await start({
       seeds: [SEED],
-      rules: [{ follow: "same-host" }, { skip: "ADS.example.com" }],
+      rules: [{ follow: "same-host" }, { skip: "ADS.site.test" }],
     });
     expect(status).toBe(400);
     expect(body).toEqual({
       error: "invalid rule patterns",
-      rules: [{ rule: 2, pattern: "ADS.example.com" }],
+      rules: [{ rule: 2, pattern: "ADS.site.test" }],
     });
     expect(crawls).toEqual([]);
   });
@@ -1588,7 +1583,7 @@ describe("規則の並びで始める", () => {
   it("前の規則に覆われた規則は 400 で、覆っている規則の番号と一緒に名指す", async () => {
     const { status, body, crawls } = await start({
       seeds: [www],
-      rules: [{ follow: "same-site" }, { skip: "ads.example.com" }],
+      rules: [{ follow: "same-site" }, { skip: "ads.site.test" }],
     });
     expect(status).toBe(400);
     expect(body).toEqual({
@@ -1600,13 +1595,13 @@ describe("規則の並びで始める", () => {
 
   it("起点を撮って辿らない並びは 400 で、その起点を名指す", async () => {
     const { status, body, crawls } = await start({
-      seeds: [www, "https://ads.example.com/"],
-      rules: [{ skip: "ads.example.com" }, { follow: "same-site" }],
+      seeds: [www, "https://ads.site.test/"],
+      rules: [{ skip: "ads.site.test" }, { follow: "same-site" }],
     });
     expect(status).toBe(400);
     expect(body).toEqual({
       error: "seeds the rules do not follow",
-      seeds: ["https://ads.example.com/"],
+      seeds: ["https://ads.site.test/"],
     });
     expect(crawls).toEqual([]);
   });

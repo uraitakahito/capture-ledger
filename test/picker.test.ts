@@ -42,8 +42,8 @@ describe("picker の画面", () => {
   // 行のクリックで開く先は、渡された replay の場所から組む。既定値を焼き込んでいたら、
   // REPLAY_ORIGIN を変えても古い場所を開き続ける。
   it("渡された replay の場所を、行のリンクを組む script に埋め込む", async () => {
-    const body = await open({ replayOrigin: "http://replay.example:9000" });
-    expect(body).toContain('const REPLAY_ORIGIN = "http://replay.example:9000";');
+    const body = await open({ replayOrigin: "http://replay.test:9000" });
+    expect(body).toContain('const REPLAY_ORIGIN = "http://replay.test:9000";');
     expect(body).not.toContain("127.0.0.1:8899");
   });
 });

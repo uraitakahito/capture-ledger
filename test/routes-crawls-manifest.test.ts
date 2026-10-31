@@ -21,7 +21,7 @@ const { parseCaptureFormats } = await import("../src/config/capture-formats.js")
 
 const CRAWL = "d272d256-e528-4581-bb4e-8d9477d78196";
 const TASK = "550e8400-e29b-41d4-a716-446655440000";
-const PAGE = "https://example.com/start";
+const PAGE = "https://site.test/start";
 const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organizations": "acme" };
 
 /** `capture_submissions` に書こうとした行。insert の `values` が受け取ったもの。 */

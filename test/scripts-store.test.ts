@@ -162,7 +162,7 @@ describe("札の形（021 の CHECK と capture-scripts の check と同じ式�
 describe("起点で選べるか", () => {
   it("札が無ければどの起点でも、札があれば起点のホスト名が 1 つ合えば", () => {
     expect(onSeed([], [])).toBe(true);
-    expect(onSeed(["www.google.com"], ["example.com", "www.google.com"])).toBe(true);
+    expect(onSeed(["www.google.com"], ["site.test", "www.google.com"])).toBe(true);
     expect(onSeed(["www.google.com"], ["google.com"])).toBe(false); // www の有無は別のホスト
     expect(onSeed(["www.google.com"], [])).toBe(false);
   });
@@ -181,9 +181,9 @@ describe("起点で選べるか", () => {
           { ...script, id: "autoscroll", sites: [] },
           { ...script, id: "google-results", sites: ["www.google.com"] },
           { ...script, id: "inline-pad" },
-          { ...script, id: "example-title", sites: ["example.com"] },
+          { ...script, id: "example-title", sites: ["site.test"] },
         ],
-        ["example.com"],
+        ["site.test"],
       ),
     ).toEqual([{ id: "google-results", sites: ["www.google.com"] }]);
   });
@@ -203,7 +203,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
   it("有効な各 id の最新版を引き、札で絞るのは引いた後（SQL に札の条件を書かない）", async () => {
     const { db, queries } = recordingDb([[]]);
 
-    await resolveScripts(db, undefined, ["example.com"]);
+    await resolveScripts(db, undefined, ["site.test"]);
 
     expect(queries[0]?.sql).toBe(
       'select distinct on ("id") "id", "version", "phase", "source", "sha256", "options", "sites" ' +
@@ -216,12 +216,12 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
     const { db } = recordingDb([
       [
         row("autofetch", 1, []),
-        row("example-title", 3, ["example.com"]),
+        row("example-title", 3, ["site.test"]),
         row("google-results", 2, ["www.google.com"]),
       ],
     ]);
 
-    const result = await resolveScripts(db, undefined, ["example.com"]);
+    const result = await resolveScripts(db, undefined, ["site.test"]);
 
     expect(
       result.kind === "ok" && result.scripts.map((s) => `${s.id}@${String(s.version)}`),
@@ -229,9 +229,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
   });
 
   it("起点が無ければ、札の無い物だけ", async () => {
-    const { db } = recordingDb([
-      [row("autofetch", 1, []), row("example-title", 1, ["example.com"])],
-    ]);
+    const { db } = recordingDb([[row("autofetch", 1, []), row("example-title", 1, ["site.test"])]]);
 
     const result = await resolveScripts(db);
 
@@ -239,11 +237,11 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
   });
 
   it("写しに札を入れる（クロールの詳しい所が返す）", async () => {
-    const { db } = recordingDb([[row("example-title", 1, ["example.com"])]]);
+    const { db } = recordingDb([[row("example-title", 1, ["site.test"])]]);
 
-    const result = await resolveScripts(db, undefined, ["example.com"]);
+    const result = await resolveScripts(db, undefined, ["site.test"]);
 
-    expect(result.kind === "ok" && result.scripts[0]?.sites).toEqual(["example.com"]);
+    expect(result.kind === "ok" && result.scripts[0]?.sites).toEqual(["site.test"]);
   });
 });
 
@@ -274,7 +272,7 @@ describe("有効な各 id の最新版（既定が空のときの 400 が使う�
 });
 
 describe("札を足す（options と同じ扱い）", () => {
-  const latest = { version: 1, source: "x;", sha256: "h", options: {}, sites: ["example.com"] };
+  const latest = { version: 1, source: "x;", sha256: "h", options: {}, sites: ["site.test"] };
 
   it("札を渡さなければ、中身が同じなら版を増やさない（意見が無い）", async () => {
     const { db, queries } = recordingDb([[latest]]);
@@ -292,11 +290,11 @@ describe("札を足す（options と同じ扱い）", () => {
       id: "example-title",
       phase: "behavior",
       source: "x;",
-      sites: ["www.example.com"],
+      sites: ["www.site.test"],
     });
 
     expect(queries[2]?.sql).toContain('insert into "scripts"');
-    expect(queries[2]?.parameters).toContainEqual(["www.example.com"]);
+    expect(queries[2]?.parameters).toContainEqual(["www.site.test"]);
     expect(result.version).toBe(2);
   });
 
@@ -307,7 +305,7 @@ describe("札を足す（options と同じ扱い）", () => {
       id: "example-title",
       phase: "behavior",
       source: "x;",
-      sites: ["example.com"],
+      sites: ["site.test"],
     });
 
     expect(queries.map((q) => q.sql.split(" ")[0])).toEqual(["begin", "select", "commit"]);

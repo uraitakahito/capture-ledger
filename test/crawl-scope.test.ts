@@ -7,22 +7,22 @@ import { parseHttpUrl, inScope, siteOf } from "../src/crawl/scope.js";
  * ここが緩いとクロールは範囲外へ出て、厳しすぎると同じページを何度も取る。どちらも
  * 「動いているように見える」ので、境目を 1 つずつ固定しておく。
  */
-const seed = parseHttpUrl("https://example.com/start")!;
+const seed = parseHttpUrl("https://site.test/start")!;
 
 describe("URL の読み取りと正規化", () => {
   it("drops the fragment", () => {
     // `#section` は同じ資源の中の位置。落とさないと同じページを何度も取る。
-    expect(parseHttpUrl("https://example.com/a#top")?.normalized).toBe("https://example.com/a");
+    expect(parseHttpUrl("https://site.test/a#top")?.normalized).toBe("https://site.test/a");
   });
 
   it("keeps the query untouched", () => {
     // 並べ替えたクエリが別のページを返すサイトは実在する。取りこぼしより取り違えが悪い。
-    const a = parseHttpUrl("https://example.com/a?b=2&a=1")?.normalized;
-    expect(a).toBe("https://example.com/a?b=2&a=1");
+    const a = parseHttpUrl("https://site.test/a?b=2&a=1")?.normalized;
+    expect(a).toBe("https://site.test/a?b=2&a=1");
   });
 
   it("refuses a scheme that is not http(s)", () => {
-    for (const raw of ["mailto:a@example.com", "javascript:alert(1)", "tel:+81", "data:,x"]) {
+    for (const raw of ["mailto:a@site.test", "javascript:alert(1)", "tel:+81", "data:,x"]) {
       expect(parseHttpUrl(raw)).toBeUndefined();
     }
   });
@@ -36,30 +36,30 @@ describe("URL の読み取りと正規化", () => {
 describe("範囲の判定", () => {
   it("treats a different scheme as a different origin", () => {
     // http と https は別 origin。混在するサイトでは same-host を選ぶことになる。
-    const candidate = parseHttpUrl("http://example.com/a")!;
+    const candidate = parseHttpUrl("http://site.test/a")!;
     expect(inScope(candidate, [seed], "same-origin")).toBe(false);
     expect(inScope(candidate, [seed], "same-host")).toBe(true);
   });
 
   it("treats a different port as a different origin", () => {
-    const candidate = parseHttpUrl("https://example.com:8443/a")!;
+    const candidate = parseHttpUrl("https://site.test:8443/a")!;
     expect(inScope(candidate, [seed], "same-origin")).toBe(false);
   });
 
   it("treats a subdomain as outside", () => {
     // `same-host` でも外。ホストが違えば別のサーバで、負荷の宛先も別。
-    const candidate = parseHttpUrl("https://www.example.com/a")!;
+    const candidate = parseHttpUrl("https://www.site.test/a")!;
     expect(inScope(candidate, [seed], "same-origin")).toBe(false);
     expect(inScope(candidate, [seed], "same-host")).toBe(false);
   });
 
   it("accepts the same origin on a different path", () => {
-    expect(inScope(parseHttpUrl("https://example.com/deep/a")!, [seed], "same-origin")).toBe(true);
+    expect(inScope(parseHttpUrl("https://site.test/deep/a")!, [seed], "same-origin")).toBe(true);
   });
 
   it("same-host はポートまで見て、scheme は見ない", () => {
-    expect(inScope(parseHttpUrl("http://example.com/a")!, [seed], "same-host")).toBe(true);
-    expect(inScope(parseHttpUrl("https://example.com:8443/a")!, [seed], "same-host")).toBe(false);
+    expect(inScope(parseHttpUrl("http://site.test/a")!, [seed], "same-host")).toBe(true);
+    expect(inScope(parseHttpUrl("https://site.test:8443/a")!, [seed], "same-host")).toBe(false);
   });
 
   it("same-site はサブドメインを入れ、別のサイトは入れない", () => {
@@ -83,7 +83,7 @@ describe("範囲の判定", () => {
 
 describe("サイト", () => {
   it("登録ドメインを返す", () => {
-    expect(siteOf("www.example.com")).toBe("example.com");
+    expect(siteOf("www.site.test")).toBe("site.test");
     expect(siteOf("a.b.example.co.jp")).toBe("example.co.jp");
   });
 
@@ -95,22 +95,22 @@ describe("サイト", () => {
 });
 
 describe("起点が複数のとき", () => {
-  const a = parseHttpUrl("https://a.example.com/start")!;
-  const b = parseHttpUrl("https://b.example.com/start")!;
+  const a = parseHttpUrl("https://a.site.test/start")!;
+  const b = parseHttpUrl("https://b.site.test/start")!;
 
   it("どれか 1 つの起点の範囲に入れば入る", () => {
     // **範囲は起点の数だけ広がる。** それでも「依頼時に決まって後から動かない」
     // という性質は変わらない —— 端のページが新しい中心になることは無い。
-    expect(inScope(parseHttpUrl("https://b.example.com/deep")!, [a, b], "same-origin")).toBe(true);
+    expect(inScope(parseHttpUrl("https://b.site.test/deep")!, [a, b], "same-origin")).toBe(true);
   });
 
   it("どの起点の範囲にも入らなければ入らない", () => {
-    expect(inScope(parseHttpUrl("https://c.example.com/x")!, [a, b], "same-origin")).toBe(false);
+    expect(inScope(parseHttpUrl("https://c.site.test/x")!, [a, b], "same-origin")).toBe(false);
   });
 
   it("起点の URL が 0 本なら何も入らない", () => {
     // `011` の CHECK が作らせないので実際には来ないが、来たときに全部を範囲内と
     // 読むよりは、何も入らないほうがよい。
-    expect(inScope(parseHttpUrl("https://a.example.com/x")!, [], "same-origin")).toBe(false);
+    expect(inScope(parseHttpUrl("https://a.site.test/x")!, [], "same-origin")).toBe(false);
   });
 });

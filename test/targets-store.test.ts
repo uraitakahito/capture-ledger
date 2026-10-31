@@ -11,9 +11,9 @@ import { recordingDb } from "./recording-db.js";
  */
 describe("撮る対象を足す", () => {
   it("既存の行を組織で絞って引き、無いものだけを組織つきで足す", async () => {
-    const { db, queries } = recordingDb([[], [{ id: "6", url: "https://example.com/" }]]);
+    const { db, queries } = recordingDb([[], [{ id: "6", url: "https://site.test/" }]]);
 
-    const result = await addTargets(db, { orgId: "acme", urls: ["https://example.com/"] });
+    const result = await addTargets(db, { orgId: "acme", urls: ["https://site.test/"] });
 
     expect(queries.map((q) => q.sql.split(" ")[0])).toEqual([
       "begin",
@@ -24,14 +24,14 @@ describe("撮る対象を足す", () => {
     expect(queries[1]?.sql).toBe(
       'select "id", "url", "enabled" from "capture_targets" where "org_id" = $1 and "url" in ($2)',
     );
-    expect(queries[1]?.parameters).toEqual(["acme", "https://example.com/"]);
+    expect(queries[1]?.parameters).toEqual(["acme", "https://site.test/"]);
     expect(queries[2]?.sql).toBe(
       'insert into "capture_targets" ("url", "org_id", "labels") values ($1, $2, $3) returning "id", "url"',
     );
-    expect(queries[2]?.parameters).toEqual(["https://example.com/", "acme", []]);
+    expect(queries[2]?.parameters).toEqual(["https://site.test/", "acme", []]);
     expect(result).toEqual({
       kind: "ok",
-      added: [{ id: "6", url: "https://example.com/" }],
+      added: [{ id: "6", url: "https://site.test/" }],
       reenabled: [],
       unchanged: [],
     });
@@ -42,31 +42,34 @@ describe("撮る対象を足す", () => {
 
     const result = await addTargets(db, {
       orgId: "acme",
-      urls: ["https://example.com/", "example.org", "ftp://example.org/x"],
+      urls: ["https://site.test/", "other-site.test", "ftp://other-site.test/x"],
     });
 
-    expect(result).toEqual({ kind: "unreadable", urls: ["example.org", "ftp://example.org/x"] });
+    expect(result).toEqual({
+      kind: "unreadable",
+      urls: ["other-site.test", "ftp://other-site.test/x"],
+    });
     expect(queries).toEqual([]);
   });
 
   it("フラグメントを落とした形で保存し、正規化して同じになる URL は 1 本に畳む", async () => {
-    const { db, queries } = recordingDb([[], [{ id: "7", url: "https://example.com/" }]]);
+    const { db, queries } = recordingDb([[], [{ id: "7", url: "https://site.test/" }]]);
 
     await addTargets(db, {
       orgId: "acme",
-      urls: ["https://example.com/#top", "https://example.com/"],
+      urls: ["https://site.test/#top", "https://site.test/"],
     });
 
-    expect(queries[1]?.parameters).toEqual(["acme", "https://example.com/"]);
-    expect(queries[2]?.parameters).toEqual(["https://example.com/", "acme", []]);
+    expect(queries[1]?.parameters).toEqual(["acme", "https://site.test/"]);
+    expect(queries[2]?.parameters).toEqual(["https://site.test/", "acme", []]);
   });
 
   it("札を渡せば、足す行に付ける", async () => {
-    const { db, queries } = recordingDb([[], [{ id: "8", url: "https://example.org/" }]]);
+    const { db, queries } = recordingDb([[], [{ id: "8", url: "https://other-site.test/" }]]);
 
-    await addTargets(db, { orgId: "acme", urls: ["https://example.org/"], labels: ["demo"] });
+    await addTargets(db, { orgId: "acme", urls: ["https://other-site.test/"], labels: ["demo"] });
 
-    expect(queries[2]?.parameters).toEqual(["https://example.org/", "acme", ["demo"]]);
+    expect(queries[2]?.parameters).toEqual(["https://other-site.test/", "acme", ["demo"]]);
   });
 
   it("無効だった行は有効に戻し、有効な行には触らず、足すものが無ければ INSERT しない", async () => {
@@ -116,9 +119,7 @@ describe("撮る対象を見る・外す・消す", () => {
   });
 
   it("見つからない id が 1 つでもあれば、何も変えずに名指しで返す", async () => {
-    const { db, queries } = recordingDb([
-      [{ id: "6", url: "https://example.com/", enabled: true }],
-    ]);
+    const { db, queries } = recordingDb([[{ id: "6", url: "https://site.test/", enabled: true }]]);
 
     const result = await setEnabled(db, { ids: ["6", "99"], enabled: false });
 
@@ -129,8 +130,8 @@ describe("撮る対象を見る・外す・消す", () => {
   it("無効にするのは、いま有効な行だけ", async () => {
     const { db, queries } = recordingDb([
       [
-        { id: "6", url: "https://example.com/", enabled: true },
-        { id: "7", url: "https://example.org/", enabled: false },
+        { id: "6", url: "https://site.test/", enabled: true },
+        { id: "7", url: "https://other-site.test/", enabled: false },
       ],
     ]);
 
@@ -142,13 +143,13 @@ describe("撮る対象を見る・外す・消す", () => {
     expect(queries[2]?.parameters).toEqual([false, "6"]);
     expect(result).toEqual({
       kind: "ok",
-      changed: [{ id: "6", url: "https://example.com/" }],
-      unchanged: [{ id: "7", url: "https://example.org/" }],
+      changed: [{ id: "6", url: "https://site.test/" }],
+      unchanged: [{ id: "7", url: "https://other-site.test/" }],
     });
   });
 
   it("消すときも、見つからない id が 1 つでもあれば何も消さない", async () => {
-    const { db, queries } = recordingDb([[{ id: "6", url: "https://example.com/" }]]);
+    const { db, queries } = recordingDb([[{ id: "6", url: "https://site.test/" }]]);
 
     const result = await removeTargets(db, { ids: ["6", "99"] });
 
@@ -157,12 +158,12 @@ describe("撮る対象を見る・外す・消す", () => {
   });
 
   it("見つかった行だけを消す", async () => {
-    const { db, queries } = recordingDb([[{ id: "6", url: "https://example.com/" }]]);
+    const { db, queries } = recordingDb([[{ id: "6", url: "https://site.test/" }]]);
 
     const result = await removeTargets(db, { ids: ["6"] });
 
     expect(queries[2]?.sql).toBe('delete from "capture_targets" where "id" in ($1)');
     expect(queries[2]?.parameters).toEqual(["6"]);
-    expect(result).toEqual({ kind: "ok", removed: [{ id: "6", url: "https://example.com/" }] });
+    expect(result).toEqual({ kind: "ok", removed: [{ id: "6", url: "https://site.test/" }] });
   });
 });

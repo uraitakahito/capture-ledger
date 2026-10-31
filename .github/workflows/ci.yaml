@@ -214,6 +214,10 @@ jobs:
       - name: seed を「起点」と書いているか
         run: pnpm run check:terms
 
+      # 中身は scripts/check-test-hosts.mjs。試験の名前は .test に揃えた。
+      - name: 試験に example 名を書いていないか
+        run: pnpm run check:test-hosts
+
       # CI が並べるこの一覧と、package.json の `check` がずれていないか。
       #
       # **一覧は 2 か所に書かれている。** 片方だけ直すと、片側でしか走らない検査が

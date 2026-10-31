@@ -160,7 +160,7 @@ describe("jwtIdentityResolver", () => {
 
   it("issuer が合わないトークンを拒む", async () => {
     await expect(
-      resolve(bearer(await token({ sub: "alice" }, { issuer: "https://evil.example" }))),
+      resolve(bearer(await token({ sub: "alice" }, { issuer: "https://evil.test" }))),
     ).resolves.toBeUndefined();
   });
 
