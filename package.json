@@ -156,7 +156,7 @@
     "eslint-config-prettier": "^10.1.8",
     "openapi-typescript": "^7.13.0",
     "prettier": "^3.9.9",
-    "puppeteer": "25.12.0",
+    "puppeteer": "25.16.0",
     "semver": "^7.8.5",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.71.1",

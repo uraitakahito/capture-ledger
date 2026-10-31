@@ -85,3 +85,19 @@ overrides:
   #
   # **外す条件: mermaid が、katex を 0.18.2 以上で要求する版を出したとき。**
   "mermaid>katex": "^0.18.2"
+
+# audit から外す勧告。外すのは、上流が修正版を受け取れず、override でも越えられないものだけ。
+# 1 件ごとに、なぜ越えられないかと、外す条件を書く。
+auditConfig:
+  ignoreGhsas:
+    # minimatch: globparts の増幅による DoS。修正は 11.0.1 (2026-10-27) からで、10 系・5 系には無い。
+    # 要求元は eslint (^10.2.5)・@eslint/config-array (^10.2.4)・@typescript-eslint/typescript-estree
+    # (^10.2.2) と、openapi-typescript 7.13 の下の @redocly/openapi-core 1.34 ("5.1.9" ちょうど)。
+    # 2026-11-01 の時点で、どれの最新版も 10 系 (@redocly/openapi-core の 1 系は "5.1.9") を要求する。
+    # @redocly/openapi-core は minimatch を関数として呼ぶ (5 系の CommonJS の形) が、10 系から先は
+    # 関数ではなく名前付きの書き出しの入れ物なので、override で 11 にすると呼んだところで落ちる。
+    # どれも devDependencies の道具 (lint と型の生成) で、本番イメージ (`pnpm install --prod`) には
+    # 入らない。読むパターンも、この repo の設定と lint の対象だけ。
+    # 外す条件: これらの親が 11.0.1 以上を要求する版を出したとき (そのとき update で直る)。
+    # 確かめ方: pnpm why minimatch -r
+    - GHSA-g3hv-75wg-m249
