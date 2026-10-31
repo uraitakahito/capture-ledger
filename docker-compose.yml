@@ -199,6 +199,10 @@ services:
       # 開発スタック限定で、本番の既定は off (SSRF 対策)。browserhive の compose にも
       # 同じ設定が同じ理由で入っている。
       BROWSERHIVE_ALLOW_PRIVATE_TARGETS: "true"
+      # WARC の本を 1 MiB で切り替える（BrowserHive v21・profile 1.14.0）。本番の既定は 1 GB。dev で
+      # 多本の WACZ（archive/data-000・001…）を毎日作り、dashboard と validator がそれを読む所を踏ませる。
+      # fixtures の /warc/rollover（8 × 250,000 バイト）がちょうど 2 本に分かれる大きさ。
+      BROWSERHIVE_WACZ_MAX_WARC_BYTES: "1048576"
       #
       # **署名の設定はここに書かない。** `signing.env` に在り、`scripts/stack.sh` が
       # `CAPTURE_LEDGER_CAPTURE_SIGNING=1` のときだけ `--env-file` で注ぐ。

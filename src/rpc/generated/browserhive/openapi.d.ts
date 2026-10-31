@@ -589,6 +589,12 @@ export interface components {
             maxTaskBytes: number;
             /** @description 1 タスクが同時に抱える保留リクエストの上限。 */
             maxPendingRequests: number;
+            /**
+             * @description WARC 1 本の上限。組を書く前に、いまの本がこれ以上なら次の本 (archive/data-NNN.warc.gz) を開く。本文の上限ではない。
+             *     後から足した欄なので最後に置き、`@default(1000000000)` (既定の 1 GB) で Smithy の互換の規則に沿わせてある。
+             * @default 1000000000
+             */
+            maxWarcBytes: number;
         };
         /**
          * @description この取り込みが、前のタスクの残留物を持ち越すかどうか。省略は `isolated`。

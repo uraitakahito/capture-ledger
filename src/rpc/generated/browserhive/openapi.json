@@ -287,6 +287,7 @@
                                             "limits": {
                                                 "maxResponseBytes": 20971520,
                                                 "maxTaskBytes": 209715200,
+                                                "maxWarcBytes": 1000000000,
                                                 "maxPendingRequests": 5000
                                             },
                                             "defaultUrlPolicies": [
@@ -1020,12 +1021,18 @@
                     "maxPendingRequests": {
                         "type": "number",
                         "description": "1 タスクが同時に抱える保留リクエストの上限。"
+                    },
+                    "maxWarcBytes": {
+                        "type": "number",
+                        "default": 1000000000,
+                        "description": "WARC 1 本の上限。組を書く前に、いまの本がこれ以上なら次の本 (archive/data-NNN.warc.gz) を開く。本文の上限ではない。\n後から足した欄なので最後に置き、`@default(1000000000)` (既定の 1 GB) で Smithy の互換の規則に沿わせてある。"
                     }
                 },
                 "required": [
                     "maxPendingRequests",
                     "maxResponseBytes",
-                    "maxTaskBytes"
+                    "maxTaskBytes",
+                    "maxWarcBytes"
                 ]
             },
             "SessionMode": {
