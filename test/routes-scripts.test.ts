@@ -82,7 +82,7 @@ describe("GET /api/scripts/:id/versions/:version", () => {
       version: 1,
       phase: "behavior",
       sha256: "c9956819ffea",
-      sites: ["example.com"],
+      sites: ["site.test"],
       enabled: false,
       bytes: 2695,
       createdAt: new Date("2026-10-14T12:26:38.656Z"),
@@ -129,7 +129,7 @@ describe("GET /api/scripts/:id/versions", () => {
       version,
       phase: "behavior",
       sha256: `sha-${String(version)}`,
-      sites: version === 2 ? ["example.com"] : [],
+      sites: version === 2 ? ["site.test"] : [],
       enabled: true,
       bytes: 2695,
       createdAt: new Date(`2026-10-1${String(version + 3)}T00:00:00.000Z`),
@@ -152,7 +152,7 @@ describe("GET /api/scripts/:id/versions", () => {
         "sites",
         "version",
       ]);
-    expect(body.versions.map((v) => v["sites"])).toEqual([["example.com"], []]); // 札は版ごと
+    expect(body.versions.map((v) => v["sites"])).toEqual([["site.test"], []]); // 札は版ごと
     expect(queries[0]?.sql).not.toContain('"source"');
     expect(queries[0]?.parameters).toEqual(["autoscroll"]);
   });
@@ -231,7 +231,7 @@ describe("GET /api/scripts", () => {
         version: 1,
         phase: "behavior",
         sha256: "e1",
-        sites: ["example.com"],
+        sites: ["site.test"],
         enabled: true,
       },
     ];

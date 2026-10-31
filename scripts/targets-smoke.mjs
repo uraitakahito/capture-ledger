@@ -84,24 +84,24 @@ const rejects = async (sql, params, expected) => {
 };
 
 try {
-  let run = cli(["add", "https://example.com/", "https://example.org/docs", "--org", org]);
+  let run = cli(["add", "https://site.test/", "https://other-site.test/docs", "--org", org]);
   check("2 件足せる", run.status === 0 && (await ours()) === 2, why(run));
 
-  run = cli(["add", "https://example.com/", "--org", org]);
+  run = cli(["add", "https://site.test/", "--org", org]);
   check(
     "すでに在る URL は足さない",
     run.status === 0 && run.stdout.includes("すでに在る") && (await ours()) === 2,
     why(run),
   );
 
-  run = cli(["add", "https://example.net/", "example.org", "--org", org]);
+  run = cli(["add", "https://third-site.test/", "other-site.test", "--org", org]);
   check(
     "読めない URL が混ざれば、1 件も足さずに名指しする",
-    run.status === 1 && run.stderr.includes("example.org") && (await ours()) === 2,
+    run.status === 1 && run.stderr.includes("other-site.test") && (await ours()) === 2,
     why(run),
   );
 
-  run = cli(["add", "https://example.com/", "--org", otherOrg]);
+  run = cli(["add", "https://site.test/", "--org", otherOrg]);
   check(
     "同じ URL を別の組織の対象にできる (ユニークは組織ごと)",
     run.status === 0 && (await count("org_id = $1", [otherOrg])) === 1,
@@ -111,10 +111,10 @@ try {
   run = cli(["add", "-", "--org", org], "# 手元の一覧\r\nhttps://example.edu/\r\n\r\n");
   check("標準入力から足せる", run.status === 0 && (await ours()) === 4, why(run));
 
-  const id = await idOf("https://example.com/");
+  const id = await idOf("https://site.test/");
   run = cli(["disable", String(id)]);
   const disabled = await count("id = $1 AND NOT enabled", [id]);
-  run = cli(["add", "https://example.com/", "--org", org]);
+  run = cli(["add", "https://site.test/", "--org", org]);
   check(
     "無効にした行を add すると、有効に戻る",
     disabled === 1 &&
@@ -152,13 +152,13 @@ try {
 
   // `015` の制約。CLI を通さない生の INSERT でも守られていること。
   let raw = await rejects(
-    "INSERT INTO capture_targets (url) VALUES ('https://example.com/raw')",
+    "INSERT INTO capture_targets (url) VALUES ('https://site.test/raw')",
     [],
     'null value in column "org_id"',
   );
   check("組織を書かない生の INSERT は断られる (既定値が無い)", raw.ok, raw.detail);
   raw = await rejects(
-    "INSERT INTO capture_targets (url, org_id) VALUES ('example.org', $1)",
+    "INSERT INTO capture_targets (url, org_id) VALUES ('other-site.test', $1)",
     [org],
     "capture_targets_url_http_check",
   );

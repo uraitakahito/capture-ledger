@@ -9,7 +9,7 @@ import { readManifest } from "../src/archive/manifest.js";
 const v12Manifest = {
   taskId: "01J8Z0",
   correlationId: "ab12cd34",
-  url: "https://example.com/",
+  url: "https://site.test/",
   labels: ["news"],
   status: "success",
   timestamp: "2026-08-19T00:00:00.000Z",
@@ -98,21 +98,21 @@ describe("readManifest", () => {
         complete: false,
         bodylessUrls: [],
         truncatedUrls: [],
-        uninterceptedUrls: ["https://example.com/feed"],
+        uninterceptedUrls: ["https://site.test/feed"],
       },
     });
     expect(report.waczStats?.totalNotIntercepted).toBe(1);
-    expect(report.completeness?.uninterceptedUrls).toEqual(["https://example.com/feed"]);
+    expect(report.completeness?.uninterceptedUrls).toEqual(["https://site.test/feed"]);
   });
 
   /** v17 はページから作るものを撮った文書を名乗る。形式を伏せた取り込みも success のまま。 */
   it("v17 の manifest（形式を伏せ、document が理由を名乗る）を読む", () => {
     const report = readManifest({
       ...v12Manifest,
-      document: { url: "https://example.com/private/", withheld: "no-archive" },
+      document: { url: "https://site.test/private/", withheld: "no-archive" },
     });
     expect(report.document).toEqual({
-      url: "https://example.com/private/",
+      url: "https://site.test/private/",
       withheld: "no-archive",
     });
   });
@@ -124,17 +124,17 @@ describe("readManifest", () => {
   it("v18 の manifest（要求した頁を deny が止め、成果物が無い）を読む", () => {
     const report = readManifest({
       taskId: "01J8Z1",
-      url: "https://example.com/private",
+      url: "https://site.test/private",
       labels: [],
       status: "success",
       timestamp: "2026-09-30T00:00:00.000Z",
       captureProcessingTimeMs: 120,
       artifacts: {},
-      document: { url: "https://example.com/private", withheld: "deny" },
+      document: { url: "https://site.test/private", withheld: "deny" },
     });
     expect(report.status).toBe("success");
     expect(report.httpStatusCode).toBeUndefined();
-    expect(report.document).toEqual({ url: "https://example.com/private", withheld: "deny" });
+    expect(report.document).toEqual({ url: "https://site.test/private", withheld: "deny" });
   });
 
   /** v18 は、方針を守れなかった取り込み（deny に当たる WebSocket を開いた、など）を policy で失敗にする。 */
@@ -144,7 +144,7 @@ describe("readManifest", () => {
       status: "failed",
       errorDetails: {
         type: "policy",
-        message: "ws://example.com/socket: deny に当たる WebSocket を開いた",
+        message: "ws://site.test/socket: deny に当たる WebSocket を開いた",
       },
     });
     expect(report.errorDetails?.type).toBe("policy");
@@ -154,7 +154,7 @@ describe("readManifest", () => {
     expect(() =>
       readManifest({
         ...v12Manifest,
-        document: { url: "https://example.com/", withheld: "denied" },
+        document: { url: "https://site.test/", withheld: "denied" },
       }),
     ).toThrow(/document\/withheld must be equal to one of the allowed values/);
   });

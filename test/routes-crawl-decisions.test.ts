@@ -255,7 +255,7 @@ describe("段の報告で、規則が決めたことを残す", () => {
 
   it("行の規則が読めなければ 500 で、何も書かない", async () => {
     const { app, queries } = await build({
-      results: [[crawlRow([{ follow: "*.example.com" }], [seed])]],
+      results: [[crawlRow([{ follow: "*.site.test" }], [seed])]],
     });
     const res = await app.inject({
       method: "POST",
@@ -405,12 +405,7 @@ describe("ドメインで、クロールを跨いで判断を引く", () => {
   });
 
   it("規則のドメインとして読めない domain は 400 で、許可を見る前に断る", async () => {
-    for (const domain of [
-      "ADS.example.com",
-      "%25.example.com",
-      "a_b.example.com",
-      "example.com:443",
-    ]) {
+    for (const domain of ["ADS.site.test", "%25.site.test", "a_b.site.test", "site.test:443"]) {
       const { res, queries } = await get(`domain=${domain}`, { allowed: false });
       expect(res.statusCode, domain).toBe(400);
       expect(res.json(), domain).toEqual({ error: "invalid domain" });
@@ -450,19 +445,17 @@ describe("始める前に規則を確かめる", () => {
   it("行ごとに読めたか・覆われているか、起点ごとにサイトと辿るかを返し、DB は引かない", async () => {
     const { res, queries } = await check(
       q([
-        ["seed", "https://www.example.com/"],
+        ["seed", "https://www.site.test/"],
         ["rule", "follow:same-site"],
-        ["rule", "skip:ads.example.com"],
+        ["rule", "skip:ads.site.test"],
       ]),
     );
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      seeds: [
-        { url: "https://www.example.com/", valid: true, site: "example.com", followed: true },
-      ],
+      seeds: [{ url: "https://www.site.test/", valid: true, site: "site.test", followed: true }],
       rules: [
         { rule: 1, action: "follow", kind: "scope", pattern: "same-site" },
-        { rule: 2, action: "skip", kind: "domain", pattern: "ads.example.com", coveredBy: 1 },
+        { rule: 2, action: "skip", kind: "domain", pattern: "ads.site.test", coveredBy: 1 },
       ],
       ok: false,
     });
@@ -472,14 +465,14 @@ describe("始める前に規則を確かめる", () => {
   it("前方一致は書き残す形（正規化した URL）で返し、当てる物の : は最初の 1 つで切る", async () => {
     const { res } = await check(
       q([
-        ["seed", "https://www.example.com/"],
-        ["rule", "skip:HTTPS://WWW.Example.com:443/search"],
+        ["seed", "https://www.site.test/"],
+        ["rule", "skip:HTTPS://WWW.Site.test:443/search"],
         ["rule", "follow:same-site"],
       ]),
     );
     expect(res.json()).toMatchObject({
       rules: [
-        { rule: 1, action: "skip", kind: "prefix", pattern: "https://www.example.com/search" },
+        { rule: 1, action: "skip", kind: "prefix", pattern: "https://www.site.test/search" },
         { rule: 2, action: "follow", kind: "scope", pattern: "same-site" },
       ],
       ok: true,
@@ -490,12 +483,12 @@ describe("始める前に規則を確かめる", () => {
     const { res } = await check(
       q([
         ["seed", "not a url"],
-        ["rule", "skip:ADS.example.com"],
+        ["rule", "skip:ADS.site.test"],
       ]),
     );
     expect(res.json()).toEqual({
       seeds: [{ url: "not a url", valid: false }],
-      rules: [{ rule: 1, action: "skip", kind: "invalid", pattern: "ADS.example.com" }],
+      rules: [{ rule: 1, action: "skip", kind: "invalid", pattern: "ADS.site.test" }],
       ok: false,
     });
   });
@@ -503,13 +496,13 @@ describe("始める前に規則を確かめる", () => {
   it("起点を辿らない並びは、その起点を followed: false で返す", async () => {
     const { res } = await check(
       q([
-        ["seed", "https://ads.example.com/"],
-        ["rule", "skip:ads.example.com"],
+        ["seed", "https://ads.site.test/"],
+        ["rule", "skip:ads.site.test"],
         ["rule", "follow:same-site"],
       ]),
     );
     expect(res.json()).toMatchObject({
-      seeds: [{ url: "https://ads.example.com/", followed: false }],
+      seeds: [{ url: "https://ads.site.test/", followed: false }],
       ok: false,
     });
   });

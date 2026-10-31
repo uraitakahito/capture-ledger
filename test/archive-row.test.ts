@@ -19,7 +19,7 @@ const LOCATION = { bucket: "browserhive", key: "task_.wacz" };
 
 const report = (over: Partial<CaptureResultReport> = {}): CaptureResultReport => ({
   taskId: "550e8400-e29b-41d4-a716-446655440000",
-  url: "https://example.com/",
+  url: "https://site.test/",
   labels: [],
   status: "success",
   timestamp: "2026-09-08T00:00:00.000Z",

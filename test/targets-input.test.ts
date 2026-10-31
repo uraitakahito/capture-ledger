@@ -7,30 +7,33 @@ describe("足す URL の読み取り", () => {
 
   it("1 行 1 URL として読み、空行と # の行を読み飛ばし、前後の空白を落とす", () => {
     const text =
-      "# 自分の一覧\r\nhttps://example.com/\r\n\r\n   https://example.org/docs  \n  # 途中の注記\n";
+      "# 自分の一覧\r\nhttps://site.test/\r\n\r\n   https://other-site.test/docs  \n  # 途中の注記\n";
 
-    expect(parseUrlLines(text)).toEqual(["https://example.com/", "https://example.org/docs"]);
+    expect(parseUrlLines(text)).toEqual(["https://site.test/", "https://other-site.test/docs"]);
   });
 
   it("引数の URL は、同じものを 1 つに畳み、最初に出た順を保つ", async () => {
     const result = await collectUrls(
-      ["https://b.example/", "https://a.example/", "https://b.example/"],
+      ["https://b.test/", "https://a.test/", "https://b.test/"],
       noStdin,
     );
 
-    expect(result).toEqual({ kind: "ok", urls: ["https://b.example/", "https://a.example/"] });
+    expect(result).toEqual({ kind: "ok", urls: ["https://b.test/", "https://a.test/"] });
   });
 
   it("- なら標準入力から読む", async () => {
     const result = await collectUrls(["-"], () =>
-      Promise.resolve("https://example.com/\nhttps://example.org/\n"),
+      Promise.resolve("https://site.test/\nhttps://other-site.test/\n"),
     );
 
-    expect(result).toEqual({ kind: "ok", urls: ["https://example.com/", "https://example.org/"] });
+    expect(result).toEqual({
+      kind: "ok",
+      urls: ["https://site.test/", "https://other-site.test/"],
+    });
   });
 
   it("- と URL を混ぜたら、標準入力を読まずに誤りにする", async () => {
-    const result = await collectUrls(["-", "https://example.com/"], noStdin);
+    const result = await collectUrls(["-", "https://site.test/"], noStdin);
 
     expect(result.kind).toBe("error");
   });

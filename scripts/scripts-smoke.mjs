@@ -171,7 +171,7 @@ try {
           phase: "behavior",
           file: "scripts/x.ts",
           summary: "smoke",
-          sites: ["example.com"],
+          sites: ["site.test"],
         },
       ],
     }),
@@ -206,8 +206,7 @@ try {
   const importedSites = await pool.query("SELECT sites FROM scripts WHERE id = $1", [imported]);
   check(
     "import は catalog の札を版に入れる",
-    JSON.stringify(importedSites.rows.map((row) => row.sites)) ===
-      JSON.stringify([["example.com"]]),
+    JSON.stringify(importedSites.rows.map((row) => row.sites)) === JSON.stringify([["site.test"]]),
     JSON.stringify(importedSites.rows),
   );
 
@@ -224,7 +223,7 @@ try {
           phase: "behavior",
           file: "scripts/x.ts",
           summary: "smoke",
-          sites: ["example.com"],
+          sites: ["site.test"],
           default: false,
         },
       ],
@@ -241,7 +240,7 @@ try {
     imported,
   ]);
   check("default: false の id は全版が無効", off.rows[0].any === false, JSON.stringify(off.rows));
-  run = cli(["list", "--seed", "https://example.com/", "--json"]);
+  run = cli(["list", "--seed", "https://site.test/", "--json"]);
   check(
     "default: false の id は、起点に合っても既定に入らない",
     run.status === 0 && !run.stdout.includes(imported),
@@ -271,7 +270,7 @@ try {
           phase: "behavior",
           file: "scripts/x.ts",
           summary: "smoke",
-          sites: ["Example.com"],
+          sites: ["Site.test"],
         },
       ],
     }),
@@ -280,7 +279,7 @@ try {
   run = cli(["import", badDir]);
   check(
     "import は札の形が悪い catalog を断る (大文字のホスト名)",
-    run.status === 1 && run.stderr.includes("Example.com"),
+    run.status === 1 && run.stderr.includes("Site.test"),
     why(run),
   );
 
@@ -290,20 +289,20 @@ try {
     "--file",
     write("ex.ts", A),
     "--site",
-    "example.com",
+    "site.test",
     "--site",
-    "www.example.com",
+    "www.site.test",
   ]);
   check(
     "add --site は札つきの版を足す (何度でも書ける)",
-    run.status === 0 && run.stdout.includes("札:example.com,www.example.com"),
+    run.status === 0 && run.stdout.includes("札:site.test,www.site.test"),
     why(run),
   );
-  run = cli(["add", onOther, "--file", write("other.ts", B), "--site", "other.example"]);
-  run = cli(["add", `${id}-bad`, "--file", write("bad.ts", A), "--site", "example.com:8080"]);
+  run = cli(["add", onOther, "--file", write("other.ts", B), "--site", "other.test"]);
+  run = cli(["add", `${id}-bad`, "--file", write("bad.ts", A), "--site", "site.test:8080"]);
   check("add --site はポートつきの札を断る", run.status === 1, why(run));
 
-  run = cli(["list", "--seed", "http://example.com:8080/a", "--json"]);
+  run = cli(["list", "--seed", "http://site.test:8080/a", "--json"]);
   let chosen = [];
   try {
     chosen = JSON.parse(run.stdout).map((script) => script.id);
@@ -319,7 +318,7 @@ try {
     `${why(run)} ${JSON.stringify(chosen).slice(0, 200)}`,
   );
 
-  run = cli(["list", "--seed", "https://other.example/", "--json"]);
+  run = cli(["list", "--seed", "https://other.test/", "--json"]);
   try {
     chosen = JSON.parse(run.stdout).map((script) => script.id);
   } catch {

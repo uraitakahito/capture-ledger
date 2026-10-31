@@ -37,7 +37,7 @@ const page = (taskId: string, url: string) => ({
 /** BrowserHive が bucket に書くとおりの `.result.json`。 */
 const manifest = (taskId: string) => ({
   taskId,
-  url: "https://example.com/",
+  url: "https://site.test/",
   labels: [],
   status: "success",
   timestamp: "2026-08-30T00:00:00.000Z",
@@ -65,10 +65,10 @@ describe("台帳に載せる", () => {
     vi.mocked(getJsonObject).mockResolvedValue(manifest("t1"));
     vi.mocked(admitArchive).mockResolvedValue({ archiveId: 7 } as never);
 
-    const result = await admitLevel([page("t1", "https://example.com/a")], options);
+    const result = await admitLevel([page("t1", "https://site.test/a")], options);
 
     expect(result.registered).toBe(1);
-    expect(result.admittedUrls).toEqual(["https://example.com/a"]);
+    expect(result.admittedUrls).toEqual(["https://site.test/a"]);
   });
 
   /**
@@ -84,9 +84,9 @@ describe("台帳に載せる", () => {
 
     // 呼ぶ側が `failed` と判断したページ。`CapturedPage` に状態の欄は無い ——
     // 状態で絞るのは呼ぶ側の仕事ではない、という形にしてある。
-    const result = await admitLevel([page("t2", "https://example.com/b")], options);
+    const result = await admitLevel([page("t2", "https://site.test/b")], options);
 
-    expect(result.admittedUrls).toEqual(["https://example.com/b"]);
+    expect(result.admittedUrls).toEqual(["https://site.test/b"]);
   });
 
   it("manifest がまだ無ければ飛ばす（reconcile が後で拾う）", async () => {
@@ -94,7 +94,7 @@ describe("台帳に載せる", () => {
     // 段の報告ごと 500 になって、クロールの進行が止まる。
     vi.mocked(getJsonObject).mockResolvedValue(undefined);
 
-    const result = await admitLevel([page("t3", "https://example.com/c")], options);
+    const result = await admitLevel([page("t3", "https://site.test/c")], options);
 
     expect(result.registered).toBe(0);
     expect(result.admittedUrls).toEqual([]);
@@ -110,7 +110,7 @@ describe("台帳に載せる", () => {
     vi.mocked(getJsonObject).mockResolvedValue(manifest("t4"));
     vi.mocked(admitArchive).mockResolvedValue({ archiveId: undefined });
 
-    const result = await admitLevel([page("t4", "https://example.com/d")], options);
+    const result = await admitLevel([page("t4", "https://site.test/d")], options);
 
     expect(result.registered).toBe(0);
     expect(result.admittedUrls).toEqual([]);
@@ -124,11 +124,11 @@ describe("台帳に載せる", () => {
     vi.mocked(admitArchive).mockResolvedValue({ archiveId: 9 } as never);
 
     const result = await admitLevel(
-      [page("t5", "https://example.com/e"), page("t6", "https://example.com/f")],
+      [page("t5", "https://site.test/e"), page("t6", "https://site.test/f")],
       options,
     );
 
-    expect(result.admittedUrls).toEqual(["https://example.com/f"]);
+    expect(result.admittedUrls).toEqual(["https://site.test/f"]);
   });
 
   /**
@@ -139,7 +139,7 @@ describe("台帳に載せる", () => {
   it("報告された鍵をそのまま読む", async () => {
     vi.mocked(getJsonObject).mockResolvedValue(undefined);
     await admitLevel(
-      [{ taskId: "t7", url: "https://example.com/g", manifestKey: "elsewhere/x y+z.result.json" }],
+      [{ taskId: "t7", url: "https://site.test/g", manifestKey: "elsewhere/x y+z.result.json" }],
       options,
     );
 
@@ -149,7 +149,7 @@ describe("台帳に載せる", () => {
   // manifest を書けなかった取り込み。読みに行く先が無いので、S3 に問い合わせもしない。
   it("鍵が無ければ読みに行かない", async () => {
     const result = await admitLevel(
-      [{ taskId: "t8", url: "https://example.com/h", manifestKey: null }],
+      [{ taskId: "t8", url: "https://site.test/h", manifestKey: null }],
       options,
     );
 

@@ -19,7 +19,7 @@ describe("parseS3Uri", () => {
   });
 
   it("rejects a URI with another scheme", () => {
-    expect(() => parseS3Uri("https://example.com/a.wacz")).toThrow(/not an s3:\/\/ URI/);
+    expect(() => parseS3Uri("https://site.test/a.wacz")).toThrow(/not an s3:\/\/ URI/);
   });
 
   // ローカルの成果物ストアは URI ではなく絶対パスを返す。そこから "" という名前の

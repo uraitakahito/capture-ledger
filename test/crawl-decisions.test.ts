@@ -37,7 +37,7 @@ describe("判断をまとめる", () => {
         link("http://a.invalid/1", 1),
         link("http://b.invalid/1", 1),
         link("http://a.invalid/2", 0),
-        link("https://www.example.com/x", 2, "follow"),
+        link("https://www.site.test/x", 2, "follow"),
       ],
       2,
     );
@@ -45,7 +45,7 @@ describe("判断をまとめる", () => {
       [1, "a.invalid", "skip", 1],
       [1, "b.invalid", "skip", 1],
       [0, "a.invalid", "skip", 1],
-      [2, "www.example.com", "follow", 1],
+      [2, "www.site.test", "follow", 1],
     ]);
     expect(rows.every((row) => row.depth === 2)).toBe(true);
   });
