@@ -27,6 +27,7 @@ import { registerSearchRoutes } from "./search.js";
 import { registerSinkRoutes, type SinkConfig } from "./sink.js";
 import { createSearchClient } from "../search/client.js";
 import { createWindmillDispatcher } from "../crawl/dispatch.js";
+import { createWindmillVariables } from "../crawl/windmill-variables.js";
 import { optional } from "../config/env.js";
 import { fatal, logger } from "../logger.js";
 
@@ -154,6 +155,15 @@ const start = async (options: ServerOptions): Promise<void> => {
   if (dispatch === undefined) {
     logger.info("CAPTURE_LEDGER_CRAWL_WEBHOOK_URL is not set — /api/crawls is not served");
   } else {
+    // 宣言で結ぶシークレットが Windmill に在るかを訊く窓口。webhook と同じ設定から作る (新しい env は無い)。
+    // 無いのは URL が flow の webhook の形でないときだけで、そのときシークレットを宣言したクロールは 400。
+    const windmill = createWindmillVariables();
+    if (windmill === undefined) {
+      logger.warn(
+        "CAPTURE_LEDGER_CRAWL_WEBHOOK_URL is not a flow webhook (…/api/w/<workspace>/jobs/run/…) — " +
+          "crawls whose scripts declare secrets are refused",
+      );
+    }
     registerCrawlRoutes(app, {
       db,
       fga,
@@ -162,6 +172,7 @@ const start = async (options: ServerOptions): Promise<void> => {
       resolveIdentity,
       dispatch,
       ...(sink && { sink }),
+      ...(windmill && { windmill }),
       capture,
     });
   }

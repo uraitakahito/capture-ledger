@@ -45,6 +45,8 @@ const sited = `${id}-site`;
 // CLI で札を付けて足す 2 本 (起点で選ばれる物と、選ばれない物)
 const onExample = `${id}-ex`;
 const onOther = `${id}-other`;
+// 宣言 (`024`) つきで取り込む 1 本。名前に `_` を含む宣言が読み返しても化けないことを見る
+const withDecl = `${id}-params`;
 // 中身の違う 2 本。古い版を読めたかを、中身で区別する
 const A = `// ${id} の v1\nglobalThis.__bh.report("${id}", { v: 1 });\n`;
 const B = `// ${id} の v2\nglobalThis.__bh.report("${id}", { v: 2 });\n`;
@@ -164,7 +166,7 @@ try {
   writeFileSync(
     join(dir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/3",
+      profile: "capture-scripts/4",
       scripts: [
         {
           id: imported,
@@ -216,7 +218,7 @@ try {
   writeFileSync(
     join(offDir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/3",
+      profile: "capture-scripts/4",
       scripts: [
         {
           id: imported,
@@ -263,7 +265,7 @@ try {
   writeFileSync(
     join(badDir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/3",
+      profile: "capture-scripts/4",
       scripts: [
         {
           id: `${id}-bad`,
@@ -281,6 +283,169 @@ try {
     "import は札の形が悪い catalog を断る (大文字のホスト名)",
     run.status === 1 && run.stderr.includes("Site.test"),
     why(run),
+  );
+
+  // 024: 宣言 (params) は catalog から版に入り、名前の `_` は Kysely で読み返しても化けない
+  const withParams = join(work, "params-scripts");
+  mkdirSync(join(withParams, "scripts"), { recursive: true });
+  const declared = [
+    { name: "query", kind: "variable", required: false, summary: "検索語" },
+    { name: "api_token", kind: "secret", required: true, summary: "鍵" },
+  ];
+  writeFileSync(
+    join(withParams, "catalog.json"),
+    JSON.stringify({
+      profile: "capture-scripts/4",
+      scripts: [
+        {
+          id: withDecl,
+          phase: "behavior",
+          file: "scripts/x.ts",
+          summary: "smoke",
+          params: declared,
+        },
+      ],
+    }),
+  );
+  writeFileSync(join(withParams, "scripts", "x.ts"), A);
+  run = cli(["import", withParams]);
+  check(
+    "024: import は宣言を版に入れ、読む値を言う",
+    run.status === 0 && run.stdout.includes("値:query,api_token(秘)!"),
+    why(run),
+  );
+  const paramsOf = await pool.query("SELECT params FROM scripts WHERE id = $1", [withDecl]);
+  check(
+    "024: 宣言は jsonb にそのまま入る (required を埋めた形)",
+    JSON.stringify(paramsOf.rows[0]?.params) === JSON.stringify(declared),
+    JSON.stringify(paramsOf.rows),
+  );
+  run = cli(["list", withDecl, "--all", "--json"]);
+  let listed = [];
+  try {
+    listed = JSON.parse(run.stdout);
+  } catch {
+    // 読めなければ空のまま
+  }
+  check(
+    "024: Kysely で読み返しても宣言の名前の _ は化けない (api_token のまま。列名の plugin は jsonb の中を写さない)",
+    run.status === 0 && JSON.stringify(listed[0]?.params) === JSON.stringify(declared),
+    `${why(run)} ${JSON.stringify(listed).slice(0, 300)}`,
+  );
+  // 同じ宣言を取り込み直しても版は増えず、宣言を変えると版が増える
+  run = cli(["import", withParams]);
+  check(
+    "024: 同じ宣言の import は版を増やさない",
+    run.status === 0 && run.stdout.includes(`= ${withDecl} v1`),
+    why(run),
+  );
+  writeFileSync(
+    join(withParams, "catalog.json"),
+    JSON.stringify({
+      profile: "capture-scripts/4",
+      scripts: [
+        {
+          id: withDecl,
+          phase: "behavior",
+          file: "scripts/x.ts",
+          summary: "smoke",
+          params: [declared[0]],
+        },
+      ],
+    }),
+  );
+  run = cli(["import", withParams]);
+  check(
+    "024: 宣言を変えた import は版を足す",
+    run.status === 0 && run.stdout.includes(`✓ ${withDecl} v2`),
+    why(run),
+  );
+
+  // 壊れた宣言の catalog は 1 本も足さずに断る。/3 の catalog (宣言を知らない形) も断る
+  const badParams = join(work, "bad-params");
+  mkdirSync(join(badParams, "scripts"), { recursive: true });
+  writeFileSync(
+    join(badParams, "catalog.json"),
+    JSON.stringify({
+      profile: "capture-scripts/4",
+      scripts: [
+        {
+          id: `${id}-badp`,
+          phase: "behavior",
+          file: "scripts/x.ts",
+          summary: "smoke",
+          params: [{ name: "q", kind: "token", summary: "x" }],
+        },
+      ],
+    }),
+  );
+  writeFileSync(join(badParams, "scripts", "x.ts"), A);
+  run = cli(["import", badParams]);
+  check(
+    "024: import は kind の違う宣言の catalog を断る",
+    run.status === 1 && run.stderr.includes("kind は variable か secret"),
+    why(run),
+  );
+  const oldProfile = join(work, "old-profile");
+  mkdirSync(join(oldProfile, "scripts"), { recursive: true });
+  writeFileSync(
+    join(oldProfile, "catalog.json"),
+    JSON.stringify({
+      profile: "capture-scripts/3",
+      scripts: [{ id: `${id}-old`, phase: "behavior", file: "scripts/x.ts", summary: "smoke" }],
+    }),
+  );
+  writeFileSync(join(oldProfile, "scripts", "x.ts"), A);
+  run = cli(["import", oldProfile]);
+  check(
+    "024: import は /3 の catalog を断る (宣言を知らない形)",
+    run.status === 1 && run.stderr.includes("capture-scripts/4 ではない"),
+    why(run),
+  );
+
+  // 024: CHECK を DB に直に当てる。params は配列、crawls の variables と secrets は object
+  said = await pool
+    .query(
+      "INSERT INTO scripts (id, version, phase, source, params) VALUES ($1, 1, 'behavior', 'x;', '{}'::jsonb)",
+      [`${id}-pcheck`],
+    )
+    .then(
+      () => "ok",
+      (err) => String(err.code),
+    );
+  check("024: scripts.params の CHECK は配列でない物を断る", said === "23514", said);
+  /** クロールの行を、値の列だけ変えて 1 行足す。断られたら Postgres の誤りの code */
+  const insertCrawl = (column, value) =>
+    pool
+      .query(
+        `INSERT INTO crawls (id, seeds, rules, max_depth, max_pages, per_host_delay_ms, host_parallelism, ` +
+          `org_id, requested_by, state, ${column}) ` +
+          `VALUES (gen_random_uuid(), ARRAY['https://smoke.invalid/'], '[]'::jsonb, 0, 1, 0, 1, $1, $1, 'failed', $2::jsonb)`,
+        [id, value],
+      )
+      .then(
+        () => "ok",
+        (err) => String(err.code),
+      );
+  said = await insertCrawl("variables", "[]");
+  check("024: crawls.variables の CHECK は object でない物を断る", said === "23514", said);
+  said = await insertCrawl("secrets", '"x"');
+  check("024: crawls.secrets の CHECK は object でない物を断る", said === "23514", said);
+  said = await insertCrawl("variables", '{"query":"個人情報"}');
+  check(
+    "024: crawls.variables は object なら通り、secrets は既定の {} で埋まる",
+    said === "ok",
+    said,
+  );
+  const crawlValues = await pool.query(
+    "SELECT variables, secrets FROM crawls WHERE org_id = $1 ORDER BY started_at DESC LIMIT 1",
+    [id],
+  );
+  check(
+    "024: 値は書いた形のまま読める",
+    JSON.stringify(crawlValues.rows[0]) ===
+      JSON.stringify({ variables: { query: "個人情報" }, secrets: {} }),
+    JSON.stringify(crawlValues.rows),
   );
 
   run = cli([
@@ -333,13 +498,19 @@ try {
   run = cli(["rm", id, imported]);
   check("rm で消せる", run.status === 0, why(run));
 } finally {
-  await pool.query("DELETE FROM scripts WHERE id IN ($1, $2, $3, $4, $5)", [
+  await pool.query("DELETE FROM scripts WHERE id IN ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [
     id,
     imported,
     sited,
     onExample,
     onOther,
+    withDecl,
+    `${id}-badp`,
+    `${id}-old`,
+    `${id}-pcheck`,
   ]);
+  // 024 の CHECK を当てたクロールの行 (通った 1 行だけ残る。org_id に自分の id を書いてある)
+  await pool.query("DELETE FROM crawls WHERE org_id = $1", [id]);
   await pool.query("DELETE FROM host_types WHERE source = $1", [TYPES]);
   await pool.end();
   rmSync(work, { recursive: true, force: true });

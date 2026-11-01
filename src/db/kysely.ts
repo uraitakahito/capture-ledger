@@ -36,13 +36,27 @@ const kyselyLog = (event: LogEvent): void => {
   }
 };
 
+/**
+ * 列名を写す plugin。**jsonb の中の鍵は写さない** (`maintainNestedObjectKeys`)。
+ *
+ * 既定の plugin は結果の object を再帰的に辿り、入れ子の鍵まで camelCase に直す。列名のための仕組みが
+ * データの鍵に及ぶと、`crawls.variables` と `crawls.secrets` の鍵 (スクリプトが宣言した名前。`api_token` の
+ * ように `_` を含む) が `apiToken` に化けて、スクリプトが読む名前と食い違う (試験の代役で実測)。
+ * `scripts.options` の鍵 (運用で付けた設定) も同じ。この repo が jsonb に書く鍵は、自分で付けた物
+ * (camelCase) と、利用者が付けた物 (そのまま返すべき物) の 2 種類しか無いので、写す理由が無い。
+ *
+ * 試験の代役 (test/recording-db.ts) も同じ plugin を使うこと —— 違うと、代役では通る鍵が本物で化ける。
+ */
+export const columnNamePlugin = (): CamelCasePlugin =>
+  new CamelCasePlugin({ maintainNestedObjectKeys: true });
+
 export const createKyselyClient = (databaseUrl: string): Kysely<Database> => {
   const dialect = new PostgresDialect({
     pool: new pg.Pool({ connectionString: databaseUrl }),
   });
   return new Kysely<Database>({
     dialect,
-    plugins: [new CamelCasePlugin()],
+    plugins: [columnNamePlugin()],
     log: kyselyLog,
   });
 };

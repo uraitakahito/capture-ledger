@@ -35,6 +35,8 @@ const CRAWL: DispatchedCrawl = {
       options: { maxSteps: 60 },
     },
   ],
+  variables: { query: "個人情報" },
+  secrets: { api_token: "f/waggle_secrets/api_token" },
 };
 
 const SINK = {
@@ -71,6 +73,8 @@ describe("webhook の本文", () => {
       signing: CRAWL.signing,
       scripts: CRAWL.scripts,
       artifact_sink: SINK,
+      variables: CRAWL.variables,
+      secrets: CRAWL.secrets,
     });
   });
 
@@ -81,6 +85,17 @@ describe("webhook の本文", () => {
    */
   it("走らせるものが空でも、scripts の鍵は送る", () => {
     expect(flowArgs({ ...CRAWL, scripts: [] })).toMatchObject({ scripts: [] });
+  });
+
+  /**
+   * クロールごとの値も **空でも送る**。flow の省いた入力は null で届くので、鍵ごと落とすと crawl_host が
+   * 「無い」を 2 通り（null と {}）読み分けることになる。形を 1 つに保つ。
+   */
+  it("変数もシークレットも空なら、空の object を鍵ごと送る", () => {
+    expect(flowArgs({ ...CRAWL, variables: {}, secrets: {} })).toMatchObject({
+      variables: {},
+      secrets: {},
+    });
   });
 
   it("dispatcher が送る本文に受け口が載る", async () => {

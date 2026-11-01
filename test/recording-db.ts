@@ -13,7 +13,6 @@
  * それは CI の Postgres に当てる検査の仕事。
  */
 import {
-  CamelCasePlugin,
   Kysely,
   PostgresAdapter,
   PostgresIntrospector,
@@ -24,6 +23,7 @@ import {
   type QueryResult,
 } from "kysely";
 import type { Database } from "../src/db/database.js";
+import { columnNamePlugin } from "../src/db/kysely.js";
 
 export interface RecordedQuery {
   sql: string;
@@ -67,7 +67,8 @@ export const recordingDb = (
       createIntrospector: (kysely) => new PostgresIntrospector(kysely),
       createQueryCompiler: () => new PostgresQueryCompiler(),
     },
-    plugins: [new CamelCasePlugin()],
+    // 本物と同じ plugin (`createKyselyClient`)。jsonb の中の鍵を写さない設定も揃える
+    plugins: [columnNamePlugin()],
   });
   return { db, queries };
 };

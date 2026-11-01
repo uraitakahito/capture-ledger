@@ -281,7 +281,9 @@ one. `GET` returns `startedAt` so you can judge; clearing it is a manual act.
 Exactly one of `seeds` (a non-empty array) or `fromTargets` — **both is 400 and
 neither is 400**, with the two reported differently, because they are different
 mistakes. Alongside them: `rules`, `maxDepth`, `maxPages`, `perHostDelayMs`,
-`hostParallelism`. An unknown key is **400**, not silently dropped.
+`hostParallelism`, `scripts` (what runs in the page) and `variables` (per-crawl values the
+scripts declared — see [Capture options](/capture-ledger/capture-options/#per-crawl-values)).
+An unknown key is **400**, not silently dropped.
 
 Capture formats are deliberately not accepted from the caller: they are part of
 what this deployment does, so they come from the environment.

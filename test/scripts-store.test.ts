@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { ScriptParam } from "../src/db/database.js";
 import {
   addHostTypes,
   addScript,
@@ -8,6 +9,7 @@ import {
   offsiteScripts,
   onSeed,
   readHostTypes,
+  readParams,
   readScript,
   resolveScripts,
   sitesRefusal,
@@ -29,7 +31,7 @@ describe("スクリプトの 1 版を読む", () => {
 
     expect(queries).toHaveLength(1);
     expect(queries[0]?.sql).toBe(
-      'select "id", "version", "phase", "sha256", "sites", "enabled", octet_length(source) as "bytes", ' +
+      'select "id", "version", "phase", "sha256", "sites", "params", "enabled", octet_length(source) as "bytes", ' +
         '"created_at", "source", "options" from "scripts" where "id" = $1 and "version" = $2',
     );
     expect(queries[0]?.parameters).toEqual(["autoscroll", 1]);
@@ -62,7 +64,7 @@ describe("スクリプトを並べる", () => {
     await listScripts(db, { allVersions: true, id: "autoscroll" });
 
     expect(queries[0]?.sql).toBe(
-      'select "id", "version", "phase", "sha256", "sites", "enabled", octet_length(source) as "bytes", ' +
+      'select "id", "version", "phase", "sha256", "sites", "params", "enabled", octet_length(source) as "bytes", ' +
         '"created_at" from "scripts" where "id" = $1 order by "id", "version" desc',
     );
     expect(queries[0]?.parameters).toEqual(["autoscroll"]);
@@ -74,7 +76,7 @@ describe("スクリプトを並べる", () => {
     await listScripts(db);
 
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "enabled", ' +
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled", ' +
         'octet_length(source) as "bytes", "created_at" from "scripts" order by "id", "version" desc',
     );
   });
@@ -206,7 +208,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
     await resolveScripts(db, undefined, ["site.test"]);
 
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "source", "sha256", "options", "sites" ' +
+      'select distinct on ("id") "id", "version", "phase", "source", "sha256", "options", "sites", "params" ' +
         'from "scripts" where "enabled" = $1 order by "id", "version" desc',
     );
   });
@@ -252,7 +254,7 @@ describe("選べるスクリプト（GET /api/scripts）", () => {
     await pickable(db);
 
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "enabled" from "scripts" ' +
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled" from "scripts" ' +
         'order by "id", "enabled" desc, "version" desc',
     );
   });
@@ -271,8 +273,132 @@ describe("有効な各 id の最新版（既定が空のときの 400 が使う�
   });
 });
 
+describe("宣言の形（capture-scripts の check と同じ決まり）", () => {
+  it("name の綴りと長さ・kind・required の既定・summary を読み、required を埋めて返す", () => {
+    expect(
+      readParams(
+        [
+          { name: "query", kind: "variable", summary: "検索語" },
+          { name: "api_token", kind: "secret", required: true, summary: "鍵" },
+        ],
+        { summaryRequired: true },
+      ),
+    ).toEqual([
+      { name: "query", kind: "variable", required: false, summary: "検索語" },
+      { name: "api_token", kind: "secret", required: true, summary: "鍵" },
+    ]);
+  });
+
+  it("配列でない・name の綴り・kind・required・知らない鍵・重複は、その文で断る", () => {
+    const bad = (raw: unknown) => readParams(raw, { summaryRequired: false });
+    expect(bad({ name: "x" })).toContain("配列");
+    expect(bad([{ name: "Query", kind: "variable" }])).toContain('"Query"');
+    expect(bad([{ name: "a-b", kind: "variable" }])).toContain('"a-b"');
+    expect(bad([{ name: "a".repeat(65), kind: "variable" }])).toContain("64 字まで");
+    expect(bad([{ name: "q", kind: "token" }])).toContain("kind は variable か secret");
+    expect(bad([{ name: "q", kind: "variable", required: "yes" }])).toContain("required は");
+    expect(bad([{ name: "q", kind: "variable", default: "x" }])).toContain("知らない鍵: default");
+    expect(
+      bad([
+        { name: "q", kind: "variable" },
+        { name: "q", kind: "secret" },
+      ]),
+    ).toContain("q が 2 度ある");
+    expect(
+      bad(Array.from({ length: 33 }, (_, i) => ({ name: `p${String(i)}`, kind: "variable" }))),
+    ).toContain("32 個まで");
+  });
+
+  it("summary は catalog では空にできず、その場の JS では省ける", () => {
+    expect(readParams([{ name: "q", kind: "variable" }], { summaryRequired: true })).toContain(
+      "summary が空",
+    );
+    expect(readParams([{ name: "q", kind: "variable" }], { summaryRequired: false })).toEqual([
+      { name: "q", kind: "variable", required: false },
+    ]);
+  });
+});
+
+describe("宣言を足す（札と同じ扱い）", () => {
+  const declared: ScriptParam[] = [
+    { name: "query", kind: "variable", required: false, summary: "検索語" },
+  ];
+  const latest = {
+    version: 1,
+    source: "x;",
+    sha256: "h",
+    options: {},
+    sites: [],
+    params: declared,
+  };
+
+  it("jsonb の中の鍵は camelCase に写さない（宣言の名前 api_token はそのまま読める）", async () => {
+    // 本物と同じ plugin (`columnNamePlugin`)。既定の CamelCasePlugin は入れ子の鍵まで直すので、
+    // api_token が apiToken に化けて、スクリプトが読む名前と食い違う
+    const row = {
+      id: "members-only",
+      version: 1,
+      params: [{ name: "api_token", kind: "secret", required: true, summary: "鍵" }],
+      options: { max_steps: 60 },
+    };
+    const { db } = recordingDb([[row]]);
+
+    const result = await readScript(db, "members-only", 1);
+
+    expect(result).toEqual(row);
+  });
+
+  it("宣言を渡さなければ、中身が同じなら版を増やさない（意見が無い）", async () => {
+    const { db, queries } = recordingDb([[latest]]);
+
+    const result = await addScript(db, { id: "egov-law-search", phase: "behavior", source: "x;" });
+
+    expect(queries.map((q) => q.sql.split(" ")[0])).toEqual(["begin", "select", "commit"]);
+    expect(result.reused).toBe(true);
+  });
+
+  it("違う宣言を渡せば、中身が同じでも版を足し、宣言を JSON で書く", async () => {
+    const { db, queries } = recordingDb([[latest], [{ version: 2, sha256: "h" }]]);
+    const params = [
+      { name: "query", kind: "variable" as const, required: true, summary: "検索語" },
+    ];
+
+    const result = await addScript(db, {
+      id: "egov-law-search",
+      phase: "behavior",
+      source: "x;",
+      params,
+    });
+
+    expect(queries[2]?.sql).toContain('insert into "scripts"');
+    expect(queries[2]?.sql).toContain('"params"');
+    expect(queries[2]?.parameters).toContainEqual(JSON.stringify(params));
+    expect(result.version).toBe(2);
+  });
+
+  it("同じ宣言を渡せば、版を増やさない", async () => {
+    const { db, queries } = recordingDb([[latest]]);
+
+    await addScript(db, {
+      id: "egov-law-search",
+      phase: "behavior",
+      source: "x;",
+      params: latest.params,
+    });
+
+    expect(queries.map((q) => q.sql.split(" ")[0])).toEqual(["begin", "select", "commit"]);
+  });
+});
+
 describe("札を足す（options と同じ扱い）", () => {
-  const latest = { version: 1, source: "x;", sha256: "h", options: {}, sites: ["site.test"] };
+  const latest = {
+    version: 1,
+    source: "x;",
+    sha256: "h",
+    options: {},
+    sites: ["site.test"],
+    params: [],
+  };
 
   it("札を渡さなければ、中身が同じなら版を増やさない（意見が無い）", async () => {
     const { db, queries } = recordingDb([[latest]]);

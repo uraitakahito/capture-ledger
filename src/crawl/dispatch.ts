@@ -73,6 +73,10 @@ const FLOW_ARGS: { readonly [K in keyof DispatchedCrawl]-?: string } = {
   scripts: "scripts",
   // 受け口を使わない配備では値が無く、鍵ごと送らない (`flowArgs`)。
   artifactSink: "artifact_sink",
+  // **クロールごとの値も必ず送る** (空なら `{}`)。変数は値ごと、シークレットは名前 → Windmill の変数の path。
+  // flow は運ぶだけで中身を見ない。値を解くのは `crawl_host` (capture-scheduler)。
+  variables: "variables",
+  secrets: "secrets",
 };
 
 /**

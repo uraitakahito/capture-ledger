@@ -9,6 +9,7 @@
  *   pnpm run scripts add hide-webdriver --file ./x.js --phase preload
  *   pnpm run scripts add autoscroll --file ./x.js --options '{"maxSteps":60}'
  *   pnpm run scripts add my-search --file ./x.ts --site www.example.com   # サイト用 (札)。--site は何度でも
+ *   pnpm run scripts add my-search --file ./x.ts --params '[{"name":"query","kind":"variable","summary":"検索語"}]'   # 読む値の宣言
  *   pnpm run scripts list                                           # 各 id の最新版
  *   pnpm run scripts list --all --json                              # 版を全部、機械向け
  *   pnpm run scripts list autoscroll --all                          # 1 つの id の版の並び
@@ -38,7 +39,7 @@ import { Command, InvalidArgumentError, Option } from "commander";
 import type { Kysely } from "kysely";
 import { databaseUrlOption } from "../cli/database-url-option.js";
 import { parseHttpUrl } from "../crawl/scope.js";
-import type { Database, ScriptPhase } from "../db/database.js";
+import type { Database, ScriptParam, ScriptPhase } from "../db/database.js";
 import { createKyselyClient } from "../db/kysely.js";
 import { fatal } from "../logger.js";
 import { readAll } from "../targets/input.js";
@@ -48,6 +49,7 @@ import {
   catalogIdRefusal,
   listScripts,
   readHostTypes,
+  readParams,
   readScript,
   removeScripts,
   resolveScripts,
@@ -81,12 +83,31 @@ const parseVersion = (raw: string): number => {
   return Number(raw);
 };
 
+/** `--params` は catalog.json の `params` と同じ形。決まりは catalog の取り込みと同じ関数で見る (`readParams`) */
+const parseParams = (raw: string): ScriptParam[] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new InvalidArgumentError("JSON として読めない");
+  }
+  const params = readParams(parsed, { summaryRequired: true });
+  if (typeof params === "string") throw new InvalidArgumentError(params);
+  return params;
+};
+
 /** 何度でも書ける旗 (`--site`・`--seed`) を、書いた順の列に集める */
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value];
 
 /** 札を 1 行の終わりに添える。札の無いスクリプト (どこでも走る) には何も添えない */
 const sitesNote = (sites: readonly string[]): string =>
   sites.length === 0 ? "" : `  札:${sites.join(",")}`;
+
+/** 読む値の宣言を 1 行の終わりに添える (`query`・`token!` のように、required には `!`)。宣言が無ければ何も添えない */
+const paramsNote = (params: readonly ScriptParam[]): string =>
+  params.length === 0
+    ? ""
+    : `  値:${params.map((p) => `${p.name}${p.kind === "secret" ? "(秘)" : ""}${p.required ? "!" : ""}`).join(",")}`;
 
 const fail = (message: string): void => {
   process.stderr.write(`${message}\n`);
@@ -128,6 +149,12 @@ program
     "札: 起点のどれかがこのホスト名のクロールでだけ走る (何度でも。小文字のホスト名)",
     collect,
   )
+  .addOption(
+    new Option(
+      "--params <json>",
+      "読む値の宣言 (catalog.json の params と同じ形: [{ name, kind, required?, summary }])",
+    ).argParser(parseParams),
+  )
   .addOption(databaseUrlOption)
   .action(
     async (
@@ -137,6 +164,7 @@ program
         phase: ScriptPhase;
         options?: Record<string, unknown>;
         site?: string[];
+        params?: ScriptParam[];
         databaseUrl: string;
       },
     ) => {
@@ -161,12 +189,13 @@ program
           source,
           ...(opts.options === undefined ? {} : { options: opts.options }),
           ...(opts.site === undefined ? {} : { sites: opts.site }),
+          ...(opts.params === undefined ? {} : { params: opts.params }),
         });
         process.stdout.write(
           `${result.reused ? "=" : "✓"} ${id} v${String(result.version)}  ${opts.phase}  ` +
             `sha256:${result.sha256.slice(0, 12)}…  ` +
             `${result.reused ? "中身が同じなので、版は増やしていない" : "足した"}` +
-            `${sitesNote(opts.site ?? [])}\n`,
+            `${sitesNote(opts.site ?? [])}${paramsNote(opts.params ?? [])}\n`,
         );
       });
     },
@@ -199,10 +228,15 @@ interface CatalogEntry {
   sites: string[];
   /** 既定に入るか。書いていなければ真。台帳の `enabled` に写す */
   default: boolean;
+  /** 読む値の宣言 (`024`)。書いていなければ空 (何も読まない) */
+  params: ScriptParam[];
 }
 
-/** 札 (`sites`) と既定 (`default`) を書ける形。`/2` は断る —— `default` を知らない catalog と区別するため */
-const CATALOG_PROFILE = "capture-scripts/3";
+/**
+ * 宣言 (`params`) を書ける形 (capture-scripts v0.6.0)。`/3` 以前は断る —— `params` を知らない catalog を
+ * 読むと、宣言の無いスクリプトとして取り込み、変数を渡すクロールが「知らない名前」で止まる。
+ */
+const CATALOG_PROFILE = "capture-scripts/4";
 
 /** 読めた catalog か、読めなかった理由。**黙って一部だけ足さない。** */
 const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
@@ -248,6 +282,9 @@ const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
     if (sitesRefused !== undefined) return `${path}: ${id} の${sitesRefused}`;
     const isDefault = entry["default"] ?? true;
     if (typeof isDefault !== "boolean") return `${path}: ${id} の default が真偽値ではない`;
+    // 宣言は capture-scripts の check と同じ決まりで読む。1 つでも悪ければ何も足さない
+    const params = readParams(entry["params"] ?? [], { summaryRequired: true });
+    if (typeof params === "string") return `${path}: ${id} の ${params}`;
     out.push({
       id,
       phase,
@@ -255,6 +292,7 @@ const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
       summary: typeof summary === "string" ? summary : "",
       sites,
       default: isDefault,
+      params,
     });
   }
   return out;
@@ -287,12 +325,13 @@ program
     await withDb(opts.databaseUrl, async (db) => {
       let added = 0;
       for (const { entry, source } of sources) {
-        // 札は catalog が正なので、必ず意見として渡す (書いていなければ空 = どこでも走る)
+        // 札と宣言は catalog が正なので、必ず意見として渡す (書いていなければ空)
         const result = await addScript(db, {
           id: entry.id,
           phase: entry.phase,
           source,
           sites: entry.sites,
+          params: entry.params,
         });
         if (!result.reused) added += 1;
         // 既定に入るかはカタログが正 (上の説明)。外すなら全版、入れるなら取り込んだ版
@@ -306,7 +345,8 @@ program
           `${result.reused ? "=" : "✓"} ${entry.id} v${String(result.version)}  ` +
             `${entry.phase.padEnd(8)}  sha256:${result.sha256.slice(0, 12)}…  ` +
             `${result.reused ? "中身が同じなので、版は増やしていない" : "足した"}` +
-            `${sitesNote(entry.sites)}${entry.default ? "" : "  既定に入らない (全版を無効にした)"}\n`,
+            `${sitesNote(entry.sites)}${paramsNote(entry.params)}` +
+            `${entry.default ? "" : "  既定に入らない (全版を無効にした)"}\n`,
         );
       }
       process.stdout.write(

@@ -110,7 +110,7 @@ opinion, and that does make a new version.
 kept out of the default set: `import` disables every version of that id, so an older version cannot
 step in as the default. An entry without `default` (or with `true`) has the imported version enabled.
 `enable` and `disable` by hand last until the next `import`. Today only `autofetch` is out of the
-default set (capture-scripts v0.5.0): name it in `scripts` to run it.
+default set (capture-scripts v0.6.0): name it in `scripts` to run it.
 
 `import` also copies `types/host.d.ts` from the same directory — the types of the receptacle
 `__bh` — into `host_types`, which likewise adds a version only when the bytes change. It is a copy
@@ -135,8 +135,9 @@ or `*`. A script with `sites` is a **site script**, and a crawl runs it only whe
 crawl's seeds is on one of those hosts. The seed's hostname is compared exactly and its port is
 ignored, so `example.com` and `www.example.com` are different hosts. A script without `sites`
 runs anywhere, as before. `sites` is part of a version, like `options`: changing it adds a
-version. The `catalog.json` format `import` reads is `capture-scripts/3` (capture-scripts v0.5.0, which
-added `default`); `import` refuses older formats, and refuses a malformed hostname before touching the database.
+version. The `catalog.json` format `import` reads is `capture-scripts/4` (capture-scripts v0.6.0, which
+added `params`, the declaration of [per-crawl values](#per-crawl-values)); `import` refuses older formats,
+and refuses a malformed hostname or declaration before touching the database.
 
 The example site script in capture-scripts is `egov-law-search`, for `laws.e-gov.go.jp` (from v0.4.0). On
 [e-Gov Law Search](https://laws.e-gov.go.jp/) it searches law titles for 「セキュリティ」 (security) within the page
@@ -150,9 +151,11 @@ makes sure each hostname appears in the source.
 ### What a crawl pins
 
 `POST /api/crawls` resolves the scripts **once**, when the crawl starts, and stores
-the result — id, version, phase, source, sha256, options, sites — on the crawl row. Later
+the result — id, version, phase, source, sha256, options, sites, params — on the crawl row. Later
 levels reuse that; the registered scripts are never consulted again. Adding a version halfway
-through a long crawl therefore cannot change what its later pages run.
+through a long crawl therefore cannot change what its later pages run. The crawl pins its
+[per-crawl values](#per-crawl-values) the same way: `variables` with their values, `secrets` with the
+Windmill variable each name was bound to.
 
 | `scripts`                                                            | What runs                                                                                                                               |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -234,6 +237,60 @@ Besides naming registered scripts, a `scripts` element can carry a script writte
   anything is checked.
 - **`preload` has no host object (`__bh`).** The types show it; the page does not have it.
 
+### Per-crawl values
+
+A script can read values that differ from crawl to crawl — a search term, an account's token. It
+declares them in `catalog.json` as `params`, and `import` copies the declaration into the version
+(`GET /api/scripts` returns it as `params`; it is part of a version, like `sites`). An inline script
+can carry the same `params`. A declaration names the value, says which of the two kinds it is, whether a
+crawl must provide it, and what it is for:
+
+```json
+{
+  "name": "query",
+  "kind": "variable",
+  "required": false,
+  "summary": "法令名の検索語。省けばソースの既定"
+}
+```
+
+**Variables** (`kind: "variable"`) are passed in the `POST /api/crawls` body as `variables` (name → string)
+and **are recorded**: pinned on the crawl row, sent with every level, written by BrowserHive into the
+archive's `settings.variables`, and returned by `GET /api/crawls/:id`. Only declared names are accepted —
+an unknown name is a 400, as is a missing `required` one. The one exception is an inline script without
+`params`: the ledger cannot know what it reads, so while one is in the list, unknown names pass.
+
+**Secrets** (`kind: "secret"`) have no field in the body. The declaration binds the name to the Windmill
+secret variable `f/waggle_secrets/<name>`, which someone puts there beforehand
+(`wmill variable add <value> f/waggle_secrets/<name> --secret`; capture-scheduler's docs cover where and
+how). When the crawl starts, the ledger asks Windmill — over the same URL and token as the webhook —
+whether the variable exists and is a secret, **without reading the value** (`variables/get` with
+`decrypt_secret=false`), and pins `{ path, editedAt }` on the row. The value is read only by the flow's
+`crawl_host`, right before the capture; it is never in the ledger, the webhook body, the archive
+(`settings.secrets` holds names only) or `GET /api/crawls/:id`. Before each later level the ledger re-reads
+`editedAt`; a change does not stop the crawl, but is recorded as `rotated` (the depth that noticed it and
+the new time).
+
+Names match `^[a-z][a-z0-9_]*$` and are at most 64 characters; a crawl takes at most 32 variables; a value
+is a string of at most 4,096 characters. A declaration never carries a default: a script reads
+`__bh.vars.<name>` (or `__bh.secrets.<name>`), gets `undefined` when nothing was passed, and falls back in
+its own source.
+
+| Answer                                                                  | When                                                                                            |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `400 missing variables` (`names`)                                       | A declared `required` variable was not passed                                                   |
+| `400 unknown variables` (`names`)                                       | A passed name that no script declares (unless an inline script without `params` is in the list) |
+| `400 secrets cannot be passed as variables` (`names`)                   | A passed name is declared as a secret — it would end up in the archive                          |
+| `400 conflicting params` (`names`)                                      | Two scripts declare the same name as different kinds                                            |
+| `400 invalid params` (`script`, `hint`)                                 | An inline script's `params` break the declaration rules (the same rules `import` applies)       |
+| `400 unknown secrets` (`secrets: [{ name, path, declaredBy }]`, `hint`) | A `required` secret is not in Windmill. A non-required one that is missing is simply not passed |
+| `400 not a secret variable` (`secrets`)                                 | The Windmill variable exists but is not marked secret                                           |
+| `400 secrets need the windmill webhook` (`names`)                       | A script declares a secret but this deployment's webhook URL is not a flow webhook              |
+| `503 windmill unreachable`                                              | Windmill could not be asked; nothing is started                                                 |
+
+None of these starts a crawl. `GET /api/crawls/:id` returns `variables` (with values) and `secrets`
+(`[{ name, path, editedAt, rotated }]`, in name order).
+
 ## What capture-ledger still does not decide
 
 The old CLI mapped a flag onto every field of BrowserHive's `CaptureRequest`:
@@ -248,13 +305,14 @@ server is configured to do, which is what BrowserHive's own documentation descri
 Pacing and reach, in the `POST /api/crawls` body — see
 [Archive ledger](/capture-ledger/archive-ledger/#following-links):
 
-| Field             | Default                                                                       | Meaning                                |
-| ----------------- | ----------------------------------------------------------------------------- | -------------------------------------- |
-| `rules`           | `[{ "follow": "same-origin" }]`                                               | Which links to follow, capture or skip |
-| `maxDepth`        | 2, or 0 with `fromTargets`                                                    | How far to follow                      |
-| `maxPages`        | 30, never below the number of seeds                                           | Total pages                            |
-| `perHostDelayMs`  | 2000                                                                          | Gap between pages on one host          |
-| `hostParallelism` | 4                                                                             | Distinct hosts touched at once         |
-| `scripts`         | every enabled id, newest version, unless it is a site script for another host | What runs in the page (above)          |
+| Field             | Default                                                                       | Meaning                                                                   |
+| ----------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `rules`           | `[{ "follow": "same-origin" }]`                                               | Which links to follow, capture or skip                                    |
+| `maxDepth`        | 2, or 0 with `fromTargets`                                                    | How far to follow                                                         |
+| `maxPages`        | 30, never below the number of seeds                                           | Total pages                                                               |
+| `perHostDelayMs`  | 2000                                                                          | Gap between pages on one host                                             |
+| `hostParallelism` | 4                                                                             | Distinct hosts touched at once                                            |
+| `scripts`         | every enabled id, newest version, unless it is a site script for another host | What runs in the page (above)                                             |
+| `variables`       | none                                                                          | Per-crawl values the chosen scripts declared ([above](#per-crawl-values)) |
 
 An unknown key is **400**, not silently dropped.

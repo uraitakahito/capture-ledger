@@ -104,7 +104,7 @@ pnpm run scripts disable autoscroll       # 既定から外す。名指しすれ
 **既定に入るかは、カタログが決めます。** `"default": false` の項目は既定に入りません。`import` はその id の
 全版を無効にします（最新版だけを無効にすると、古い版が既定に出てくるため）。`default` を省いた（`true` の）
 項目は、取り込んだ版を有効にします。`enable`・`disable` で手で替えた物は、次の `import` まで効きます。
-いま既定に入らないのは `autofetch` だけです（capture-scripts v0.5.0）。走らせるには `scripts` で名指しします。
+いま既定に入らないのは `autofetch` だけです（capture-scripts v0.6.0）。走らせるには `scripts` で名指しします。
 
 `import` は、同じ置き場所の `types/host.d.ts`（受け皿 `__bh` の型）も `host_types` に写します。
 こちらも中身が変わったときだけ版を足します。スクリプトを読む人に見せる写しで、クロールの変換が使う型は
@@ -125,9 +125,9 @@ BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGU
 scheme・`*` は書けません。札のあるスクリプトは**サイト用のスクリプト**で、クロールの起点のどれかがそのホストに
 あるときだけ走ります。照らすのは起点のホスト名との完全一致で、ポートは見ません。`example.com` と
 `www.example.com` は別のホストです。札の無いスクリプトは、今までどおりどこでも走ります。札は版の一部で、
-`options` と同じく、変えたら版が足されます。`import` が読む `catalog.json` の形は `capture-scripts/3`
-（capture-scripts v0.5.0 で `default` が入った）で、`import` はそれより前の形を断ります。形の悪いホスト名も、DB に
-触る前に断ります。
+`options` と同じく、変えたら版が足されます。`import` が読む `catalog.json` の形は `capture-scripts/4`
+（capture-scripts v0.6.0 で、[クロールごとの値](#クロールごとの値)の宣言 `params` が入った）で、`import` はそれより前の
+形を断ります。形の悪いホスト名や宣言も、DB に触る前に断ります。
 
 capture-scripts のサイト用のスクリプトの見本は `egov-law-search`（札 `laws.e-gov.go.jp`・v0.4.0 から）です。
 [e-Gov 法令検索](https://laws.e-gov.go.jp/)の頁の中で法令名を「セキュリティ」で引き、件数と法令名を報告します。
@@ -141,9 +141,10 @@ capture-scripts のサイト用のスクリプトの見本は `egov-law-search`�
 ### クロールが固定するもの
 
 `POST /api/crawls` はスクリプトを**始めるときに 1 度だけ**解決し、その結果 —— id・版・phase・
-source・sha256・options・札 —— をクロールの行に書きます。以後の段はそれをそのまま使い、
+source・sha256・options・札・宣言 —— をクロールの行に書きます。以後の段はそれをそのまま使い、
 台帳のスクリプトを引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
-変わりません。
+変わりません。[クロールごとの値](#クロールごとの値)も同じように固定します。`variables` は値ごと、
+`secrets` は名前を結んだ Windmill の変数の path を。
 
 | `scripts`                                                         | 走るもの                                                                                            |
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -219,6 +220,56 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 - **`POST /api/crawls` の本文は、全体で 1 MiB までです。** 超えると、何かを検査する前に 413 で断ります。
 - **`preload` には受け皿（`__bh`）がありません。** 型の上では見えますが、ページには在りません。
 
+### クロールごとの値
+
+スクリプトは、クロールごとに違う値 —— 検索語や、口座の鍵 —— を読めます。読む名前は `catalog.json` の
+`params` で宣言し、`import` が宣言を版に写します（`GET /api/scripts` が `params` で返します。札と同じく
+版の一部です）。その場の JS にも同じ形の `params` を添えられます。宣言は、名前と、2 つの種類のどちらかと、
+クロールが必ず渡すべきかと、何の値かを言います。
+
+```json
+{
+  "name": "query",
+  "kind": "variable",
+  "required": false,
+  "summary": "法令名の検索語。省けばソースの既定"
+}
+```
+
+**変数**（`kind: "variable"`）は `POST /api/crawls` の本文の `variables`（名前 → 文字列）で渡し、**記録に残ります**。
+クロールの行に固定され、段ごとに運ばれ、BrowserHive がアーカイブの `settings.variables` に書き、
+`GET /api/crawls/:id` が返します。受けるのは宣言された名前だけで、知らない名前も、`required` の物の欠けも
+400 です。例外は `params` を添えていないその場の JS で、何を読むか台帳に分からないので、それが混ざる間は
+知らない名前も通します。
+
+**シークレット**（`kind: "secret"`）には本文の欄がありません。宣言が名前を Windmill の secret 変数
+`f/waggle_secrets/<名前>` に結び、そこへは人が前もって置きます（`wmill variable add <値> f/waggle_secrets/<名前> --secret`。
+置き場と手順は capture-scheduler の docs にあります）。クロールを始めるとき、台帳は webhook と同じ URL と token で
+Windmill に「在るか・secret か」を訊き、**値は読まずに**（`variables/get` に `decrypt_secret=false`）、
+`{ path, editedAt }` を行に固定します。値を読むのは flow の `crawl_host` だけで、取り込みの直前に読みます。
+値は台帳にも webhook の本文にもアーカイブ（`settings.secrets` に在るのは名前だけ）にも `GET /api/crawls/:id`
+にも在りません。次の段を送る前に台帳は `editedAt` を読み直し、変わっていてもクロールは止めず、
+`rotated`（気づいた段と新しい時刻）に残します。
+
+名前は `^[a-z][a-z0-9_]*$` で 64 字まで、1 クロールの変数は 32 個まで、値は 4,096 字までの文字列です。
+宣言に既定値は書けません。スクリプトは `__bh.vars.<名前>`（`__bh.secrets.<名前>`）を読み、渡されなければ
+`undefined` を受け取って、自分のソースの既定に倒します。
+
+| 答え                                                                     | いつ                                                                                     |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `400 missing variables`（`names`）                                       | `required` の変数が渡されていない                                                        |
+| `400 unknown variables`（`names`）                                       | どのスクリプトも宣言していない名前を渡した（`params` の無いその場の JS が在れば見ない）  |
+| `400 secrets cannot be passed as variables`（`names`）                   | シークレットとして宣言された名前を変数で渡した —— アーカイブに値が残ってしまう           |
+| `400 conflicting params`（`names`）                                      | 同じ名前を、別々のスクリプトが別の種類で宣言している                                     |
+| `400 invalid params`（`script`・`hint`）                                 | その場の JS の `params` が宣言の決まり（`import` と同じ）に合わない                      |
+| `400 unknown secrets`（`secrets: [{ name, path, declaredBy }]`・`hint`） | `required` のシークレットが Windmill に無い。`required` でない物が無ければ渡さないだけ   |
+| `400 not a secret variable`（`secrets`）                                 | Windmill に在るが secret の印が無い                                                      |
+| `400 secrets need the windmill webhook`（`names`）                       | シークレットを宣言したスクリプトが在るのに、この配備の webhook の URL が flow の物でない |
+| `503 windmill unreachable`                                               | Windmill に訊けなかった。何も始めない                                                    |
+
+どれもクロールは立ちません。`GET /api/crawls/:id` は `variables`（値ごと）と `secrets`
+（`[{ name, path, editedAt, rotated }]`。名前順）を返します。
+
 ## capture-ledger がいまも決めないもの
 
 以前の CLI は BrowserHive の `CaptureRequest` のフィールドそれぞれに旗を対応させていました
@@ -233,13 +284,14 @@ BrowserHive 自身のドキュメントが定義します）。
 相手への当たり方と範囲を、`POST /api/crawls` のボディで渡せます
 （[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#リンクを辿る)を参照）。
 
-| フィールド        | 既定                                                               | 意味                                           |
-| ----------------- | ------------------------------------------------------------------ | ---------------------------------------------- |
-| `rules`           | `[{ "follow": "same-origin" }]`                                    | どのリンクを撮って辿り、撮るだけにし、落とすか |
-| `maxDepth`        | 2。`fromTargets` のときは 0                                        | どこまで辿るか                                 |
-| `maxPages`        | 30。ただし起点の数は下回らない                                     | 総ページ数                                     |
-| `perHostDelayMs`  | 2000                                                               | 同じホストのページ間の間隔                     |
-| `hostParallelism` | 4                                                                  | 同時に触るホストの数                           |
-| `scripts`         | 有効な各 id の最新版（ほかのホスト用のサイト用のスクリプトを除く） | ページの中で走らせるもの（上記）               |
+| フィールド        | 既定                                                               | 意味                                                                      |
+| ----------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `rules`           | `[{ "follow": "same-origin" }]`                                    | どのリンクを撮って辿り、撮るだけにし、落とすか                            |
+| `maxDepth`        | 2。`fromTargets` のときは 0                                        | どこまで辿るか                                                            |
+| `maxPages`        | 30。ただし起点の数は下回らない                                     | 総ページ数                                                                |
+| `perHostDelayMs`  | 2000                                                               | 同じホストのページ間の間隔                                                |
+| `hostParallelism` | 4                                                                  | 同時に触るホストの数                                                      |
+| `scripts`         | 有効な各 id の最新版（ほかのホスト用のサイト用のスクリプトを除く） | ページの中で走らせるもの（上記）                                          |
+| `variables`       | 無し                                                               | 選んだスクリプトが宣言した、クロールごとの値（[上記](#クロールごとの値)） |
 
 知らないキーは黙って落とさず **400** で返します。
