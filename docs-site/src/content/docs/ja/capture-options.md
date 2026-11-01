@@ -104,7 +104,7 @@ pnpm run scripts disable autoscroll       # 既定から外す。名指しすれ
 **既定に入るかは、カタログが決めます。** `"default": false` の項目は既定に入りません。`import` はその id の
 全版を無効にします（最新版だけを無効にすると、古い版が既定に出てくるため）。`default` を省いた（`true` の）
 項目は、取り込んだ版を有効にします。`enable`・`disable` で手で替えた物は、次の `import` まで効きます。
-いま既定に入らないのは `autofetch` だけです（capture-scripts v0.6.0）。走らせるには `scripts` で名指しします。
+いま既定に入らないのは `autofetch` だけです（capture-scripts v0.6.1）。走らせるには `scripts` で名指しします。
 
 `import` は、同じ置き場所の `types/host.d.ts`（受け皿 `__bh` の型）も `host_types` に写します。
 こちらも中身が変わったときだけ版を足します。スクリプトを読む人に見せる写しで、クロールの変換が使う型は

@@ -619,7 +619,7 @@
                     },
                     "secrets": {
                         "$ref": "#/components/schemas/Values",
-                        "description": "この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。\n**値はどこにも書かない** —— archive の `settings.secrets` には名前だけ (名前順)、受け皿のコード\n(`behaviors/runtime.js`) は値を含まず、ログの報告と例外の文からは伏せる。隠せるのは記録からだけで、\n頁の JS からは読めるし、スクリプトが網に送れば WARC には残る。"
+                        "description": "この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。\n**値はどこにも書かない** —— archive の `settings.secrets` には名前だけ (名前順)、受け皿のコード\n(`behaviors/runtime.js`) は値を含まず、ログの報告と例外の文からは伏せる。隠せるのは記録からだけで、\n頁の JS からは読めるし、スクリプトが通信に載せれば WARC には残る。"
                     }
                 },
                 "required": [
@@ -944,7 +944,7 @@
                         "type": "number",
                         "maximum": 60000,
                         "minimum": 0,
-                        "description": "網・CPU・DOM が「静か」とみなす窓。"
+                        "description": "通信・CPU・DOM が「静か」とみなす窓。"
                     },
                     "networkConcurrency": {
                         "type": "number",
@@ -1113,11 +1113,11 @@
                     },
                     "quietMs": {
                         "type": "number",
-                        "description": "網・CPU・DOM に共通の、静かとみなす窓 (ms)。"
+                        "description": "通信・CPU・DOM に共通の、静かとみなす窓 (ms)。"
                     },
                     "networkConcurrency": {
                         "type": "number",
-                        "description": "網が静まったとみなす in-flight の要求数の上限。0 は全部届くまで待つ。"
+                        "description": "通信が静まったとみなす in-flight の要求数の上限。0 は全部届くまで待つ。"
                     }
                 },
                 "required": [
