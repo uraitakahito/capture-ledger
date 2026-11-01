@@ -19,9 +19,10 @@ const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organiz
 const MINE = "11111111-1111-1111-1111-111111111111";
 const NOT_MINE = "22222222-2222-2222-2222-222222222222";
 
-const hit = (archiveId: string, title: string) => ({
+const hit = (archiveId: string, title: string, stage: string | null = null) => ({
   _source: {
     archiveId,
+    stage,
     url: `http://capture-fixtures.capture-ledger:8080/${title}`,
     title,
     objectKey: `${archiveId}.wacz`,
@@ -109,6 +110,30 @@ describe("検索の認可", () => {
     ).json<{ hits: unknown[]; total: { value: number } }>();
     expect(body.hits).toHaveLength(1);
     expect(body.total.value).toBe(2);
+    await app.close();
+  });
+
+  it("同じアーカイブの検索前と検索後は 2 件とも返し、fga には 1 回だけ訊く", async () => {
+    // 1 件は 1 時点。認可の答えはアーカイブで決まるので、同じ id を 2 回訊かない。
+    const checked: string[] = [];
+    const app = await build({
+      search: fakeSearch([
+        hit(MINE, "before", "after-load"),
+        hit(MINE, "after", "after-behaviors"),
+      ]) as never,
+      fga: {
+        batchCheck: (req: { checks: { object: string }[] }) => {
+          checked.push(...req.checks.map((check) => check.object));
+          return fakeFga([MINE]).batchCheck(req);
+        },
+      } as never,
+    });
+    const res = await app.inject({ method: "GET", url: "/api/search?q=x", headers: SUBJECT });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ hits: { stage: string | null }[] }>();
+    expect(body.hits.map((one) => one.stage)).toEqual(["after-load", "after-behaviors"]);
+    expect(checked).toEqual([`archive:${MINE}`]);
     await app.close();
   });
 

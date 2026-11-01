@@ -52,6 +52,7 @@ export interface SearchRouteDeps {
 
 interface Hit {
   archiveId: string;
+  stage: string | null;
   url: string;
   title: string;
   objectKey: string;
@@ -148,6 +149,9 @@ export const registerSearchRoutes = (app: FastifyInstance, deps: SearchRouteDeps
    *
    * 返るのは**見てよいものだけ**だが、`total` は索引が数えた生の件数なので、
    * 返った件数とは一致しない。上の docstring のとおり、これは設計上の代償。
+   *
+   * 1 件はアーカイブの 1 時点 (`stage`)。同じアーカイブの検索前と検索後が両方当たれば
+   * 2 件返る。
    */
   app.get<{ Querystring: { q: string } }>(
     "/api/search",
@@ -187,11 +191,10 @@ export const registerSearchRoutes = (app: FastifyInstance, deps: SearchRouteDeps
       if (hits.length === 0) return reply.code(200).send({ hits: [], total: 0 });
 
       // **ここが唯一の認可。** 索引は誰に見せてよいかを知らないし、知るべきでもない。
-      const allowed = await viewableArchiveIds(
-        fga,
-        identity,
-        hits.map((hit) => hit._source.archiveId),
-      );
+      // 同じアーカイブが時点ごとに当たっても、答えはアーカイブで決まるので 1 回だけ訊く。
+      const allowed = await viewableArchiveIds(fga, identity, [
+        ...new Set(hits.map((hit) => hit._source.archiveId)),
+      ]);
 
       return reply.code(200).send({
         hits: hits

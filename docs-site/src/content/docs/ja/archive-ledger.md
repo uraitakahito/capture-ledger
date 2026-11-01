@@ -520,7 +520,7 @@ curl -X POST .../api/crawls/<id>/index
 
 # 引く
 curl ".../api/search?q=responsive"
-# → { "hits": [ { "archiveId": "…", "url": "…", "title": "responsive", … } ], "total": 3 }
+# → { "hits": [ { "archiveId": "…", "stage": "after-load", "url": "…", "title": "responsive", … } ], "total": 3 }
 ```
 
 ### 本文はアーカイブから採ります
@@ -533,6 +533,12 @@ BrowserHive が WACZ の `pages/pages.jsonl` に `title` と `text` を書いて
 `textWithheld`（BrowserHive の `DocumentWithheld`。`url-policy`・`content-type`・`no-archive`・`deny`・`unattributed`）も一緒に運びます。捨てると
 **取り込みが空だった**のと**方針が保存を禁じた**のが同じ見た目になります。
 前者は調べるべき異常で、後者は正常な運用です。
+
+BrowserHive は、頁を写した時点ごとにページ一覧の行を書きます（読み込みの後が
+`after-load`、スクリプトの後が `after-behaviors`）。capture-ledger は行ごとに 1 件として
+載せ、時点を `stage` に入れます。同じアーカイブの検索前と検索後が両方当たれば 2 件返ります。
+認可はアーカイブで決まるので、2 件の答えは同じです。写しが 1 つも無い取り込み
+（本文を伏せた文書など）の行には時点が無く、`stage` は `null` です。
 
 ### 索引は誰に見せてよいかを知りません
 
@@ -550,7 +556,12 @@ BrowserHive が WACZ の `pages/pages.jsonl` に `title` と `text` を書いて
 権威が 1 つであることを採っています。
 :::
 
-### 作り直すのは 1 文です
+### 索引を作り直す
+
+```sh
+# mapping か解析器を変えたときだけ、先に索引を消す
+curl -X DELETE http://127.0.0.1:9200/capture-pages
+```
 
 ```sql
 UPDATE archives SET indexed_at = NULL;
@@ -560,8 +571,12 @@ UPDATE archives SET indexed_at = NULL;
 （必要なものは台帳の行と S3 から全部導けます）。そのため解析器や mapping を
 変える判断が安く済みます。
 
+capture-ledger は mapping を**索引を作るときにしか置きません**。mapping か解析器を
+変えたのに索引を消さずに載せ直すと、古い mapping のまま載り、新しい欄の型は
+OpenSearch が推測します（エラーは出ません）。
+
 いまの解析器は組み込みの `cjk`（bigram）です。kuromoji はプラグインの導入が要り、
-既製イメージでは動きません ― 必要になったら自前イメージに替えて、上の 1 文で
+既製イメージでは動きません ― 必要になったら自前イメージに替えて、上の手順で
 作り直してください。
 
 ## ブラウザからアーカイブを選ぶ

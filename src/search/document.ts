@@ -23,6 +23,13 @@
  *
  * `textTruncated` も同じ。100 万文字で切られた本文を「全文」として索引に載せると、
  * 「その語はこのページに無い」と言えなくなる。
+ *
+ * ## 1 アーカイブに時点ごとの行
+ *
+ * BrowserHive は、頁を写した時点ごとに `pages.jsonl` の行を書く（`stage`。読み込みの後が
+ * `after-load`、スクリプトの後が `after-behaviors`）。題と本文はその時点で読んだ物なので、
+ * 検索前と検索後は別の 1 件として載せる。写しが 1 つも無い取り込み（本文を伏せた文書など）は、
+ * 時点の無い 1 行のまま。
  */
 
 /** `pages.jsonl` の 1 行。BrowserHive の `PagesLineInput` に対応する。 */
@@ -34,12 +41,16 @@ export interface PageLine {
   text?: string;
   textTruncated?: boolean;
   textWithheld?: string;
+  /** BrowserHive がその行を読んだ時点（`after-load`・`after-behaviors`）。写しの無い取り込みの行には無い。 */
+  stage?: string;
 }
 
 /** 索引に載せる 1 件。 */
 export interface SearchDocument {
   /** 台帳の archive id。**認可の単位はこれ** —— 検索の結果はこの id で `can_view` を訊く。 */
   archiveId: string;
+  /** 行の時点。時点の無い行（写しの無い取り込み）は `null`。 */
+  stage: string | null;
   url: string;
   title: string;
   text: string;
@@ -104,6 +115,7 @@ export const parsePagesJsonl = (raw: string): PageLine[] => {
  */
 export const searchDocument = (page: PageLine, archive: ArchiveRow): SearchDocument => ({
   archiveId: archive.id,
+  stage: typeof page.stage === "string" && page.stage !== "" ? page.stage : null,
   url: page.url,
   title: page.title ?? "",
   text: page.text ?? "",
@@ -114,3 +126,12 @@ export const searchDocument = (page: PageLine, archive: ArchiveRow): SearchDocum
   labels: archive.labels,
   capturedAt: archive.capturedAt.toISOString(),
 });
+
+/**
+ * 索引の 1 件の `_id`。**アーカイブの id と時点**で作る。時点の無い行は `page`。
+ *
+ * URL で分けないのは、頁の中で URL が替わらない検索だと、検索前と検索後が同じ URL に
+ * なるため。同じアーカイブを二度載せても、`_id` が同じなので増えない。
+ */
+export const searchDocumentId = (doc: Pick<SearchDocument, "archiveId" | "stage">): string =>
+  `${doc.archiveId}:${doc.stage ?? "page"}`;
