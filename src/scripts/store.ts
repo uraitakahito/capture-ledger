@@ -194,6 +194,23 @@ export type ResolveResult =
   | { kind: "ok"; scripts: CrawlScript[] };
 
 /**
+ * 鍵の順に依らない JSON の文字列。jsonb に書いた物を比べるために要る —— **Postgres の jsonb は object の
+ * 鍵を並べ替えて持つ** (短い鍵が先、同じ長さなら辞書順) ので、書いた順のまま `JSON.stringify` で比べると、
+ * 同じ宣言・同じ options を取り込み直すたびに「違う」と読んで版が増える (CI の smoke で実測: 同じ catalog の
+ * 2 度目の import が v2 を足した)。
+ */
+const stableStringify = (value: unknown): string =>
+  JSON.stringify(value, (_key, item: unknown) =>
+    typeof item === "object" && item !== null && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.entries(item as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : item,
+  );
+
+/**
  * 1 本足す。**版は自動で採番する** —— 呼ぶ側に決めさせると、飛んだ番号や
  * 同じ番号の取り合いを扱うことになる。
  *
@@ -236,9 +253,10 @@ export const addScript = async (
 
     if (
       latest?.source === input.source &&
-      (!opinionated || JSON.stringify(latest.options) === JSON.stringify(options)) &&
+      (!opinionated || stableStringify(latest.options) === stableStringify(options)) &&
       (input.sites === undefined || latest.sites.join(" ") === input.sites.join(" ")) &&
-      (input.params === undefined || JSON.stringify(latest.params) === JSON.stringify(input.params))
+      (input.params === undefined ||
+        stableStringify(latest.params) === stableStringify(input.params))
     ) {
       return {
         kind: "ok" as const,

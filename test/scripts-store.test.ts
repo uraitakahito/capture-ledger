@@ -388,6 +388,28 @@ describe("宣言を足す（札と同じ扱い）", () => {
 
     expect(queries.map((q) => q.sql.split(" ")[0])).toEqual(["begin", "select", "commit"]);
   });
+
+  it("jsonb が鍵の順を並べ替えて返しても、同じ宣言・同じ options と見なす（版を増やさない）", async () => {
+    // Postgres の jsonb は短い鍵を先に並べる。書いた順 (name, kind, required, summary) のまま文字列で比べると、
+    // 2 度目の import が毎回新しい版を足す (CI の smoke で実測)
+    const fromJsonb = {
+      ...latest,
+      params: [{ kind: "variable", name: "query", summary: "検索語", required: false }],
+      options: { b: 1, a: "x" },
+    };
+    const { db, queries } = recordingDb([[fromJsonb]]);
+
+    const result = await addScript(db, {
+      id: "egov-law-search",
+      phase: "behavior",
+      source: "x;",
+      options: { a: "x", b: 1 },
+      params: declared,
+    });
+
+    expect(queries.map((q) => q.sql.split(" ")[0])).toEqual(["begin", "select", "commit"]);
+    expect(result.reused).toBe(true);
+  });
 });
 
 describe("札を足す（options と同じ扱い）", () => {

@@ -55,6 +55,13 @@ const TYPES = `// ${id}\ndeclare var __bh: { report(id: string, data: unknown): 
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 const work = mkdtempSync(join(tmpdir(), "scripts-smoke-"));
+/** 鍵の順に依らない比べ方。jsonb は object の鍵を並べ替えて持つ (短い鍵が先) ので、書いた順とは一致しない */
+const canonical = (value) =>
+  JSON.stringify(value, (_key, item) =>
+    typeof item === "object" && item !== null && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : item,
+  );
 const results = [];
 const check = (name, ok, detail = "") => {
   results.push({ name, ok, detail });
@@ -316,8 +323,8 @@ try {
   );
   const paramsOf = await pool.query("SELECT params FROM scripts WHERE id = $1", [withDecl]);
   check(
-    "024: 宣言は jsonb にそのまま入る (required を埋めた形)",
-    JSON.stringify(paramsOf.rows[0]?.params) === JSON.stringify(declared),
+    "024: 宣言は jsonb にそのまま入る (required を埋めた形。鍵の順は jsonb が並べ替える)",
+    canonical(paramsOf.rows[0]?.params) === canonical(declared),
     JSON.stringify(paramsOf.rows),
   );
   run = cli(["list", withDecl, "--all", "--json"]);
@@ -329,7 +336,7 @@ try {
   }
   check(
     "024: Kysely で読み返しても宣言の名前の _ は化けない (api_token のまま。列名の plugin は jsonb の中を写さない)",
-    run.status === 0 && JSON.stringify(listed[0]?.params) === JSON.stringify(declared),
+    run.status === 0 && canonical(listed[0]?.params) === canonical(declared),
     `${why(run)} ${JSON.stringify(listed).slice(0, 300)}`,
   );
   // 同じ宣言を取り込み直しても版は増えず、宣言を変えると版が増える
