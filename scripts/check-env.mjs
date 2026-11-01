@@ -39,7 +39,7 @@ const TEMPLATE = ".env.example";
 
 // 開き括弧の後の空白を許すこと。prettier は長い呼び出しを改行するので、
 // `optional(\n  "NAME",` の形が普通に現れる。空白を許さないとその行を見落とし、
-// **検査は緑のまま網から漏れる**。
+// **検査は緑のまま素通しになる**。
 const PATTERNS = [
   /\b(?:required|optional|need)\(\s*"([A-Z_0-9]+)"/g,
   /\.env\(\s*"([A-Z_0-9]+)"\)/g,
@@ -119,7 +119,7 @@ for (const dir of SOURCE_DIRS) {
   }
 }
 
-// ─── B. guardEnv の網が、実際に読まれている変数を覆っているか ──────────────
+// ─── B. guardEnv の見張りが、実際に読まれている変数を覆っているか ────────────
 // 覆えていない変数は「空で設定されている」を検出されないまま素通りする。
 for (const [name, file] of used) {
   if (required.has(name) || optional.has(name) || scriptEnv.has(name)) continue;

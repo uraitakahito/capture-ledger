@@ -110,7 +110,7 @@ opinion, and that does make a new version.
 kept out of the default set: `import` disables every version of that id, so an older version cannot
 step in as the default. An entry without `default` (or with `true`) has the imported version enabled.
 `enable` and `disable` by hand last until the next `import`. Today only `autofetch` is out of the
-default set (capture-scripts v0.6.0): name it in `scripts` to run it.
+default set (capture-scripts v0.6.1): name it in `scripts` to run it.
 
 `import` also copies `types/host.d.ts` from the same directory — the types of the receptacle
 `__bh` — into `host_types`, which likewise adds a version only when the bytes change. It is a copy

@@ -305,7 +305,7 @@ export interface components {
              * @description この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。
              *     **値はどこにも書かない** —— archive の `settings.secrets` には名前だけ (名前順)、受け皿のコード
              *     (`behaviors/runtime.js`) は値を含まず、ログの報告と例外の文からは伏せる。隠せるのは記録からだけで、
-             *     頁の JS からは読めるし、スクリプトが網に送れば WARC には残る。
+             *     頁の JS からは読めるし、スクリプトが通信に載せれば WARC には残る。
              */
             secrets?: components["schemas"]["Values"];
         };
@@ -567,7 +567,7 @@ export interface components {
             minMs?: number;
             /** @description 合図が来なくても切り上げる最長。 */
             maxMs?: number;
-            /** @description 網・CPU・DOM が「静か」とみなす窓。 */
+            /** @description 通信・CPU・DOM が「静か」とみなす窓。 */
             quietMs?: number;
             /** @description 静かでも許す同時接続数。0 なら全部届くまで (既定)。 */
             networkConcurrency?: number;
@@ -645,9 +645,9 @@ export interface components {
             minMs: number;
             /** @description 待ちの最長 (ms、goto が返ってから)。先にここに当たれば `endedBy` は `deadline` —— 失敗ではない。 */
             maxMs: number;
-            /** @description 網・CPU・DOM に共通の、静かとみなす窓 (ms)。 */
+            /** @description 通信・CPU・DOM に共通の、静かとみなす窓 (ms)。 */
             quietMs: number;
-            /** @description 網が静まったとみなす in-flight の要求数の上限。0 は全部届くまで待つ。 */
+            /** @description 通信が静まったとみなす in-flight の要求数の上限。0 は全部届くまで待つ。 */
             networkConcurrency: number;
         };
         /** @description load の結末。atMs が無ければ、最長までに load を見なかった。 */

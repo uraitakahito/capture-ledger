@@ -19,7 +19,7 @@
  *
  * ## ② http(s) でない URL を断る
  *
- * 粗い網。host が在るかどうかのような細かい検査は `parseHttpUrl` の仕事で、ここでは
+ * 粗い検査。host が在るかどうかのような細かい検査は `parseHttpUrl` の仕事で、ここでは
  * scheme だけを見る。scheme の大文字は許す —— `parseHttpUrl` (WHATWG の URL) は読める。
  *
  * ## ③ ユニークを組織ごとにする

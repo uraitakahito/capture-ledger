@@ -2,7 +2,7 @@
 #
 # ここに並ぶのは、署名の endpoint が実際に投げている問いそのもの。どれか 1 つでも
 # 裏返れば、見えてはいけない相手に WACZ が見える。つまりこのファイルは形式ではなく、
-# 認可の設計全体に対する回帰の網。
+# 認可の設計全体に対する回帰の安全網。
 name: capture-ledger authorization model
 model_file: ./model.fga
 
