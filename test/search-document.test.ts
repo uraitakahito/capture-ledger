@@ -21,13 +21,13 @@ const PAGE =
   '{"id": "09791c9f-264b-40ee-8a40-40dc0362f6e6", "url": "http://capture-fixtures.browserhive:8080/responsive-images", "ts": "2026-09-07T22:06:40.697Z", "title": "responsive", "text": "responsive\\n  image"}';
 
 /**
- * 時点ごとの 2 行 (検索前と検索後)。TODO(段 6): BrowserHive の新しい版が fixtures の
- * `/marked/search/:name` を撮った WACZ の行に差し替える。
+ * 時点ごとの 2 行 (検索前と検索後)。行の url は写しの urn。TODO(段 6): BrowserHive の新しい版が
+ * fixtures の `/marked/search/:name` を撮った WACZ の行に差し替える。
  */
 const PAGE_AFTER_LOAD =
-  '{"id": "09791c9f-264b-40ee-8a40-40dc0362f6e6-after-load", "url": "http://capture-fixtures.browserhive:8080/marked/search/x", "ts": "2026-11-02T00:00:01Z", "stage": "after-load", "title": "search", "text": "search"}';
+  '{"id": "09791c9f-264b-40ee-8a40-40dc0362f6e6-after-load", "url": "urn:browserhive:snapshot:after-load:http://capture-fixtures.browserhive:8080/marked/search/x?tag=t", "ts": "2026-11-02T00:00:01Z", "stage": "after-load", "title": "search", "text": "search"}';
 const PAGE_AFTER_BEHAVIORS =
-  '{"id": "09791c9f-264b-40ee-8a40-40dc0362f6e6-after-behaviors", "url": "http://capture-fixtures.browserhive:8080/marked/search/x/result", "ts": "2026-11-02T00:00:03Z", "stage": "after-behaviors", "title": "result", "text": "result"}';
+  '{"id": "09791c9f-264b-40ee-8a40-40dc0362f6e6-after-behaviors", "url": "urn:browserhive:snapshot:after-behaviors:http://capture-fixtures.browserhive:8080/marked/search/x/result?tag=t", "ts": "2026-11-02T00:00:03Z", "stage": "after-behaviors", "title": "result", "text": "result"}';
 
 const ARCHIVE: ArchiveRow = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -112,13 +112,6 @@ describe("時点ごとの行", () => {
       `${ARCHIVE.id}:after-load`,
       `${ARCHIVE.id}:after-behaviors`,
     ]);
-  });
-
-  it("同じ URL の 2 時点でも _id が分かれる", () => {
-    // 頁の中で URL が替わらない検索。URL で分けると、検索後が検索前を上書きする。
-    const before = searchDocument({ url: "http://x/", stage: "after-load" }, ARCHIVE);
-    const after = searchDocument({ url: "http://x/", stage: "after-behaviors" }, ARCHIVE);
-    expect(searchDocumentId(before)).not.toBe(searchDocumentId(after));
   });
 
   it("時点の無い行は stage が null で、_id の後ろは page", () => {

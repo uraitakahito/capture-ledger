@@ -582,11 +582,13 @@ store**. The first is a fault worth investigating; the second is normal.
 
 BrowserHive writes one line of the page list for each point at which it
 snapshotted the page (`after-load` once the page has loaded, `after-behaviors`
-after the scripts). capture-ledger indexes each line as its own hit and puts the
-point in `stage`. When both the before-search and after-search points of one
-archive match, you get two hits. Authorization is per archive, so both get the
-same answer. A capture with no snapshot at all (a withheld document, say) keeps
-a single line with no point, and its `stage` is `null`.
+after the scripts). The line's `url` is the snapshot's urn, shaped like
+`urn:browserhive:snapshot:after-load:https://…` with the document's URL at the
+end. capture-ledger indexes each line as its own hit and puts the point in
+`stage`. When both the before-search and after-search points of one archive
+match, you get two hits. Authorization is per archive, so both get the same
+answer. A capture with no snapshot at all (a withheld document, say) keeps a
+single line for the requested URL, and its `stage` is `null`.
 
 ### The index does not know who may see what
 

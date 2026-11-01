@@ -535,10 +535,12 @@ BrowserHive が WACZ の `pages/pages.jsonl` に `title` と `text` を書いて
 前者は調べるべき異常で、後者は正常な運用です。
 
 BrowserHive は、頁を写した時点ごとにページ一覧の行を書きます（読み込みの後が
-`after-load`、スクリプトの後が `after-behaviors`）。capture-ledger は行ごとに 1 件として
-載せ、時点を `stage` に入れます。同じアーカイブの検索前と検索後が両方当たれば 2 件返ります。
-認可はアーカイブで決まるので、2 件の答えは同じです。写しが 1 つも無い取り込み
-（本文を伏せた文書など）の行には時点が無く、`stage` は `null` です。
+`after-load`、スクリプトの後が `after-behaviors`）。行の `url` は写しの urn
+（`urn:browserhive:snapshot:after-load:https://…` の形で、文書の URL はその後ろ）です。
+capture-ledger は行ごとに 1 件として載せ、時点を `stage` に入れます。同じアーカイブの
+検索前と検索後が両方当たれば 2 件返ります。認可はアーカイブで決まるので、2 件の答えは
+同じです。写しが 1 つも無い取り込み（本文を伏せた文書など）は、要求の URL の行が 1 つで、
+`stage` は `null` です。
 
 ### 索引は誰に見せてよいかを知りません
 

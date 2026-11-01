@@ -27,9 +27,10 @@
  * ## 1 アーカイブに時点ごとの行
  *
  * BrowserHive は、頁を写した時点ごとに `pages.jsonl` の行を書く（`stage`。読み込みの後が
- * `after-load`、スクリプトの後が `after-behaviors`）。題と本文はその時点で読んだ物なので、
+ * `after-load`、スクリプトの後が `after-behaviors`）。行の `url` は写しの urn
+ * （`urn:browserhive:snapshot:<stage>:<文書の URL>`）。題と本文はその時点で読んだ物なので、
  * 検索前と検索後は別の 1 件として載せる。写しが 1 つも無い取り込み（本文を伏せた文書など）は、
- * 時点の無い 1 行のまま。
+ * 要求の URL の、時点の無い 1 行のまま。
  */
 
 /** `pages.jsonl` の 1 行。BrowserHive の `PagesLineInput` に対応する。 */
@@ -130,8 +131,9 @@ export const searchDocument = (page: PageLine, archive: ArchiveRow): SearchDocum
 /**
  * 索引の 1 件の `_id`。**アーカイブの id と時点**で作る。時点の無い行は `page`。
  *
- * URL で分けないのは、頁の中で URL が替わらない検索だと、検索前と検索後が同じ URL に
- * なるため。同じアーカイブを二度載せても、`_id` が同じなので増えない。
+ * 1 アーカイブの中で行を 1 つに決めるのは時点（BrowserHive は時点ごとに 1 行）。URL は
+ * 長く、写しの urn か要求の URL かで形が変わるので鍵にしない。同じアーカイブを二度
+ * 載せても、`_id` が同じなので増えない。
  */
 export const searchDocumentId = (doc: Pick<SearchDocument, "archiveId" | "stage">): string =>
   `${doc.archiveId}:${doc.stage ?? "page"}`;
