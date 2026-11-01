@@ -51,6 +51,9 @@ const fakeDb = {
             pagesCaptured: 0,
             artifactKeyPrefix: null,
             scripts: fakeScripts,
+            // 本物の行は必ず持つ (024 の NOT NULL DEFAULT)。偽物も同じ形で
+            variables: {},
+            secrets: {},
           }),
       }),
     }),

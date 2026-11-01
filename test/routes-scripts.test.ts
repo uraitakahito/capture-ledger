@@ -83,6 +83,7 @@ describe("GET /api/scripts/:id/versions/:version", () => {
       phase: "behavior",
       sha256: "c9956819ffea",
       sites: ["site.test"],
+      params: [{ name: "query", kind: "variable", required: false, summary: "検索語" }],
       enabled: false,
       bytes: 2695,
       createdAt: new Date("2026-10-14T12:26:38.656Z"),
@@ -95,6 +96,7 @@ describe("GET /api/scripts/:id/versions/:version", () => {
     expect(res.json()).toEqual({ ...row, createdAt: "2026-10-14T12:26:38.656Z" });
     expect(queries).toHaveLength(1);
     expect(queries[0]?.sql).toContain('"sites"');
+    expect(queries[0]?.sql).toContain('"params"');
     expect(queries[0]?.sql).toContain('where "id" = $1 and "version" = $2');
     expect(queries[0]?.parameters).toEqual(["autoscroll", 1]);
   });
@@ -130,6 +132,7 @@ describe("GET /api/scripts/:id/versions", () => {
       phase: "behavior",
       sha256: `sha-${String(version)}`,
       sites: version === 2 ? ["site.test"] : [],
+      params: version === 2 ? [{ name: "query", kind: "variable", required: false }] : [],
       enabled: true,
       bytes: 2695,
       createdAt: new Date(`2026-10-1${String(version + 3)}T00:00:00.000Z`),
@@ -147,12 +150,18 @@ describe("GET /api/scripts/:id/versions", () => {
         "bytes",
         "createdAt",
         "enabled",
+        "params",
         "phase",
         "sha256",
         "sites",
         "version",
       ]);
     expect(body.versions.map((v) => v["sites"])).toEqual([["site.test"], []]); // 札は版ごと
+    // 宣言も版ごと
+    expect(body.versions.map((v) => v["params"])).toEqual([
+      [{ name: "query", kind: "variable", required: false }],
+      [],
+    ]);
     expect(queries[0]?.sql).not.toContain('"source"');
     expect(queries[0]?.parameters).toEqual(["autoscroll"]);
   });
@@ -188,7 +197,8 @@ describe("GET /api/host-types", () => {
 });
 
 describe("GET /api/scripts", () => {
-  it("各 id の 1 行を、身元と札と既定に入るか（id・版・phase・sha256・sites・enabled）だけで返す", async () => {
+  it("各 id の 1 行を、身元と札と宣言と既定に入るか（id・版・phase・sha256・sites・params・enabled）だけで返す", async () => {
+    const params = [{ name: "query", kind: "variable", required: false, summary: "検索語" }];
     const row = {
       id: "autoscroll",
       version: 2,
@@ -197,6 +207,7 @@ describe("GET /api/scripts", () => {
       sha256: "c9",
       options: {},
       sites: [],
+      params,
       enabled: true,
     };
     const { res } = await get("/api/scripts", { rows: [[row]] });
@@ -204,7 +215,15 @@ describe("GET /api/scripts", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       scripts: [
-        { id: "autoscroll", version: 2, phase: "behavior", sha256: "c9", sites: [], enabled: true },
+        {
+          id: "autoscroll",
+          version: 2,
+          phase: "behavior",
+          sha256: "c9",
+          sites: [],
+          params,
+          enabled: true,
+        },
       ],
     });
   });
@@ -216,6 +235,7 @@ describe("GET /api/scripts", () => {
       phase: "behavior",
       sha256: "6a",
       sites: [],
+      params: [],
       enabled: false,
     };
     const { res } = await get("/api/scripts", { rows: [[row]] });
@@ -225,13 +245,22 @@ describe("GET /api/scripts", () => {
 
   it("サイト用のスクリプトも返す（既定で走る物だけではない）。札で絞らない", async () => {
     const rows = [
-      { id: "autoscroll", version: 2, phase: "behavior", sha256: "c9", sites: [], enabled: true },
+      {
+        id: "autoscroll",
+        version: 2,
+        phase: "behavior",
+        sha256: "c9",
+        sites: [],
+        params: [],
+        enabled: true,
+      },
       {
         id: "example-title",
         version: 1,
         phase: "behavior",
         sha256: "e1",
         sites: ["site.test"],
+        params: [],
         enabled: true,
       },
     ];
@@ -239,7 +268,7 @@ describe("GET /api/scripts", () => {
 
     expect(res.json<{ scripts: unknown[] }>().scripts).toEqual(rows);
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "enabled" from "scripts" ' +
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled" from "scripts" ' +
         'order by "id", "enabled" desc, "version" desc',
     );
   });

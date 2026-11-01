@@ -38,7 +38,7 @@
 import { createHash } from "node:crypto";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
-import type { CrawlScript, Database, ScriptPhase } from "../db/database.js";
+import type { CrawlScript, Database, ParamKind, ScriptParam, ScriptPhase } from "../db/database.js";
 import { HOSTNAME } from "../crawl/scope.js";
 
 /** `scripts` の 1 行 (source は含めない —— 一覧で読むものではない)。 */
@@ -49,6 +49,8 @@ export interface ScriptRow {
   sha256: string;
   /** 札（`021`）。空ならどこでも走る */
   sites: string[];
+  /** クロールごとの値の宣言 (`024`)。無ければ空 */
+  params: ScriptParam[];
   enabled: boolean;
   bytes: number;
   /** 取り込んだ時刻。版を並べたときに、どれがいつの物かを言う */
@@ -91,6 +93,66 @@ export const sitesRefusal = (sites: readonly string[]): string | undefined => {
   return undefined;
 };
 
+/**
+ * クロールごとの値の名前の形。BrowserHive の契約 (`ValueName`) と同じ —— 英小文字で始め、英小文字・数字・`_`。
+ * 台帳が断るので、Windmill がハイフンを通しても path に入らない。
+ */
+export const VALUE_NAME = /^[a-z][a-z0-9_]*$/;
+export const VALUE_NAME_MAX = 64;
+/** 1 クロールの変数の数と、宣言の数の上限。BrowserHive の map の上限と同じ。 */
+export const VALUES_MAX = 32;
+/** 値 1 つの長さの上限。BrowserHive の `ValueText` と同じ。 */
+export const VALUE_TEXT_MAX = 4096;
+const PARAM_KINDS: readonly ParamKind[] = ["variable", "secret"];
+
+/**
+ * 宣言の列 (`params`) として読めれば返し、読めなければその文を返す。capture-scripts の tools/check.mjs と
+ * 同じ決まり —— 配列・`name` の綴りと長さ・`kind` は variable か secret・`required` は真偽値 (省けば false)・
+ * `summary` は空でない・名前の重複なし。catalog の `import` と CLI の `--params` と、その場の JS の `params` が
+ * 同じ関数を通る。`summary` を求めるのは catalog だけ (その場の JS は人に見せる一覧に並ばない)。
+ *
+ * **既定値は書けない。** 既定値はソースの中にだけ置く (読む側の `??` が既定値で、宣言は名前と種類だけ)。
+ */
+export const readParams = (
+  raw: unknown,
+  { summaryRequired }: { summaryRequired: boolean },
+): ScriptParam[] | string => {
+  if (!Array.isArray(raw)) return "params は宣言の配列";
+  if (raw.length > VALUES_MAX) return `params は ${String(VALUES_MAX)} 個まで`;
+  const out: ScriptParam[] = [];
+  for (const entry of raw as unknown[]) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      return "params の要素は { name, kind, required?, summary } の object";
+    }
+    const { name, kind, required, summary, ...rest } = entry as Record<string, unknown>;
+    if (typeof name !== "string" || !VALUE_NAME.test(name) || name.length > VALUE_NAME_MAX) {
+      return `params の name ${JSON.stringify(name)} は ^[a-z][a-z0-9_]*$ で ${String(VALUE_NAME_MAX)} 字まで`;
+    }
+    if (typeof kind !== "string" || !(PARAM_KINDS as readonly string[]).includes(kind)) {
+      return `params の ${name} の kind は variable か secret (いまは ${String(kind)})`;
+    }
+    if (required !== undefined && typeof required !== "boolean") {
+      return `params の ${name} の required は true か false (省けば false)`;
+    }
+    if (summary !== undefined && typeof summary !== "string") {
+      return `params の ${name} の summary は文字列`;
+    }
+    if (summaryRequired && (summary === undefined || summary === "")) {
+      return `params の ${name} の summary が空 —— 一覧で何の値か分からなくなる`;
+    }
+    const unknown = Object.keys(rest);
+    if (unknown.length > 0) return `params の ${name} に知らない鍵: ${unknown.join(", ")}`;
+    if (out.some((p) => p.name === name)) return `params に ${name} が 2 度ある`;
+    out.push({
+      name,
+      kind: kind as ParamKind,
+      required: required === true,
+      ...(summary === undefined ? {} : { summary }),
+    });
+  }
+  return out;
+};
+
 /** その札のスクリプトを、この起点で走らせてよいか。札が無ければどこでも。起点はホスト名 (ポートは見ない) */
 export const onSeed = (sites: readonly string[], seedHosts: readonly string[]): boolean =>
   sites.length === 0 || sites.some((site) => seedHosts.includes(site));
@@ -118,6 +180,8 @@ export interface InlineScript {
   name: string;
   phase: ScriptPhase;
   source: string;
+  /** 読む値の宣言。添えなければ「宣言が無い」(空の宣言とは別。`crawl/values.ts`) */
+  params?: ScriptParam[];
 }
 
 /** 要求の 1 要素。台帳のスクリプトの名指しか、その場の JS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
@@ -128,6 +192,23 @@ export type ResolveResult =
   | { kind: "missing"; ids: string[] }
   | { kind: "duplicate"; ids: string[] }
   | { kind: "ok"; scripts: CrawlScript[] };
+
+/**
+ * 鍵の順に依らない JSON の文字列。jsonb に書いた物を比べるために要る —— **Postgres の jsonb は object の
+ * 鍵を並べ替えて持つ** (短い鍵が先、同じ長さなら辞書順) ので、書いた順のまま `JSON.stringify` で比べると、
+ * 同じ宣言・同じ options を取り込み直すたびに「違う」と読んで版が増える (CI の smoke で実測: 同じ catalog の
+ * 2 度目の import が v2 を足した)。
+ */
+const stableStringify = (value: unknown): string =>
+  JSON.stringify(value, (_key, item: unknown) =>
+    typeof item === "object" && item !== null && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.entries(item as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : item,
+  );
 
 /**
  * 1 本足す。**版は自動で採番する** —— 呼ぶ側に決めさせると、飛んだ番号や
@@ -144,6 +225,8 @@ export type ResolveResult =
  *
  * **札 (`sites`) も同じ扱い。** 渡したときだけ最新版と比べ、違えば版を足す。`import` は catalog の札を
  * 必ず渡す (書いていなければ空) —— catalog が札の正なので、意見として渡す。
+ *
+ * **宣言 (`params`) も同じ扱い。** 渡したときだけ比べ、違えば版を足す。`import` は catalog の宣言を必ず渡す。
  */
 export const addScript = async (
   db: Kysely<Database>,
@@ -153,6 +236,7 @@ export const addScript = async (
     source: string;
     options?: Record<string, unknown>;
     sites?: readonly string[];
+    params?: readonly ScriptParam[];
   },
 ): Promise<AddResult> => {
   const options = input.options ?? {};
@@ -161,7 +245,7 @@ export const addScript = async (
   return db.transaction().execute(async (trx) => {
     const latest = await trx
       .selectFrom("scripts")
-      .select(["version", "source", "sha256", "options", "sites"])
+      .select(["version", "source", "sha256", "options", "sites", "params"])
       .where("id", "=", input.id)
       .orderBy("version", "desc")
       .limit(1)
@@ -169,8 +253,10 @@ export const addScript = async (
 
     if (
       latest?.source === input.source &&
-      (!opinionated || JSON.stringify(latest.options) === JSON.stringify(options)) &&
-      (input.sites === undefined || latest.sites.join(" ") === input.sites.join(" "))
+      (!opinionated || stableStringify(latest.options) === stableStringify(options)) &&
+      (input.sites === undefined || latest.sites.join(" ") === input.sites.join(" ")) &&
+      (input.params === undefined ||
+        stableStringify(latest.params) === stableStringify(input.params))
     ) {
       return {
         kind: "ok" as const,
@@ -190,6 +276,7 @@ export const addScript = async (
         source: input.source,
         options: JSON.stringify(options),
         sites: [...(input.sites ?? [])],
+        params: JSON.stringify(input.params ?? []),
       })
       .returning(["version", "sha256"])
       .executeTakeFirstOrThrow();
@@ -218,6 +305,7 @@ export const listScripts = async (
     "phase",
     "sha256",
     "sites",
+    "params",
     "enabled",
     // **`length` ではなく `octet_length`。** `length` は文字数を数えるので、
     // 日本語のコメントを持つスクリプトでは「B」と書いた列が実際のバイト数より
@@ -250,6 +338,7 @@ export const readScript = async (
       "phase",
       "sha256",
       "sites",
+      "params",
       "enabled",
       sql<number>`octet_length(source)`.as("bytes"), // listScripts と同じく length ではない
       "createdAt",
@@ -393,12 +482,13 @@ export const pickable = async (
     phase: ScriptPhase;
     sha256: string;
     sites: string[];
+    params: ScriptParam[];
     enabled: boolean;
   }[]
 > =>
   db
     .selectFrom("scripts")
-    .select(["id", "version", "phase", "sha256", "sites", "enabled"])
+    .select(["id", "version", "phase", "sha256", "sites", "params", "enabled"])
     .distinctOn("id")
     .orderBy("id")
     .orderBy("enabled", "desc")
@@ -426,7 +516,16 @@ export const resolveScripts = async (
   requested?: readonly RequestedScript[],
   seedHosts: readonly string[] = [],
 ): Promise<ResolveResult> => {
-  const columns = ["id", "version", "phase", "source", "sha256", "options", "sites"] as const;
+  const columns = [
+    "id",
+    "version",
+    "phase",
+    "source",
+    "sha256",
+    "options",
+    "sites",
+    "params",
+  ] as const;
 
   if (requested === undefined) {
     const rows = await db
@@ -481,15 +580,17 @@ const idOf = (r: RequestedScript): string =>
 /**
  * その場の JS の写し。**形は台帳のスクリプトの写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
  * 台帳のスクリプトと区別しない。版は 1、options は空。sha256 は台帳が source から打つ (`scripts` の生成列
- * `encode(digest(source, 'sha256'), 'hex')` と同じ値)。
+ * `encode(digest(source, 'sha256'), 'hex')` と同じ値)。宣言 (`params`) は添えられたときだけ写す ——
+ * 添えなかった物と空の宣言は別 (`crawl/values.ts`)。
  */
-const inlineScript = ({ name, phase, source }: InlineScript): CrawlScript => ({
+const inlineScript = ({ name, phase, source, params }: InlineScript): CrawlScript => ({
   id: INLINE_PREFIX + name,
   version: 1,
   phase,
   source,
   sha256: createHash("sha256").update(source, "utf8").digest("hex"),
   options: {},
+  ...(params === undefined ? {} : { params }),
 });
 
 const toScript = (row: {
@@ -500,6 +601,7 @@ const toScript = (row: {
   sha256: string;
   options: Record<string, unknown>;
   sites: string[];
+  params: ScriptParam[];
 }): CrawlScript => ({
   id: row.id,
   version: row.version,
@@ -508,6 +610,7 @@ const toScript = (row: {
   sha256: row.sha256,
   options: row.options,
   sites: row.sites,
+  params: row.params,
 });
 
 /** 指定された版 (無ければ最新版) を id ごとに 1 つ引く。見つからない id は名指しで返す。 */

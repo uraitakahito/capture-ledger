@@ -612,6 +612,14 @@
                             "$ref": "#/components/schemas/Script"
                         },
                         "description": "遷移の**前**に、書かれた順で注入するスクリプト。iframe を含む全フレームで、遷移のたびに走り、\n報告の手段を持たない。behaviors とは約束が違うので同じ列には入れない。"
+                    },
+                    "variables": {
+                        "$ref": "#/components/schemas/Values",
+                        "description": "この取り込みに渡す変数。受け皿の `__bh.vars` で読める (preload には渡らない)。\n**値は archive の `settings.variables` にそのまま残る** —— どの値で撮ったかを後から言うための欄。\n残したくない値は `secrets` に。省略と空はどちらも「無い」で、archive には空の object が残る。"
+                    },
+                    "secrets": {
+                        "$ref": "#/components/schemas/Values",
+                        "description": "この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。\n**値はどこにも書かない** —— archive の `settings.secrets` には名前だけ (名前順)、受け皿のコード\n(`behaviors/runtime.js`) は値を含まず、ログの報告と例外の文からは伏せる。隠せるのは記録からだけで、\n頁の JS からは読めるし、スクリプトが網に送れば WARC には残る。"
                     }
                 },
                 "required": [
@@ -1194,6 +1202,23 @@
                 "required": [
                     "message"
                 ]
+            },
+            "Values": {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 4096,
+                    "description": "取り込みごとの値。**文字列だけ** —— 数や JSON はスクリプトが読み替える。4,096 字まで。"
+                },
+                "propertyNames": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 1,
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "description": "取り込みごとの値の名前。英小文字で始め、英小文字・数字・`_` で 64 字まで。\n受け皿の `__bh.vars` / `__bh.secrets` の鍵になる綴りで、呼ぶ側 (台帳) が catalog の宣言と\n突き合わせるのも同じ綴り。"
+                },
+                "maxProperties": 32,
+                "description": "名前 → 値。1 回の取り込みに 32 個まで。"
             },
             "Viewport": {
                 "type": "object",

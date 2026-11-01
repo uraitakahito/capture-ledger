@@ -38,6 +38,7 @@ import type {
   CrawlRule,
   CrawlRuleAction,
   CrawlScript,
+  CrawlSecret,
   CrawlsTable,
   CrawlState,
   Database,
@@ -47,12 +48,19 @@ import {
   INLINE_PREFIX,
   isInlineId,
   offsiteScripts,
+  readParams,
   resolveScripts,
+  VALUE_NAME,
+  VALUE_NAME_MAX,
+  VALUE_TEXT_MAX,
+  VALUES_MAX,
   type RequestedScript,
 } from "../scripts/store.js";
 import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
+import { checkValues, type DeclaredSecret } from "../crawl/values.js";
+import { WindmillUnreachable, type WindmillVariables } from "../crawl/windmill-variables.js";
 import {
   HOSTNAME,
   parseHttpUrl,
@@ -191,6 +199,16 @@ export interface DispatchedCrawl {
    * (どちらも「何も走らない」) ので、常に載せて形を 1 つに保つ。
    */
   scripts: CrawlScript[];
+  /**
+   * クロールごとの変数 (名前 → 文字列)。**必ず載せる** (空なら `{}`)。行に固定した物を段ごとにそのまま配る。
+   * flow は運ぶだけで、BrowserHive が頁に渡して WACZ の `settings.variables` に値を書く。
+   */
+  variables: Record<string, string>;
+  /**
+   * 宣言で結んだシークレット (名前 → Windmill の変数の path)。**必ず載せる** (空なら `{}`)。値は無い ——
+   * 解くのは flow の `crawl_host` で、BrowserHive に送る直前に読む。台帳・webhook・WACZ が持つのは名前と path だけ。
+   */
+  secrets: Record<string, string>;
 }
 
 export interface CrawlRouteDeps {
@@ -210,10 +228,22 @@ export interface CrawlRouteDeps {
   /** 受け口の設定。無ければ送り先を配らない。 */
   sink?: SinkConfig;
   dispatch: CrawlDispatcher;
+  /**
+   * Windmill の変数に在るかを訊く窓口 (`crawl/windmill-variables.ts`)。webhook と同じ設定から作るので、
+   * 無いのは URL が flow の webhook の形でないときだけ —— そのとき、シークレットを宣言したスクリプトの
+   * クロールは 400 で止まる (値を解く flow が無いので)。
+   */
+  windmill?: WindmillVariables;
 }
 
 interface CrawlBody {
   seeds?: string[];
+  /**
+   * クロールごとの変数 (名前 → 文字列)。スクリプトが宣言した名前 (`params` の `variable`) だけを渡せ、
+   * 行に固定されて段ごとに配られ、WACZ の `settings.variables` に**値が残る**。シークレットには欄が無い ——
+   * 宣言した名前を Windmill の変数に結ぶ (`crawl/values.ts`)。
+   */
+  variables?: Record<string, string>;
   /**
    * 起点を明示せず、`capture_targets` の有効な行から取る。
    *
@@ -288,6 +318,23 @@ const toDispatched = ({
   options,
 });
 
+/** flow へ渡すシークレットの形: 名前 → Windmill の変数の path。行が持つ更新時刻は渡さない (flow には要らない)。 */
+const pathsOf = (secrets: Readonly<Record<string, CrawlSecret>>): Record<string, string> =>
+  Object.fromEntries(Object.entries(secrets).map(([name, secret]) => [name, secret.path]));
+
+/** `GET /api/crawls/:id` が返すシークレットの形。名前順の列で、値は無い。 */
+const secretsOf = (
+  secrets: Readonly<Record<string, CrawlSecret>>,
+): { name: string; path: string; editedAt: string | null; rotated: CrawlSecret["rotated"] }[] =>
+  Object.entries(secrets)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([name, secret]) => ({
+      name,
+      path: secret.path,
+      editedAt: secret.editedAt,
+      rotated: secret.rotated,
+    }));
+
 export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps): void => {
   const { db, fga, resolveIdentity, dispatch, capture, sink } = deps;
 
@@ -332,6 +379,52 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       .catch((updateErr: unknown) => {
         log.error({ err: updateErr, crawlId, depth }, "Could not record the dispatch");
       });
+  };
+
+  /**
+   * 次の段を送る前に、シークレットの更新時刻を読み直す。**続ける** —— 段の先で解くのは新しい値で、
+   * 止める理由は無い。ただし気づいた段と新しい時刻を行に残す (`rotated`)。もう 1 度替われば書き換える。
+   * 比べる相手は最後に知った時刻 (始めたときか、前に気づいた物) なので、同じ替わりを段ごとに書き直さない。
+   *
+   * 訊けなければそのまま送る。flow が解けなければ `fail_crawl` が締めるので、ここで止めない。
+   * 消えた変数も書かない (同じ理由で flow が落とす)。
+   */
+  const noteRotations = async (
+    crawlId: string,
+    secrets: Readonly<Record<string, CrawlSecret>>,
+    depth: number,
+  ): Promise<Record<string, CrawlSecret>> => {
+    const windmill = deps.windmill;
+    const entries = Object.entries(secrets);
+    if (windmill === undefined || entries.length === 0) return { ...secrets };
+    const next: Record<string, CrawlSecret> = { ...secrets };
+    let changed = false;
+    try {
+      for (const [name, current] of entries) {
+        const meta = await windmill.meta(current.path);
+        if (meta === undefined) continue;
+        const known = current.rotated === null ? current.editedAt : current.rotated.editedAt;
+        if (meta.editedAt === known) continue;
+        next[name] = { ...current, rotated: { depth, editedAt: meta.editedAt } };
+        changed = true;
+        log.warn(
+          { crawlId, depth, name, editedAt: meta.editedAt },
+          "A secret changed while the crawl was running",
+        );
+      }
+    } catch (err) {
+      if (!(err instanceof WindmillUnreachable)) throw err;
+      log.warn({ err, crawlId, depth }, "Could not re-read the secrets; sending the level anyway");
+      return { ...secrets };
+    }
+    if (changed) {
+      await db
+        .updateTable("crawls")
+        .set({ secrets: JSON.stringify(next) })
+        .where("id", "=", crawlId)
+        .execute();
+    }
+    return next;
   };
 
   /**
@@ -389,6 +482,18 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             // 0 を許すのは、試験で意図的に間隔を外せるようにするため。
             perHostDelayMs: { type: "integer", minimum: 0, maximum: 600000 },
             hostParallelism: { type: "integer", minimum: 1, maximum: 32 },
+            // クロールごとの変数。名前の綴りと長さ・数・値の長さは BrowserHive の契約 (ValueName・ValueText・
+            // Values) と同じ。宣言に在るか・required が揃っているかは handler で見て 400 で名指す (`crawl/values.ts`)。
+            variables: {
+              type: "object",
+              maxProperties: VALUES_MAX,
+              propertyNames: {
+                type: "string",
+                pattern: VALUE_NAME.source,
+                maxLength: VALUE_NAME_MAX,
+              },
+              additionalProperties: { type: "string", maxLength: VALUE_TEXT_MAX },
+            },
             // **空配列を許す。** 「既定でよい」(省く) と「何も走らせない」([]) を
             // 書き分けられるようにするため。
             //
@@ -414,6 +519,27 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                       name: { type: "string", pattern: "^[a-z][a-z0-9-]*$", maxLength: 57 },
                       phase: { type: "string", enum: ["behavior", "preload"] },
                       source: { type: "string", minLength: 1 },
+                      // 読む値の宣言 (catalog.json の params と同じ形)。添えなければ「宣言が無い」で、
+                      // 空の配列は「何も読まない」の宣言 (`crawl/values.ts`)。重複と required の既定は handler
+                      params: {
+                        type: "array",
+                        maxItems: VALUES_MAX,
+                        items: {
+                          type: "object",
+                          additionalProperties: false,
+                          required: ["name", "kind"],
+                          properties: {
+                            name: {
+                              type: "string",
+                              pattern: VALUE_NAME.source,
+                              maxLength: VALUE_NAME_MAX,
+                            },
+                            kind: { type: "string", enum: ["variable", "secret"] },
+                            required: { type: "boolean" },
+                            summary: { type: "string" },
+                          },
+                        },
+                      },
                     },
                   },
                 },
@@ -499,7 +625,29 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // このクロールが走らせるものは変わらない (`018`)。札 (`021`) と比べるのは起点のホスト名で、
       // ポートは見ない —— 省いた頼みでは、札の無い物と、起点に合うサイト用の物が走る
       const seedHosts = [...new Set(parsedSeeds.map((parsed) => parsed.hostname))];
-      const resolved = await resolveScripts(db, body.scripts, seedHosts);
+      // その場の JS の宣言は、catalog と同じ決まりで読んでから写す (重複と required の既定は schema が見ない)。
+      // 添えなかった物は添えないまま —— 「宣言が無い」と「何も読まない」は別 (`crawl/values.ts`)
+      const requested: RequestedScript[] = [];
+      for (const element of body.scripts ?? []) {
+        if (!("inline" in element) || element.inline.params === undefined) {
+          requested.push(element);
+          continue;
+        }
+        const params = readParams(element.inline.params, { summaryRequired: false });
+        if (typeof params === "string") {
+          return reply.code(400).send({
+            error: "invalid params",
+            script: INLINE_PREFIX + element.inline.name,
+            hint: params,
+          });
+        }
+        requested.push({ inline: { ...element.inline, params } });
+      }
+      const resolved = await resolveScripts(
+        db,
+        body.scripts === undefined ? undefined : requested,
+        seedHosts,
+      );
       if (resolved.kind === "missing") {
         return reply.code(400).send({ error: "unknown script ids", ids: resolved.ids });
       }
@@ -543,6 +691,66 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         });
       }
 
+      // **クロールごとの値を、宣言に照らす。** 変数は頼みの物 (無ければ空)、シークレットは宣言から集める
+      // (`crawl/values.ts`)。断るのは行を立てる前 —— 行は残らない。
+      const variables = body.variables ?? {};
+      const values = checkValues(resolved.scripts, variables);
+      if (values.kind === "refused") return reply.code(400).send(values.body);
+
+      // **宣言したシークレットが Windmill に在るか。** 値は読まない (`crawl/windmill-variables.ts`)。required の
+      // 物が無ければ 400 で名前と path を言い、secret でない変数が置かれていれば 400。required でない物が無ければ
+      // 渡さないだけ (スクリプトは undefined を読む)。訊けなければ 503 で始めない —— Windmill に届かないなら
+      // flow も動かない。
+      const secrets: Record<string, CrawlSecret> = {};
+      if (values.secrets.length > 0) {
+        const windmill = deps.windmill;
+        if (windmill === undefined) {
+          return reply.code(400).send({
+            error: "secrets need the windmill webhook",
+            names: values.secrets.map((secret) => secret.name),
+          });
+        }
+        const unknown: DeclaredSecret[] = [];
+        const notSecret: DeclaredSecret[] = [];
+        try {
+          for (const secret of values.secrets) {
+            const meta = (await windmill.exists(secret.path))
+              ? await windmill.meta(secret.path)
+              : undefined;
+            if (meta === undefined) {
+              if (secret.required) unknown.push(secret);
+              continue;
+            }
+            if (!meta.isSecret) {
+              notSecret.push(secret);
+              continue;
+            }
+            secrets[secret.name] = { path: secret.path, editedAt: meta.editedAt, rotated: null };
+          }
+        } catch (err) {
+          if (!(err instanceof WindmillUnreachable)) throw err;
+          log.warn({ err, subject: identity.subject }, "Could not ask Windmill about the secrets");
+          return reply.code(503).send({ error: "windmill unreachable" });
+        }
+        const named = (list: DeclaredSecret[]) =>
+          list.map(({ name, path, declaredBy }) => ({ name, path, declaredBy }));
+        if (unknown.length > 0) {
+          return reply.code(400).send({
+            error: "unknown secrets",
+            secrets: named(unknown),
+            // wmill CLI の綴り (値が先、path が後)。置き場は capture-scheduler の docs が案内する
+            hint: unknown
+              .map((secret) => `wmill variable add <value> ${secret.path} --secret`)
+              .join(" / "),
+          });
+        }
+        if (notSecret.length > 0) {
+          return reply
+            .code(400)
+            .send({ error: "not a secret variable", secrets: named(notSecret) });
+        }
+      }
+
       const crawlId = randomUUID();
       // **型注釈を付けること。** 注釈の無い変数に入れてから `.values()` へ渡すと
       // 余剰プロパティの検査が効かず、存在しない列名を書いても typecheck が緑で通る。
@@ -561,6 +769,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         requestedBy: identity.subject,
         // 解決済みの写し。並びが実行順。
         scripts: JSON.stringify(resolved.scripts),
+        // クロールごとの値。変数は値ごと、シークレットは path と更新時刻だけ (値は台帳を通らない)
+        variables: JSON.stringify(variables),
+        secrets: JSON.stringify(secrets),
         state: "running" as const,
         // **置く場所を、いま 1 度だけ決めて書き残す。** 以後は置く側 (受け口) も
         // 探す側 (`admitLevel`) もこの列を読む —— 両側が別々に計算すると、
@@ -624,6 +835,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // 次の段と同じく `toDispatched` を通す。行の写しには札 (`021`) が在るが、flow には送らない ——
         // compile の段は scripts をそのまま ts-compile-service に渡すので、知らない欄が届く
         scripts: resolved.scripts.map(toDispatched),
+        // クロールごとの値。段ごとに同じ物を配る (行に固定した物)。シークレットは名前 → path だけ
+        variables,
+        secrets: pathsOf(secrets),
         ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
       });
 
@@ -635,6 +849,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           // id だけだと、後から台帳のスクリプトを書き換えたときに「何が走ったのか」を
           // このログから言えなくなる。
           scripts: resolved.scripts.map((script) => `${script.id}@${String(script.version)}`),
+          // 値は出さない。変数は行と WACZ に在り、シークレットの値は台帳を通らない
+          variables: Object.keys(variables),
+          secrets: Object.keys(secrets),
         },
         "Crawl started",
       );
@@ -815,6 +1032,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           depth: page.depth,
           reason: page.skipReason,
         })),
+        // クロールごとの値。変数は値ごと (WACZ の settings.variables にも残る)。シークレットは名前・path・
+        // 始めたときの更新時刻と、途中で替わったなら気づいた段と新しい時刻。値は無い
+        variables: crawl.variables,
+        secrets: secretsOf(crawl.secrets),
       });
     },
   );
@@ -1486,6 +1707,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           if (row.last !== null) lastByHost.set(row.host, new Date(row.last).toISOString());
         }
 
+        // シークレットが途中で替わっていないかを読み直してから配る (替わっていても続ける)
+        const secrets = await noteRotations(crawlId, crawl.secrets, nextDepth);
+
         dispatchLevel({
           crawlId,
           depth: nextDepth,
@@ -1500,6 +1724,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           signing: capture.signing,
           // 台帳のスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
           scripts: crawl.scripts.map(toDispatched),
+          // 値も行に固定した物をそのまま。変数は値ごと、シークレットは名前 → path
+          variables: crawl.variables,
+          secrets: pathsOf(secrets),
           ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
         });
       }

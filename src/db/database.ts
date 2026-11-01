@@ -105,6 +105,21 @@ export interface CrawlsTable {
    * 書くときは JSON の文字列 (`fgaOutbox.payload` と同じ扱い)。
    */
   scripts: ColumnType<CrawlScript[], string | undefined, string>;
+  /**
+   * 頼みで渡された変数 (名前 → 文字列。`024`)。スクリプトの宣言 (`params`) に照らして受け、行に固定する。
+   * 段ごとに flow へ運ばれ、BrowserHive が WACZ の `settings.variables` に**値を書く**。
+   *
+   * 書くときは JSON の文字列 (`scripts` と同じ扱い)。後から書き換えない。
+   */
+  variables: ColumnType<Record<string, string>, string, never>;
+  /**
+   * 宣言で結んだシークレット (名前 → path と `edited_at`。`024`)。**値は持たない** —— 解くのは flow の
+   * `crawl_host` で、台帳が持つのは Windmill の変数の path と、始めたときの更新時刻だけ。段を送るたびに読み直し、
+   * 変わっていれば `rotated` を書き足す (`CrawlSecret`)。
+   *
+   * 書くときは JSON の文字列。
+   */
+  secrets: ColumnType<Record<string, CrawlSecret>, string, string>;
   state: CrawlState;
   // 走行中は NULL。なぜ終わったかが入る。
   stopReason: ColumnType<
@@ -163,6 +178,41 @@ export interface CrawlScript {
   jsSha256?: string;
   /** 何で (typescript の版)・何に向けて (受け皿の型の tag) 変換したか。`jsSha256` と一緒に写す。 */
   compiledWith?: { typescript: string; hostTypes: string };
+  /**
+   * クロールごとの値の宣言 (`024`)。台帳のスクリプトは `scripts.params` の写しを必ず持ち (宣言が無ければ空)、
+   * その場の JS は頼みに `params` を添えたときだけ持つ。**宣言の無いその場の JS が 1 本でも在れば**、知らない
+   * 変数の名前を 400 にしない (`crawl/values.ts`)。flow へは渡さない (`toDispatched`)。
+   */
+  params?: ScriptParam[];
+}
+
+/** クロールごとの値の種類。`variable` は記録に値が残り、`secret` は名前しか残らない。 */
+export type ParamKind = "variable" | "secret";
+
+/**
+ * スクリプトが読む、クロールごとの値の宣言 1 つ (`024`)。capture-scripts の catalog.json の `params` と、
+ * その場の JS の `params` が同じ形。`name` は `^[a-z][a-z0-9_]*$` で 64 字まで (`scripts/store.ts` の
+ * `VALUE_NAME`)。**既定値は持たない** —— 既定値はソースの中にだけ在り、省かれた値をスクリプトは `undefined` と読む。
+ */
+export interface ScriptParam {
+  name: string;
+  kind: ParamKind;
+  /** 無ければ `POST /api/crawls` が 400 で止める。省けば false。 */
+  required: boolean;
+  /** 人に見せる 1 行。catalog では空にできない。その場の JS では省ける。 */
+  summary?: string;
+}
+
+/**
+ * クロールの行に固定したシークレット 1 つ (`crawls.secrets` の値。鍵は名前)。**値は持たない** —— 持つのは
+ * Windmill の変数の path (`f/waggle_secrets/<名前>`) と、始めたときの `edited_at`。段を送るたびに読み直し、
+ * 変わっていれば `rotated` に、気づいた段の深さと新しい時刻を書く (もう 1 度変われば書き換える)。
+ */
+export interface CrawlSecret {
+  path: string;
+  /** Windmill が答えた更新時刻。答えに無ければ null。 */
+  editedAt: string | null;
+  rotated: { depth: number; editedAt: string | null } | null;
 }
 
 /**
@@ -188,6 +238,11 @@ export interface ScriptsTable {
   options: ColumnType<Record<string, unknown>, string | undefined, string>;
   /** 札（どのサイト用か。`021`）。空ならどこでも走る。小文字のホスト名で、CHECK が形を見る */
   sites: ColumnType<string[], string[] | undefined, string[]>;
+  /**
+   * クロールごとの値の宣言 (`024`)。版の一部で、変えたら版を足す (`options`・`sites` と同じ)。
+   * 書くときは JSON の文字列 (`options` と同じ扱い)。
+   */
+  params: ColumnType<ScriptParam[], string | undefined, string>;
   enabled: ColumnType<boolean, boolean | undefined, boolean>;
   createdAt: ColumnType<Date, string | undefined, never>;
 }

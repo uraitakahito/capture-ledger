@@ -1,9 +1,14 @@
 import { createHash } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
-import { registerCrawlRoutes, type CrawlRouteDeps } from "../src/api/crawls.js";
+import {
+  registerCrawlRoutes,
+  type CrawlRouteDeps,
+  type DispatchedCrawl,
+} from "../src/api/crawls.js";
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
-import type { CrawlRule } from "../src/db/database.js";
+import { WindmillUnreachable, type WindmillVariables } from "../src/crawl/windmill-variables.js";
+import type { CrawlRule, CrawlSecret, ScriptParam } from "../src/db/database.js";
 
 /**
  * クロールを始める口の検査。
@@ -220,6 +225,9 @@ interface FakeCrawl {
   waczCount?: number;
   /** 解決済みの顔ぶれ。**行に固定されたもの**で、段ごとに引き直さない (`018`)。 */
   scripts: FakeScript[];
+  /** クロールごとの値 (`024`)。本物の行は必ず持つ (NOT NULL DEFAULT) */
+  variables: Record<string, string>;
+  secrets: Record<string, CrawlSecret>;
 }
 
 /** `scripts` の 1 行。解決の並びと、見つからない id の扱いを見るのに要る欄だけ。 */
@@ -232,6 +240,8 @@ interface FakeScript {
   options: Record<string, unknown>;
   /** 札（`021`）。解決は引いた後に JS で絞るので、偽物も持っていればよい */
   sites: string[];
+  /** 宣言（`024`）。本物の行は必ず持つ (NOT NULL DEFAULT '[]') */
+  params: ScriptParam[];
   enabled: boolean;
 }
 
@@ -295,7 +305,12 @@ const fakeDb = (
           err.constraint = "crawls_single_active_idx";
           throw err;
         }
-        const inserting = row as unknown as FakeCrawl & { scripts: unknown; rules: unknown };
+        const inserting = row as unknown as FakeCrawl & {
+          scripts: unknown;
+          rules: unknown;
+          variables: unknown;
+          secrets: unknown;
+        };
         crawls.push({
           ...inserting,
           rules:
@@ -307,6 +322,15 @@ const fakeDb = (
             typeof inserting.scripts === "string"
               ? (JSON.parse(inserting.scripts) as FakeScript[])
               : [],
+          // 値も jsonb (`024`)。同じく文字列で書いて object で読む
+          variables:
+            typeof inserting.variables === "string"
+              ? (JSON.parse(inserting.variables) as Record<string, string>)
+              : {},
+          secrets:
+            typeof inserting.secrets === "string"
+              ? (JSON.parse(inserting.secrets) as Record<string, CrawlSecret>)
+              : {},
           stopReason: null,
           startedAt: new Date(),
           finishedAt: null,
@@ -495,6 +519,7 @@ const DEFAULT_CATALOG: FakeScript[] = [
     options: {},
     enabled: true,
     sites: [],
+    params: [],
   },
 ];
 
@@ -506,6 +531,8 @@ const depsWith = (opts: {
   pages?: FakePage[];
   updates?: Record<string, unknown>[];
   scripts?: FakeScript[];
+  /** Windmill の変数の窓口。省けば無い配備 (シークレットを宣言したクロールは 400) */
+  windmill?: WindmillVariables;
 }): CrawlRouteDeps =>
   ({
     db: fakeDb(
@@ -521,6 +548,7 @@ const depsWith = (opts: {
     // **本物の設定を使う。** 手書きの literal だと、`capture-formats.ts` が
     // 6 つ全部を返す約束を破っても、この試験は気づかない。
     capture: parseCaptureFormats("wacz", false),
+    ...(opts.windmill && { windmill: opts.windmill }),
   }) as unknown as CrawlRouteDeps;
 
 describe("クロール route の認可と単一実行", () => {
@@ -762,8 +790,11 @@ describe("クロール route の認可と単一実行", () => {
           options: {},
           enabled: true,
           sites: [],
+          params: [],
         },
       ],
+      variables: {},
+      secrets: {},
     };
     const pages: FakePage[] = [
       {
@@ -815,6 +846,8 @@ describe("クロール route の認可と単一実行", () => {
       lastJobId: null,
       lastJobDepth: null,
       scripts: [],
+      variables: {},
+      secrets: {},
     } satisfies FakeCrawl;
     const app = await buildApp(depsWith({ crawls: [crawl], allowed: true }));
     const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
@@ -985,6 +1018,7 @@ describe("走らせるものの解決", () => {
       options: {},
       enabled: true,
       sites: [],
+      params: [],
     },
     {
       id: "autoscroll",
@@ -995,6 +1029,7 @@ describe("走らせるものの解決", () => {
       options: {},
       enabled: true,
       sites: [],
+      params: [],
     },
     {
       id: "autoscroll",
@@ -1005,6 +1040,7 @@ describe("走らせるものの解決", () => {
       options: { maxSteps: 60 },
       enabled: true,
       sites: [],
+      params: [],
     },
     {
       id: "hide-webdriver",
@@ -1015,6 +1051,7 @@ describe("走らせるものの解決", () => {
       options: {},
       enabled: false,
       sites: [],
+      params: [],
     },
   ];
 
@@ -1096,6 +1133,7 @@ describe("走らせるものの解決", () => {
         sha256: "c".repeat(64),
         options: { maxSteps: 60 },
         sites: [],
+        params: [],
       },
     ]);
   });
@@ -1343,6 +1381,8 @@ describe("クロールの一覧", () => {
     lastJobId: null,
     lastJobDepth: null,
     scripts: [],
+    variables: {},
+    secrets: {},
     ...over,
   });
 
@@ -1447,7 +1487,13 @@ describe("クロールの一覧", () => {
 });
 
 describe("札（サイト用のスクリプト）と起点", () => {
-  const base = { phase: "behavior" as const, source: "(() => {})();", options: {}, enabled: true };
+  const base = {
+    phase: "behavior" as const,
+    source: "(() => {})();",
+    options: {},
+    enabled: true,
+    params: [],
+  };
   const SITED: FakeScript[] = [
     { ...base, id: "autoscroll", version: 1, sha256: "a".repeat(64), sites: [] },
     { ...base, id: "example-title", version: 1, sha256: "b".repeat(64), sites: ["site.test"] },
@@ -1604,5 +1650,332 @@ describe("規則の並びで始める", () => {
       seeds: ["https://ads.site.test/"],
     });
     expect(crawls).toEqual([]);
+  });
+});
+
+/**
+ * クロールごとの値 (変数とシークレット。`024`)。宣言に照らす判断は `crawl-values.test.ts` が、Windmill への
+ * 訊き方は `windmill-variables.test.ts` が見る。ここで見るのは配線: schema・400 と 503 の形・行に固定する物・
+ * webhook に載る物・GET の答え。
+ */
+describe("クロールごとの値（変数とシークレット）", () => {
+  const EGOV: FakeScript = {
+    id: "egov-law-search",
+    version: 2,
+    phase: "behavior",
+    source: "(async () => { /* egov */ })();",
+    sha256: "e".repeat(64),
+    options: {},
+    enabled: true,
+    sites: ["site.test"],
+    params: [{ name: "query", kind: "variable", required: false, summary: "検索語" }],
+  };
+  const MEMBERS: FakeScript = {
+    id: "members-only",
+    version: 1,
+    phase: "behavior",
+    source: "(async () => { /* token */ })();",
+    sha256: "9".repeat(64),
+    options: {},
+    enabled: false,
+    sites: [],
+    params: [
+      { name: "api_token", kind: "secret", required: true, summary: "会員の鍵" },
+      { name: "lang", kind: "variable", required: true, summary: "言語" },
+    ],
+  };
+  const PATH = "f/waggle_secrets/api_token";
+  const EDITED = "2026-11-01T07:00:00.000000Z";
+
+  /** Windmill の偽物。在る path とその答え。訊いた順を記録する */
+  const windmillWith = (
+    known: Record<string, { isSecret: boolean; editedAt: string | null }>,
+    asked: string[] = [],
+  ): WindmillVariables => ({
+    exists: (path) => {
+      asked.push(`exists ${path}`);
+      return Promise.resolve(path in known);
+    },
+    meta: (path) => {
+      asked.push(`meta ${path}`);
+      return Promise.resolve(known[path]);
+    },
+  });
+  const unreachable: WindmillVariables = {
+    exists: () => Promise.reject(new WindmillUnreachable("connect ECONNREFUSED")),
+    meta: () => Promise.reject(new WindmillUnreachable("connect ECONNREFUSED")),
+  };
+
+  const start = async (
+    payload: Record<string, unknown>,
+    opts: { windmill?: WindmillVariables; scripts?: FakeScript[] } = {},
+  ) => {
+    const crawls: FakeCrawl[] = [];
+    const sent: DispatchedCrawl[] = [];
+    const app = await buildApp(
+      depsWith({
+        crawls,
+        allowed: true,
+        scripts: opts.scripts ?? [...DEFAULT_CATALOG, EGOV, MEMBERS],
+        dispatch: (crawl) => {
+          sent.push(crawl);
+          return Promise.resolve(undefined);
+        },
+        ...(opts.windmill && { windmill: opts.windmill }),
+      }),
+    );
+    const res = await app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+    await app.close();
+    return { res, crawls, sent };
+  };
+  /** 始めた行を GET で読む。 */
+  const read = async (crawls: FakeCrawl[], scripts: FakeScript[] = [EGOV, MEMBERS]) => {
+    const app = await buildApp(depsWith({ crawls, allowed: true, scripts }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${crawls[0]!.id}` });
+    await app.close();
+    return res.json<Record<string, unknown>>();
+  };
+
+  it("変数の名前の綴り・64 字・32 個・値の 4,096 字・文字列でない値は schema の 400（値は答えに写らない）", async () => {
+    const app = await buildApp(unreachableDeps);
+    const post = async (variables: unknown) => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/crawls",
+        headers: SUBJECT,
+        payload: { seeds: [SEED], variables },
+      });
+      return res;
+    };
+    const names = (n: number) =>
+      Object.fromEntries(Array.from({ length: n }, (_, i) => [`v${String(i)}`, "x"]));
+    expect((await post({ Query: "x" })).statusCode).toBe(400);
+    expect((await post({ "a-b": "x" })).statusCode).toBe(400);
+    expect((await post({ ["a".repeat(65)]: "x" })).statusCode).toBe(400);
+    expect((await post(names(33))).statusCode).toBe(400);
+    expect((await post({ q: "x".repeat(4097) })).statusCode).toBe(400);
+    // 文字列に直せない値は 400。数と 1 要素の配列は Fastify の ajv (coerceTypes: "array") が文字列に直して通す
+    expect((await post({ q: { nested: 1 } })).statusCode).toBe(400);
+    expect((await post({ q: ["x", "y"] })).statusCode).toBe(400);
+    expect((await post(["q"])).statusCode).toBe(400);
+    const secret = "s3cr3t-value-that-must-not-echo";
+    const refused = await post({ q: secret, Q: "x" });
+    expect(refused.statusCode).toBe(400);
+    expect(refused.body).not.toContain(secret);
+    // ちょうどは schema を通る（500 は deps に触れた＝検証を通過した証拠）
+    expect((await post({ ["a".repeat(64)]: "x".repeat(4096) })).statusCode).toBe(500);
+    expect((await post(names(32))).statusCode).toBe(500);
+    await app.close();
+  });
+
+  it("その場の JS の宣言は schema で形を見る: kind・name の綴り・知らない鍵は 400、形が合えば通る", async () => {
+    const app = await buildApp(unreachableDeps);
+    const post = async (params: unknown) => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/crawls",
+        headers: SUBJECT,
+        payload: {
+          seeds: [SEED],
+          scripts: [{ inline: { name: "probe", phase: "behavior", source: "x;", params } }],
+        },
+      });
+      return res.statusCode;
+    };
+    expect(await post([{ name: "q", kind: "token" }])).toBe(400);
+    expect(await post([{ name: "Q", kind: "variable" }])).toBe(400);
+    expect(await post([{ name: "q", kind: "variable", default: "x" }])).toBe(400);
+    expect(await post([{ kind: "variable" }])).toBe(400);
+    expect(await post({ q: "variable" })).toBe(400);
+    expect(await post([{ name: "q", kind: "variable", required: true, summary: "s" }])).toBe(500);
+    expect(await post([])).toBe(500);
+    await app.close();
+  });
+
+  it("変数を省けば空を固定し、webhook にも variables と secrets を空の object で載せる", async () => {
+    const { res, crawls, sent } = await start({ seeds: [SEED] });
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.variables).toEqual({});
+    expect(crawls[0]?.secrets).toEqual({});
+    expect(sent[0]).toMatchObject({ variables: {}, secrets: {} });
+  });
+
+  it("宣言した変数は行に固定され、段の本文に載り、GET が値ごと返す", async () => {
+    const { res, crawls, sent } = await start({
+      seeds: [SEED],
+      scripts: [{ catalog: "egov-law-search" }],
+      variables: { query: "個人情報" },
+    });
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.variables).toEqual({ query: "個人情報" });
+    expect(sent[0]).toMatchObject({ variables: { query: "個人情報" }, secrets: {} });
+    expect(await read(crawls)).toMatchObject({ variables: { query: "個人情報" }, secrets: [] });
+  });
+
+  it("宣言の無い名前は 400 unknown variables で名指し、行は立たない", async () => {
+    const { res, crawls, sent } = await start({
+      seeds: [SEED],
+      scripts: [{ catalog: "egov-law-search" }],
+      variables: { qeury: "x" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: "unknown variables", names: ["qeury"] });
+    expect(crawls).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it("required の変数が無ければ 400 missing variables", async () => {
+    const { res } = await start(
+      { seeds: [SEED], scripts: [{ catalog: "members-only" }] },
+      { windmill: windmillWith({ [PATH]: { isSecret: true, editedAt: EDITED } }) },
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: "missing variables", names: ["lang"] });
+  });
+
+  it("宣言した secret は exists → get の順に Windmill に訊き、在れば path と更新時刻を行に固定し、段の本文には名前 → path を載せる", async () => {
+    const asked: string[] = [];
+    const { res, crawls, sent } = await start(
+      { seeds: [SEED], scripts: [{ catalog: "members-only" }], variables: { lang: "ja" } },
+      { windmill: windmillWith({ [PATH]: { isSecret: true, editedAt: EDITED } }, asked) },
+    );
+    expect(res.statusCode).toBe(202);
+    expect(asked).toEqual([`exists ${PATH}`, `meta ${PATH}`]);
+    expect(crawls[0]?.secrets).toEqual({
+      api_token: { path: PATH, editedAt: EDITED, rotated: null },
+    });
+    // 値はどこにも無い。段の本文は名前 → path だけ
+    expect(sent[0]).toMatchObject({ variables: { lang: "ja" }, secrets: { api_token: PATH } });
+    expect(await read(crawls)).toMatchObject({
+      variables: { lang: "ja" },
+      secrets: [{ name: "api_token", path: PATH, editedAt: EDITED, rotated: null }],
+    });
+  });
+
+  it("required の secret が Windmill に無ければ 400 unknown secrets で名前・path・宣言した物と hint を言い、行は立たない", async () => {
+    const { res, crawls } = await start(
+      { seeds: [SEED], scripts: [{ catalog: "members-only" }], variables: { lang: "ja" } },
+      { windmill: windmillWith({}) },
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "unknown secrets",
+      secrets: [{ name: "api_token", path: PATH, declaredBy: ["members-only"] }],
+      hint: `wmill variable add <value> ${PATH} --secret`,
+    });
+    expect(crawls).toEqual([]);
+  });
+
+  it("在っても secret でなければ 400 not a secret variable", async () => {
+    const { res, crawls } = await start(
+      { seeds: [SEED], scripts: [{ catalog: "members-only" }], variables: { lang: "ja" } },
+      { windmill: windmillWith({ [PATH]: { isSecret: false, editedAt: null } }) },
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "not a secret variable",
+      secrets: [{ name: "api_token", path: PATH, declaredBy: ["members-only"] }],
+    });
+    expect(crawls).toEqual([]);
+  });
+
+  it("required でない secret が無ければ、渡さないだけで始まる（スクリプトは undefined を読む）", async () => {
+    const { res, crawls, sent } = await start(
+      {
+        seeds: [SEED],
+        scripts: [
+          {
+            inline: {
+              name: "probe",
+              phase: "behavior",
+              source: "x;",
+              params: [{ name: "opt_token", kind: "secret" }],
+            },
+          },
+        ],
+      },
+      { windmill: windmillWith({}) },
+    );
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.secrets).toEqual({});
+    expect(sent[0]?.secrets).toEqual({});
+  });
+
+  it("Windmill に訊けなければ 503 で、行は立たない", async () => {
+    const { res, crawls } = await start(
+      { seeds: [SEED], scripts: [{ catalog: "members-only" }], variables: { lang: "ja" } },
+      { windmill: unreachable },
+    );
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: "windmill unreachable" });
+    expect(crawls).toEqual([]);
+  });
+
+  it("窓口の無い配備で secret を宣言したスクリプトは 400 secrets need the windmill webhook", async () => {
+    const { res, crawls } = await start({
+      seeds: [SEED],
+      scripts: [{ catalog: "members-only" }],
+      variables: { lang: "ja" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "secrets need the windmill webhook",
+      names: ["api_token"],
+    });
+    expect(crawls).toEqual([]);
+  });
+
+  it("その場の JS の宣言は catalog と同じ決まりで読む: 重複は 400 invalid params、required の既定は false で写す", async () => {
+    const twice = await start({
+      seeds: [SEED],
+      scripts: [
+        {
+          inline: {
+            name: "probe",
+            phase: "behavior",
+            source: "x;",
+            params: [
+              { name: "q", kind: "variable" },
+              { name: "q", kind: "secret" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(twice.res.statusCode).toBe(400);
+    expect(twice.res.json()).toMatchObject({ error: "invalid params", script: "inline-probe" });
+    expect(twice.res.json<{ hint: string }>().hint).toContain("q が 2 度ある");
+
+    const { crawls } = await start({
+      seeds: [SEED],
+      scripts: [
+        {
+          inline: {
+            name: "probe",
+            phase: "behavior",
+            source: "x;",
+            params: [{ name: "probe", kind: "variable" }],
+          },
+        },
+      ],
+      variables: { probe: "x" },
+    });
+    expect(crawls[0]?.scripts[0]?.params).toEqual([
+      { name: "probe", kind: "variable", required: false },
+    ]);
+  });
+
+  it("宣言を添えないその場の JS が混ざれば、知らない名前も通して行に固定する", async () => {
+    const { res, crawls } = await start({
+      seeds: [SEED],
+      scripts: [
+        { catalog: "egov-law-search" },
+        { inline: { name: "probe", phase: "behavior", source: "x;" } },
+      ],
+      variables: { anything: "goes" },
+    });
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.variables).toEqual({ anything: "goes" });
+    expect(crawls[0]?.scripts[1]).not.toHaveProperty("params");
   });
 });

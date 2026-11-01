@@ -3,13 +3,14 @@
  *
  * | 口 | 返すもの |
  * | --- | --- |
- * | `GET /api/scripts` | 有効な各 id の最新版の身元と札 (サイト用のスクリプトも。何も指定しないクロールが走らせるのは、札の無い物と起点に合う物) |
+ * | `GET /api/scripts` | 有効な各 id の最新版の身元と札と宣言 (サイト用のスクリプトも。何も指定しないクロールが走らせるのは、札の無い物と起点に合う物) |
  * | `GET /api/scripts/:id/versions` | 1 つの id の版の並び (新しい順)。**source は返さない** |
- * | `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと (source・渡す値・札・有効か・取り込んだ時刻) |
+ * | `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと (source・渡す値・札・宣言・有効か・取り込んだ時刻) |
  * | `GET /api/host-types` | 受け皿 `__bh` の型のいちばん新しい版 (読む人に見せる写し。`020`) |
  *
- * 一覧が身元と札 (`id` / `version` / `phase` / `sha256` / `sites`) だけなのは、何が走るかを知るのに
- * 要るのが「どれの何版か」と「どの起点で走るか」だから。中身は 1 版の口・`pnpm run scripts show`・アーカイブ (`behaviors/custom.jsonl`。
+ * 一覧が身元と札と宣言 (`id` / `version` / `phase` / `sha256` / `sites` / `params`) だけなのは、何が走るかを知るのに
+ * 要るのが「どれの何版か」「どの起点で走るか」「どの値を読むか」だから。dashboard は `params` で、新しいクロールの
+ * 画面に変数の欄を並べる (`024`)。中身は 1 版の口・`pnpm run scripts show`・アーカイブ (`behaviors/custom.jsonl`。
  * こちらは変換後の JS) に在る。1 版の口は**有効かどうかを見ない** —— 無効な版も、過去のクロールが
  * 走らせた物で、読み返す相手になる。
  *
@@ -73,12 +74,13 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
     // 各 id に 1 行 (サイト用のスクリプトも、既定に入らない物も)。既定で走るのは enabled の物のうち、札の無い物と起点に合う物
     const scripts = await pickable(db);
     return reply.code(200).send({
-      scripts: scripts.map(({ id, version, phase, sha256, sites, enabled }) => ({
+      scripts: scripts.map(({ id, version, phase, sha256, sites, params, enabled }) => ({
         id,
         version,
         phase,
         sha256,
         sites,
+        params,
         enabled,
       })),
     });
@@ -99,15 +101,18 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
       if (rows.length === 0) return reply.code(404).send({ error: "not found" });
       return reply.code(200).send({
         id: request.params.id,
-        versions: rows.map(({ version, phase, sha256, sites, enabled, bytes, createdAt }) => ({
-          version,
-          phase,
-          sha256,
-          sites,
-          enabled,
-          bytes,
-          createdAt,
-        })),
+        versions: rows.map(
+          ({ version, phase, sha256, sites, params, enabled, bytes, createdAt }) => ({
+            version,
+            phase,
+            sha256,
+            sites,
+            params,
+            enabled,
+            bytes,
+            createdAt,
+          }),
+        ),
       });
     },
   );

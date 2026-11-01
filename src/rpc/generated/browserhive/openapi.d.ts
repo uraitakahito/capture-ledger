@@ -295,6 +295,19 @@ export interface components {
              *     報告の手段を持たない。behaviors とは約束が違うので同じ列には入れない。
              */
             preload?: components["schemas"]["Script"][];
+            /**
+             * @description この取り込みに渡す変数。受け皿の `__bh.vars` で読める (preload には渡らない)。
+             *     **値は archive の `settings.variables` にそのまま残る** —— どの値で撮ったかを後から言うための欄。
+             *     残したくない値は `secrets` に。省略と空はどちらも「無い」で、archive には空の object が残る。
+             */
+            variables?: components["schemas"]["Values"];
+            /**
+             * @description この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。
+             *     **値はどこにも書かない** —— archive の `settings.secrets` には名前だけ (名前順)、受け皿のコード
+             *     (`behaviors/runtime.js`) は値を含まず、ログの報告と例外の文からは伏せる。隠せるのは記録からだけで、
+             *     頁の JS からは読めるし、スクリプトが網に送れば WARC には残る。
+             */
+            secrets?: components["schemas"]["Values"];
         };
         /** @description Capture の応答。結果そのものと、それを記録できたか。 */
         CaptureResponseContent: {
@@ -696,6 +709,10 @@ export interface components {
              *     A member can appear in this list more than once if it failed to satisfy multiple constraints.
              */
             fieldList?: components["schemas"]["ValidationExceptionField"][];
+        };
+        /** @description 名前 → 値。1 回の取り込みに 32 個まで。 */
+        Values: {
+            [key: string]: string;
         };
         /** @description viewport の指定。値域は model に書いてあり、外れると 400。 */
         Viewport: {

@@ -8,9 +8,14 @@
  */
 import { describe, it, expect } from "vitest";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
-import { registerCrawlRoutes, type CrawlRouteDeps } from "../src/api/crawls.js";
+import {
+  registerCrawlRoutes,
+  type CrawlRouteDeps,
+  type DispatchedCrawl,
+} from "../src/api/crawls.js";
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
-import type { CrawlRule } from "../src/db/database.js";
+import { WindmillUnreachable, type WindmillVariables } from "../src/crawl/windmill-variables.js";
+import type { CrawlRule, CrawlSecret } from "../src/db/database.js";
 import { recordingDb, type RecordedQuery } from "./recording-db.js";
 
 const CRAWL = "d272d256-e528-4581-bb4e-8d9477d78196";
@@ -18,7 +23,11 @@ const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organiz
 const FIXTURES = "http://capture-fixtures.capture-ledger:8080";
 const COMPILED = { typescript: "6.0.3", hostTypes: "v0.2.0", scripts: [] };
 
-const crawlRow = (rules: CrawlRule[], seeds: string[]) => ({
+const crawlRow = (
+  rules: CrawlRule[],
+  seeds: string[],
+  values: { variables?: Record<string, string>; secrets?: Record<string, CrawlSecret> } = {},
+) => ({
   id: CRAWL,
   seeds,
   rules,
@@ -33,6 +42,9 @@ const crawlRow = (rules: CrawlRule[], seeds: string[]) => ({
   pagesCaptured: 0,
   artifactKeyPrefix: null,
   scripts: [],
+  // 本物の行は必ず持つ (024 の NOT NULL DEFAULT)。偽物も同じ形で
+  variables: values.variables ?? {},
+  secrets: values.secrets ?? {},
 });
 
 interface Built {
@@ -40,15 +52,20 @@ interface Built {
   queries: RecordedQuery[];
   /** S3 から読んだ鍵。リンクを見ないページは、ここに出ない。 */
   read: string[];
+  /** 次の段として flow へ投げた物。 */
+  dispatched: DispatchedCrawl[];
 }
 
 const build = async (opts: {
   results?: readonly (readonly object[])[];
   allowed?: boolean;
   links?: Record<string, unknown>;
+  /** Windmill の変数の窓口。省けば無い配備 (読み直しをしない)。 */
+  windmill?: WindmillVariables;
 }): Promise<Built> => {
   const { db, queries } = recordingDb(opts.results);
   const read: string[] = [];
+  const dispatched: DispatchedCrawl[] = [];
   const s3 = {
     send: (command: { input: { Key: string } }) => {
       read.push(command.input.Key);
@@ -67,13 +84,17 @@ const build = async (opts: {
     db,
     fga: { check: () => Promise.resolve({ allowed: opts.allowed ?? true }) },
     resolveIdentity: () => Promise.resolve({ subject: "alice", organizations: ["acme"] }),
-    dispatch: () => Promise.resolve(undefined),
+    dispatch: (crawl: DispatchedCrawl) => {
+      dispatched.push(crawl);
+      return Promise.resolve(undefined);
+    },
     s3,
     bucket: "b",
     capture: parseCaptureFormats("wacz", false),
+    ...(opts.windmill && { windmill: opts.windmill }),
   } as unknown as CrawlRouteDeps);
   await app.ready();
-  return { app, queries, read };
+  return { app, queries, read, dispatched };
 };
 
 const sqlOf = (queries: RecordedQuery[], table: string): RecordedQuery | undefined =>
@@ -267,6 +288,134 @@ describe("段の報告で、規則が決めたことを残す", () => {
     expect(res.statusCode).toBe(500);
     expect(res.json()).toEqual({ error: "a crawl rule is not readable" });
     expect(queries).toHaveLength(1);
+  });
+});
+
+/**
+ * 次の段を送る前に、シークレットの更新時刻を読み直す。替わっていても続けるが、気づいた段と新しい時刻を行に残す。
+ * 値は読まない (`meta` は `decrypt_secret=false`。`windmill-variables.test.ts`)。
+ */
+describe("次の段を送る前に、シークレットの更新時刻を読み直す", () => {
+  const rules: CrawlRule[] = [{ follow: "same-host" }];
+  const seed = `${FIXTURES}/links/rules`;
+  const PATH = "f/waggle_secrets/api_token";
+  const AT_START = "2026-11-01T00:00:00.000000Z";
+  const LATER = "2026-11-01T06:00:00.000000Z";
+  const secrets = (): Record<string, CrawlSecret> => ({
+    api_token: { path: PATH, editedAt: AT_START, rotated: null },
+  });
+  /** 段の報告 1 回分の DB の答え。次の段が 1 本在るので、読み直しと投げる所まで進む。 */
+  const results = (row: object) => [
+    [row], // クロールの行
+    [{ id: "11" }], // 報告した行を閉じる (returning id)
+    [], // crawl_decisions
+    [{ count: "1" }], // crawl_pages の数
+    [{ url: `${FIXTURES}/links/leaf/1`, host: "capture-fixtures.capture-ledger:8080" }], // 次の段の行
+    [], // crawls の集計
+    [], // ホストごとの最後の時刻
+    [], // (替わっていれば) secrets の更新
+  ];
+  const links = { "rules.links.json": { links: [{ href: `${FIXTURES}/links/leaf/1` }] } };
+  const report = (built: Built) =>
+    built.app.inject({
+      method: "POST",
+      url: `/api/crawls/${CRAWL}/pages`,
+      headers: SUBJECT,
+      payload: {
+        depth: 0,
+        compiled: COMPILED,
+        results: [{ url: seed, status: "captured", linksLocation: "s3://b/rules.links.json" }],
+      },
+    });
+  const asked: string[] = [];
+  const windmillAnswering = (editedAt: string | Error): WindmillVariables => ({
+    exists: () => Promise.resolve(true),
+    meta: (path) => {
+      asked.push(path);
+      return editedAt instanceof Error
+        ? Promise.reject(editedAt)
+        : Promise.resolve({ isSecret: true, editedAt });
+    },
+  });
+  const secretsUpdate = (queries: RecordedQuery[]) =>
+    queries.find((q) => q.sql.startsWith('update "crawls" set "secrets"'));
+
+  it("替わっていれば rotated に気づいた段と新しい時刻を書き、次の段は送る（止めない）", async () => {
+    asked.length = 0;
+    const built = await build({
+      results: results(crawlRow(rules, [seed], { variables: { query: "x" }, secrets: secrets() })),
+      links,
+      windmill: windmillAnswering(LATER),
+    });
+    const res = await report(built);
+    await built.app.close();
+    expect(res.statusCode).toBe(200);
+    expect(asked).toEqual([PATH]);
+    const update = secretsUpdate(built.queries);
+    expect(update?.sql).toBe('update "crawls" set "secrets" = $1 where "id" = $2');
+    expect(update?.parameters).toEqual([
+      JSON.stringify({
+        api_token: { path: PATH, editedAt: AT_START, rotated: { depth: 1, editedAt: LATER } },
+      }),
+      CRAWL,
+    ]);
+    // 投げる本文は行に固定した値と、名前 → path。更新時刻は flow に要らない
+    expect(built.dispatched[0]).toMatchObject({
+      depth: 1,
+      variables: { query: "x" },
+      secrets: { api_token: PATH },
+    });
+  });
+
+  it("同じ時刻なら何も書かない。前に気づいた時刻と同じでも書き直さない", async () => {
+    const same = await build({
+      results: results(crawlRow(rules, [seed], { secrets: secrets() })),
+      links,
+      windmill: windmillAnswering(AT_START),
+    });
+    expect((await report(same)).statusCode).toBe(200);
+    await same.app.close();
+    expect(secretsUpdate(same.queries)).toBeUndefined();
+
+    const noted = await build({
+      results: results(
+        crawlRow(rules, [seed], {
+          secrets: {
+            api_token: { path: PATH, editedAt: AT_START, rotated: { depth: 1, editedAt: LATER } },
+          },
+        }),
+      ),
+      links,
+      windmill: windmillAnswering(LATER),
+    });
+    expect((await report(noted)).statusCode).toBe(200);
+    await noted.app.close();
+    expect(secretsUpdate(noted.queries)).toBeUndefined();
+  });
+
+  it("Windmill に訊けなければ、書かずにそのまま送る（flow が解けなければ fail_crawl が締める）", async () => {
+    const built = await build({
+      results: results(crawlRow(rules, [seed], { secrets: secrets() })),
+      links,
+      windmill: windmillAnswering(new WindmillUnreachable("connect ECONNREFUSED")),
+    });
+    expect((await report(built)).statusCode).toBe(200);
+    await built.app.close();
+    expect(secretsUpdate(built.queries)).toBeUndefined();
+    expect(built.dispatched[0]?.secrets).toEqual({ api_token: PATH });
+  });
+
+  it("シークレットが無いクロールでは Windmill に訊かない", async () => {
+    asked.length = 0;
+    const built = await build({
+      results: results(crawlRow(rules, [seed])),
+      links,
+      windmill: windmillAnswering(LATER),
+    });
+    expect((await report(built)).statusCode).toBe(200);
+    await built.app.close();
+    expect(asked).toEqual([]);
+    expect(built.dispatched[0]).toMatchObject({ variables: {}, secrets: {} });
   });
 });
 
