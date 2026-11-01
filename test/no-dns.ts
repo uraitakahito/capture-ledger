@@ -3,7 +3,7 @@
  *
  * 引いてよいのは、RFC 6761 が答えを決めている名前だけ:
  *   - IP リテラル（引かない）と localhost（§6.3。OS の hosts が答える）
- *   - *.invalid（§6.4。網に聞かずに「無い」と答える）
+ *   - *.invalid（§6.4。問い合わせずに「無い」と答える）
  * ほかの名前は「無い」と答えたうえで記録し、その試験を afterEach で赤にする。lookup の中で
  * 投げて知らせないのは、呼んだ側が lookup の失敗を握りつぶすことがあるから（browserhive の
  * checkCaptureAddress は引けない名前を通す）。答えが要る試験は、試験の中で
@@ -28,7 +28,7 @@ interface State {
 const scope = globalThis as unknown as Record<symbol, State | undefined>;
 const state = (scope[Symbol.for("crawler.no-dns")] ??= { refused: [], installed: false });
 
-/** "pass" は本物の lookup に渡す。"nxdomain" は網に聞かずに「無い」と答える。 */
+/** "pass" は本物の lookup に渡す。"nxdomain" は問い合わせずに「無い」と答える。 */
 const decide = (host: string): "pass" | "nxdomain" | "refuse" => {
   if (isIP(host) !== 0) return "pass";
   const name = host.toLowerCase().replace(/\.$/, "");

@@ -4,7 +4,7 @@
  *
  * ## なぜ要るのか
  *
- * example 名（example.com・.org・.net とその下、*.example）は文書のための名前で、網によって
+ * example 名（example.com・.org・.net とその下、*.example）は文書のための名前で、ネットワークによって
  * 答えが変わる。2026-10 に、この LAN のルータ（Aterm）が example.com に 127.0.0.1 を返し、
  * browserhive の単体試験が手元でだけ赤になった。名前を引く試験は締め出し（test/no-dns.ts）が
  * 捕まえるが、名前を書くこと自体は捕まえない。書き手は長く example.com を書いてきたので、
