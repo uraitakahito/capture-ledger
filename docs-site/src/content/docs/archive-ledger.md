@@ -565,7 +565,7 @@ curl -X POST .../api/crawls/<id>/index
 
 # Query
 curl ".../api/search?q=responsive"
-# → { "hits": [ { "archiveId": "…", "url": "…", "title": "responsive", … } ], "total": 3 }
+# → { "hits": [ { "archiveId": "…", "stage": "after-load", "url": "…", "title": "responsive", … } ], "total": 3 }
 ```
 
 ### The text comes out of the archive
@@ -579,6 +579,16 @@ what the archive signed for.
 `no-archive`, `deny` or `unattributed`) travels with it. Drop it and
 **a capture that came back empty** looks identical to **a body policy refused to
 store**. The first is a fault worth investigating; the second is normal.
+
+BrowserHive writes one line of the page list for each point at which it
+snapshotted the page (`after-load` once the page has loaded, `after-behaviors`
+after the scripts). The line's `url` is the snapshot's urn, shaped like
+`urn:browserhive:snapshot:after-load:https://…` with the document's URL at the
+end. capture-ledger indexes each line as its own hit and puts the point in
+`stage`. When both the before-search and after-search points of one archive
+match, you get two hits. Authorization is per archive, so both get the same
+answer. A capture with no snapshot at all (a withheld document, say) keeps a
+single line for the requested URL, and its `stage` is `null`.
 
 ### The index does not know who may see what
 
@@ -597,7 +607,12 @@ counting, which is the "put permissions in the index" option above. We take one
 authority over exact numbers.
 :::
 
-### Rebuilding is one statement
+### Rebuilding the index
+
+```sh
+# Only when you changed the mapping or the analyzer: drop the index first
+curl -X DELETE http://127.0.0.1:9200/capture-pages
+```
 
 ```sql
 UPDATE archives SET indexed_at = NULL;
@@ -607,9 +622,14 @@ Index state is the single `archives.indexed_at` column and no body text is store
 (everything needed is derivable from the ledger row and S3). That makes changing
 the analyzer or mapping a cheap decision.
 
+capture-ledger puts the mapping down **only when it creates the index**. Change
+the mapping or the analyzer and re-index without dropping the index, and the
+documents land in the old mapping while OpenSearch guesses the type of any new
+field (with no error).
+
 The analyzer today is the built-in `cjk` (bigram). Kuromoji needs a plugin
 install and does not run on the stock image — swap in a custom image when you
-need it, then rebuild with the statement above.
+need it, then rebuild as above.
 
 ## Picking an archive in a browser
 

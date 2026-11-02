@@ -17,7 +17,8 @@
  * ## 失敗しても `indexed_at` を立てない
  *
  * 立てるのは送り終えてから。途中で落ちれば列は NULL のままなので、次の周回が
- * 同じ行を拾う。**at-least-once** で、`_id` が archive の id なので重複しない。
+ * 同じ行を拾う。**at-least-once** で、`_id` がアーカイブの id と時点
+ * (`document.ts` の `searchDocumentId`) なので重複しない。
  */
 import type { Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
@@ -26,7 +27,7 @@ import { fromBuffer } from "yauzl-promise";
 import { getObjectBytes } from "../archive/s3.js";
 import type { Database } from "../db/database.js";
 import { createChildLogger } from "../logger.js";
-import { parsePagesJsonl, searchDocument, type ArchiveRow } from "./document.js";
+import { parsePagesJsonl, searchDocument, searchDocumentId, type ArchiveRow } from "./document.js";
 
 const log = createChildLogger({ module: "search-index-archive" });
 
@@ -58,7 +59,8 @@ export interface IndexArchiveOptions {
 }
 
 /**
- * 1 本を索引に載せる。載せた件数 (= そのアーカイブが含むページ数) を返す。
+ * 1 本を索引に載せる。載せた件数 (= そのアーカイブの `pages.jsonl` の行の数。時点ごとに
+ * 1 行) を返す。
  *
  * WACZ が無い、あるいは `pages.jsonl` が無いときは **`indexed_at` を立てる**。
  * 索引に載せるものが無いことは確定していて、次の周回で拾い直しても同じ答えに
@@ -75,9 +77,9 @@ export const indexArchive = async (
   if (pages.length > 0) {
     const body = pages.flatMap((page) => {
       const doc = searchDocument(page, archive);
-      // 1 アーカイブ = 1 ページ (BrowserHive の単位) なので、_id は archive の id で
-      // 足りる。複数ページを持つ WACZ が来たら url を混ぜること。
-      return [{ index: { _index: options.index, _id: doc.archiveId } }, doc];
+      // 1 アーカイブは時点ごとに行を持つ (検索前と検索後) ので、_id はアーカイブの id と
+      // 時点で作る。archive の id だけだと、後の行が前の行を上書きする。
+      return [{ index: { _index: options.index, _id: searchDocumentId(doc) } }, doc];
     });
     const result = await options.search.bulk({ body, refresh: true });
     if (result.body.errors === true) {
