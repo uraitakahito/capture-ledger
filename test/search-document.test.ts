@@ -21,13 +21,13 @@ const PAGE =
   '{"id": "09791c9f-264b-40ee-8a40-40dc0362f6e6", "url": "http://capture-fixtures.browserhive:8080/responsive-images", "ts": "2026-09-07T22:06:40.697Z", "title": "responsive", "text": "responsive\\n  image"}';
 
 /**
- * 時点ごとの 2 行 (検索前と検索後)。行の url は写しの urn。TODO(段 6): BrowserHive の新しい版が
- * fixtures の `/marked/search/:name` を撮った WACZ の行に差し替える。
+ * 時点ごとの 2 行 (検索前と検索後)。BrowserHive v23.0.0 の e2e が capture-fixtures の
+ * `/marked/search/public` を撮った WACZ から採った物。行の url は写しの urn。
  */
 const PAGE_AFTER_LOAD =
-  '{"id": "09791c9f-264b-40ee-8a40-40dc0362f6e6-after-load", "url": "urn:browserhive:snapshot:after-load:http://capture-fixtures.browserhive:8080/marked/search/x?tag=t", "ts": "2026-11-02T00:00:01Z", "stage": "after-load", "title": "search", "text": "search"}';
+  '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa-after-load","url":"urn:browserhive:snapshot:after-load:http://capture-fixtures-1-a.browserhive:8080/marked/search/public?tag=sn1","ts":"2026-11-02T12:10:54.239Z","stage":"after-load","title":"search","text":"search\\n\\nbefore-public-sn1\\n\\nquery  token  search"}';
 const PAGE_AFTER_BEHAVIORS =
-  '{"id": "09791c9f-264b-40ee-8a40-40dc0362f6e6-after-behaviors", "url": "urn:browserhive:snapshot:after-behaviors:http://capture-fixtures.browserhive:8080/marked/search/x/result?tag=t", "ts": "2026-11-02T00:00:03Z", "stage": "after-behaviors", "title": "result", "text": "result"}';
+  '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa-after-behaviors","url":"urn:browserhive:snapshot:after-behaviors:http://capture-fixtures-1-a.browserhive:8080/marked/search/public/result?tag=sn1","ts":"2026-11-02T12:10:54.800Z","stage":"after-behaviors","title":"search","text":"search\\n\\nafter-public-sn1\\n\\nquery  token  search\\n個人 情報 1\\n個人 情報 2\\n個人 情報 3"}';
 
 const ARCHIVE: ArchiveRow = {
   id: "11111111-1111-1111-1111-111111111111",
