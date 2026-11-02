@@ -149,17 +149,17 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.21.0",
     "@types/yauzl-promise": "^4.0.1",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "openapi-typescript": "^7.13.0",
-    "prettier": "^3.9.9",
+    "prettier": "^3.9.10",
     "puppeteer": "25.16.0",
     "semver": "^7.8.5",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.1",
-    "vitest": "^5.0.3"
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
   }
 }
