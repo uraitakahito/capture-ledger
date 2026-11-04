@@ -72,14 +72,14 @@ describe("行のリンク", () => {
     );
   });
 
-  it("url は BrowserHive がページ一覧の 1 行目に書く形 —— 末尾の / を足し、断片を除く", () => {
+  it("url は台帳の sourceUrl のまま —— 末尾の / が無くても足さない（replay が文書に当てる）", () => {
     const href = replayHref(ORIGIN, {
       objectKey: KEY,
-      sourceUrl: "http://site.test#top",
+      sourceUrl: "http://site.test",
       capturedAt: "2026-11-04T10:39:16Z",
     });
     expect(new URLSearchParams(href.slice(href.indexOf("#") + 1)).get("url")).toBe(
-      "http://site.test/",
+      "http://site.test",
     );
   });
 
@@ -99,7 +99,7 @@ describe("行のリンク", () => {
     ["時刻が無い", { sourceUrl: "https://site.test/" }],
     ["時刻が読めない", { sourceUrl: "https://site.test/", capturedAt: "" }],
     ["URL が無い", { capturedAt: "2026-11-04T10:39:16Z" }],
-    ["URL が読めない", { sourceUrl: "not a url", capturedAt: "2026-11-04T10:39:16Z" }],
+    ["URL が空", { sourceUrl: "", capturedAt: "2026-11-04T10:39:16Z" }],
   ])("%s なら、一覧を開く形のまま", (_, rest) => {
     expect(replayHref(ORIGIN, { objectKey: KEY, ...rest })).toBe(`${ORIGIN}/?source=/wacz/${KEY}`);
   });

@@ -48,8 +48,8 @@ export const replayOriginFromEnv = (): string => optional("REPLAY_ORIGIN", "http
  * ts は UTC の 14 桁）。replay（ReplayWeb.page）は mainPageURL を読まず、`?source=` だけではページ一覧を
  * 新しい順に出す —— 取り込んだ文書の行（WACZ Profile 1.18.0 の 1 行目）は、いちばん下になる。
  *
- * url は、BrowserHive がページ一覧の 1 行目に書く形（URL Standard の serializer で書き、断片を除く）にそろえる。
- * URL か時刻が読めなければ、一覧を開く形のまま。
+ * url は台帳の sourceUrl のまま渡す。replay は、path が空の URL（末尾の `/` が無い）も断片の付いた URL も、
+ * 記録した文書に当てる（2026-11-04 に replaywebpage 2.5.0 で確かめた）。URL か時刻が無ければ、一覧を開く形のまま。
  *
  * 画面の script に `toString()` で埋め込むので、外の名前を使わない（ブラウザの組み込みだけを使う）。
  */
@@ -58,19 +58,15 @@ export const replayHref = (
   archive: { objectKey: string; sourceUrl?: unknown; capturedAt?: unknown },
 ): string => {
   const base = replayOrigin + "/?source=/wacz/" + encodeURIComponent(archive.objectKey);
-  if (typeof archive.sourceUrl !== "string" || typeof archive.capturedAt !== "string") return base;
+  if (typeof archive.sourceUrl !== "string" || archive.sourceUrl === "") return base;
+  if (typeof archive.capturedAt !== "string") return base;
   // new Date("") は Invalid Date で、ここで落とせる。
   const when = new Date(archive.capturedAt);
   if (Number.isNaN(when.getTime())) return base;
-  let url: URL;
-  try {
-    url = new URL(archive.sourceUrl);
-  } catch {
-    return base;
-  }
-  url.hash = "";
   const ts = when.toISOString().replace(/[-:T]/g, "").slice(0, 14);
-  return base + "#" + new URLSearchParams({ view: "replay", url: url.href, ts }).toString();
+  return (
+    base + "#" + new URLSearchParams({ view: "replay", url: archive.sourceUrl, ts }).toString()
+  );
 };
 
 /**
