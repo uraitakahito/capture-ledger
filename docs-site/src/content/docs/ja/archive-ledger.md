@@ -779,6 +779,9 @@ picker が replay に渡すのは `objectKey` だけ:
 http://127.0.0.1:8899/?source=/wacz/<objectKey>
 ```
 
+（符号にする前の形。link は鍵を区切りごとに符号にし、その path 全体を query の値としてもう 1 度符号にする ——
+[アーカイブを見る（picker）](/capture-ledger/ja/picker/#行をクリックした後)。）
+
 署名付き URL は使わない。あれは S3 を直接指すので viewer から見て別 origin になり、
 bucket に CORS が要る。object key なら読みは replay 自身の上流（`/wacz/`）を通るので、
 picker が replay に求める物はほかに無い。

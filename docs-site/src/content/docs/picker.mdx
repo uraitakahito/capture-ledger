@@ -216,6 +216,11 @@ is built from where replay lives, the key of that WACZ (`objectKey`), and the ca
 http://127.0.0.1:8899/?source=/wacz/<objectKey>#view=replay&url=<captured URL>&ts=<YYYYMMDDhhmmss>
 ```
 
+The `source` above is shown unencoded. In the link, each segment of the key is percent-encoded and then
+the whole path `/wacz/…` once more, as a query value. replay decodes the path once, segment by segment,
+so a key that itself holds `%XX` — BrowserHive writes a label with a space or Japanese into the key that
+way — reaches the store unchanged.
+
 **Playback starts at once.** The bar at the top shows the original URL and the capture time; below it
 is the page as it was captured, with the page's own scripts running. The DOM snapshots BrowserHive
 took (before and after the capture's scripts, say) are rows of replay's Pages tab; their URLs start

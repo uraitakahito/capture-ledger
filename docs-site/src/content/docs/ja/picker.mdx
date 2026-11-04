@@ -212,6 +212,11 @@ JWT の設定では、API は JWT だけを受け付けます。
 http://127.0.0.1:8899/?source=/wacz/<objectKey>#view=replay&url=<取り込んだ URL>&ts=<YYYYMMDDhhmmss>
 ```
 
+上の `source` は符号にする前の形です。
+link では、鍵を区切りごとに百分率の符号にし、その path（`/wacz/…`）全体を query の値としてもう 1 度符号にします。
+replay は path を区切りごとに 1 度だけ解くので、鍵そのものに `%XX` を含んでいても
+（BrowserHive は、ラベルの空白や日本語をその形で鍵に入れます）、元の鍵で保管庫に届きます。
+
 **再生はすぐに始まります。**
 上の欄に元の URL と取り込んだ日時が出て、その下が、取り込んだときのページです（ページの script も動きます）。
 BrowserHive が撮った DOM の写し（取り込みのスクリプトの前と後など）は、replay の Pages タブの行で、

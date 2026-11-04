@@ -840,6 +840,9 @@ The picker hands replay the `objectKey` and nothing else:
 http://127.0.0.1:8899/?source=/wacz/<objectKey>
 ```
 
+(Shown unencoded: the link encodes each segment of the key, and then the whole path once more as a
+query value — see [Browsing archives](/capture-ledger/picker/#after-clicking-a-row).)
+
 Not the signed URL. A signed URL points straight at S3, which is a different
 origin from the viewer, so the browser would need CORS on the bucket. The
 object key goes through replay's own upstream (`/wacz/`), so the picker needs
