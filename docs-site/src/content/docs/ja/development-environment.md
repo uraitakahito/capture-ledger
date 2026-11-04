@@ -221,13 +221,16 @@ BrowserHive の在り処はもうここにありません。スタックが公�
 curl と flow のためのもので、capture-ledger のためではありません。
 
 台帳は **ts-compile-service** を呼びます。このスタックには無く、capture-scheduler の compose が
-動かして、host の `127.0.0.1:28080` に出しています（capture-scheduler v0.28.0 から）。
-`CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` を書くと、`GET /api/crawls/:id/diagnostics`
-が出ます。口は capture-scheduler の `pnpm run doctor` が見ます（`host→ts-compile`）。
+動かして、host の `127.0.0.1:28080` に出しています（capture-scheduler v0.28.0 から）。宛先は、
+capture-scheduler の `windmill:bootstrap` がほかの行と一緒に渡し（capture-scheduler v0.30.0 から）、
+`dev:up` の段の `pnpm run connect` が `.env.local` に `CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` を
+書きます。これで `GET /api/crawls/:id/diagnostics` が出ます。手で書くのは、`dev:up` を使わずに API を起こす
+ときだけです。口は capture-scheduler の `pnpm run doctor` が見ます（`host→ts-compile`）。
 
 Claude に直し方を訊く口（`POST /api/crawls/:id/inline/:name/fix`）には、Anthropic の Console の API の鍵も
 要ります（`CAPTURE_LEDGER_ANTHROPIC_API_KEY`）。`.env` にだけ書き、commit しません。SDK が自分で読む
-`ANTHROPIC_API_KEY` は読みません。`pnpm run fix:eval` は、決めた見本（型の誤りのある JS）を本物の
+`ANTHROPIC_API_KEY` は読みません。鍵があって ts-compile の宛先が無いと API は起動で止まるので、`dev:up` で
+起こします（`dev:up` を使わないなら、宛先も書く）。`pnpm run fix:eval` は、決めた見本（型の誤りのある JS）を本物の
 ts-compile-service と Claude で直させて測ります。**お金が掛かります**（見本ごとと合計の費用を出します）。
 CI では走りません。
 

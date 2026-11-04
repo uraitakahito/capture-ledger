@@ -229,13 +229,16 @@ publishes, `localhost:50051` and `localhost:50052` — one BrowserHive per Chrom
 are for curl and for the flow, not for capture-ledger.
 
 capture-ledger does call **ts-compile-service**, which is not in this stack: capture-scheduler's compose
-runs it and publishes it on `127.0.0.1:28080` (from capture-scheduler v0.28.0). Set
-`CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` to serve `GET /api/crawls/:id/diagnostics`;
-capture-scheduler's `pnpm run doctor` checks the port (`host→ts-compile`).
+runs it and publishes it on `127.0.0.1:28080` (from capture-scheduler v0.28.0). capture-scheduler's
+`windmill:bootstrap` hands the address over with the other lines (from capture-scheduler v0.30.0), and
+`pnpm run connect` — a step of `dev:up` — writes `CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` into
+`.env.local`, which serves `GET /api/crawls/:id/diagnostics`. Write it yourself only when you start the API
+without `dev:up`. capture-scheduler's `pnpm run doctor` checks the port (`host→ts-compile`).
 
 Asking Claude for fixes (`POST /api/crawls/:id/inline/:name/fix`) also needs an Anthropic Console API key
 in `CAPTURE_LEDGER_ANTHROPIC_API_KEY`. Put it in `.env` only and never commit it; the SDK's own
-`ANTHROPIC_API_KEY` is not read. `pnpm run fix:eval` measures the fixer on a fixed set of broken samples
+`ANTHROPIC_API_KEY` is not read. With the key but without the ts-compile address the API refuses to start,
+so start it through `dev:up` (or write the address too). `pnpm run fix:eval` measures the fixer on a fixed set of broken samples
 against the real ts-compile-service and Claude — **it spends money** (it prints the cost of each sample
 and the total) and CI never runs it.
 
