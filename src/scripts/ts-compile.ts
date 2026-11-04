@@ -6,15 +6,13 @@
  * クロールを送り直せば、落ちたときと同じ型の誤りが行と列で返る。クロールの行に残る失敗の文は
  * 台帳の上限の 2,000 字で切られ、最初の数件しか無い —— 全部を行と列で読むのはここだけ。
  *
+ * **env を読まない** (設定から窓口を作るのは `src/config/ts-compile.ts`)。評価の道具も同じ窓口を使う。
+ *
  * 宛先は host の loopback (`127.0.0.1:28080`。capture-scheduler の compose が出す)。macOS 26 では
  * host の node がコンテナの subnet に TCP を張れないので、名前 (`ts-compile.capture-scheduler`) では
  * 届かない。
  */
-import { optional } from "../config/env.js";
 import type { CrawlScript } from "../db/database.js";
-
-/** 既定の待ち時間。flow の compile の段は 1 回 1 秒に満たない。 */
-const DEFAULT_TIMEOUT_MS = 10_000;
 
 /** ts-compile-service に届かなかった・答えの形が違った。口はこれを 503 に訳す。 */
 export class TsCompileUnreachable extends Error {
@@ -112,19 +110,6 @@ export const tsCompileAt = ({
     return readAnswer(res.status, body);
   },
 });
-
-/**
- * 設定を読んで窓口を作る。URL が無ければ `undefined` —— その配備に取り直しは無く、口を出さない。
- * **起動時に読む。** 頼まれてから「設定がありません」と言わない。
- */
-export const createTsCompile = (): TsCompile | undefined => {
-  const base = optional("CAPTURE_LEDGER_TS_COMPILE_URL", "");
-  if (base === "") return undefined;
-  const timeoutMs = Number(
-    optional("CAPTURE_LEDGER_TS_COMPILE_TIMEOUT_MS", String(DEFAULT_TIMEOUT_MS)),
-  );
-  return tsCompileAt({ base: base.replace(/\/+$/, ""), timeoutMs });
-};
 
 /**
  * 誤りの `file` (`<id>.ts`) を、送ったスクリプトの id に直す。送った id に無い file

@@ -232,6 +232,12 @@ runs it and publishes it on `127.0.0.1:28080` (from capture-scheduler v0.28.0). 
 `CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` to serve `GET /api/crawls/:id/diagnostics`;
 capture-scheduler's `pnpm run doctor` checks the port (`host→ts-compile`).
 
+Asking Claude for fixes (`POST /api/crawls/:id/inline/:name/fix`) also needs an Anthropic Console API key
+in `CAPTURE_LEDGER_ANTHROPIC_API_KEY`. Put it in `.env` only and never commit it; the SDK's own
+`ANTHROPIC_API_KEY` is not read. `pnpm run fix:eval` measures the fixer on a fixed set of broken samples
+against the real ts-compile-service and Claude — **it spends money** (it prints the cost of each sample
+and the total) and CI never runs it.
+
 The `pnpm run` scripts read that `.env` themselves
 (`node --env-file-if-exists=.env`) — no shell `export` needed. **Variables
 already in the environment win**, so `DATABASE_URL=... pnpm run db:migrate`

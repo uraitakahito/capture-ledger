@@ -23,7 +23,9 @@ import { registerScriptsRoute } from "./scripts.js";
 import { registerPicker, replayOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
-import { createTsCompile } from "../scripts/ts-compile.js";
+import { createTsCompile } from "../config/ts-compile.js";
+import { claudeBudgetUsd, createFixModel } from "../config/claude.js";
+import { derivationStoreOf } from "../derivations/store.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerSinkRoutes, type SinkConfig } from "./sink.js";
 import { createSearchClient } from "../search/client.js";
@@ -173,6 +175,20 @@ const start = async (options: ServerOptions): Promise<void> => {
         "CAPTURE_LEDGER_TS_COMPILE_URL is not set — /api/crawls/:id/diagnostics is not served",
       );
     }
+    // 直す係の Claude。案は型の検査に通してから返すので、ts-compile の宛先も要る —— 鍵だけでは起動で止める
+    // (黙って口を出さないと、鍵を置いた人は「直し方を訊く」が無い理由を探すことになる)。
+    const fixModel = createFixModel();
+    if (fixModel !== undefined && tsCompile === undefined) {
+      throw new Error(
+        "CAPTURE_LEDGER_ANTHROPIC_API_KEY needs CAPTURE_LEDGER_TS_COMPILE_URL " +
+          "(a proposed fix is checked by ts-compile-service before it is shown)",
+      );
+    }
+    if (fixModel === undefined) {
+      logger.info(
+        "CAPTURE_LEDGER_ANTHROPIC_API_KEY is not set — /api/crawls/:id/inline/:name/fix is not served",
+      );
+    }
     registerCrawlRoutes(app, {
       db,
       fga,
@@ -183,6 +199,11 @@ const start = async (options: ServerOptions): Promise<void> => {
       ...(sink && { sink }),
       ...(windmill && { windmill }),
       ...(tsCompile && { tsCompile }),
+      ...(fixModel && {
+        fixModel,
+        derivations: derivationStoreOf(db),
+        claudeBudgetUsd: claudeBudgetUsd(),
+      }),
       capture,
     });
   }

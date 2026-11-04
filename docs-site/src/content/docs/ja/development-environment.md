@@ -224,6 +224,12 @@ curl と flow のためのもので、capture-ledger のためではありませ
 `CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` を書くと、`GET /api/crawls/:id/diagnostics`
 が出ます。口は capture-scheduler の `pnpm run doctor` が見ます（`host→ts-compile`）。
 
+Claude に直し方を訊く口（`POST /api/crawls/:id/inline/:name/fix`）には、Anthropic の Console の API の鍵も
+要ります（`CAPTURE_LEDGER_ANTHROPIC_API_KEY`）。`.env` にだけ書き、commit しません。SDK が自分で読む
+`ANTHROPIC_API_KEY` は読みません。`pnpm run fix:eval` は、決めた見本（型の誤りのある JS）を本物の
+ts-compile-service と Claude で直させて測ります。**お金が掛かります**（見本ごとと合計の費用を出します）。
+CI では走りません。
+
 `pnpm run` 系のコマンドはこの `.env` を自分で読みます
 （`node --env-file-if-exists=.env`）。シェルで `export` する必要はありません。
 **すでに環境にある変数のほうが優先される**ので、一時的に別の DB を向きたいときは

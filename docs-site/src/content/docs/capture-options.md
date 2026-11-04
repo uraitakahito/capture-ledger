@@ -192,6 +192,34 @@ needs `CAPTURE_LEDGER_TS_COMPILE_URL` — capture-scheduler's compose publishes 
 `127.0.0.1:28080` — and is not served without it. It changes nothing and calls only ts-compile-service,
 so it is a GET with the same permission as the crawl's other routes; an unreachable service is a 503.
 
+`POST /api/crawls/:id/inline/:name/fix` (body `{}`) asks Claude how to fix the inline script's type
+errors, and **returns only a fix that passes the same check**. The ledger re-checks the crawl's scripts
+first, then sends Claude the inline script with line numbers, the scripts that run with it (to read,
+not to change), the errors and the host types (`host_types`), and asks for line-range replacements
+and a one-line reason per error. It applies the replacements, refuses any that add
+`// @ts-nocheck`, `@ts-ignore`, `@ts-expect-error`, `as any` or `: any`, add `import` or `export`
+(the script would become a module and silently not run), or replace more than half the lines (three
+are always allowed) — and checks the result with ts-compile-service together with the other scripts.
+A failed check goes back to Claude once more (two rounds at most), appended to the same conversation.
+Nothing else is sent: no page text, no variable values, no secrets. Only types are checked; whether the
+script still does what it did is for you to read in the diff.
+
+| Answer                                                  | When                                                                             | Claude called |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------- |
+| 200 `{ rounds, source, edits, notes, compiled, usage }` | a fix passed the check (`edits` holds each replaced range, `before` and `after`) | yes           |
+| 409 `scripts compile`                                   | the scripts type-check now — nothing to fix                                      | no            |
+| 422 `no errors in this inline script`                   | the errors are elsewhere (another script or a lib file)                          | no            |
+| 429 `claude budget exhausted`                           | the organization reached this month's limit                                      | no            |
+| 422 `no fix passed the checks`                          | two rounds did not pass (with the last errors and the refusals)                  | yes           |
+| 422 `claude refused`                                    | the request was declined for safety reasons                                      | yes           |
+| 502 `claude failed` / 503 `ts-compile unreachable`      | the API or ts-compile-service did not answer                                     | maybe         |
+
+Each request that called Claude leaves one row in the `derivations` table (input digest, model, prompt
+version, effort, rounds, output, usage and cost), never in the WACZ. The monthly limit per organization
+adds those costs up (`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`, 5 by default). The route exists only when
+`CAPTURE_LEDGER_ANTHROPIC_API_KEY` is set, and the API refuses to start with the key but without
+`CAPTURE_LEDGER_TS_COMPILE_URL`. `usage` in the answer carries the tokens and the cost (`usd`).
+
 Once the first level has been reported, each entry also carries `jsSha256` and
 `compiledWith` (`{ typescript, hostTypes }`): the hash of the JavaScript that level ran,
 and what produced it, as ts-compile-service answered and the flow reported
