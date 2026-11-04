@@ -47,7 +47,12 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
-/** 走査するのはこの 3 つ。生成物と依存は入っていない。 */
+/**
+ * 走査するのはこの 3 つ。生成物と依存は入っていない。
+ *
+ * 無い場所や、見るファイルが 1 本も無い場所は落とす。置き場所を移したのに ROOTS を直して
+ * いないと、そこのコメントを黙って見なくなり、腐った参照が緑のまま残るため。
+ */
 const ROOTS = ["src", "test", "scripts"];
 
 /**
@@ -88,8 +93,12 @@ const problems = [];
 
 for (const root of ROOTS) {
   const dir = resolve(ROOT, root);
-  if (!existsSync(dir)) continue;
-  for (const file of walk(dir).filter((f) => /\.(ts|mts|mjs)$/.test(f))) {
+  const files = existsSync(dir) ? walk(dir).filter((f) => /\.(ts|mts|mjs)$/.test(f)) : [];
+  if (files.length === 0) {
+    problems.push(`ROOTS の ${root}/ に見るファイルが無い (置き場所を移したなら ROOTS も直すこと)`);
+    continue;
+  }
+  for (const file of files) {
     const rel = relative(ROOT, file);
     const lines = readFileSync(file, "utf8").split("\n");
     for (const [i, line] of lines.entries()) {
