@@ -842,14 +842,15 @@ http://127.0.0.1:8899/?source=/wacz/<objectKey>
 
 Not the signed URL. A signed URL points straight at S3, which is a different
 origin from the viewer, so the browser would need CORS on the bucket. The
-object key goes through replay's own upstream, so **replay needs no change at
-all**.
+object key goes through replay's own upstream (`/wacz/`), so the picker needs
+nothing else from replay.
 
 :::caution[The list is filtered; the read is not]
 `can_view` decides what appears in the picker. It does **not** guard
 `/wacz/<key>` — anyone who knows a key can read it, because that path is served
 by the bucket's anonymous read. The filtering decides what you are shown, not
-what you could fetch.
+what you could fetch. The same holds for replay's `/q/<dir>/pages`, which answers
+the page lookups of a crawl's [replay bundle](#replay-bundles) from that read.
 
 Closing that gap means handing out the signed URL instead and setting CORS on
 the bucket, which is a separate change.

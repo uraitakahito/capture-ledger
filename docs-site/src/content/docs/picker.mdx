@@ -222,6 +222,11 @@ took (before and after the capture's scripts, say) are rows of replay's Pages ta
 with `urn:browserhive:snapshot:`. Without the part after `#`, replay opens that tab with the newest
 row first, and the captured document is the last row.
 
+**Only that one WACZ is opened.** A link to another page of the same crawl shows replay's Not Found,
+because that page was captured into a WACZ of its own. To follow links across a crawl, open the crawl's
+[replay bundle](/capture-ledger/archive-ledger/#replay-bundles) instead: it lists every WACZ of the
+crawl as one archive.
+
 Where replay lives comes from `REPLAY_ORIGIN` in `.env` (default `http://127.0.0.1:8899`). The replay
 container is started along with the rest by `pnpm run stack:up`.
 

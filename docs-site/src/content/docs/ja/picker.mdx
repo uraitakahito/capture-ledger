@@ -218,6 +218,12 @@ BrowserHive が撮った DOM の写し（取り込みのスクリプトの前と
 URL が `urn:browserhive:snapshot:` で始まります。
 `#` から後ろが無いと、replay はそのタブを新しい行から並べて開き、取り込んだ文書はいちばん下の行になります。
 
+**開くのは、その WACZ 1 本だけです。**
+同じクロールの別のページへのリンクを押すと、replay は Not Found を出します。
+そのページは別の WACZ に撮られているからです。
+クロールの中をリンクで辿るなら、クロールの[合本](/capture-ledger/ja/archive-ledger/#合本)を開きます。
+合本は、クロールの WACZ を全部並べて 1 つのアーカイブとして開きます。
+
 replay の場所は `.env` の `REPLAY_ORIGIN` で決まります（既定は `http://127.0.0.1:8899`）。
 replay のコンテナは、`pnpm run stack:up` で一緒に起動しています。
 

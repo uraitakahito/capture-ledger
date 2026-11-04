@@ -780,13 +780,14 @@ http://127.0.0.1:8899/?source=/wacz/<objectKey>
 ```
 
 署名付き URL は使わない。あれは S3 を直接指すので viewer から見て別 origin になり、
-bucket に CORS が要る。object key なら読みは replay 自身の上流を通るので、
-**replay は一切変えなくてよい**。
+bucket に CORS が要る。object key なら読みは replay 自身の上流（`/wacz/`）を通るので、
+picker が replay に求める物はほかに無い。
 
 :::caution[絞っているのは一覧だけで、読みではない]
 `can_view` が決めるのは picker に出るかどうか。`/wacz/<key>` を**守ってはいない** ——
 その経路は bucket の匿名 read で配られるので、鍵を知っていれば誰でも読める。
 絞り込みが決めるのは「何を見せるか」であって「何を取れるか」ではない。
+replay の `/q/<置き場>/pages`（クロールの[合本](#合本)の頁の問い）も同じ匿名の read から答える。
 
 ここを閉じるなら署名付き URL を渡し、bucket に CORS を設定することになる。
 それは別の変更。
