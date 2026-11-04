@@ -16,6 +16,10 @@
  * 名前の形は 4 つ: example.com など・その SURT（com,example）・*.example・その SURT（example,a）。
  * 正規表現の中の \. も同じ名前として見る。
  *
+ * **SCOPES のどれかが 1 本も当たらなければ落とす。** git ls-files は無い path に何も言わずに
+ * 0 本で答えるので、試験を移したのに SCOPES を直し忘れると、その場所が黙って範囲から抜け、
+ * 見るファイルが減ったまま緑になる（smoke の 2 本を移す試作で 47 → 45 ファイル）。
+ *
  * ## 見ないもの
  *
  * docs・src のコメント・UI の placeholder。example は文書のための名前で、そこが本来の使い道。
@@ -38,9 +42,22 @@ const FIND = [
   /(?<![A-Za-z0-9-])example,[A-Za-z0-9-]+[),]/i,
 ];
 
-const files = execFileSync("git", ["ls-files", "--", ...SCOPES], { encoding: "utf8" })
-  .split("\n")
-  .filter(Boolean);
+const files = [];
+const empty = [];
+for (const scope of SCOPES) {
+  const tracked = execFileSync("git", ["ls-files", "--", scope], { encoding: "utf8" })
+    .split("\n")
+    .filter(Boolean);
+  if (tracked.length === 0) empty.push(scope);
+  files.push(...tracked);
+}
+if (empty.length > 0) {
+  console.error(
+    `SCOPES に、git が追跡するファイルが 1 本も無い場所がある: ${empty.join("、")}\n` +
+      "  移した・名前を変えたなら、SCOPES も直すこと（そのままだと、その場所を見ないまま緑になる）。",
+  );
+  process.exit(1);
+}
 let found = 0;
 for (const file of files) {
   const text = readFileSync(file, "utf8");

@@ -52,10 +52,25 @@ const walk = (dir) =>
     return entry.isDirectory() ? walk(path) : [path];
   });
 
+/**
+ * 見る物が 1 本も無い場所は落とす。置き場所を移したのに SOURCE_DIRS を直していない印で、
+ * 黙って 0 本を読むと、そこでの読み取りが「誰も読まない」に化けるか、まるごと見落とされる。
+ */
+const sourceFiles = (dir) => {
+  const files = walk(resolve(ROOT, dir)).filter((f) => /\.(ts|mjs)$/.test(f));
+  if (files.length === 0) {
+    console.error(
+      `SOURCE_DIRS の ${dir}/ に .ts も .mjs も無い。置き場所を移したなら SOURCE_DIRS も直すこと。`,
+    );
+    process.exit(1);
+  }
+  return files;
+};
+
 /** name -> 最初に見つけたファイル。直す人には「どこで読まれているか」が要る。 */
 const used = new Map();
 for (const dir of SOURCE_DIRS) {
-  for (const file of walk(resolve(ROOT, dir)).filter((f) => /\.(ts|mjs)$/.test(f))) {
+  for (const file of sourceFiles(dir)) {
     const source = readFileSync(file, "utf8");
     for (const pattern of PATTERNS) {
       for (const match of source.matchAll(pattern)) {
@@ -108,7 +123,7 @@ for (const name of declared) {
 // ${VAR:-word} 側に揃えてあるので、1 か所でも残ると、その変数だけ空文字の意味が
 // 違う状態に戻る。
 for (const dir of SOURCE_DIRS) {
-  for (const file of walk(resolve(ROOT, dir)).filter((f) => /\.(ts|mjs)$/.test(f))) {
+  for (const file of sourceFiles(dir)) {
     const source = readFileSync(file, "utf8");
     for (const hit of source.matchAll(/process\.env\["([A-Z_0-9]+)"\]\s*\?\?/g)) {
       problems.push(
