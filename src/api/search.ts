@@ -68,7 +68,7 @@ export const registerSearchRoutes = (app: FastifyInstance, deps: SearchRouteDeps
   /**
    * クロール 1 本ぶんを索引に載せる。
    *
-   * 認可は `/api/crawls/:id/pages` と同じ (`can_submit`) —— 呼ぶのは同じ flow で、
+   * 認可は段の報告 (`POST /api/crawls/:id/pages`) と同じ (`can_submit`) —— 呼ぶのは同じ flow で、
    * 段を報告できる者は索引も書けてよい。載せる中身は既に台帳に在るので、
    * ここで新しく見えるようになるものは無い。
    */

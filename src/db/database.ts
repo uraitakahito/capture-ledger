@@ -297,6 +297,21 @@ export interface CrawlPagesTable {
   submittedAt: ColumnType<Date | null, string | null | undefined, string | null>;
   finishedAt: ColumnType<Date | null, string | null | undefined, string | null>;
   createdAt: ColumnType<Date, string | undefined, never>;
+  /**
+   * 取り込みのログの level ごとの行の数と、残さなかった行の数 (`025`)。`.result.json` の `log` から写す。
+   * NULL は「この行の取り込みの `.result.json` から数を読んでいない」—— 理由は列に残さない。
+   * 書くときは JSON の文字列 (`crawls.variables` と同じ扱い)。
+   */
+  logCounts: ColumnType<LogCounts | null, string | null | undefined, string | null>;
+}
+
+/** 取り込みのログの数 (`crawl_pages.log_counts`・`025`)。`log.counts` の 4 つに `log.dropped` を足した物。 */
+export interface LogCounts {
+  debug: number;
+  info: number;
+  warn: number;
+  error: number;
+  dropped: number;
 }
 
 export type CrawlPageState = "pending" | "captured" | "failed" | "skipped";

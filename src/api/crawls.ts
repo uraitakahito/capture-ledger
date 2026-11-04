@@ -35,6 +35,7 @@ import type { S3Client } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
 import type {
   CaptureSubmissionsTable,
+  CrawlPageState,
   CrawlRule,
   CrawlRuleAction,
   CrawlScript,
@@ -42,6 +43,7 @@ import type {
   CrawlsTable,
   CrawlState,
   Database,
+  LogCounts,
 } from "../db/database.js";
 import {
   enabledLatest,
@@ -87,7 +89,7 @@ import {
 import { aggregateDecisions, SAMPLES } from "../crawl/decisions.js";
 import { planNextLevel } from "../crawl/budget.js";
 import { getJsonObject } from "../archive/s3.js";
-import { manifestOutcome } from "../archive/manifest.js";
+import { manifestOutcome, readManifest } from "../archive/manifest.js";
 import { isUniqueViolation, maySubmit, unauthorized } from "./authorization.js";
 import { withLinks, type CaptureFormats, type CaptureSettings } from "../config/capture-formats.js";
 import { loadTargets } from "../data/url-source.js";
@@ -112,6 +114,15 @@ const DEFAULT_PER_HOST_DELAY_MS = 2000;
 const DEFAULT_HOST_PARALLELISM = 4;
 /** `GET /api/crawls/:id` が返す、取れなかったページの数の上限。理由を読むには数本で足りる。 */
 const FAILURES_SHOWN = 5;
+/** `GET /api/crawls/:id/pages` の 1 回の既定の行数と上限。続きは答えの `next` で引く。 */
+const PAGES_DEFAULT = 100;
+const PAGES_MAX = 500;
+/**
+ * ページの id (`crawl_pages.id`・bigserial) の綴り。**数字だけの文字列で、18 桁まで。** int では受けない ——
+ * JSON の数は 2^53 を超えると丸まる。桁を縛るのは、bigint の上限 (19 桁) を超える値を SQL に渡すと
+ * Postgres が「範囲の外」で断り、400 ではなく 500 になるから。
+ */
+const PAGE_ID = "^[0-9]{1,18}$";
 /** 一覧の 1 ページ。`GET /api/archives` と同じ大きさに揃えてある。 */
 const CRAWLS_PAGE = 50;
 /** `GET /api/decisions` が返す行の上限。超えたら `truncated` で言う (`com` のような広いドメインのため)。 */
@@ -344,6 +355,74 @@ const secretsOf = (
       editedAt: secret.editedAt,
       rotated: secret.rotated,
     }));
+
+/**
+ * クロール 1 本のページの行と、その取り込みの WACZ の id。ページの一覧と 1 ページのログの口が、同じ形を返すため。
+ *
+ * **`archives` に `crawl_id` は無い。** 繋ぐのは `task_id` で、uuid 側を text に倒す (`waczCount` と同じ理由 ——
+ * 素で繋ぐと `operator does not exist`、逆向きは uuid の形でない値が 1 行でもあると問い合わせごと落ちる)。
+ * 1 つの取り込みの WACZ は 1 本なので行は増えないはずだが、`distinct on` で 1 ページ 1 行に縛る —— 増えれば
+ * 一覧の `limit` と `next` がずれる。並びはページの id の昇順 (`crawl_pages` に入った順)。
+ */
+const pageRows = (db: Kysely<Database>, crawlId: string) =>
+  db
+    .selectFrom("crawlPages as p")
+    .leftJoin("archives as a", (join) =>
+      join.onRef("p.taskId", "=", sql<string>`${sql.ref("a.taskId")}::text`),
+    )
+    .select([
+      "p.id",
+      "p.url",
+      "p.depth",
+      "p.state",
+      "p.skipReason",
+      "p.taskId",
+      "p.logCounts",
+      "a.id as archiveId",
+    ])
+    .where("p.crawlId", "=", crawlId)
+    .distinctOn("p.id")
+    .orderBy("p.id")
+    .orderBy("a.createdAt");
+
+interface PageRow {
+  id: string;
+  url: string;
+  depth: number;
+  state: CrawlPageState;
+  skipReason: string | null;
+  taskId: string | null;
+  logCounts: LogCounts | null;
+  archiveId: string | null;
+}
+
+/**
+ * ページ 1 つの答えの形。`state` は行のまま (読み手は字として出すだけ)、`reason` は `skip_reason` ——
+ * 取らなかった理由も、取れなかった理由も入る。`logCounts` の null は「この行の取り込みの `.result.json` から
+ * 数を読んでいない」(`025`)。
+ */
+const pageOf = (row: PageRow) => ({
+  id: row.id,
+  url: row.url,
+  depth: row.depth,
+  state: row.state,
+  reason: row.skipReason,
+  taskId: row.taskId,
+  archiveId: row.archiveId,
+  logCounts: row.logCounts,
+});
+
+/**
+ * 1 ページのログを読めなかった理由。どれも 200 で答える —— ページは在り、読めないことが答え。
+ *
+ * - `not-captured` 取り込みの答えが無い (`task_id` が無い: pending・skipped・flow が切った・断られた)
+ * - `no-manifest` 答えはあるが、`.result.json` の場所が記録されていない (書けなかった・台帳に読めない場所)
+ * - `manifest-missing` 保管庫の、記録した場所に `.result.json` が無い
+ * - `manifest-invalid` `.result.json` が契約に合わない (JSON でない・`readManifest` が断った)
+ * - `no-log` `.result.json` に `log` が無い (BrowserHive v24.0.0 より前の取り込み)
+ */
+type LogUnreadable =
+  "not-captured" | "no-manifest" | "manifest-missing" | "manifest-invalid" | "no-log";
 
 export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps): void => {
   const { db, fga, resolveIdentity, dispatch, capture, sink, tsCompile } = deps;
@@ -986,9 +1065,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       // 取れなかったページと、その理由。0 ページで「成功」したクロールは、これが無いと
       // 理由が台帳の中に眠ったままになる (`skip_reason` には失敗の理由も入る)。
+      // ページの id も返す —— 理由の先 (そのページの取り込みのログ) へ、`/pages/:page/log` で辿れるように。
       const failures = await db
         .selectFrom("crawlPages")
-        .select(["url", "depth", "skipReason"])
+        .select(["id", "url", "depth", "skipReason"])
         .where("crawlId", "=", crawl.id)
         .where("state", "=", "failed")
         .orderBy("id", "desc")
@@ -1038,6 +1118,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         lastJob:
           crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
         failures: failures.map((page) => ({
+          page: page.id,
           url: page.url,
           depth: page.depth,
           reason: page.skipReason,
@@ -1156,6 +1237,144 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       },
     );
   }
+
+  /**
+   * クロール 1 本のページ。**`crawl_pages` の行を、入った順に `limit` 本ずつ。** 続きは答えの `next` を
+   * `after` に渡して引く。続きを本文で言うのは、dashboard の中継が状態・content-type・本文の外のヘッダを
+   * 落とすから。
+   *
+   * 1 行は `pageOf` の形で、取り込みのログの数 (`logCounts`) を持つ —— 数は段の登録が `.result.json` から
+   * 写した物で、ここでは保管庫を読まない。行そのものは `GET /api/crawls/:id/pages/:page/log` が読む。
+   * 認可と 404 は `GET /api/crawls/:id` と同じ (クロールが無くても 404)。段の報告 (`POST`) と同じ path。
+   */
+  app.get<{ Params: { id: string }; Querystring: { after?: string; limit?: number } }>(
+    "/api/crawls/:id/pages",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: { id: { type: "string", format: "uuid" } },
+          required: ["id"],
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            // 前の答えの `next`。ページの id で、その次から返す
+            after: { type: "string", pattern: PAGE_ID },
+            limit: { type: "integer", minimum: 1, maximum: PAGES_MAX },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) {
+        return reply.code(404).send({ error: "not found" });
+      }
+
+      const crawl = await db
+        .selectFrom("crawls")
+        .select(["id"])
+        .where("id", "=", request.params.id)
+        .executeTakeFirst();
+      if (!crawl) return reply.code(404).send({ error: "not found" });
+
+      // 1 本多く引き、続きが在るかを言う (`GET /api/decisions` の `truncated` と同じ)
+      const { after, limit = PAGES_DEFAULT } = request.query;
+      let query = pageRows(db, crawl.id).limit(limit + 1);
+      if (after !== undefined) query = query.where("p.id", ">", after);
+      const rows = await query.execute();
+
+      const shown = rows.slice(0, limit);
+      return reply.code(200).send({
+        pages: shown.map(pageOf),
+        next: rows.length > limit ? (shown[shown.length - 1]?.id ?? null) : null,
+      });
+    },
+  );
+
+  /**
+   * ページ 1 つの取り込みのログ。**台帳はログを持たない** —— BrowserHive が答えと一緒に `.result.json` に
+   * 書いた `log` を、そのたびに保管庫から読んで返す。行は届いた順のままで、並べ替えも言い換えもしない。
+   *
+   * 引く順: ページの行 (id とクロールの組 —— 他のクロールのページは 404) → その行の `task_id` →
+   * `capture_submissions.manifest_key` (task_id は uuid と text なので、uuid 側を text に倒す) → 保管庫の
+   * `.result.json` → 契約に照らす (`readManifest`)。途中で読めなければ、ページと理由 (`LogUnreadable`) を
+   * 200 で返す。保管庫に届かないときだけ 502。認可と 404 は `GET /api/crawls/:id` と同じ。
+   */
+  app.get<{ Params: { id: string; page: string } }>(
+    "/api/crawls/:id/pages/:page/log",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            page: { type: "string", pattern: PAGE_ID },
+          },
+          required: ["id", "page"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) {
+        return reply.code(404).send({ error: "not found" });
+      }
+
+      const { id: crawlId, page: pageId } = request.params;
+      const row = await pageRows(db, crawlId)
+        .leftJoin("captureSubmissions as s", (join) =>
+          join.onRef("p.taskId", "=", sql<string>`${sql.ref("s.taskId")}::text`),
+        )
+        .select("s.manifestKey")
+        .where("p.id", "=", pageId)
+        .executeTakeFirst();
+      if (!row) return reply.code(404).send({ error: "not found" });
+
+      const page = pageOf(row);
+      const unreadable = (reason: LogUnreadable) =>
+        reply.code(200).send({ page, log: null, reason });
+      if (row.taskId === null) return unreadable("not-captured");
+      if (row.manifestKey === null) return unreadable("no-manifest");
+
+      let raw: unknown;
+      try {
+        raw = await getJsonObject(deps.s3, deps.bucket, row.manifestKey);
+      } catch (err) {
+        // 中身が JSON でない (`JSON.parse` が投げた) のは、届いたうえで読めない物
+        if (err instanceof SyntaxError) {
+          log.warn({ err, crawlId, page: pageId, key: row.manifestKey }, "Manifest is not JSON");
+          return unreadable("manifest-invalid");
+        }
+        log.warn(
+          { err, crawlId, page: pageId, key: row.manifestKey },
+          "Could not read a capture's manifest from the store",
+        );
+        return reply.code(502).send({ error: "storage unreachable" });
+      }
+      if (raw === undefined) {
+        log.warn(
+          { crawlId, page: pageId, key: row.manifestKey },
+          "Manifest is not where the capture reported writing it",
+        );
+        return unreadable("manifest-missing");
+      }
+      try {
+        readManifest(raw);
+      } catch (err) {
+        log.warn(
+          { err, crawlId, page: pageId, key: row.manifestKey },
+          "Manifest is not a report the ledger can read",
+        );
+        return unreadable("manifest-invalid");
+      }
+      // FIXME(CAPTURE-18): 写した契約 (BrowserHive v23.1.0) は `log` を持たない。持つ版に上げたら、ここで返す
+      return unreadable("no-log");
+    },
+  );
 
   /**
    * クロール 1 本で、規則がリンクをどう決めたか。**固定した規則と、段 × 規則 × ホスト名の数と、
