@@ -39,9 +39,9 @@
  *   - 「起点」を seed の意味で使っているか、「起こす」がクロールの意味か。語の意味は機械には
  *     見えないので、「起こす」は形の並びで見る（並びに無い言い回しは止まらない）
  */
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { repoFiles } from "./repo-files.js";
 import { ROOT } from "./root.js";
 
 const SELF = "src/tools/check-terms.ts";
@@ -85,9 +85,10 @@ const RULES: Rule[] = [
   },
 ];
 
-const files = execFileSync("git", ["-C", ROOT, "ls-files", "-z"], { encoding: "utf8" })
-  .split("\0")
-  .filter((f) => f !== "" && f !== SELF && f !== "pnpm-lock.yaml" && !f.startsWith(".upstream/"));
+// 追跡している物と、まだ add していない新しい物（`repo-files.ts`）。
+const files = repoFiles(ROOT).filter(
+  (f) => f !== SELF && f !== "pnpm-lock.yaml" && !f.startsWith(".upstream/"),
+);
 
 const found = RULES.map((rule) => ({ ...rule, hits: [] as string[] }));
 for (const file of files) {

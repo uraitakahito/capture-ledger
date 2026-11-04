@@ -12,7 +12,8 @@
  *
  * ## 何を見るか
  *
- * git が追跡する text のファイルのうち、SCOPES に挙げた場所（試験と、試験が読む物）。
+ * git が repo の中身と見なす text のファイル（追跡している物と、まだ add していない物。`repo-files.ts`）の
+ * うち、SCOPES に挙げた場所（試験と、試験が読む物）。
  * 名前の形は 4 つ: example.com など・その SURT（com,example）・*.example・その SURT（example,a）。
  * 正規表現の中の \. も同じ名前として見る。
  *
@@ -25,8 +26,11 @@
  * docs・src のコメント・UI の placeholder。example は文書のための名前で、そこが本来の使い道。
  * .env.example（名前ではなくファイル名）と、zip や画像のような text でないファイル。
  */
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { repoFiles } from "./repo-files.js";
+import { ROOT } from "./root.js";
 
 /** この repo の試験の場所。repo ごとに違うのはここだけ。 */
 const SCOPES = ["test", "src/tools/targets-smoke.ts", "src/tools/scripts-smoke.ts"];
@@ -45,22 +49,21 @@ const FIND = [
 const files = [];
 const empty = [];
 for (const scope of SCOPES) {
-  const tracked = execFileSync("git", ["ls-files", "--", scope], { encoding: "utf8" })
-    .split("\n")
-    .filter(Boolean);
-  if (tracked.length === 0) empty.push(scope);
-  files.push(...tracked);
+  // 追跡している物と、まだ add していない新しい物（`repo-files.ts`）。新しい試験も commit の前に見る
+  const inScope = repoFiles(ROOT, [scope]);
+  if (inScope.length === 0) empty.push(scope);
+  files.push(...inScope);
 }
 if (empty.length > 0) {
   console.error(
-    `SCOPES に、git が追跡するファイルが 1 本も無い場所がある: ${empty.join("、")}\n` +
+    `SCOPES に、読めるファイルが 1 本も無い場所がある: ${empty.join("、")}\n` +
       "  移した・名前を変えたなら、SCOPES も直すこと（そのままだと、その場所を見ないまま緑になる）。",
   );
   process.exit(1);
 }
 let found = 0;
 for (const file of files) {
-  const text = readFileSync(file, "utf8");
+  const text = readFileSync(join(ROOT, file), "utf8");
   if (text.includes("\u0000")) continue;
   text.split("\n").forEach((line, index) => {
     if (FIND.some((re) => re.test(line))) {
