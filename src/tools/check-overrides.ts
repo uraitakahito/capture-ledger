@@ -41,11 +41,10 @@
  * 「もう要らない」で落ちる)。
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import semver from "semver";
+import { ROOT } from "./root.js";
 
-const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const WORKSPACE = "pnpm-workspace.yaml";
 const STORE = join(ROOT, "node_modules/.pnpm");
 
@@ -53,46 +52,62 @@ const STORE = join(ROOT, "node_modules/.pnpm");
 const NAME = /^(?:@[a-z0-9._~-]+\/)?[a-z0-9._~-]+$/;
 
 /** YAML の値か鍵の引用符を外す。 */
-const unquote = (text) => text.replace(/^(["'])(.*)\1$/, "$2");
+const unquote = (text: string): string => text.replace(/^(["'])(.*)\1$/, "$2");
+
+interface SectionLine {
+  text: string;
+  line: number;
+}
 
 /**
  * `overrides:` と `packages:` の節を、行で読む。
  *
  * YAML の parser は使わない —— この repo 群の検査器は workflow や compose をテキストとして
- * 読む (scripts/check-ci-parity.mjs と同じ)。読むのは 2 空白で字下げした 1 行ずつの形だけで、
+ * 読む (src/tools/check-ci-parity.ts と同じ)。読むのは 2 空白で字下げした 1 行ずつの形だけで、
  * それ以外の書き方が来たら読めなかった行として落とす。
  */
-const readSection = (lines, head) => {
+const readSection = (lines: readonly string[], head: string): SectionLine[] => {
   const start = lines.findIndex((l) => l === `${head}:`);
   if (start < 0) return [];
-  const body = [];
-  for (let i = start + 1; i < lines.length; i += 1) {
-    if (/^\S/.test(lines[i])) break; // 次の top-level の鍵
-    if (/^\s*(#.*)?$/.test(lines[i])) continue; // 空行とコメント
-    body.push({ text: lines[i], line: i + 1 });
+  const body: SectionLine[] = [];
+  for (const [i, text] of lines.entries()) {
+    if (i <= start) continue;
+    if (/^\S/.test(text)) break; // 次の top-level の鍵
+    if (/^\s*(#.*)?$/.test(text)) continue; // 空行とコメント
+    body.push({ text, line: i + 1 });
   }
   return body;
 };
 
-const problems = [];
+interface Override {
+  key: string;
+  name: string;
+  parent: string | null;
+  forced: string;
+  line: number;
+}
+
+const problems: string[] = [];
 const lines = readFileSync(join(ROOT, WORKSPACE), "utf8").split("\n");
 
-const overrides = [];
+const overrides: Override[] = [];
 for (const { text, line } of readSection(lines, "overrides")) {
-  const m = /^ {2}("[^"]+"|'[^']+'|[^\s:]+):\s+("[^"]*"|'[^']*'|\S+)\s*(?:#.*)?$/.exec(text);
-  if (!m) {
+  const [, rawKey, rawForced] =
+    /^ {2}("[^"]+"|'[^']+'|[^\s:]+):\s+("[^"]*"|'[^']*'|\S+)\s*(?:#.*)?$/.exec(text) ?? [];
+  if (rawKey === undefined || rawForced === undefined) {
     problems.push(`  ${WORKSPACE}:${String(line)} を読めない: ${text.trim()}`);
     continue;
   }
-  const key = unquote(m[1]);
-  const forced = unquote(m[2]);
+  const key = unquote(rawKey);
+  const forced = unquote(rawForced);
   const parts = key.split(">");
-  const name = parts.at(-1);
-  const parent = parts.length === 2 ? parts[0] : null;
+  // split は空の配列を返さないので `?? ""` へは来ない (来ても "" は NAME に当たらず、下で落ちる)
+  const name = parts.at(-1) ?? "";
+  const parent = parts.length === 2 ? (parts[0] ?? "") : null;
   if (parts.length > 2 || !NAME.test(name) || (parent !== null && !NAME.test(parent))) {
     problems.push(
       `  ${WORKSPACE}:${String(line)} の鍵 "${key}" は、この検査が読める形ではない ` +
-        `(読めるのは name と parent>name)。scripts/check-overrides.mjs を直すこと`,
+        `(読めるのは name と parent>name)。src/tools/check-overrides.ts を直すこと`,
     );
     continue;
   }
@@ -112,18 +127,31 @@ if (!existsSync(STORE)) {
   process.exit(1);
 }
 
+interface PackageJson {
+  name?: string;
+  version?: string;
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+}
+
+interface Manifest {
+  pkg: PackageJson;
+  own: boolean;
+}
+
 /**
  * 入っている全パッケージと workspace 自身の manifest。同じ name@version は 1 度だけ。
  *
  * `own` は workspace 自身 (root と `packages:` の下) の印。devDependencies を数えるのは
  * こちらだけ —— 入れた依存の devDependencies は install されないので、要求元にならない。
  */
-const manifests = () => {
-  const found = new Map();
-  const add = (file, own) => {
-    let pkg;
+const manifests = (): Manifest[] => {
+  const found = new Map<string, Manifest>();
+  const add = (file: string, own: boolean): void => {
+    let pkg: PackageJson;
     try {
-      pkg = JSON.parse(readFileSync(file, "utf8"));
+      pkg = JSON.parse(readFileSync(file, "utf8")) as PackageJson;
     } catch {
       return; // package.json を持たない入れ物や、壊れたものは対象外
     }
@@ -153,15 +181,15 @@ const manifests = () => {
  * peerDependencies は数えない。peer は親が入れた版を借りるだけで、自分では何も入れない
  * —— override の範囲と交わらない peer は「要る理由」ではなく、別の不整合。
  */
-const FIELDS = ["dependencies", "optionalDependencies"];
+const FIELDS = ["dependencies", "optionalDependencies"] as const;
 
 const all = overrides.length > 0 ? manifests() : [];
-const kept = [];
+const kept: string[] = [];
 for (const override of overrides) {
-  const users = [];
+  const users: { who: string; range: string }[] = [];
   for (const { pkg, own } of all) {
     if (override.parent !== null && pkg.name !== override.parent) continue;
-    for (const field of own ? [...FIELDS, "devDependencies"] : FIELDS) {
+    for (const field of own ? ([...FIELDS, "devDependencies"] as const) : FIELDS) {
       const range = pkg[field]?.[override.name];
       if (typeof range === "string") {
         users.push({ who: `${pkg.name}@${String(pkg.version)}`, range });

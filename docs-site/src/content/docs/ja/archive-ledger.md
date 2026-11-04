@@ -758,7 +758,7 @@ pnpm run api
 `--env-file-if-exists` を 2 つ渡しています。**後が勝ちます**）。必須のもの（`REQUIRED_ENV`）のうち、
 `CAPTURE_LEDGER_FGA_STORE_ID` と `CAPTURE_LEDGER_FGA_MODEL_ID` は `fga:deploy` を走らせるまで
 存在しません。この手順が `api` より前にあるのはそのためです。`.env.example` が
-実際の読み取りとずれていないかは `scripts/check-env.mjs` が見ています。
+実際の読み取りとずれていないかは `src/tools/check-env.ts` が見ています。
 
 :::caution[`fga:migrate` が独立した手順である理由]
 `openfga` イメージは distroless なので、seaweedfs のように entrypoint で

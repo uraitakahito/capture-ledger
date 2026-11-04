@@ -14,7 +14,7 @@ packages:
 #                   dependency として postinstall と無関係に入るので、false でも動く。
 #                   (@bufbuild/buf と protobufjs も同じ形で false にしていた。BrowserHive
 #                   v12 で proto が無くなり、どちらも依存から消えた。)
-#   puppeteer     — docs の画面の絵を撮る (scripts/docs-shots.mjs) ためだけに在る。
+#   puppeteer     — docs の画面の絵を撮る (src/tools/docs-shots/docs-shots.ts) ためだけに在る。
 #                   postinstall は Chromium (150MB) を取りに行くので、false にして
 #                   install のたびに DL させない (CI でも要らない)。撮る人は初回だけ
 #                   手で `./node_modules/.bin/puppeteer browsers install chrome`。
@@ -44,7 +44,7 @@ allowBuilds:
 #
 # **override が要るのは、要求元の宣言した範囲が修正版と交わらないときだけ。** 交わるなら
 # lockfile の更新で足り、後戻りは audit が止める。役目を終えた override は黙って版を縛り
-# 続けるので、`pnpm run check:overrides` (scripts/check-overrides.mjs) が見張っている ——
+# 続けるので、`pnpm run check:overrides` (src/tools/check-overrides.ts) が見張っている ——
 # 要らなくなったものは CI が名指しする。
 #
 # **下限は「修正版そのもの」に置くこと。** override は範囲を狭めるだけで lockfile を進める

@@ -9,7 +9,7 @@
  *
  * CI の check job が、migration を当てた後に走らせる (`.github/workflows/ci.yaml`)。手元でも走る:
  *
- *   pnpm run build && DATABASE_URL=postgres://… node scripts/scripts-smoke.mjs
+ *   pnpm run build && pnpm run build:tools && DATABASE_URL=postgres://… node dist/tools/scripts-smoke.js
  *
  * **向ける DB は使い捨てのものにすること。** 自分の id (`smoke-<pid>`) の行と、自分で足した受け皿の型
  * (中身に pid を書くので、ほかと重ならない) だけを足して最後に消し、ほかの行には触らないが、それでも書く。
@@ -23,10 +23,9 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { ROOT } from "./root.js";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CLI = resolve(ROOT, "dist/scripts/cli.js");
 const databaseUrl = process.env["DATABASE_URL"];
 if (!databaseUrl) {
@@ -56,19 +55,19 @@ const TYPES = `// ${id}\ndeclare var __bh: { report(id: string, data: unknown): 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 const work = mkdtempSync(join(tmpdir(), "scripts-smoke-"));
 /** 鍵の順に依らない比べ方。jsonb は object の鍵を並べ替えて持つ (短い鍵が先) ので、書いた順とは一致しない */
-const canonical = (value) =>
-  JSON.stringify(value, (_key, item) =>
+const canonical = (value: unknown) =>
+  JSON.stringify(value, (_key, item: unknown) =>
     typeof item === "object" && item !== null && !Array.isArray(item)
       ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
       : item,
   );
-const results = [];
-const check = (name, ok, detail = "") => {
+const results: { name: string; ok: boolean; detail: string }[] = [];
+const check = (name: string, ok: boolean, detail = "") => {
   results.push({ name, ok, detail });
 };
 
 /** CLI を子プロセスで走らせる。接続先は旗で明示する (環境変数に頼らない)。 */
-const cli = (args, input) => {
+const cli = (args: string[], input?: string) => {
   const run = spawnSync(process.execPath, [CLI, ...args, "--database-url", databaseUrl], {
     encoding: "utf8",
     input: input ?? "",
@@ -76,9 +75,9 @@ const cli = (args, input) => {
   return { status: run.status, stdout: run.stdout, stderr: run.stderr };
 };
 /** 期待と違ったときに出す手がかり。CLI の予期しない誤りは標準出力に JSON で出るので、両方を見る。 */
-const why = (run) =>
-  `rc=${String(run.status)} ${(run.stderr.trim() || run.stdout.trim()).split("\n")[0].slice(0, 200)}`;
-const write = (name, text) => {
+const why = (run: ReturnType<typeof cli>) =>
+  `rc=${String(run.status)} ${(run.stderr.trim() || run.stdout.trim()).split("\n")[0]?.slice(0, 200)}`;
+const write = (name: string, text: string) => {
   const path = join(work, name);
   writeFileSync(path, text);
   return path;
@@ -95,7 +94,10 @@ try {
   );
 
   // 021: 札を書かずに足した版の札は空。CHECK は形を見る
-  const sitesOf = await pool.query("SELECT sites FROM scripts WHERE id = $1 AND version = 1", [id]);
+  const sitesOf = await pool.query<{ sites: string[] }>(
+    "SELECT sites FROM scripts WHERE id = $1 AND version = 1",
+    [id],
+  );
   check(
     "021: 札を書かずに足した版の札は空",
     Array.isArray(sitesOf.rows[0]?.sites) && sitesOf.rows[0].sites.length === 0,
@@ -103,7 +105,7 @@ try {
   );
   let siteVersion = 0;
   /** 札だけを変えて 1 行足す。断られたら Postgres の誤りの code (23514 は CHECK) */
-  const insertSites = (sites) =>
+  const insertSites = (sites: string[]) =>
     pool
       .query(
         "INSERT INTO scripts (id, version, phase, source, sites) VALUES ($1, $2, 'behavior', 'x;', $3)",
@@ -111,7 +113,8 @@ try {
       )
       .then(
         () => "ok",
-        (err) => String(err.code),
+        // 誤りは DatabaseError とは限らない (繋がらないときの誤りにも code がある)。読むのは code だけ
+        (err: { code?: unknown }) => String(err.code),
       );
   let said = await insertSites(["Google.com"]);
   check("021: 札の CHECK は大文字のホスト名を断る", said === "23514", said);
@@ -135,9 +138,10 @@ try {
   );
 
   run = cli(["list", id, "--all", "--json"]);
-  let versions = [];
+  // 試験が形を確かめる欄 (createdAt) は unknown のまま
+  let versions: { id: string; version: number; createdAt: unknown }[] = [];
   try {
-    versions = JSON.parse(run.stdout);
+    versions = JSON.parse(run.stdout) as typeof versions;
   } catch {
     // 読めなければ空のまま
   }
@@ -207,12 +211,16 @@ try {
     why(run),
   );
 
-  const { rows } = await pool.query("SELECT count(*)::int AS n FROM host_types WHERE source = $1", [
-    TYPES,
-  ]);
-  check("型の行は 1 つだけ", rows[0].n === 1, `行=${String(rows[0].n)}`);
+  const { rows } = await pool.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM host_types WHERE source = $1",
+    [TYPES],
+  );
+  check("型の行は 1 つだけ", rows[0]?.n === 1, `行=${String(rows[0]?.n)}`);
 
-  const importedSites = await pool.query("SELECT sites FROM scripts WHERE id = $1", [imported]);
+  const importedSites = await pool.query<{ sites: string[] }>(
+    "SELECT sites FROM scripts WHERE id = $1",
+    [imported],
+  );
   check(
     "import は catalog の札を版に入れる",
     JSON.stringify(importedSites.rows.map((row) => row.sites)) === JSON.stringify([["site.test"]]),
@@ -245,10 +253,12 @@ try {
     run.status === 0 && run.stdout.includes("既定に入らない"),
     why(run),
   );
-  const off = await pool.query("SELECT bool_or(enabled) AS any FROM scripts WHERE id = $1", [
-    imported,
-  ]);
-  check("default: false の id は全版が無効", off.rows[0].any === false, JSON.stringify(off.rows));
+  // bool_or は行が無ければ null
+  const off = await pool.query<{ any: boolean | null }>(
+    "SELECT bool_or(enabled) AS any FROM scripts WHERE id = $1",
+    [imported],
+  );
+  check("default: false の id は全版が無効", off.rows[0]?.any === false, JSON.stringify(off.rows));
   run = cli(["list", "--seed", "https://site.test/", "--json"]);
   check(
     "default: false の id は、起点に合っても既定に入らない",
@@ -257,12 +267,13 @@ try {
   );
   // default を省いた catalog を取り込み直すと、取り込んだ版が有効に戻る (カタログが正)
   run = cli(["import", dir]);
-  const on = await pool.query("SELECT bool_or(enabled) AS any FROM scripts WHERE id = $1", [
-    imported,
-  ]);
+  const on = await pool.query<{ any: boolean | null }>(
+    "SELECT bool_or(enabled) AS any FROM scripts WHERE id = $1",
+    [imported],
+  );
   check(
     "default を省いた import で、取り込んだ版が有効に戻る",
-    run.status === 0 && on.rows[0].any === true,
+    run.status === 0 && on.rows[0]?.any === true,
     JSON.stringify(on.rows),
   );
 
@@ -321,16 +332,19 @@ try {
     run.status === 0 && run.stdout.includes("値:query,api_token(秘)!"),
     why(run),
   );
-  const paramsOf = await pool.query("SELECT params FROM scripts WHERE id = $1", [withDecl]);
+  const paramsOf = await pool.query<{ params: unknown }>(
+    "SELECT params FROM scripts WHERE id = $1",
+    [withDecl],
+  );
   check(
     "024: 宣言は jsonb にそのまま入る (required を埋めた形。鍵の順は jsonb が並べ替える)",
     canonical(paramsOf.rows[0]?.params) === canonical(declared),
     JSON.stringify(paramsOf.rows),
   );
   run = cli(["list", withDecl, "--all", "--json"]);
-  let listed = [];
+  let listed: { params: unknown }[] = [];
   try {
-    listed = JSON.parse(run.stdout);
+    listed = JSON.parse(run.stdout) as typeof listed;
   } catch {
     // 読めなければ空のまま
   }
@@ -418,11 +432,11 @@ try {
     )
     .then(
       () => "ok",
-      (err) => String(err.code),
+      (err: { code?: unknown }) => String(err.code),
     );
   check("024: scripts.params の CHECK は配列でない物を断る", said === "23514", said);
   /** クロールの行を、値の列だけ変えて 1 行足す。断られたら Postgres の誤りの code */
-  const insertCrawl = (column, value) =>
+  const insertCrawl = (column: "variables" | "secrets", value: string) =>
     pool
       .query(
         `INSERT INTO crawls (id, seeds, rules, max_depth, max_pages, per_host_delay_ms, host_parallelism, ` +
@@ -432,7 +446,7 @@ try {
       )
       .then(
         () => "ok",
-        (err) => String(err.code),
+        (err: { code?: unknown }) => String(err.code),
       );
   said = await insertCrawl("variables", "[]");
   check("024: crawls.variables の CHECK は object でない物を断る", said === "23514", said);
@@ -444,7 +458,7 @@ try {
     said === "ok",
     said,
   );
-  const crawlValues = await pool.query(
+  const crawlValues = await pool.query<{ variables: unknown; secrets: unknown }>(
     "SELECT variables, secrets FROM crawls WHERE org_id = $1 ORDER BY started_at DESC LIMIT 1",
     [id],
   );
@@ -475,9 +489,9 @@ try {
   check("add --site はポートつきの札を断る", run.status === 1, why(run));
 
   run = cli(["list", "--seed", "http://site.test:8080/a", "--json"]);
-  let chosen = [];
+  let chosen: string[] = [];
   try {
-    chosen = JSON.parse(run.stdout).map((script) => script.id);
+    chosen = (JSON.parse(run.stdout) as { id: string }[]).map((script) => script.id);
   } catch {
     // 読めなければ空のまま
   }
@@ -492,7 +506,7 @@ try {
 
   run = cli(["list", "--seed", "https://other.test/", "--json"]);
   try {
-    chosen = JSON.parse(run.stdout).map((script) => script.id);
+    chosen = (JSON.parse(run.stdout) as { id: string }[]).map((script) => script.id);
   } catch {
     chosen = [];
   }

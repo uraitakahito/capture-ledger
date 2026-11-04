@@ -10,10 +10,14 @@
  * よりはるかに悪い。
  */
 import { ExplainedError } from "../errors.js";
+import { optional, required } from "./read-env.js";
+
+// 読み口は副作用の無い read-env.ts に置き、src にはここから配る (src の import を動かさないため)。
+export { optional, required };
 
 /**
  * この repo が読む環境変数の全体。**`guardEnv` の検査対象そのもの** なので、
- * 変数を足したらここにも足すこと —— `scripts/check-env.mjs` が `src/` の実際の
+ * 変数を足したらここにも足すこと —— `src/tools/check-env.ts` が `src/` の実際の
  * 読み取りと突き合わせ、漏れていれば CI が落ちる。
  *
  * required と optional を分けているのは、空文字の扱いが違うから。required の
@@ -106,27 +110,6 @@ const guardEnv = (): void => {
 };
 
 guardEnv();
-
-/**
- * `identity.ts` も同じ方針 (既定値に落とさず throw) を使うので export している。
- * この 2 つは env.ts の外へ広く配るためのものではない。
- *
- * どちらも空文字を「無い」と同じに扱う。POSIX の `${VAR:-word}` 側の意味で、
- * `??` (`${VAR-word}` 側) は使わないこと —— この repo では読み口をこちらに
- * 揃えてある。
- */
-export const required = (name: string): string => {
-  const value = process.env[name];
-  if (value === undefined || value === "") {
-    throw new Error(`${name} is not set`);
-  }
-  return value;
-};
-
-export const optional = (name: string, fallback: string): string => {
-  const value = process.env[name];
-  return value === undefined || value === "" ? fallback : value;
-};
 
 /**
  * 足りない変数を、**値の出どころ** ごとに分けて案内する。

@@ -61,9 +61,9 @@ const ONLY_IN_CI = {
   "Apply migrations": "postgres の service と DATABASE_URL が要る",
   "Migration round-trip (down then up)": "同上。手元の `check` が DB を要求しないため",
   "Targets CLI against Postgres":
-    "同上。撮る対象の CLI を本物の DB に当てる (scripts/targets-smoke.mjs)",
+    "同上。撮る対象の CLI を本物の DB に当てる (src/tools/targets-smoke.ts)",
   "Scripts CLI against Postgres":
-    "同上。スクリプトの CLI と、スクリプトを読む口の関数を本物の DB に当てる (scripts/scripts-smoke.mjs)",
+    "同上。スクリプトの CLI と、スクリプトを読む口の関数を本物の DB に当てる (src/tools/scripts-smoke.ts)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 
@@ -76,14 +76,24 @@ const ONLY_IN_CHECK = {
   "site:check": "site.yaml。submodule とタグの取得が要る",
 };
 
+interface PackageJson {
+  scripts?: { check?: string };
+}
+
 /** `check` が束ねる script を、書かれた順に。 */
-const checkMembers = () => {
-  const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+const checkMembers = (): string[] => {
+  const pkg = JSON.parse(readFileSync("package.json", "utf8")) as PackageJson;
   const chain = pkg.scripts?.check ?? "";
-  return [...chain.matchAll(/pnpm run ([a-z][a-z0-9:._-]*)|pnpm (test)\b/g)].map(
-    (m) => m[1] ?? m[2],
+  // 当たるたびに、2 つの組のどちらか一方が必ず埋まる。`?? []` は型を絞るためで、そこへは来ない
+  return [...chain.matchAll(/pnpm run ([a-z][a-z0-9:._-]*)|pnpm (test)\b/g)].flatMap(
+    (m) => m[1] ?? m[2] ?? [],
   );
 };
+
+interface Step {
+  name: string | null;
+  run: string;
+}
 
 /**
  * workflow から本体 job の `run:` step を、順番どおりに取り出す。
@@ -92,24 +102,19 @@ const checkMembers = () => {
  * —— この repo 群の検査器は workflow や compose をテキストとして読む
  * (browserhive の stack コマンドの検査器が先例)。依存を増やさないためでもある。
  */
-const ciSteps = () => {
+const ciSteps = (): Step[] => {
   const lines = readFileSync(WORKFLOW, "utf8").split("\n");
   const start = lines.findIndex((l) => l === `  ${JOB}:`);
   if (start < 0) throw new Error(`${WORKFLOW} に job "${JOB}" が無い`);
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i += 1) {
-    if (/^ {2}[a-z][a-z0-9-]*:/.test(lines[i])) {
-      end = i;
-      break;
-    }
-  }
+  const next = lines.findIndex((l, i) => i > start && /^ {2}[a-z][a-z0-9-]*:/.test(l));
+  const end = next < 0 ? lines.length : next;
 
-  const steps = [];
-  let name = null;
+  const steps: Step[] = [];
+  let name: string | null = null;
   for (const line of lines.slice(start, end)) {
-    const named = /^\s+- name:\s*(.+?)\s*$/.exec(line);
-    if (named) {
-      name = named[1];
+    const named = /^\s+- name:\s*(.+?)\s*$/.exec(line)?.[1];
+    if (named !== undefined) {
+      name = named;
       continue;
     }
     if (/^\s+- uses:/.test(line)) {
@@ -118,23 +123,24 @@ const ciSteps = () => {
     }
     // `- run: cmd` と、`- name:` に続く `run: cmd` の両方。**書き方は repo ごとに違う**
     // —— browserhive は名前を付けず `- run:` だけを並べる。
-    const run = /^\s+-?\s*run:\s*(.*)$/.exec(line);
-    if (run) steps.push({ name, run: run[1].trim() });
-    if (run) name = null;
+    const run = /^\s+-?\s*run:\s*(.*)$/.exec(line)?.[1];
+    if (run !== undefined) steps.push({ name, run: run.trim() });
+    if (run !== undefined) name = null;
   }
   return steps;
 };
 
-const problems = [];
+const problems: string[] = [];
 const steps = ciSteps();
 
 // ① CI の step を、検査 (script) と それ以外 に仕分ける
-const ciMembers = [];
-const seenExceptions = new Set();
+const ciMembers: string[] = [];
+const seenExceptions = new Set<string>();
 for (const step of steps) {
   const m = /^pnpm run ([a-z][a-z0-9:._-]*)$|^pnpm (test)$/.exec(step.run);
-  if (m) {
-    ciMembers.push(m[1] ?? m[2]);
+  const script = m?.[1] ?? m?.[2];
+  if (script !== undefined) {
+    ciMembers.push(script);
     continue;
   }
   // 名前で引き、無ければ実行文字列で引く。名前を付けない repo があるため。

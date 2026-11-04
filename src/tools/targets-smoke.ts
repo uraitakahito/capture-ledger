@@ -8,7 +8,7 @@
  *
  * CI の check job が、migration を当てた後に走らせる (`.github/workflows/ci.yaml`)。手元でも走る:
  *
- *   pnpm run build && DATABASE_URL=postgres://… node scripts/targets-smoke.mjs
+ *   pnpm run build && pnpm run build:tools && DATABASE_URL=postgres://… node dist/tools/targets-smoke.js
  *
  * **向ける DB は使い捨てのものにすること。** 自分の組織 (`smoke-<pid>`) の行だけを足して最後に
  * 消し、ほかの行には触らないが、それでも書く。
@@ -18,10 +18,9 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { ROOT } from "./root.js";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const CLI = resolve(ROOT, "dist/targets/cli.js");
 const databaseUrl = process.env["DATABASE_URL"];
 if (!databaseUrl) {
@@ -36,13 +35,13 @@ if (!existsSync(CLI)) {
 const org = `smoke-${String(process.pid)}`;
 const otherOrg = `${org}-b`;
 const pool = new pg.Pool({ connectionString: databaseUrl });
-const results = [];
-const check = (name, ok, detail = "") => {
+const results: { name: string; ok: boolean; detail: string }[] = [];
+const check = (name: string, ok: boolean, detail = "") => {
   results.push({ name, ok, detail });
 };
 
 /** CLI を子プロセスで走らせる。接続先は旗で明示する (環境変数に頼らない)。 */
-const cli = (args, input) => {
+const cli = (args: string[], input?: string) => {
   const run = spawnSync(process.execPath, [CLI, ...args, "--database-url", databaseUrl], {
     encoding: "utf8",
     input: input ?? "",
@@ -50,25 +49,26 @@ const cli = (args, input) => {
   return { status: run.status, stdout: run.stdout, stderr: run.stderr };
 };
 /** 期待と違ったときに出す手がかり。CLI の予期しない誤りは標準出力に JSON で出るので、両方を見る。 */
-const why = (run) =>
-  `rc=${String(run.status)} ${(run.stderr.trim() || run.stdout.trim()).split("\n")[0].slice(0, 200)}`;
-const count = async (where, params = []) => {
-  const { rows } = await pool.query(
+const why = (run: ReturnType<typeof cli>) =>
+  `rc=${String(run.status)} ${(run.stderr.trim() || run.stdout.trim()).split("\n")[0]?.slice(0, 200)}`;
+const count = async (where: string, params: unknown[] = []) => {
+  const { rows } = await pool.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM capture_targets WHERE ${where}`,
     params,
   );
-  return Number(rows[0].n);
+  return Number(rows[0]?.n);
 };
 const ours = () => count("org_id IN ($1, $2)", [org, otherOrg]);
-const idOf = async (url) => {
-  const { rows } = await pool.query(
+const idOf = async (url: string) => {
+  // id は BIGSERIAL。node-pg は int8 を string で返す
+  const { rows } = await pool.query<{ id: string }>(
     "SELECT id FROM capture_targets WHERE org_id = $1 AND url = $2",
     [org, url],
   );
   return rows[0]?.id;
 };
 /** 生の INSERT が断られるか。トランザクションの中で走らせ、通ってしまっても必ず戻す。 */
-const rejects = async (sql, params, expected) => {
+const rejects = async (sql: string, params: unknown[], expected: string) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -78,7 +78,7 @@ const rejects = async (sql, params, expected) => {
     const message = error instanceof Error ? error.message : String(error);
     return { ok: message.includes(expected), detail: message };
   } finally {
-    await client.query("ROLLBACK").catch(() => {});
+    await client.query("ROLLBACK").catch(() => undefined);
     client.release();
   }
 };
@@ -126,7 +126,7 @@ try {
   run = cli(["list", "--org", org, "--json"]);
   let listed = -1;
   try {
-    listed = JSON.parse(run.stdout).length;
+    listed = (JSON.parse(run.stdout) as unknown[]).length;
   } catch {
     // 読めなければ -1 のまま
   }

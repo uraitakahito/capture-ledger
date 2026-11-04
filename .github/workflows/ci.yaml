@@ -148,7 +148,7 @@ jobs:
       # (組織の既定値なし・URL の CHECK・組織ごとのユニーク) が本当に効くかを見るのは、
       # ここだけ。自分の組織 (smoke-<pid>) の行だけを足して、最後に消す。
       - name: Targets CLI against Postgres
-        run: node scripts/targets-smoke.mjs
+        run: pnpm run build:tools && node dist/tools/targets-smoke.js
 
       # スクリプトの CLI (pnpm run scripts) を、本物の Postgres に当てる。
       #
@@ -156,7 +156,7 @@ jobs:
       # 通るか、版を本当に絞るか、`020` の表が版を足すかを見るのは、ここだけ。自分の id
       # (smoke-<pid>) の行と、自分で足した型だけを足して、最後に消す。
       - name: Scripts CLI against Postgres
-        run: node scripts/scripts-smoke.mjs
+        run: pnpm run build:tools && node dist/tools/scripts-smoke.js
 
       # 契約 (openapi.json) から生成した型が、コミットされた物と一致するか。
       - name: OpenAPI types drift check
@@ -167,7 +167,7 @@ jobs:
       # override は、入れた理由が消えた後も黙って効き続け、将来の版上げを曲げる。
       # 「○○ が上がったら外す」という条件は、人の記憶に置いた時点で忘れられる ——
       # 2026-09 に調べたら、axios の override はすでに何もしていなかった。
-      # 要・不要の線引きは scripts/check-overrides.mjs の冒頭に書いてある。
+      # 要・不要の線引きは src/tools/check-overrides.ts の冒頭に書いてある。
       - name: Overrides are still needed
         run: pnpm run check:overrides
 
@@ -184,7 +184,7 @@ jobs:
 
       # ソースのコメントが名指しするファイルが、まだ実在するか。
       #
-      # docs については check-doc-refs.mjs が同じことを見ているが、**コメントは
+      # docs については src/tools/check-doc-refs.ts が同じことを見ているが、**コメントは
       # 誰も見ていなかった。** run を crawl に畳んだとき、識別子は追随したのに
       # コメントには消えたファイルを現在形で指す記述が 19 箇所残り、うち 1 つは
       # 運用手順として「片付けは api/runs.ts の GET を見ること」と指示していた。
@@ -204,17 +204,17 @@ jobs:
       # 渡す。capture-ledger の CLI は allowExcessArguments(false) なので、それは
       # "too many arguments" で即死する。npm から移したときの書き換え漏れは
       # ドキュメントの中でしか起きず、テストも lint も届かないので、ここで見る。
-      # 中身は scripts/check-flag-style.mjs。**inline の shell に置かない** ——
+      # 中身は src/tools/check-flag-style.ts。**inline の shell に置かない** ——
       # 手元で走らせようが無い検査は、CI でしか気づけない検査になる。
       - name: No npm-style `--` before flags
         run: pnpm run check:flag-style
 
       # seed の旧い訳語が、docs・コメント・試験の名前に戻っていないか。
-      # 中身は scripts/check-terms.mjs。この注記には、探す字そのものを書かない（検査に掛かる）。
+      # 中身は src/tools/check-terms.ts。この注記には、探す字そのものを書かない（検査に掛かる）。
       - name: seed を「起点」と書いているか
         run: pnpm run check:terms
 
-      # 中身は scripts/check-test-hosts.mjs。試験の名前は .test に揃えた。
+      # 中身は src/tools/check-test-hosts.ts。試験の名前は .test に揃えた。
       - name: 試験に example 名を書いていないか
         run: pnpm run check:test-hosts
 

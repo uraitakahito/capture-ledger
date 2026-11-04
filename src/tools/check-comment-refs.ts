@@ -3,7 +3,7 @@
  *
  * ## なぜ要るのか
  *
- * `check-doc-refs.mjs` は docs-site のページについて同じことを見ているが、**ソースの
+ * `check-doc-refs.ts` は docs-site のページについて同じことを見ているが、**ソースの
  * コメントは誰も見ていない。** そして腐るのはコメントのほうが速い —— ドキュメントは
  * 「読み物」として書き直されるが、コメントは隣のコードを直すときにしか目に入らない。
  *
@@ -36,16 +36,14 @@
  * (実測)。しかも死んだフィクスチャに名前が残っていると「生きている」と判定されて
  * すり抜ける。**path だけが機械で確かめられる。**
  *
- *   node scripts/check-comment-refs.mjs      # `pnpm run check` と CI から走る
+ *   pnpm run check-comment-refs      # `pnpm run check` と CI から走る
  *
  * 見つかれば終了コード 1。効いていることを見たいなら、どこかのコメントに
  * 存在しないファイル名を backtick 付きで書いて走らせ直す —— その行が赤くなる。
  */
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
+import { ROOT } from "./root.js";
 
 /**
  * 走査するのはこの 3 つ。生成物と依存は入っていない。
@@ -53,6 +51,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
  * 無い場所や、見るファイルが 1 本も無い場所は落とす。置き場所を移したのに ROOTS を直して
  * いないと、そこのコメントを黙って見なくなり、腐った参照が緑のまま残るため。
  */
+// FIXME(CAPTURE-26): 道具が全部 src/tools/ に移ったら "scripts" を外す
 const ROOTS = ["src", "test", "scripts"];
 
 /**
@@ -63,7 +62,7 @@ const ROOTS = ["src", "test", "scripts"];
  */
 const MANIFESTS = ["package.json", "docs-site/package.json"];
 
-const walk = (dir) =>
+const walk = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const p = join(dir, entry.name);
     return entry.isDirectory() ? walk(p) : [p];
@@ -71,7 +70,7 @@ const walk = (dir) =>
 
 /** 実在の一覧は repo 全体から採る (docs や .github のファイルも名指しされうる)。 */
 const SKIP = /(^|\/)(node_modules|\.git|dist|build|coverage|\.upstream|\.astro|graphify-out)(\/|$)/;
-const every = (dir) =>
+const every = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const p = join(dir, entry.name);
     if (SKIP.test(relative(ROOT, p))) return [];
@@ -84,12 +83,12 @@ const real = every(ROOT).map((f) => relative(ROOT, f));
  * 参照が実在に当たるか。**末尾一致**で見る —— コメントは api/runs.ts のように
  * 途中から書くことが多く、完全な相対 path を強いると読みにくくなる。
  */
-const resolves = (ref) => real.some((f) => f === ref || f.endsWith(`/${ref}`));
+const resolves = (ref: string) => real.some((f) => f === ref || f.endsWith(`/${ref}`));
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;
 const REF = /`([A-Za-z0-9_./-]+\.(?:ts|mts|mjs|sql|yml|yaml))`/g;
 
-const problems = [];
+const problems: string[] = [];
 
 for (const root of ROOTS) {
   const dir = resolve(ROOT, root);
@@ -104,6 +103,7 @@ for (const root of ROOTS) {
     for (const [i, line] of lines.entries()) {
       if (!COMMENT.test(line)) continue;
       for (const [, ref] of line.matchAll(REF)) {
+        if (ref === undefined) continue;
         if (ref.startsWith(".")) continue;
         if (resolves(ref)) continue;
         problems.push(`${rel}:${String(i + 1)}: \`${ref}\` はこの repo に無い`);
@@ -112,11 +112,17 @@ for (const root of ROOTS) {
   }
 }
 
+/** 要素は String() で読むので、文字列だとは名乗らせない。 */
+interface Manifest {
+  "//"?: unknown[];
+}
+
 for (const rel of MANIFESTS) {
-  const notes = JSON.parse(readFileSync(resolve(ROOT, rel), "utf8"))["//"];
+  const notes = (JSON.parse(readFileSync(resolve(ROOT, rel), "utf8")) as Manifest)["//"];
   if (!Array.isArray(notes)) continue;
   for (const [i, line] of notes.entries()) {
     for (const [, ref] of String(line).matchAll(REF)) {
+      if (ref === undefined) continue;
       if (ref.startsWith(".")) continue;
       if (resolves(ref)) continue;
       problems.push(`${rel} の "//" の ${String(i + 1)} 行目: \`${ref}\` はこの repo に無い`);

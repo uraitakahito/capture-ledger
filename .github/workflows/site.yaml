@@ -2,14 +2,14 @@ name: site
 
 # Sync guard for the documentation site (Astro/Starlight).
 #
-# Builds docs-site/ and runs scripts/check-doc-refs.mjs so a pull request cannot
+# Builds docs-site/ and runs src/tools/check-doc-refs.ts so a pull request cannot
 # merge documentation that has drifted from the repository:
 #
 #   - the build injects `// #region` snippets and resolves the BrowserHive pin
 #     from the .upstream/browserhive submodule (docs-site/src/lib/extract.ts).
 #     The pin is read from an .mdx page, so an uninitialised submodule fails
 #     the build outright.
-#   - check-doc-refs.mjs catches what the build does not: a page that exists in
+#   - check-doc-refs.ts catches what the build does not: a page that exists in
 #     only one language, a `src/….ts` path that was renamed, and a missing
 #     `#region` marker — `astro build` logs that one but still exits 0, so it
 #     cannot be relied on as a gate. (The difference is the extension: a throw
@@ -36,9 +36,9 @@ on:
     # merge has been a push to main since develop was retired (2026-10).
     branches: [main]
     paths:
+      # src/** also covers the checker itself (src/tools/check-doc-refs.ts).
       - "src/**"
       - "docs-site/**"
-      - "scripts/check-doc-refs.mjs"
       # The pinned BrowserHive version is read out of this submodule at build
       # time, so a bump can break the build (an off-tag pin fails `git
       # describe`) while touching nothing else the filter lists.
@@ -52,9 +52,9 @@ on:
       - ".github/workflows/site.yaml"
   pull_request:
     paths:
+      # src/** also covers the checker itself (src/tools/check-doc-refs.ts).
       - "src/**"
       - "docs-site/**"
-      - "scripts/check-doc-refs.mjs"
       # The pinned BrowserHive version is read out of this submodule at build
       # time, so a bump can break the build (an off-tag pin fails `git
       # describe`) while touching nothing else the filter lists.

@@ -27,8 +27,8 @@
      */
     // Specify what module code is generated. NodeNext (rather than
     // BrowserHive's `ESNext` paired with `moduleResolution: Bundler`)
-    // because capture-ledger is a Node CLI run directly via `node dist/submit-captures.js`,
-    // not via a bundler.
+    // because capture-ledger runs under node straight from dist/ (the API as
+    // `node dist/api/server.js`, the repo tools from `dist/tools/`), not via a bundler.
     "module": "NodeNext",
     // Match the resolver to `module: NodeNext`
     "moduleResolution": "NodeNext",
@@ -84,5 +84,6 @@
   // Root config covers source, tests, and *.config.ts so editors and the
   // typecheck script see everything; the build config narrows to src/**.
   "include": ["src/**/*", "test/**/*", "*.config.ts"],
-  "exclude": ["node_modules", "dist"]
+  // src/tools/docs-shots has its own program with the DOM types (see its tsconfig.json).
+  "exclude": ["node_modules", "dist", "src/tools/docs-shots"]
 }
