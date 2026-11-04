@@ -144,7 +144,11 @@ beforeEach(() => {
   inserted = [];
   fakeScripts = [];
   vi.mocked(admitLevel).mockReset();
-  vi.mocked(admitLevel).mockResolvedValue({ registered: 0, admittedUrls: [] });
+  vi.mocked(admitLevel).mockResolvedValue({
+    registered: 0,
+    admittedUrls: [],
+    logCounts: new Map(),
+  });
 });
 
 /**

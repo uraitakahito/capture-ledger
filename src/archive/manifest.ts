@@ -11,9 +11,15 @@
  * 知らない値を黙って UNRECOGNIZED に落としていたが、JSON の写しに逆関数は無い ——
  * 照らさずに型だけ名乗ると、v11 の manifest や壊れた物が `status` の比較を素通りして
  * 台帳に入りうる。通らなければ、どの項目が駄目かを添えて投げる。呼ぶ側 (段の登録・
- * reconcile) は 1 件の失敗で止まらず、飛ばしてそう言う。
+ * reconcile) は 1 件の失敗で止まらず、飛ばしてそう言う。1 ページのログの口
+ * (`GET /api/crawls/:id/pages/:page/log`) は、投げたら `manifest-invalid` と答える。
  *
  * 契約に無い項目は通す。BrowserHive が項目を足す版上げで台帳が止まらないため。
+ *
+ * **契約に `format` が入ると、この file の import で落ちる。** Ajv は `date-time` や `double` を知らず
+ * (ajv-formats は依存に無い)、strict のまま compile すると投げる —— API は起動しない。compile するのは
+ * `CaptureResultReport` から辿れる schema だけなので、写しを上げるときはそこに `format` が増えていないかを見る
+ * (BrowserHive は、取り込みのログの時刻を Timestamp ではなく String に、数を Integer にしてある)。
  *
  * 契約が既定値を持つ項目は、欠けていれば既定値で補ってから照らす（Ajv の `useDefaults`）。
  * Smithy の `@default` は「無ければその値」という意味で、後から required になった項目を
@@ -25,6 +31,7 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
 import openapi from "../rpc/generated/browserhive/openapi.json" with { type: "json" };
 import type { components } from "../rpc/generated/browserhive/openapi.js";
+import type { LogCounts } from "../db/database.js";
 import { parseS3Uri, type S3Location } from "./s3-uri.js";
 
 export type CaptureResultReport = components["schemas"]["CaptureResultReport"];
@@ -46,6 +53,19 @@ export const readManifest = (raw: unknown): CaptureResultReport => {
   throw new Error(
     `manifest is not a BrowserHive CaptureResultReport: ${ajv.errorsText(validate.errors)}`,
   );
+};
+
+/**
+ * 取り込みのログの数を、`crawl_pages.log_counts` (`025`) の形にする。`log.counts` の 4 つに `log.dropped` を足す。
+ *
+ * `log` を持たない manifest (BrowserHive v24.0.0 より前) には数が無い —— 0 で埋めない。0 は「行が無かった」で、
+ * 「読む物が無かった」とは別の事実なので、列は NULL (読んでいない) のまま残す。`log` は契約で任意の欄で、
+ * 既定値も無いので、`useDefaults` が補うことも無い。
+ */
+export const logCountsOf = (report: CaptureResultReport): LogCounts | undefined => {
+  if (report.log === undefined) return undefined;
+  const { debug, info, warn, error } = report.log.counts;
+  return { debug, info, warn, error, dropped: report.log.dropped };
 };
 
 /** 台帳に書く manifest の結末。どちらか一方だけが値を持つ。 */

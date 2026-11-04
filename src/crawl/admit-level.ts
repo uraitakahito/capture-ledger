@@ -23,19 +23,25 @@
  * 同じ handler が `.links.json` を S3 から読んでいるので、経路は増えない。
  *
  * ## 失敗の報告も渡してよい
-
+ *
  * 渡すのは「`taskId` を持つ全件」で、報告上の状態は問わない。報告は flow が
  * BrowserHive の答えをどう受け取ったかで、正本は BrowserHive 自身が成果物の隣に
  * 書く manifest —— 食い違えば manifest を採る。`failed` と報告されたページに
  * 成功の manifest が在れば、**取り込み自体は成功していて成果物は S3 に在る**。
  *
- * **切られた取り込みだけは拾えない。** flow の deadline が尽きると BrowserHive は
- * (v9.1.0 以降) ページを壊し、`cancelled` の manifest を書く —— 成果物が無いので
- * `admitArchive` が弾く。それで正しい: 拾う先が無い。
+ * **flow が切った取り込みは、ここに来ない。** flow の deadline (capture-scheduler の `crawl_host`) を
+ * 過ぎると、BrowserHive は `cancelled` の manifest を書くが、flow は答えを受け取っていないので、報告に
+ * `taskId` も manifest の場所も載らない。`capture_submissions` の行も無く、reconcile も拾えない。
  *
  * 拾えたかどうかは `admittedUrls` が答える。呼ぶ側はそれを見て `crawl_pages` の
  * 状態を上げる —— そこまでやらないと、台帳には在るのにクロールの記録では
  * 失敗している、という食い違いが残る。
+ *
+ * ## 取り込みのログの数も、ここで取る
+ *
+ * manifest を読むのはここなので、`log` の数 (`025`) も同じ所で取る。**台帳に入るかどうかとは関わらない** ——
+ * 時間切れや失敗の取り込みは WACZ を持たず `admitArchive` に弾かれるが、そのページにこそ読みたい行が在る。
+ * だから数を取るのは `admitArchive` の前。返した数は、呼ぶ側が `crawl_pages` に書く。
  *
  * ## 無いものは飛ばす
  *
@@ -48,10 +54,10 @@
  */
 import type { Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
-import { readManifest } from "../archive/manifest.js";
+import { logCountsOf, readManifest } from "../archive/manifest.js";
 import { getJsonObject } from "../archive/s3.js";
 import { admitArchive } from "../archive/admit.js";
-import type { Database } from "../db/database.js";
+import type { Database, LogCounts } from "../db/database.js";
 import { createChildLogger } from "../logger.js";
 
 const log = createChildLogger({ module: "crawl-admit-level" });
@@ -84,6 +90,13 @@ export interface AdmitLevelResult {
    * 成功を語っていればここに入る。呼ぶ側はこれを見て記録を直す。
    */
   admittedUrls: string[];
+  /**
+   * 取り込みのログの数 (`025`)。taskId ごとに、manifest を読めて契約に照らせ、`log` を持っていた取り込みだけ。
+   * **台帳に入らなかった取り込みのぶんも在る** —— 数を取るのは `admitArchive` の前なので、WACZ の無い取り込み
+   * (時間切れ・失敗・WACZ を頼まれていない) も数が残る。行が要るのは、むしろそちらのほう。
+   * 呼ぶ側はこれを `crawl_pages.log_counts` に書く。
+   */
+  logCounts: Map<string, LogCounts>;
 }
 
 /**
@@ -99,6 +112,7 @@ export const admitLevel = async (
 ): Promise<AdmitLevelResult> => {
   let registered = 0;
   const admittedUrls: string[] = [];
+  const logCounts = new Map<string, LogCounts>();
   for (const page of pages) {
     // **鍵は報告が運んだもの。** 書けなかった取り込みには、読みに行く先が無い。
     if (page.manifestKey === null) continue;
@@ -109,12 +123,11 @@ export const admitLevel = async (
         log.debug({ taskId: page.taskId, key }, "no manifest yet; leaving it to reconcile");
         continue;
       }
-      const result = await admitArchive(
-        options.db,
-        readManifest(raw),
-        options.orgId,
-        options.requestedBy,
-      );
+      const report = readManifest(raw);
+      // 数は台帳に入るかどうかと関わらない。`admitArchive` が WACZ の無い取り込みを弾く前に取る
+      const counts = logCountsOf(report);
+      if (counts !== undefined) logCounts.set(page.taskId, counts);
+      const result = await admitArchive(options.db, report, options.orgId, options.requestedBy);
       if (result.archiveId !== undefined) {
         registered += 1;
         admittedUrls.push(page.url);
@@ -127,6 +140,9 @@ export const admitLevel = async (
       );
     }
   }
-  log.info({ crawlId: options.crawlId, reported: pages.length, registered }, "level registered");
-  return { registered, admittedUrls };
+  log.info(
+    { crawlId: options.crawlId, reported: pages.length, registered, counted: logCounts.size },
+    "level registered",
+  );
+  return { registered, admittedUrls, logCounts };
 };

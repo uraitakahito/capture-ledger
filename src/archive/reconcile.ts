@@ -22,6 +22,12 @@
  * - **manifest を書けなかったと報告された取り込み。** 鍵が無い。予算切れと書き込みの
  *   完了が競って後から書けていた場合も、ここからは見えない。
  *
+ * ## 取り込みのログの数も埋める
+ *
+ * 読んだ manifest が `log` を持っていれば、その数をページの行 (`crawl_pages.log_counts`・`025`) の NULL に埋める。
+ * 段の登録が manifest を読めなかったページの穴で、台帳に入らない取り込み (WACZ の無い時間切れ・失敗) も含む。
+ * 拾えないのは上の 2 つと同じ取り込みと、台帳に既に入っている取り込み (この問い合わせが外す) の数。
+ *
  * ## 規模
  *
  * 問うのは DB の未登録の行だけで、S3 には鍵を指定した GetObject しか投げない。手間は
@@ -30,7 +36,7 @@
  */
 import type { Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
-import { readManifest } from "./manifest.js";
+import { logCountsOf, readManifest } from "./manifest.js";
 import type { Database } from "../db/database.js";
 import { getJsonObject } from "./s3.js";
 import { admitArchive } from "./admit.js";
@@ -49,6 +55,8 @@ export interface ReconcileResult {
   skipped: number;
   /** 「書けた」と報告された場所に manifest が無かった。 */
   missing: number;
+  /** 取り込みのログの数を、まだ読んでいなかった (`log_counts` が NULL の) ページの行に埋めた数 (`025`)。 */
+  counted: number;
 }
 
 export const reconcile = async (
@@ -75,6 +83,7 @@ export const reconcile = async (
     registered: 0,
     skipped: 0,
     missing: 0,
+    counted: 0,
   };
 
   for (const row of pending) {
@@ -101,6 +110,20 @@ export const reconcile = async (
         "Manifest is not a report the ledger can read; skipping it",
       );
       continue;
+    }
+
+    // 取り込みのログの数を、段の登録が読めなかったページの行に埋める (`025`)。WACZ の無い取り込みは台帳に
+    // 入らないので、回すたびにここへ来る —— 埋めるのは NULL の行だけにして、数を書き直さない (終わった取り込みの
+    // 事実なので、段の登録が書いた数と同じはず)。行の task_id は text なので、uuid を文字列のまま比べる
+    const counts = logCountsOf(report);
+    if (counts !== undefined) {
+      const filled = await db
+        .updateTable("crawlPages")
+        .set({ logCounts: JSON.stringify(counts) })
+        .where("taskId", "=", row.taskId)
+        .where("logCounts", "is", null)
+        .executeTakeFirst();
+      result.counted += Number(filled.numUpdatedRows);
     }
 
     // 冪等: 段の登録との競合は unique index が吸収する。identity はここでは作らない ——

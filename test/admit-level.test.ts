@@ -3,11 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * 段の報告から台帳へ載せる経路。
  *
- * いちばん見たいのは **失敗の報告も一度は当たってみること**。BrowserHive の結果
- * キャッシュには上限があり、flow が 15 分待つ間に押し出されうる —— そのとき flow は
- * `NOT_FOUND` を受け取って `failed` と報告するが、取り込み自体は成功していて
- * 成果物は S3 に在る。ここで拾わないと、**まさに時間のかかった取り込みだけ**が
- * 台帳から落ち、しかもリンクが辿られずクロール木がそこで切れる。
+ * いちばん見たいのは **失敗の報告も一度は当たってみること**。報告は flow が BrowserHive の
+ * 答えをどう受け取ったかで、正本は BrowserHive が成果物の隣に書く manifest —— 食い違えば
+ * manifest を採る。もう 1 つは **取り込みのログの数を、台帳に入るかどうかと関わらずに返す
+ * こと**。時間切れや失敗の取り込みは WACZ を持たずに台帳から弾かれるが、行を読みたいのは
+ * そちらのほう。
  *
  * `getJsonObject` と `admitArchive` を偽物にしてある。この関数の仕事は「報告された鍵で
  * 読み、無いものは飛ばし、入ったものを数えて名前を返す」という段取りのほうなので、
@@ -156,5 +156,68 @@ describe("台帳に載せる", () => {
     expect(getJsonObject).not.toHaveBeenCalled();
     expect(result.registered).toBe(0);
     expect(result.admittedUrls).toEqual([]);
+  });
+});
+
+/**
+ * 取り込みのログの数 (`025`)。数を取るのは `readManifest` の後・`admitArchive` の前で、台帳に入るかどうかとは
+ * 関わらない。返した数を `crawl_pages` に書くのは呼ぶ側 (`api/crawls.ts`)。
+ */
+describe("取り込みのログの数を返す", () => {
+  const log = {
+    lines: [],
+    counts: { debug: 0, info: 2, warn: 1, error: 1 },
+    dropped: 3,
+  };
+  /** 時間切れで WACZ の無い取り込み。BrowserHive は失敗の答えにも log を付ける。 */
+  const timedOut = (taskId: string) => ({
+    ...manifest(taskId),
+    status: "timeout",
+    artifacts: {},
+    errorDetails: { type: "timeout", message: "capture exceeded its budget" },
+    log,
+  });
+
+  it("WACZ が無く台帳に入らなくても、数は返る（数を取るのは admitArchive の前）", async () => {
+    vi.mocked(getJsonObject).mockResolvedValue(timedOut("t9"));
+    vi.mocked(admitArchive).mockResolvedValue({ reason: "no-archive" });
+
+    const result = await admitLevel([page("t9", "https://site.test/slow")], options);
+
+    expect(result.registered).toBe(0);
+    expect([...result.logCounts]).toEqual([
+      ["t9", { debug: 0, info: 2, warn: 1, error: 1, dropped: 3 }],
+    ]);
+  });
+
+  it("readManifest が投げたら、数は返らない", async () => {
+    vi.mocked(getJsonObject).mockResolvedValue(timedOut("t10"));
+    vi.mocked(readManifest).mockImplementationOnce(() => {
+      throw new Error("manifest is not a BrowserHive CaptureResultReport: data/status …");
+    });
+
+    const result = await admitLevel([page("t10", "https://site.test/x")], options);
+
+    expect(result.logCounts.size).toBe(0);
+    expect(admitArchive).not.toHaveBeenCalled();
+  });
+
+  it("manifest が無ければ、数は返らない", async () => {
+    vi.mocked(getJsonObject).mockResolvedValue(undefined);
+
+    const result = await admitLevel([page("t11", "https://site.test/y")], options);
+
+    expect(result.logCounts.size).toBe(0);
+  });
+
+  // 0 は「行が無かった」で、「読む物が無かった」とは別。列は NULL (読んでいない) のまま残す
+  it("log の無い manifest（BrowserHive v24.0.0 より前）は数を返さない（0 で埋めない）", async () => {
+    vi.mocked(getJsonObject).mockResolvedValue(manifest("t12"));
+    vi.mocked(admitArchive).mockResolvedValue({ archiveId: 12 } as never);
+
+    const result = await admitLevel([page("t12", "https://site.test/z")], options);
+
+    expect(result.registered).toBe(1);
+    expect(result.logCounts.size).toBe(0);
   });
 });

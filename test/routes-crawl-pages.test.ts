@@ -101,6 +101,35 @@ const manifest = {
   artifacts: { wacz: "s3://b/x.wacz" },
 };
 
+/** BrowserHive v24.0.0 から答えと `.result.json` に載る取り込みのログ。行は届いた順 (`ms` が減らない)。 */
+const log = {
+  lines: [
+    {
+      at: "2026-11-04T05:12:04.551Z",
+      ms: 4522,
+      dpr: 1,
+      source: "script",
+      script: "egov-law-search",
+      level: "info",
+      msg: "検索語を入れて押した",
+      data: { query: "個人情報" },
+    },
+    {
+      at: "2026-11-04T05:12:14.531Z",
+      ms: 14531,
+      dpr: 1,
+      source: "script",
+      script: "egov-law-search",
+      level: "warn",
+      msg: "件数が出ない",
+      data: { remainingMs: 17343 },
+    },
+    { at: "2026-11-04T05:12:14.873Z", ms: 14873, source: "page", level: "error", msg: "Uncaught" },
+  ],
+  counts: { debug: 0, info: 1, warn: 1, error: 1 },
+  dropped: 0,
+};
+
 describe("クロールのページを読む", () => {
   const url = `/api/crawls/${CRAWL}/pages`;
 
@@ -322,6 +351,15 @@ describe("1 ページの取り込みのログを読む", () => {
     expect(read).toEqual([`b/${KEY}`]);
   });
 
+  it("log の在る .result.json は、行を届いたままの順と形で返す（reason は null）", async () => {
+    const { res } = await get(url, {
+      results: [[row({ manifestKey: KEY })]],
+      store: { [KEY]: { ...manifest, log } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ...unreadable("x"), log, reason: null });
+  });
+
   it("保管庫に届かなければ 502", async () => {
     const { res } = await get(url, {
       results: [[row({ manifestKey: KEY })]],
@@ -351,5 +389,99 @@ describe("1 ページの取り込みのログを読む", () => {
       expect(res.statusCode, page).toBe(400);
       expect(queries, page).toEqual([]);
     }
+  });
+});
+
+/**
+ * 段の報告 (`POST /api/crawls/:id/pages`) で、取り込みのログの数をページの行に写す (`025`)。数は本物の
+ * `admitLevel` が偽の保管庫の manifest から取る。**WACZ の無い取り込みこそ見たい** —— 時間切れは台帳に入らないが、
+ * 行と数は在る (`admitArchive` の後で数えると、ここが NULL のまま)。
+ */
+describe("段の報告で、取り込みのログの数をページの行に写す", () => {
+  const crawlRow = {
+    id: CRAWL,
+    seeds: ["https://site.test/"],
+    rules: [{ follow: "same-host" }],
+    orgId: "acme",
+    requestedBy: "alice",
+    state: "running",
+    maxDepth: 0,
+    maxPages: 20,
+    perHostDelayMs: 0,
+    hostParallelism: 1,
+    pagesDiscovered: 1,
+    pagesCaptured: 0,
+    artifactKeyPrefix: null,
+    scripts: [],
+    variables: {},
+    secrets: {},
+  };
+  /** 時間切れの取り込みの答え。WACZ は無く、log は在る。 */
+  const timedOut = {
+    ...manifest,
+    status: "timeout",
+    artifacts: {},
+    errorDetails: { type: "timeout", message: "capture exceeded its budget" },
+    log,
+  };
+  /** 答えの並びは問い合わせの順。数を書く問い合わせは、数が在るときだけ挟まる。 */
+  const report = async (stored: object, counted: boolean) => {
+    const built = await build({
+      results: [
+        [crawlRow], // クロールの行
+        [{ id: "42" }], // 報告した行を閉じる (returning id)
+        [], // capture_submissions
+        ...(counted ? [[]] : []), // log_counts
+        [{ count: "1" }], // crawl_pages の数
+        [], // crawls の集計 (次が無いので締める)
+      ],
+      store: { [KEY]: stored },
+    });
+    const res = await built.app.inject({
+      method: "POST",
+      url: `/api/crawls/${CRAWL}/pages`,
+      headers: SUBJECT,
+      payload: {
+        depth: 0,
+        compiled: { typescript: "6.0.3", hostTypes: "v0.7.0", scripts: [] },
+        results: [
+          {
+            url: "https://site.test/",
+            status: "failed",
+            skipReason: "timeout: capture exceeded its budget",
+            taskId: TASK,
+            manifestLocation: `s3://b/${KEY}`,
+          },
+        ],
+      },
+    });
+    await built.app.close();
+    return { res, queries: built.queries, read: built.read };
+  };
+  const countsWrite = (queries: RecordedQuery[]) =>
+    queries.filter((q) => q.sql.startsWith('update "crawl_pages" set "log_counts"'));
+
+  it("WACZ の無い時間切れの取り込みでも、数をクロールと taskId の組で書く", async () => {
+    const { res, queries, read } = await report(timedOut, true);
+    expect(res.statusCode).toBe(200);
+    expect(read).toEqual([`b/${KEY}`]);
+    // 台帳には入らない (WACZ が無い)
+    expect(queries.some((q) => q.sql.startsWith('insert into "archives"'))).toBe(false);
+    const written = countsWrite(queries);
+    expect(written).toHaveLength(1);
+    expect(written[0]?.sql).toBe(
+      'update "crawl_pages" set "log_counts" = $1 where "crawl_id" = $2 and "task_id" = $3',
+    );
+    expect(written[0]?.parameters).toEqual([
+      JSON.stringify({ debug: 0, info: 1, warn: 1, error: 1, dropped: 0 }),
+      CRAWL,
+      TASK,
+    ]);
+  });
+
+  it("log の無い manifest（BrowserHive v24.0.0 より前）なら書かない（NULL のまま）", async () => {
+    const { res, queries } = await report({ ...timedOut, log: undefined }, false);
+    expect(res.statusCode).toBe(200);
+    expect(countsWrite(queries)).toEqual([]);
   });
 });

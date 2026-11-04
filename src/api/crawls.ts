@@ -1362,8 +1362,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         );
         return unreadable("manifest-missing");
       }
+      let report;
       try {
-        readManifest(raw);
+        report = readManifest(raw);
       } catch (err) {
         log.warn(
           { err, crawlId, page: pageId, key: row.manifestKey },
@@ -1371,8 +1372,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         );
         return unreadable("manifest-invalid");
       }
-      // FIXME(CAPTURE-18): 写した契約 (BrowserHive v23.1.0) は `log` を持たない。持つ版に上げたら、ここで返す
-      return unreadable("no-log");
+      // `log` は契約で任意の欄 (BrowserHive v24.0.0 より前の取り込みには無い)。在れば、書かれたまま返す
+      if (report.log === undefined) return unreadable("no-log");
+      return reply.code(200).send({ page, log: report.log, reason: null });
     },
   );
 
@@ -1830,7 +1832,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // ── 2c. 拾えたものは記録を直す ──────────────────────────────────
         // **台帳には在るのにクロールの記録では失敗している、を残さない。**
         // どちらが正しいかを後から言えなくなる。manifest が成功を語っているなら
-        // そちらが正 —— 報告のほうは「15 分では見えなかった」でしかない。
+        // そちらが正 —— 報告のほうは、flow が答えをどう受け取ったかでしかない。
         const reportedFailed = new Set(
           results.filter((r) => r.status !== "captured").map((r) => r.url),
         );
@@ -1846,6 +1848,18 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             { crawlId, depth, recovered: recovered.length },
             "recovered captures the flow could not see",
           );
+        }
+
+        // ── 2d. 取り込みのログの数を、ページの行に写す (`025`) ────────────────
+        // WACZ が無く台帳に入らなかった取り込み (時間切れ・失敗) の数も在る (`crawl/admit-level.ts`)。
+        // 引くのはクロールと taskId の組で、上書きなので、同じ段の報告がやり直されても値は変わらない。
+        for (const [taskId, counts] of admitted.logCounts) {
+          await db
+            .updateTable("crawlPages")
+            .set({ logCounts: JSON.stringify(counts) })
+            .where("crawlId", "=", crawlId)
+            .where("taskId", "=", taskId)
+            .execute();
         }
       }
 
