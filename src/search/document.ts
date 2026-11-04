@@ -29,8 +29,12 @@
  * BrowserHive は、頁を写した時点ごとに `pages.jsonl` の行を書く（`stage`。読み込みの後が
  * `after-load`、スクリプトの後が `after-behaviors`）。行の `url` は写しの urn
  * （`urn:browserhive:snapshot:<stage>:<文書の URL>`）。題と本文はその時点で読んだ物なので、
- * 検索前と検索後は別の 1 件として載せる。写しが 1 つも無い取り込み（本文を伏せた文書など）は、
- * 要求の URL の、時点の無い 1 行のまま。
+ * 検索前と検索後は別の 1 件として載せる。
+ *
+ * WACZ Profile 1.18.0 から、1 行目はいつでも取り込んだ文書の行（`stage` が無く、`url` は要求の URL）。
+ * 題と本文はスクリプトの後に読んだ物なので、after-behaviors の写しの行とほぼ同じ文になり、両方を載せると
+ * 同じ語が 1 アーカイブで 2 回当たる。そこで、写しの行がある WACZ では文書の行を載せない
+ * （{@link pagesToIndex}）。写しが 1 つも無い取り込み（本文を伏せた文書など）は、文書の行の 1 件だけ。
  */
 
 /** `pages.jsonl` の 1 行。BrowserHive の `PagesLineInput` に対応する。 */
@@ -42,7 +46,7 @@ export interface PageLine {
   text?: string;
   textTruncated?: boolean;
   textWithheld?: string;
-  /** BrowserHive がその行を読んだ時点（`after-load`・`after-behaviors`）。写しの無い取り込みの行には無い。 */
+  /** 写しの行の時点（`after-load`・`after-behaviors`）。文書の行には無い。 */
   stage?: string;
 }
 
@@ -50,7 +54,7 @@ export interface PageLine {
 export interface SearchDocument {
   /** 台帳の archive id。**認可の単位はこれ** —— 検索の結果はこの id で `can_view` を訊く。 */
   archiveId: string;
-  /** 行の時点。時点の無い行（写しの無い取り込み）は `null`。 */
+  /** 行の時点。文書の行（写しの無い取り込みで載せる 1 件）は `null`。 */
   stage: string | null;
   url: string;
   title: string;
@@ -105,6 +109,17 @@ export const parsePagesJsonl = (raw: string): PageLine[] => {
     pages.push(parsed as PageLine);
   }
   return pages;
+};
+
+/**
+ * 索引に載せる行を選ぶ。写しの行（`stage` を持つ行）があれば、それだけを載せ、文書の行（`stage` の無い行）は
+ * 載せない。写しの行が無ければ、全部（文書の行の 1 件）を載せる。
+ *
+ * 写しの行だけの WACZ（Profile 1.17.0 まで）も、写しの無い WACZ も、載せる件数は前と変わらない。
+ */
+export const pagesToIndex = (pages: readonly PageLine[]): PageLine[] => {
+  const staged = pages.filter((page) => typeof page.stage === "string" && page.stage !== "");
+  return staged.length > 0 ? staged : [...pages];
 };
 
 /**

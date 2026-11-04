@@ -27,7 +27,13 @@ import { fromBuffer } from "yauzl-promise";
 import { getObjectBytes } from "../archive/s3.js";
 import type { Database } from "../db/database.js";
 import { createChildLogger } from "../logger.js";
-import { parsePagesJsonl, searchDocument, searchDocumentId, type ArchiveRow } from "./document.js";
+import {
+  pagesToIndex,
+  parsePagesJsonl,
+  searchDocument,
+  searchDocumentId,
+  type ArchiveRow,
+} from "./document.js";
 
 const log = createChildLogger({ module: "search-index-archive" });
 
@@ -59,8 +65,8 @@ export interface IndexArchiveOptions {
 }
 
 /**
- * 1 本を索引に載せる。載せた件数 (= そのアーカイブの `pages.jsonl` の行の数。時点ごとに
- * 1 行) を返す。
+ * 1 本を索引に載せる。載せた件数（写しの行があれば時点ごとに 1 件、無ければ文書の行の 1 件。
+ * `document.ts` の `pagesToIndex`）を返す。
  *
  * WACZ が無い、あるいは `pages.jsonl` が無いときは **`indexed_at` を立てる**。
  * 索引に載せるものが無いことは確定していて、次の周回で拾い直しても同じ答えに
@@ -73,7 +79,7 @@ export const indexArchive = async (
   const bytes = await getObjectBytes(options.s3, archive.bucket, archive.objectKey);
   const raw = bytes === undefined ? undefined : await readEntry(bytes, PAGES_ENTRY_PATH);
 
-  const pages = raw === undefined ? [] : parsePagesJsonl(raw);
+  const pages = raw === undefined ? [] : pagesToIndex(parsePagesJsonl(raw));
   if (pages.length > 0) {
     const body = pages.flatMap((page) => {
       const doc = searchDocument(page, archive);

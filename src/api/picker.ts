@@ -44,6 +44,32 @@ import { isLoopback, type StartupFacts } from "./startup-notes.js";
 export const replayOriginFromEnv = (): string => optional("REPLAY_ORIGIN", "http://127.0.0.1:8899");
 
 /**
+ * 行のリンク。object_key で WACZ を開き、取り込んだ URL を撮った時刻で直に開く（`#view=replay&url=…&ts=…`。
+ * ts は UTC の 14 桁）。replay（ReplayWeb.page）は mainPageURL を読まず、`?source=` だけではページ一覧を
+ * 新しい順に出す —— 取り込んだ文書の行（WACZ Profile 1.18.0 の 1 行目）は、いちばん下になる。
+ *
+ * url は台帳の sourceUrl のまま渡す。replay は、path が空の URL（末尾の `/` が無い）も断片の付いた URL も、
+ * 記録した文書に当てる（2026-11-04 に replaywebpage 2.5.0 で確かめた）。URL か時刻が無ければ、一覧を開く形のまま。
+ *
+ * 画面の script に `toString()` で埋め込むので、外の名前を使わない（ブラウザの組み込みだけを使う）。
+ */
+export const replayHref = (
+  replayOrigin: string,
+  archive: { objectKey: string; sourceUrl?: unknown; capturedAt?: unknown },
+): string => {
+  const base = replayOrigin + "/?source=/wacz/" + encodeURIComponent(archive.objectKey);
+  if (typeof archive.sourceUrl !== "string" || archive.sourceUrl === "") return base;
+  if (typeof archive.capturedAt !== "string") return base;
+  // new Date("") は Invalid Date で、ここで落とせる。
+  const when = new Date(archive.capturedAt);
+  if (Number.isNaN(when.getTime())) return base;
+  const ts = when.toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  return (
+    base + "#" + new URLSearchParams({ view: "replay", url: archive.sourceUrl, ts }).toString()
+  );
+};
+
+/**
  * この画面の使い方のページ (公開中の docs)。
  *
  * 画面に置くのは、**迷う人が居るのは docs の上ではなく、この画面の上だから**。2 つの入力欄に
@@ -177,6 +203,7 @@ const script = (replayOrigin: string, view: PickerView): string => {
   return `<script>
 const MODE = ${JSON.stringify(view.form)};
 const REPLAY_ORIGIN = ${JSON.stringify(replayOrigin)};
+const replayHref = ${replayHref.toString()};
 const UNAUTHORIZED = ${JSON.stringify(view.unauthorized)};
 const PROMPT = ${JSON.stringify(PROMPT[view.form])};
 const $ = (id) => document.getElementById(id);
@@ -221,9 +248,9 @@ const say = (className, text) => {
 const fmt = (iso) => new Date(iso).toLocaleString();
 
 const rowHtml = (a) => {
-  // replay へ渡すのは object_key ひとつ。bucket も資格情報も要らない ——
-  // 読みは replay 自身の上流設定を通る。
-  const href = REPLAY_ORIGIN + "/?source=/wacz/" + encodeURIComponent(a.objectKey);
+  // replay へ渡すのは object_key と、直に開く URL と時刻。bucket も資格情報も要らない ——
+  // 読みは replay 自身の上流設定を通る。属性に入れるので & は文字参照にする。
+  const href = replayHref(REPLAY_ORIGIN, a).replace(/&/g, "&amp;");
   const labels = (a.labels ?? []).map((l) => '<span class="label">' + l + "</span>").join("");
   // 完全でない archive は開く前に分かるようにする。開いてから「本文が無い」と
   // 気づくのでは遅い。

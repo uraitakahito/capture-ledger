@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  pagesToIndex,
   parsePagesJsonl,
   searchDocument,
   searchDocumentId,
@@ -28,6 +29,17 @@ const PAGE_AFTER_LOAD =
   '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa-after-load","url":"urn:browserhive:snapshot:after-load:http://capture-fixtures-1-a.browserhive:8080/marked/search/public?tag=sn1","ts":"2026-11-02T12:10:54.239Z","stage":"after-load","title":"search","text":"search\\n\\nbefore-public-sn1\\n\\nquery  token  search"}';
 const PAGE_AFTER_BEHAVIORS =
   '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa-after-behaviors","url":"urn:browserhive:snapshot:after-behaviors:http://capture-fixtures-1-a.browserhive:8080/marked/search/public/result?tag=sn1","ts":"2026-11-02T12:10:54.800Z","stage":"after-behaviors","title":"search","text":"search\\n\\nafter-public-sn1\\n\\nquery  token  search\\n個人 情報 1\\n個人 情報 2\\n個人 情報 3"}';
+
+/**
+ * WACZ Profile 1.18.0 の文書の行（1 行目。`stage` が無く、`url` は要求の URL）。上の 2 行と同じ取り込みを、
+ * 1.18.0 の形に組んだ物（題と本文はスクリプトの後に読んだ物で、after-behaviors の行と同じ文）。
+ */
+const PAGE_DOCUMENT =
+  '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa","url":"http://capture-fixtures-1-a.browserhive:8080/marked/search/public?tag=sn1","ts":"2026-11-02T12:10:53.912Z","title":"search","text":"search\\n\\nafter-public-sn1\\n\\nquery  token  search\\n個人 情報 1\\n個人 情報 2\\n個人 情報 3"}';
+
+/** 方針が伏せた文書の行。写しは撮られず、この 1 行だけになる。 */
+const PAGE_DOCUMENT_WITHHELD =
+  '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa","url":"http://capture-fixtures-1-a.browserhive:8080/marked/search/secret?tag=sn4","ts":"2026-11-02T12:10:53.912Z","textWithheld":"no-archive"}';
 
 const ARCHIVE: ArchiveRow = {
   id: "11111111-1111-1111-1111-111111111111",
@@ -114,10 +126,39 @@ describe("時点ごとの行", () => {
     ]);
   });
 
-  it("時点の無い行は stage が null で、_id の後ろは page", () => {
+  it("時点の無い行（文書の行）は stage が null で、_id の後ろは page", () => {
     // 写しが 1 つも無い取り込み (本文を伏せた文書など) は、時点の無い 1 行のまま。
     const doc = searchDocument(parsePagesJsonl(PAGE)[0]!, ARCHIVE);
     expect(doc.stage).toBeNull();
     expect(searchDocumentId(doc)).toBe(`${ARCHIVE.id}:page`);
+  });
+});
+
+describe("載せる行を選ぶ（WACZ Profile 1.18.0 の文書の行）", () => {
+  const idsOf = (raw: string): string[] =>
+    pagesToIndex(parsePagesJsonl(raw)).map((page) =>
+      searchDocumentId(searchDocument(page, ARCHIVE)),
+    );
+
+  it("写しの行があれば文書の行を載せず、時点ごとの 2 件だけ —— 同じ語が 1 アーカイブで 2 回当たらない", () => {
+    // 文書の行の本文は after-behaviors の行と同じ文。載せると「個人 情報」が 2 件当たる。
+    expect(
+      idsOf(`${HEADER}\n${PAGE_DOCUMENT}\n${PAGE_AFTER_LOAD}\n${PAGE_AFTER_BEHAVIORS}\n`),
+    ).toEqual([`${ARCHIVE.id}:after-load`, `${ARCHIVE.id}:after-behaviors`]);
+  });
+
+  it("写しの行が無ければ、文書の行の 1 件（_id の後ろは page）—— 伏せた理由も運ぶ", () => {
+    const pages = pagesToIndex(parsePagesJsonl(`${HEADER}\n${PAGE_DOCUMENT_WITHHELD}\n`));
+    expect(pages.map((page) => searchDocumentId(searchDocument(page, ARCHIVE)))).toEqual([
+      `${ARCHIVE.id}:page`,
+    ]);
+    expect(searchDocument(pages[0]!, ARCHIVE).textWithheld).toBe("no-archive");
+  });
+
+  it("写しの行だけの WACZ（1.17.0 まで）は、前と同じ時点ごとの 2 件", () => {
+    expect(idsOf(`${HEADER}\n${PAGE_AFTER_LOAD}\n${PAGE_AFTER_BEHAVIORS}\n`)).toEqual([
+      `${ARCHIVE.id}:after-load`,
+      `${ARCHIVE.id}:after-behaviors`,
+    ]);
   });
 });
