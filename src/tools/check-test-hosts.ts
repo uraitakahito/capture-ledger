@@ -29,7 +29,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 /** この repo の試験の場所。repo ごとに違うのはここだけ。 */
-const SCOPES = ["test", "scripts/targets-smoke.mjs", "scripts/scripts-smoke.mjs"];
+const SCOPES = ["test", "src/tools/targets-smoke.ts", "src/tools/scripts-smoke.ts"];
 
 const FIND = [
   // example.com・.org・.net とその下（www.example.com・someone@example.com・example\.com）

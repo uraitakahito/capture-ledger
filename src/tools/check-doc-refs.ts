@@ -18,7 +18,7 @@
  *      `#region` を参照しているページはどれも .md。
  *   3. 死んだソースのパス —— コードスパンに書かれた `src/….ts` のうち、その後
  *      名前が変わったか消えたもの。
- *   4. 古い画面の絵 —— docs-site/src/assets/picker/ の PNG は `scripts/docs-shots.mjs` の
+ *   4. 古い画面の絵 —— docs-site/src/assets/picker/ の PNG は `src/tools/docs-shots/docs-shots.ts` の
  *      生成物で、撮ったときの画面のソース (`src/api/picker.ts`) の sha256 を
  *      shots-manifest.json に控えてある。**いまのソースと控えが違えば落とす** ——
  *      「画面を変えたら撮り直せ」を機械で言う。絵は画面の書き写しで、書き写しは

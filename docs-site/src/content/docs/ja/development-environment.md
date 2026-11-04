@@ -486,7 +486,7 @@ API に受け口の有無を訊き（トークン無しの `PUT` が、在れば
 
 ## 画面の絵を撮り直す
 
-[アーカイブを見る](/capture-ledger/ja/picker/)の絵は、`scripts/docs-shots.mjs` が撮った生成物です。
+[アーカイブを見る](/capture-ledger/ja/picker/)の絵は、`src/tools/docs-shots/docs-shots.ts` が撮った生成物です。
 手で撮った絵は 1 枚もありません。絵は画面の書き写しで、書き写しは画面を直した日から古くなるためです。
 
 ```sh

@@ -11,7 +11,7 @@
  *
  * ## スタックは要らない
  *
- * 立てるのは **本物の画面** (ビルド済みの registerPicker) と、**見本データを返す代役の
+ * 立てるのは **本物の画面** (`src/api/picker.ts` の registerPicker) と、**見本データを返す代役の
  * `/api/archives` と `/api/me`** だけ。DB も OpenFGA も replay も issuer も要らない。見本データ
  * なので、実データにはなかなか現れない状態 (「欠けあり」) も写せる。
  *
@@ -39,28 +39,20 @@
  *   ./node_modules/.bin/puppeteer browsers install chrome
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import puppeteer from "puppeteer";
+import { registerPicker, type PickerOptions } from "../../api/picker.js";
+import type { Identity } from "../../config/identity.js";
+import { ROOT } from "../root.js";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SOURCE = "src/api/picker.ts";
-const BUILT = resolve(ROOT, "dist/api/picker.js");
 const OUT = resolve(ROOT, "docs-site/src/assets/picker");
 // 幅は docs の本文幅 (約 630px) に近づけてある。広く撮ると、縮められて画面の中の文字が読めなくなる
 // (最初は 1040 で撮って、そうなった)。
 const VIEWPORT = { width: 800, height: 700, deviceScaleFactor: 2 };
 const EMULATION = { lang: "ja-JP", timezone: "Asia/Tokyo", colorScheme: "light" };
-
-if (!existsSync(BUILT)) {
-  console.error(
-    "dist/api/picker.js が無い。`pnpm run docs:shots` から走らせること (先に build する)。",
-  );
-  process.exit(1);
-}
-const { registerPicker } = await import(BUILT);
 
 // 見本データ。`owner` と `org` は代役だけが使い、応答には載せない (本物の応答にも無い)。
 // alice と acme は、画面の入力例 (placeholder) と同じ名前にしてある。
@@ -113,7 +105,10 @@ const LOOPBACK = { host: "127.0.0.1", port: 7070 };
 const LAN = { host: "0.0.0.0", port: 7070 };
 
 /** 名乗り方ごとの「誰か」。通らなければ undefined (本物は 401)。 */
-const IDENTIFY = {
+const IDENTIFY: Record<
+  PickerOptions["identity"]["mode"],
+  (request: FastifyRequest) => Identity | undefined
+> = {
   header: (request) => {
     const subject = String(request.headers["x-capture-ledger-subject"] ?? "");
     if (subject === "") return undefined;
@@ -131,18 +126,18 @@ const IDENTIFY = {
 };
 
 /** 本物の画面と代役の API を 1 組立てる。 */
-const stand = async (identity, listen) => {
+const stand = async (identity: PickerOptions["identity"], listen: PickerOptions["listen"]) => {
   const app = Fastify();
   registerPicker(app, { replayOrigin: REPLAY_ORIGIN, identity, listen });
   const identify = IDENTIFY[identity.mode];
-  app.get("/api/archives", (request, reply) => {
+  app.get<{ Querystring: { before?: string } }>("/api/archives", (request, reply) => {
     const me = identify(request);
     if (me === undefined) return reply.code(401).send({ error: "unauthenticated" });
     // 2 ページ目は無い。「さらに読む」を押しても何も増えない、を本物と同じ形で返す。
     if (request.query.before !== undefined) return reply.send({ archives: [] });
-    const archives = FIXTURES.filter(
-      (a) => a.owner === me.subject || me.organizations.includes(a.org),
-    ).map(({ owner: _owner, org: _org, ...archive }) => archive);
+    const archives = FIXTURES.flatMap(({ owner, org, ...archive }) =>
+      owner === me.subject || me.organizations.includes(org) ? [archive] : [],
+    );
     return reply.send({ archives });
   });
   app.get("/api/me", (request, reply) => {
@@ -151,7 +146,11 @@ const stand = async (identity, listen) => {
     return reply.send({ ...me, canSubmit: true });
   });
   await app.listen({ host: "127.0.0.1", port: 0 });
-  return { app, origin: `http://127.0.0.1:${String(app.server.address().port)}` };
+  const address = app.server.address();
+  if (address === null || typeof address === "string") {
+    throw new Error("代役の API が TCP のポートで待ち受けていない");
+  }
+  return { app, origin: `http://127.0.0.1:${String(address.port)}` };
 };
 
 const stands = {
@@ -161,8 +160,16 @@ const stands = {
   exposed: await stand({ mode: "header" }, LAN),
 };
 
+interface Annotation {
+  selector: string;
+  n: number;
+  pad?: number;
+  inset?: { left: number; right: number; top: number; bottom: number };
+  badgeDx?: number;
+}
+
 const browser = await puppeteer.launch({ args: [`--lang=${EMULATION.lang}`] });
-const shots = [];
+const shots: string[] = [];
 try {
   const page = await browser.newPage();
   await page.setViewport(VIEWPORT);
@@ -172,29 +179,37 @@ try {
   mkdirSync(OUT, { recursive: true });
 
   /** その状態でしか出ない文字を待つ。無ければ撮らずに落ちる。 */
-  const expectText = (text) =>
+  const expectText = (text: string) =>
     page.waitForFunction((t) => document.body.innerText.includes(t), { timeout: 10_000 }, text);
 
-  const bottomOf = (selector) =>
+  const bottomOf = (selector: string) =>
     page.evaluate((s) => {
-      const rect = document.querySelector(s).getBoundingClientRect();
+      const element = document.querySelector(s);
+      if (element === null) throw new Error(`画面に ${s} が無い`);
+      const rect = element.getBoundingClientRect();
       return Math.ceil(rect.bottom + scrollY);
     }, selector);
 
   /** 名乗りを入れて「読み込む」を押し、その状態でしか出ない文字を待つ。 */
-  const load = async (subject, organizations, expected) => {
+  const load = async (subject: string, organizations: string, expected: string) => {
     for (const [id, value] of [
       ["subject", subject],
       ["orgs", organizations],
-    ]) {
+    ] as const) {
+      // puppeteer の型は #id から要素の種類を読めず、Element を渡す。引数を HTMLInputElement と
+      // 書くと strictFunctionTypes で通らないので、中で言い切る (#subject も #orgs も input)。
       await page.$eval(`#${id}`, (el) => {
-        el.value = "";
+        (el as HTMLInputElement).value = "";
       });
       if (value !== "") await page.type(`#${id}`, value);
     }
     await page.click("#reload");
     await page.waitForFunction(
-      (text) => document.querySelector("#out").innerText.includes(text),
+      (text) => {
+        const out = document.querySelector<HTMLElement>("#out");
+        if (out === null) throw new Error("画面に #out が無い");
+        return out.innerText.includes(text);
+      },
       { timeout: 10_000 },
       expected,
     );
@@ -208,7 +223,7 @@ try {
   };
 
   /** 枠と番号を画面に足す。説明の文は足さない (英日で同じ絵を使うため)。 */
-  const annotate = (targets) =>
+  const annotate = (targets: Annotation[]) =>
     page.evaluate((list) => {
       document.getElementById("docs-shots-annotations")?.remove();
       const layer = document.createElement("div");
@@ -216,7 +231,9 @@ try {
       layer.style.cssText =
         "position:absolute;left:0;top:0;width:0;height:0;z-index:99999;pointer-events:none";
       for (const { selector, n, pad = 3, inset, badgeDx = 0 } of list) {
-        const full = document.querySelector(selector).getBoundingClientRect();
+        const element = document.querySelector(selector);
+        if (element === null) throw new Error(`画面に ${selector} が無い`);
+        const full = element.getBoundingClientRect();
         const r = inset
           ? {
               left: full.left + inset.left,
@@ -237,7 +254,7 @@ try {
       document.body.append(layer);
     }, targets);
 
-  const shoot = async (name, top, bottom) => {
+  const shoot = async (name: string, top: number, bottom: number) => {
     await page.screenshot({
       path: resolve(OUT, name),
       clip: { x: 0, y: top, width: VIEWPORT.width, height: bottom - top },
@@ -250,9 +267,11 @@ try {
   const BELOW_HEADER = 96;
 
   // 02: 開いた直後。まだ何も訊いていない。
-  await page.waitForFunction(() =>
-    document.querySelector("#out").innerText.includes("subject を入れて"),
-  );
+  await page.waitForFunction(() => {
+    const out = document.querySelector<HTMLElement>("#out");
+    if (out === null) throw new Error("画面に #out が無い");
+    return out.innerText.includes("subject を入れて");
+  });
   await shoot("02-initial.png", 0, (await bottomOf("#out")) + 16);
 
   // 03: 見本のどの行にも当たらない名乗り → 空。

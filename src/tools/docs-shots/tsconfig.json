@@ -1,0 +1,14 @@
+{
+  // docs-shots is the only tool with code that runs inside the browser (page.evaluate),
+  // so the DOM types are added here and nowhere else. The root tsconfig.json keeps DOM out
+  // on purpose (a stray `document` or `window` should be a compile error), and it excludes
+  // this directory. `pnpm run typecheck` checks this program too; ESLint and editors pick
+  // it up as the nearest tsconfig.json.
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM"]
+  },
+  "include": ["./*.ts"],
+  // Replaces the inherited exclude, which leaves this directory out.
+  "exclude": []
+}

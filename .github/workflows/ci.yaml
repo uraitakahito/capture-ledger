@@ -148,7 +148,7 @@ jobs:
       # (組織の既定値なし・URL の CHECK・組織ごとのユニーク) が本当に効くかを見るのは、
       # ここだけ。自分の組織 (smoke-<pid>) の行だけを足して、最後に消す。
       - name: Targets CLI against Postgres
-        run: node scripts/targets-smoke.mjs
+        run: pnpm run build:tools && node dist/tools/targets-smoke.js
 
       # スクリプトの CLI (pnpm run scripts) を、本物の Postgres に当てる。
       #
@@ -156,7 +156,7 @@ jobs:
       # 通るか、版を本当に絞るか、`020` の表が版を足すかを見るのは、ここだけ。自分の id
       # (smoke-<pid>) の行と、自分で足した型だけを足して、最後に消す。
       - name: Scripts CLI against Postgres
-        run: node scripts/scripts-smoke.mjs
+        run: pnpm run build:tools && node dist/tools/scripts-smoke.js
 
       # 契約 (openapi.json) から生成した型が、コミットされた物と一致するか。
       - name: OpenAPI types drift check

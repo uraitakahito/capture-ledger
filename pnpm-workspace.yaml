@@ -14,7 +14,7 @@ packages:
 #                   dependency として postinstall と無関係に入るので、false でも動く。
 #                   (@bufbuild/buf と protobufjs も同じ形で false にしていた。BrowserHive
 #                   v12 で proto が無くなり、どちらも依存から消えた。)
-#   puppeteer     — docs の画面の絵を撮る (scripts/docs-shots.mjs) ためだけに在る。
+#   puppeteer     — docs の画面の絵を撮る (src/tools/docs-shots/docs-shots.ts) ためだけに在る。
 #                   postinstall は Chromium (150MB) を取りに行くので、false にして
 #                   install のたびに DL させない (CI でも要らない)。撮る人は初回だけ
 #                   手で `./node_modules/.bin/puppeteer browsers install chrome`。
