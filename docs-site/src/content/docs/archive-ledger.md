@@ -617,24 +617,42 @@ printed — just as with `GET /api/crawls/:id`.
 
 ## Full-text search
 
-Off by default. A deployment may have no index, so unless `CAPTURE_LEDGER_OPENSEARCH_URL`
-is set the endpoints are **not served at all** (you get a 404 — the capability
-genuinely is not there, so that is the right answer).
+**Required.** The API reads `CAPTURE_LEDGER_OPENSEARCH_URL` with its other required
+settings and, at startup, asks OpenSearch for the index (creating it, mapping
+included, when it is missing). Without the URL, or when OpenSearch does not answer,
+the API does not start. Search used to be optional: without the URL the endpoints
+were not served, the crawl flow's index step took the 404 as "skipped", and every
+check stayed green with no search at all.
+
+In development `pnpm run dev:up` starts it. The step `search` starts only the
+`opensearch` service of the compose profile `search` (named — without the name every
+container is recreated), and the step `search-connect` waits for the cluster health
+to reach yellow and writes the URL to `.env.local`. `pnpm run dev:status` says whether
+it answers and how many documents the index holds; `pnpm run dev:down` stops it.
 
 ```sh
-pnpm run stack:up --profile search
-# and CAPTURE_LEDGER_OPENSEARCH_URL=http://127.0.0.1:9200 in .env
+# OpenSearch alone (what the step search starts; the step skips it when 9200 answers)
+pnpm run stack:up --profile search opensearch
+pnpm run search:connect
+# Or resume dev:up from the step search (the steps after it run too)
+pnpm run dev:up --from search
 ```
 
 ```sh
-# Index one crawl's worth (the crawl flow calls this on its own)
+# Index one crawl's worth (the crawl flow's last step calls this)
 curl -X POST .../api/crawls/<id>/index
-# → 202 { "indexed": 6, "pages": 6 }
+# → 202 { "pending": 6, "indexed": 6, "failed": 0, "pages": 12 }
+# → 503 { "error": "search unavailable", … } when OpenSearch does not answer
 
 # Query
 curl ".../api/search?q=responsive"
-# → { "hits": [ { "archiveId": "…", "stage": "after-load", "url": "…", "title": "responsive", … } ], "total": 3 }
+# → { "hits": [ { "archiveId": "…", "stage": "after-load", "url": "…", "title": "responsive", … } ], "total": 2 }
 ```
+
+`pending` is the crawl's archives not indexed yet and `failed` those that did not go
+in. A failed archive keeps an empty `indexed_at`, so calling the endpoint again — or
+`pnpm run search:reindex` — picks it up; nothing retries on its own. The crawl flow
+treats `failed` above 0, a 404 and a 503 as errors.
 
 ### The text comes out of the archive
 
@@ -675,22 +693,29 @@ faster, but then **the index becomes an authority on authorization, and one fact
 has two homes**. Fix one and both still look like they work, so an authorization
 bypass stays silent.
 
-:::caution[Counts and paging are not exact]
-`total` is the index's raw count and **includes what authorization dropped**. Ask
-for 50 and you may get 30. Counting only what you may see means filtering before
-counting, which is the "put permissions in the index" option above. We take one
-authority over exact numbers.
+:::caution[No paging]
+Ask for 50 and you may get 30: hits you may not see are dropped after the query.
+`total` is the number of hits returned, not the index's raw count — the raw count
+would tell how many matches sit in archives you may not see (it was returned before
+CAPTURE-53). Counting only what you may see in the index means filtering before
+counting, which is the "put permissions in the index" option above.
 :::
 
 ### Rebuilding the index
 
 ```sh
-# Only when you changed the mapping or the analyzer: drop the index first
-curl -X DELETE http://127.0.0.1:9200/capture-pages
+pnpm run search:reindex                # every archive
+pnpm run search:reindex --crawl <id>   # one crawl's archives
 ```
 
-```sql
-UPDATE archives SET indexed_at = NULL;
+It clears `archives.indexed_at` and indexes the archives again, reading the ledger,
+the store and OpenSearch directly (no access token). Run it when OpenSearch was
+recreated — the compose service has no volume, so the index starts empty while the
+ledger still says "indexed" — or after dropping the index:
+
+```sh
+# Only when you changed the mapping or the analyzer: drop the index first
+curl -X DELETE http://127.0.0.1:9200/capture-pages
 ```
 
 Index state is the single `archives.indexed_at` column and no body text is stored

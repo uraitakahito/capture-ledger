@@ -121,6 +121,16 @@ same file the ledger checks every `.result.json` manifest against.
 Both Chromiums are headless. To watch one render, open `chrome://inspect` in a
 local Chrome and add `localhost:9222` and `localhost:9223` under _Configure…_.
 
+Then full-text search. The API does not start without it
+([Full-text search](/capture-ledger/archive-ledger/#full-text-search)), so start OpenSearch —
+only that service, **named**, or every container is recreated — and write its URL to
+`.env.local`:
+
+```sh
+pnpm run stack:up --profile search opensearch
+pnpm run search:connect   # waits for OpenSearch, then writes CAPTURE_LEDGER_OPENSEARCH_URL to .env.local
+```
+
 ## 4. Prepare the database
 
 ```sh

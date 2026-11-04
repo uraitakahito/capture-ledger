@@ -352,9 +352,10 @@ services:
       # アーカイブが永久に開かない**。公開範囲の話ではない。
       - "127.0.0.1:8899:8080"
 
-  # 全文検索の索引。既定では起動しない:
+  # 全文検索の索引。台帳の API は検索が無いと起動しない (CAPTURE-53)。dev では dev:up の段 search が
+  # **サービス名を付けて**起こす (名前を付け忘れると、全部のコンテナが作り直される):
   #
-  #   pnpm run stack:up --profile search
+  #   pnpm run stack:up --profile search opensearch
   #
   # **開発スタック限定の設定が 2 つ入っている。** security plugin を切っているので
   # 認証も TLS も無く、`discovery.type=single-node` なので冗長性も無い。API に
@@ -371,11 +372,12 @@ services:
       # 既定は 1g。開発では 512m で足りるうえ、このスタックは他に 10 本以上
       # 動いている。
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
-      # 1 ノードなので複製先が無い。既定のままだと index が黄色で建ち続ける。
+      # disk の残りで索引を読み専用にする閾値を切る (開発機の disk が埋まっていても書ける)。
+      # 1 ノードなので replica は割り当たらず、health は yellow のまま —— それで検索も索引も効く。
       - cluster.routing.allocation.disk.threshold_enabled=false
     ports:
-      # host 側から索引を直接覗くため (`curl 127.0.0.1:9200/_cat/indices`)。
-      # capture-ledger 自身は DNS 名で引く。
+      # capture-ledger の API は host で動くので、この口で引く (CAPTURE_LEDGER_OPENSEARCH_URL)。
+      # 索引を直に覗くのもここ (`curl 127.0.0.1:9200/_cat/indices`)。
       - "127.0.0.1:9200:9200"
     # JVM は 512m の heap の外にも要る。2g は実測ではなく安全側の見積り。
     mem_limit: 2gb
@@ -384,7 +386,7 @@ services:
     # `AccessDeniedException` で起動に失敗する (実測)。
     #
     # 所有者を直して持たせることもできるが、**持たせる利得が小さい**: 索引は
-    # `UPDATE archives SET indexed_at = NULL` で作り直せる (`009` を見ること)。
+    # pnpm run search:reindex で作り直せる (台帳の indexed_at を空にして入れ直す)。
     # 落とせば消えるが、消えても困らないように作ってある。
     profiles: ["search"]
 

@@ -16,8 +16,9 @@
  *
  * ## 失敗しても `indexed_at` を立てない
  *
- * 立てるのは送り終えてから。途中で落ちれば列は NULL のままなので、次の周回が
- * 同じ行を拾う。**at-least-once** で、`_id` がアーカイブの id と時点
+ * 立てるのは送り終えてから。途中で落ちれば列は NULL のままなので、次に索引の口
+ * (`POST /api/crawls/:id/index`。flow の段) か `pnpm run search:reindex` を叩いたときに同じ行を拾う
+ * —— 自分で周回する係は無い。**at-least-once** で、`_id` がアーカイブの id と時点
  * (`document.ts` の `searchDocumentId`) なので重複しない。
  */
 import type { Kysely } from "kysely";
@@ -69,8 +70,8 @@ export interface IndexArchiveOptions {
  * `document.ts` の `pagesToIndex`）を返す。
  *
  * WACZ が無い、あるいは `pages.jsonl` が無いときは **`indexed_at` を立てる**。
- * 索引に載せるものが無いことは確定していて、次の周回で拾い直しても同じ答えに
- * なるため —— 立てないと、その行を永久に読み続けることになる。
+ * 索引に載せるものが無いことは確定していて、拾い直しても同じ答えになるため ——
+ * 立てないと、索引の口を叩くたびにその行を読み続けることになる。
  */
 export const indexArchive = async (
   archive: ArchiveRow & { bucket: string },
@@ -89,7 +90,7 @@ export const indexArchive = async (
     });
     const result = await options.search.bulk({ body, refresh: true });
     if (result.body.errors === true) {
-      // 部分的な失敗を握り潰さない。`indexed_at` を立てずに投げ、次の周回に回す。
+      // 部分的な失敗を握り潰さない。`indexed_at` を立てずに投げる (呼ぶ側が failed に数える)。
       const first = result.body.items?.find(
         (item: { index?: { error?: unknown } }) => item.index?.error !== undefined,
       );

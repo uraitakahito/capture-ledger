@@ -72,12 +72,13 @@ interface Stack {
 // **それぞれの repo のコマンドで落とす。** 生の container-compose を叩かないのは、
 // capture-ledger 側は profile の組み合わせを stack.sh が決めているため
 // (署名を有効にしていると、profile 抜きの down は wacz-signer を残す)。
+// `--profile search` は dev:up の段 search が起こした OpenSearch のため —— 渡さないと止め残る。
 const stacks: Stack[] = [
   {
     label: "capture-ledger",
     cwd: ROOT,
-    show: "pnpm run stack:down",
-    cmd: ["pnpm", "run", "stack:down"],
+    show: "pnpm run stack:down --profile search",
+    cmd: ["pnpm", "run", "stack:down", "--profile", "search"],
   },
   {
     label: "capture-scheduler",

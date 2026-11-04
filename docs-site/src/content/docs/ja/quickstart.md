@@ -121,6 +121,15 @@ Chromium は 2 台とも headless です。描画を見たい場合は、ロー�
 `chrome://inspect` を開き、_Configure…_ に `localhost:9222` と `localhost:9223`
 を登録してください。
 
+続けて全文検索です。API は検索が無いと起動しません
+（[全文検索](/capture-ledger/ja/archive-ledger/#全文検索)）。OpenSearch を、**そのサービスだけ名指しで**
+起こし（名前を付け忘れると全部のコンテナが作り直されます）、宛先を `.env.local` に書きます:
+
+```sh
+pnpm run stack:up --profile search opensearch
+pnpm run search:connect   # OpenSearch が答えるのを待ち、CAPTURE_LEDGER_OPENSEARCH_URL を .env.local に書く
+```
+
 ## 4. データベースを準備する
 
 ```sh

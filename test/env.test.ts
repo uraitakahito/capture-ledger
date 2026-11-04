@@ -6,6 +6,7 @@ import {
   MissingEnvError,
   OPTIONAL_ENV,
   REQUIRED_ENV,
+  searchFrom,
   storageFrom,
   type Need,
 } from "../src/config/env.js";
@@ -163,6 +164,31 @@ describe("足りない変数の案内", () => {
     const { message } = new MissingEnvError(["CAPTURE_LEDGER_S3_BUCKET"]);
     expect(message).toContain("cp -n .env.example .env");
     expect(message).not.toContain("fga:deploy");
+  });
+
+  // CAPTURE-53 で必須にした。dev の正しい手は雛形の写しではなく OpenSearch を起こすこと ——
+  // 写しても OpenSearch が答えなければ、API は起動の時に止まる。
+  it("全文検索の宛先が欠けているときは dev:up の段 search を案内し、雛形の写しは勧めない", () => {
+    const { message } = new MissingEnvError(["CAPTURE_LEDGER_OPENSEARCH_URL"]);
+    expect(message).toContain("CAPTURE_LEDGER_OPENSEARCH_URL");
+    expect(message).toContain("pnpm run dev:up");
+    expect(message).toContain("検索は必須");
+    expect(message).not.toContain("cp -n");
+  });
+
+  it("全文検索の宛先は必須で、無ければ collectEnv が名指す", () => {
+    const saved = process.env["CAPTURE_LEDGER_OPENSEARCH_URL"];
+    delete process.env["CAPTURE_LEDGER_OPENSEARCH_URL"];
+    try {
+      expect(() => collectEnv(searchFrom)).toThrow(MissingEnvError);
+      try {
+        collectEnv(searchFrom);
+      } catch (caught) {
+        expect((caught as MissingEnvError).names).toEqual(["CAPTURE_LEDGER_OPENSEARCH_URL"]);
+      }
+    } finally {
+      if (saved !== undefined) process.env["CAPTURE_LEDGER_OPENSEARCH_URL"] = saved;
+    }
   });
 
   it("両方が欠けているときは、名前を出どころごとの案内の下に並べる", () => {

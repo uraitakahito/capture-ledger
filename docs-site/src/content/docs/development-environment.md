@@ -79,8 +79,9 @@ takes its value from `.env.local`.
 | `.env`       | you       | a copy of `.env.example`. **The only one you edit by hand**   |
 | `.env.local` | the tools | values that only exist once something has run; git ignores it |
 
-Two tools write it: `pnpm run fga:deploy` (the OpenFGA store and model ids) and
-`pnpm run connect` (the four lines capture-scheduler hands over — quickstart §7).
+The tools that write it are `pnpm run fga:deploy` (the OpenFGA store and model ids),
+`pnpm run connect` (the four lines capture-scheduler hands over — quickstart §7) and
+`pnpm run search:connect` (the OpenSearch URL, once OpenSearch answers — quickstart §3).
 They are split because they have different owners: when a tool reorders or drops
 a line a person wrote, nobody can tell afterwards what happened.
 
@@ -92,8 +93,8 @@ config: .env (16 names), .env.local (6 names) — .env.local wins for CAPTURE_LE
 
 When "I edited `.env` and nothing changed", look for the name on that line: if it
 is there, `.env.local` is winning. When you suspect a stale `.env.local`, the
-fastest fix is to **regenerate it** — both `fga:deploy` and `connect` are safe to
-repeat.
+fastest fix is to **regenerate it** — `fga:deploy`, `connect` and `search:connect` are all
+safe to repeat.
 
 The line prints **names only, never values**: tokens are among them, and the
 explanation of where a value came from does not need the value. A value set in
@@ -134,7 +135,7 @@ that rule too.
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm run dev:up`                         | The startup steps, in order. `--dry-run` lists them; `--from <step>` resumes.                                                                              |
 | `pnpm run dev:status`                     | What is up right now. **Changes nothing.**                                                                                                                 |
-| `pnpm run dev:down`                       | What runs on the host, then both repos' containers. Never the shared store.                                                                                |
+| `pnpm run dev:down`                       | What runs on the host, then both repos' containers, OpenSearch included. Never the shared store.                                                           |
 | `pnpm run api`                            | Build, then run the API (`tsc` then `node dist/api/server.js`).                                                                                            |
 | `pnpm run build`                          | Emit JS/d.ts to `dist/` via `tsconfig.build.json`.                                                                                                         |
 | `pnpm run typecheck`                      | `tsc --noEmit`, including tests and `*.config.ts`.                                                                                                         |

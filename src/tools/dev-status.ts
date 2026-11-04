@@ -124,9 +124,59 @@ console.log(
     "",
     `fga:deploy ${mark(declares(".env.local", "CAPTURE_LEDGER_FGA_MODEL_ID"))}   ` +
       `connect ${mark(declares(".env.local", "CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN"))}   ` +
-      "(どちらも .env.local に書く。打ち直せば作り直せる)",
+      `search:connect ${mark(declares(".env.local", "CAPTURE_LEDGER_OPENSEARCH_URL"))}   ` +
+      "(どれも .env.local に書く。打ち直せば作り直せる)",
   ),
 );
+
+// ── 検索 ────────────────────────────────────────────────────────────
+// 全文検索は必須 (CAPTURE-53)。宛先が答えるかと、索引に何件在るかを言う。宛先は node と同じ順に読む
+// (.env の後に .env.local。名前が重なれば .env.local が勝つ)。
+const valueIn = (file: string, name: string): string | undefined => {
+  const path = resolve(ROOT, file);
+  if (!existsSync(path)) return undefined;
+  const line = readFileSync(path, "utf8")
+    .split("\n")
+    .findLast((one) => one.startsWith(`${name}=`));
+  return line === undefined ? undefined : line.slice(name.length + 1).trim();
+};
+const settingOf = (name: string): string | undefined =>
+  valueIn(".env.local", name) ?? valueIn(".env", name);
+const searchUrl = settingOf("CAPTURE_LEDGER_OPENSEARCH_URL");
+const searchIndex = settingOf("CAPTURE_LEDGER_OPENSEARCH_INDEX") ?? "capture-pages";
+const answerOf = async (url: string): Promise<Record<string, unknown> | undefined> => {
+  try {
+    const res = await fetch(url);
+    return res.ok ? ((await res.json()) as Record<string, unknown>) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+if (searchUrl === undefined) {
+  console.log(
+    row("検索", "宛先が無い (pnpm run dev:up --from search で起こして .env.local に書く)"),
+  );
+} else {
+  const health = await answerOf(`${searchUrl}/_cluster/health`);
+  if (health === undefined) {
+    console.log(
+      row(
+        "検索",
+        `${searchUrl} が答えない (起こすのは pnpm run stack:up --profile search opensearch。` +
+          "起こし直した索引は空なので、続けて pnpm run search:reindex)",
+      ),
+    );
+  } else {
+    const counted = await answerOf(`${searchUrl}/${searchIndex}/_count`);
+    const docs =
+      counted === undefined
+        ? "無い (API が起動の時に作る。API が動いたまま OpenSearch を起こし直したなら pnpm run search:reindex)"
+        : `${String(counted["count"])} 件`;
+    console.log(
+      row("検索", `${searchUrl}  health ${String(health["status"])}  索引 ${searchIndex}: ${docs}`),
+    );
+  }
+}
 
 // ── スクリプト ──────────────────────────────────────────────────────
 // ページで走らせる JavaScript。**空だと、撮れているのに何も走らない。**

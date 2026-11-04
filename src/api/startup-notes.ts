@@ -28,8 +28,6 @@ export interface StartupFacts {
   crawls: boolean;
   /** 受け口 (sink の 2 行) が在るか。 */
   sink: boolean;
-  /** 検索の口が在るか。 */
-  search: boolean;
 }
 
 export interface Note {
@@ -134,7 +132,6 @@ export const startupNotes = (facts: StartupFacts): Note[] => {
       ...(identity.mode === "jwt" && { issuer: identity.issuer }),
       crawls: facts.crawls,
       sink: facts.sink,
-      search: facts.search,
       crawlLevelReports: reports,
     },
   });

@@ -18,7 +18,6 @@ const USER_0920: StartupFacts = {
   devIdentity: true,
   crawls: true,
   sink: false,
-  search: false,
 };
 
 /** capture-scheduler の `windmill:bootstrap` が出す 4 行を貼った API。`.env.example` の DEV_IDENTITY=1 も残っている。 */
@@ -115,7 +114,6 @@ describe("startupNotes", () => {
       issuer: "http://127.0.0.1:9099",
       crawls: true,
       sink: false,
-      search: false,
       crawlLevelReports: "ready",
     });
   });

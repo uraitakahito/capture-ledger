@@ -33,6 +33,7 @@ export const REQUIRED_ENV = [
   "CAPTURE_LEDGER_S3_SECRET_ACCESS_KEY",
   "CAPTURE_LEDGER_FGA_STORE_ID",
   "CAPTURE_LEDGER_FGA_MODEL_ID",
+  "CAPTURE_LEDGER_OPENSEARCH_URL",
 ] as const;
 
 /**
@@ -48,6 +49,16 @@ export const REQUIRED_ENV = [
 export const FGA_DEPLOY_ENV = [
   "CAPTURE_LEDGER_FGA_STORE_ID",
   "CAPTURE_LEDGER_FGA_MODEL_ID",
+] as const satisfies readonly (typeof REQUIRED_ENV)[number][];
+
+/**
+ * 必須の変数のうち、**dev では dev:up の段 search が `.env.local` に書くもの**（全文検索の宛先）。
+ *
+ * 雛形にも値（`http://127.0.0.1:9200`）は在るが、dev の正しい手は写すことではなく OpenSearch を
+ * 起こすこと —— 写して起動しても、OpenSearch が答えなければ API は起動の時に止まる。
+ */
+export const SEARCH_CONNECT_ENV = [
+  "CAPTURE_LEDGER_OPENSEARCH_URL",
 ] as const satisfies readonly (typeof REQUIRED_ENV)[number][];
 
 export const OPTIONAL_ENV = [
@@ -74,7 +85,6 @@ export const OPTIONAL_ENV = [
   "CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN",
   "CAPTURE_LEDGER_CRAWL_WEBHOOK_TIMEOUT_MS",
   "CAPTURE_LEDGER_DRAIN_INTERVAL_MS",
-  "CAPTURE_LEDGER_OPENSEARCH_URL",
   "CAPTURE_LEDGER_OPENSEARCH_INDEX",
   "CAPTURE_LEDGER_TS_COMPILE_URL",
   "CAPTURE_LEDGER_TS_COMPILE_TIMEOUT_MS",
@@ -125,7 +135,12 @@ guardEnv();
  */
 const explainMissing = (names: string[]): string => {
   const fromDeploy = names.filter((name) => (FGA_DEPLOY_ENV as readonly string[]).includes(name));
-  const fromTemplate = names.filter((name) => !fromDeploy.includes(name));
+  const fromSearch = names.filter((name) =>
+    (SEARCH_CONNECT_ENV as readonly string[]).includes(name),
+  );
+  const fromTemplate = names.filter(
+    (name) => !fromDeploy.includes(name) && !fromSearch.includes(name),
+  );
   const list = (group: string[]): string => group.map((name) => `    - ${name}`).join("\n");
   const sections: string[] = [];
   if (fromTemplate.length > 0) {
@@ -140,6 +155,14 @@ const explainMissing = (names: string[]): string => {
       `  OpenFGA へのデプロイで決まるもの:\n${list(fromDeploy)}\n` +
         "    pnpm run fga:deploy を走らせること。id は .env.local に書き込まれる\n" +
         "    ので、書き写す作業は無い (OpenFGA が初めてなら、先に pnpm run fga:migrate)。",
+    );
+  }
+  if (fromSearch.length > 0) {
+    sections.push(
+      `  全文検索 (OpenSearch) の宛先 —— 検索は必須:\n${list(fromSearch)}\n` +
+        "    dev では pnpm run dev:up の段 search が OpenSearch を起こし、段 search-connect が\n" +
+        "    .env.local に書く (途中から続けるなら pnpm run dev:up --from search)。dev の外では、\n" +
+        "    動いている OpenSearch の URL を .env に書く。",
     );
   }
   return `環境変数が足りない:\n\n${sections.join("\n\n")}`;
@@ -252,14 +275,14 @@ export interface SearchConfig {
 }
 
 /**
- * 全文検索の宛先。**設定が無ければ `undefined`** —— 検索を持たない配備がありうる。
+ * 全文検索の宛先。**必須** (CAPTURE-53)。
  *
- * `createWindmillDispatcher` と同じ形。呼ぶ側 (`api/server.ts`) は `undefined` の
- * ときに口ごと出さない。「設定がありません」と実行時に言うのでは遅く、そのときには
- * 呼んだ側は索引されたつもりでいる。
+ * 以前は、無ければ検索と索引の口を出さない形だった。すると flow の索引の段は 404 を
+ * 「飛ばした」として緑で終わり、検索が無いことに誰も気づかなかった (dev:up は OpenSearch を
+ * 起こしていなかった)。いまは無ければ起動しない。呼ぶ側の `collectEnv` に渡して、他の設定と
+ * 欠落をまとめる (API も search:reindex も S3 と一緒に建てる)。
  */
-export const searchConfig = (): SearchConfig | undefined => {
-  const url = optional("CAPTURE_LEDGER_OPENSEARCH_URL", "");
-  if (url === "") return undefined;
-  return { url, index: optional("CAPTURE_LEDGER_OPENSEARCH_INDEX", "capture-pages") };
-};
+export const searchFrom = (need: Need): SearchConfig => ({
+  url: need("CAPTURE_LEDGER_OPENSEARCH_URL"),
+  index: optional("CAPTURE_LEDGER_OPENSEARCH_INDEX", "capture-pages"),
+});

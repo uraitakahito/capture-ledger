@@ -98,18 +98,32 @@ describe("検索の認可", () => {
     await app.close();
   });
 
-  it("総数は索引が数えた生の値で、返った件数と一致しないことがある", async () => {
-    // docs に明記している代償。**申告どおりに振る舞うこと**を固定しておく ——
-    // 黙って一致させる実装に変わると、認可の前に数えていることになる。
+  it("total は見せてよい当たりの数で、認可で落ちた分を数えない（生の件数を漏らさない）", async () => {
+    // 以前は索引が数えた生の件数 ({ value: 2 }) を返していた。生の件数は、見てはいけない
+    // アーカイブの当たりの数を教えてしまう (CAPTURE-53)。
     const app = await build({
       search: fakeSearch([hit(MINE, "mine"), hit(NOT_MINE, "secret")]) as never,
       fga: fakeFga([MINE]) as never,
     });
     const body = (
       await app.inject({ method: "GET", url: "/api/search?q=x", headers: SUBJECT })
-    ).json<{ hits: unknown[]; total: { value: number } }>();
+    ).json<{ hits: unknown[]; total: unknown }>();
     expect(body.hits).toHaveLength(1);
-    expect(body.total.value).toBe(2);
+    expect(body.total).toBe(1);
+    await app.close();
+  });
+
+  it("OpenSearch が答えなければ 503（索引が無いときも、0 件にしない）", async () => {
+    const app = await build({
+      search: {
+        search: () => Promise.reject(new Error("index_not_found_exception")),
+        indices: { exists: () => Promise.resolve({ body: true }) },
+      } as never,
+      fga: fakeFga([MINE]) as never,
+    });
+    const res = await app.inject({ method: "GET", url: "/api/search?q=x", headers: SUBJECT });
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toBe("search unavailable");
     await app.close();
   });
 
@@ -168,6 +182,91 @@ describe("検索の認可", () => {
     expect(
       (await app.inject({ method: "GET", url: "/api/search", headers: SUBJECT })).statusCode,
     ).toBe(400);
+    await app.close();
+  });
+});
+
+describe("索引の口", () => {
+  const CRAWL = "33333333-3333-3333-3333-333333333333";
+  /** まだ載せていないアーカイブ。中身は indexOne の偽物しか読まない。 */
+  const archive = (id: string) => ({
+    id,
+    bucket: "browserhive",
+    objectKey: `${id}.wacz`,
+    sourceUrl: "http://site.test/",
+    labels: [],
+    capturedAt: new Date("2026-11-05T00:00:00.000Z"),
+  });
+  const submitter = { check: () => Promise.resolve({ allowed: true }) };
+  const post = (app: Awaited<ReturnType<typeof build>>) =>
+    app.inject({ method: "POST", url: `/api/crawls/${CRAWL}/index`, headers: SUBJECT });
+
+  beforeEach(() => {
+    process.env["CAPTURE_LEDGER_DEV_IDENTITY"] = "1";
+  });
+  afterEach(() => {
+    delete process.env["CAPTURE_LEDGER_DEV_IDENTITY"];
+  });
+
+  it("待っていた数・載せた数・取りこぼした数・載せたページの数を返す", async () => {
+    // 1 本の失敗は 202 のまま、failed で言う。以前は { indexed, pages } だけで、取りこぼしは
+    // ログの 1 行にしか残らなかった (CAPTURE-53)。
+    const app = await build({
+      search: fakeSearch([]) as never,
+      fga: submitter as never,
+      pendingOf: () => Promise.resolve([archive(MINE), archive(NOT_MINE), archive(CRAWL)]),
+      indexOne: (one: { id: string }) =>
+        one.id === NOT_MINE ? Promise.reject(new Error("bulk failed")) : Promise.resolve(2),
+    });
+    const res = await post(app);
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toEqual({ pending: 3, indexed: 2, failed: 1, pages: 4 });
+    await app.close();
+  });
+
+  it("待つ物が無ければ、OpenSearch に触れずに 0 を返す", async () => {
+    const app = await build({
+      search: {
+        indices: { exists: () => Promise.reject(new Error("OpenSearch に触れた")) },
+      } as never,
+      fga: submitter as never,
+      pendingOf: () => Promise.resolve([]),
+      indexOne: () => Promise.reject(new Error("載せに行った")),
+    });
+    const res = await post(app);
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toEqual({ pending: 0, indexed: 0, failed: 0, pages: 0 });
+    await app.close();
+  });
+
+  it("OpenSearch が答えなければ 503 で、1 本も載せに行かない", async () => {
+    // 以前は 500 (internal error)。flow はこれを「OpenSearch が答えない」と言い分けられなかった。
+    let tried = 0;
+    const app = await build({
+      search: {
+        indices: { exists: () => Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:9200")) },
+      } as never,
+      fga: submitter as never,
+      pendingOf: () => Promise.resolve([archive(MINE)]),
+      indexOne: () => {
+        tried += 1;
+        return Promise.resolve(1);
+      },
+    });
+    const res = await post(app);
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toBe("search unavailable");
+    expect(tried).toBe(0);
+    await app.close();
+  });
+
+  it("can_submit が無ければ 404", async () => {
+    const app = await build({
+      search: fakeSearch([]) as never,
+      fga: { check: () => Promise.resolve({ allowed: false }) } as never,
+      pendingOf: () => Promise.reject(new Error("台帳を引いた")),
+    });
+    expect((await post(app)).statusCode).toBe(404);
     await app.close();
   });
 });
