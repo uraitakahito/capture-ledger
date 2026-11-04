@@ -136,9 +136,9 @@ describe("reconcile は記録された鍵だけを読む", () => {
     expect(result).toEqual({ pending: 2, registered: 1, skipped: 1, missing: 0, counted: 0 });
   });
 
-  // 成果物の無い manifest (cancelled など)。manifest は在るので missing ではない。
+  // 成果物の無い manifest (時間切れ・失敗など)。manifest は在るので missing ではない。
   it("台帳が受け付けなかったものは skipped", async () => {
-    const { db } = fakeDb([row("cancelled.result.json")]);
+    const { db } = fakeDb([row("timeout.result.json")]);
     vi.mocked(getJsonObject).mockResolvedValue({ taskId: TASK });
     vi.mocked(admitArchive).mockResolvedValue({ reason: "no-archive" });
 

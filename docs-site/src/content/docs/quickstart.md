@@ -266,9 +266,11 @@ follow nothing. That is what the old `POST /api/runs` did. The rows are taken in
 order, so `{"fromTargets":{"limit":1}}` is always the first sample row, not the URL you added in §4.
 
 Ask `GET /api/crawls/<crawlId>`, with the same header, how the crawl ended. A failed crawl carries
-`error` as `[step] message`, pages that could not be captured are in `failures` with their reasons,
-and `lastJob` names the Windmill run of the last level dispatched (open it at
-`http://127.0.0.1:8000/run/<lastJob.id>?workspace=crawler`).
+`error` as `[step] message`, pages that could not be captured are in `failures` with their reasons and
+page ids (`page`), and `lastJob` names the Windmill run of the last level dispatched (open it at
+`http://127.0.0.1:8000/run/<lastJob.id>?workspace=crawler`). That page's capture log is what
+`GET /api/crawls/<crawlId>/pages/<page>/log` returns
+([Pages and their capture logs](/capture-ledger/archive-ledger/#pages-and-their-capture-logs)).
 
 ```sh
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<crawlId> \

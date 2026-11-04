@@ -862,9 +862,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         variables: JSON.stringify(variables),
         secrets: JSON.stringify(secrets),
         state: "running" as const,
-        // **置く場所を、いま 1 度だけ決めて書き残す。** 以後は置く側 (受け口) も
-        // 探す側 (`admitLevel`) もこの列を読む —— 両側が別々に計算すると、
-        // 受け口の設定を切り替えた配備や月をまたぐクロールでずれる。
+        // **置く場所を、いま 1 度だけ決めて書き残す。** 以後は置く側 (受け口) がこの列を読む ——
+        // 段ごとに計算し直すと、受け口の設定を切り替えた配備や月をまたぐクロールでずれる。探す側
+        // (`admitLevel`) はこの列を読まず、報告が運んだ manifest の場所を読む (`014`)。
         // 受け口を使わない配備では書かない (NULL = 記録が無い)。
         ...(sink && { artifactKeyPrefix: crawlKeyPrefix(orgId, new Date()) }),
       };

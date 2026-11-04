@@ -43,16 +43,22 @@ capture-ledger の設定に BrowserHive の在り処は 1 つも入っていま�
 帰属を記録し、見つかったリンクを範囲で絞り、上限を当て、次の段を答えます ——
 あるいは `stopReason` を返します。
 
-段の報告に**成果物の在り処は載っていません**。そこで capture-ledger は、BrowserHive が
-成果物の隣に書く `{taskId}_{correlationId}[_{labels}].result.json` を読み直します。
-この file は BrowserHive の再起動にも耐えるので、ここで使えます。
+段の報告に**成果物の在り処は載っていません**。載っているのは、
+BrowserHive（または受け口）が成果物の隣に `.result.json`（manifest）を書いた場所だけです。そこで
+capture-ledger は、**報告された場所のとおりに** manifest を読み直します ——
+名前を組み立てて探すことはしません。この file は BrowserHive の再起動にも耐えるので、
+ここで使えます。取り込みのログもこの file に在り、capture-ledger はその数だけを `crawl_pages`
+に写します（[ページと取り込みのログ](/capture-ledger/ja/archive-ledger/#ページと取り込みのログ)）。
 
 知っておくべき帰結:
 
-- **`failed` と報告されたページでも、アーカイブができていることがあります。**
-  flow が待っている間に結果がキャッシュから溢れると、flow は `NOT_FOUND` を
-  受け取って失敗と報告しますが、manifest は bucket に在るので capture-ledger が拾い直し、
-  `crawl_pages` の記録を直します。
+- **報告の状態より manifest を採ります。** `failed` と報告されたページの manifest も読み、
+  成功を語っていれば台帳に入れて `crawl_pages` の記録を直します。いまの BrowserHive は manifest
+  を書き終えてから 1 往復で答え、答えの report と manifest は同じ中身なので、
+  食い違うことはまずありません —— 報告と正本がずれたときの備えです。
+- **flow の deadline で切った取り込みは拾えません。** flow は答えを受け取っていないので、
+  `taskId` も manifest の場所も報告に載りません。BrowserHive が書いた manifest は bucket に在っても、
+  台帳からは辿れません。
 - まだ manifest が無い `taskId` は、投げずに飛ばします。ここで投げると、書き込みが
   少し遅れただけで段の報告が 500 になり、クロールが止まります。遅れたぶんは
   reconcile が拾います。

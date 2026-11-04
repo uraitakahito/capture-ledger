@@ -8,11 +8,15 @@ import { browserhivePin } from "../../../lib/extract";
 capture-ledger は `main` ではなく **特定の BrowserHive の版**に固定されています。
 現在のピンは **{browserhivePin()}** です。
 
-これは `.upstream/browserhive` submodule から来ています。ビルド時に
-`git describe --tags` で読んでいるので、このページが古くなることはありません。
-submodule が**唯一のピン**で、BrowserHive 本体・BrowserHive が検証済みの
-`chromium-server-docker`・スタックがマウントする SeaweedFS 設定・manifest を照らす
-OpenAPI 文書（`generated/openapi.json`）が、すべてこの中に入っています。
+これは `.upstream/browserhive` submodule から来ています。ビルド時に `git describe --tags`
+で読んでいるので、このページが古くなることはありません。この submodule には、BrowserHive
+本体・BrowserHive が検証済みの
+`chromium-server-docker`・署名のサービス（`wacz-signer`・`timestamp-authority`）・manifest を照らす
+OpenAPI 文書（`generated/openapi.json`）が入っています。**ピンはこれだけではありません。** object
+store の起動設定は `.upstream/seaweedfs`、WACZ のビューアは `.upstream/replay`、
+取り込み対象のフィクスチャは `.upstream/capture-fixtures`、スクリプトは `.upstream/capture-scripts`
+から来ます。それぞれが自分のタグに固定されていて、この submodule を上げても動きません（スタックが
+build に使う物を分けてある理由は、`docker-compose.yml` の冒頭にあります）。
 
 :::note[以前は 4 箇所ありました]
 かつては `package.json`・setup.sh（いまは無い）・compose 2 枚にバージョン文字列が書かれ、
@@ -88,3 +92,23 @@ API の追加だけの変更 (オプショナルなリクエストフィール�
 
 ピンを上げたら、`etc/seaweedfs/*`・entrypoint・compose の契約に触れる変更が
 無いか、上流のリリースノートを読んでください。
+
+### manifest の照合が通すもの
+
+段の登録・reconcile・1 ページのログの口は、どれも `.result.json` を `readManifest`
+（`src/archive/manifest.ts`）で読み、写した `CaptureResultReport` に Ajv で照らします。版を上げると、
+ここで次のことが効きます。
+
+- **写しが知らない項目は通します。** 新しい BrowserHive の manifest も読めるので、写しを上げる前に
+  BrowserHive の版が上がっても、台帳は止まりません。
+- **契約が既定値を持つ項目は、欠けていれば補います**（`useDefaults`）。後から `@default`
+  つきで必須になった項目は、古い manifest を落としません。既定値の無い必須の項目が増えたときと、enum
+  の値が消えたときは落とします —— 上げる前に、新旧の `openapi.json` どうしで `required` と `enum`
+  を比べてください。
+- **任意の項目は、無いまま残ります。** v24.0.0 の `log` は既定値を持たないので、それより前の
+  manifest は、空の log ではなく `log` の無い物として読まれます。1 ページのログの口が、
+  空のログを見せずに `no-log` と言えるのはこのためです。
+- **契約に `format` が入ると、API が起動しません。** Ajv は `date-time` も `double`
+  も知らず（ajv-formats は入れていません）、`src/archive/manifest.ts` を import した時点で compile
+  が投げます。manifest を読む試験も全部落ちます。compile するのは `CaptureResultReport` から辿れる
+  schema だけなので、上げる前にそこに `format` が増えていないかを見てください。

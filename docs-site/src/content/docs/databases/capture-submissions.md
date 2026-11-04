@@ -69,13 +69,22 @@ again, hence `onConflict … doNothing()`.
 
 ## How it is read
 
-`reconcile.ts` reads the rows that carry a `manifest_key` and have no archive yet:
+There are two readers.
+
+**Reconcile** (`reconcile.ts`) reads the rows that carry a `manifest_key` and have no archive yet:
 
 ```
 capture_submissions row with manifest_key, no archives row
   → GetObject(manifest_key)
+  → if it has a log, fill the capture-log counts into crawl_pages rows with that task_id and no counts yet
   → register in archives, and queue tuples with that org_id and submitted_by
 ```
+
+**The log route for one page** (`GET /api/crawls/:id/pages/:page/log`) follows the page row's `task_id`
+to this table's `manifest_key` and returns the `log` of that `.result.json`
+([Pages and their capture logs](/capture-ledger/archive-ledger/#pages-and-their-capture-logs)).
+`crawl_pages.task_id` is text and this table's `task_id` is a uuid, so the uuid side is cast to text —
+the other way round, a single value that is not uuid-shaped fails the whole query.
 
 ## Column notes
 
@@ -102,7 +111,8 @@ It is still worth filling, because this value becomes the `owner` tuple on the
 :::
 
 :::note[The counts will not match the ledger]
-Everything submitted lands here, but only captures that **produced an archive**
-land in [`archives`](/capture-ledger/databases/archives/). A failed capture uploaded
-nothing, so a gap is expected.
+Every capture whose level report carried a `taskId` lands here, failures included, but
+only captures that **produced an archive** land in [`archives`](/capture-ledger/databases/archives/).
+A failed capture uploaded nothing, so a gap is expected. A capture cut by the flow's deadline, and one
+BrowserHive refused (400 or 500), never had its `taskId` reported, so it is not here either.
 :::

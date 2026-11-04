@@ -68,13 +68,22 @@ submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
 
 ## 読まれ方
 
-`reconcile.ts` が、`manifest_key` を持ち、まだアーカイブの無い行を引きます。
+読み手は 2 つです。
+
+**reconcile**（`reconcile.ts`）が、`manifest_key` を持ち、まだアーカイブの無い行を引きます。
 
 ```
 manifest_key を持ち、archives に行の無い capture_submissions の行
   → GetObject(manifest_key)
+  → log があれば、同じ task_id で数が NULL の crawl_pages の行に、取り込みのログの数を埋める
   → archives に登録し、その org_id と submitted_by で tuple を積む
 ```
+
+**1 ページの取り込みのログの口**（`GET /api/crawls/:id/pages/:page/log`）が、ページの行の `task_id`
+からこの表の `manifest_key` を引き、その `.result.json` の `log`
+を返します（[ページと取り込みのログ](/capture-ledger/ja/archive-ledger/#ページと取り込みのログ)）。
+`crawl_pages.task_id` は text、この表の `task_id` は uuid なので、uuid の側を text に倒して繋ぎます
+—— 逆向きは、uuid の形でない値が 1 行でもあると問い合わせごと落ちます。
 
 ## 列の要点
 
@@ -100,7 +109,8 @@ manifest_key を持ち、archives に行の無い capture_submissions の行
 :::
 
 :::note[台帳と件数が一致しません]
-この表には**投げたものすべて**が入りますが、[`archives`](/capture-ledger/ja/databases/archives/)
-に入るのは**アーカイブを生んだものだけ**です。失敗した取り込みは何もアップロード
-していないので、差が出るのが正常です。
+この表に入るのは、段の報告が `taskId` を運んだ取り込みすべて（失敗も含む）ですが、
+[`archives`](/capture-ledger/ja/databases/archives/) に入るのは**アーカイブを生んだものだけ**です。
+失敗した取り込みは何もアップロードしていないので、差が出るのが正常です。flow の deadline で切った取り込みと、
+BrowserHive が断った（400・500）取り込みは `taskId` が届かないので、この表にも入りません。
 :::

@@ -44,17 +44,23 @@ One level is one round trip. The flow captures the URLs it was handed and posts
 `crawl_pages`, attributes the submissions, filters the discovered links, applies
 the budget, and answers with the next level — or with a `stopReason`.
 
-The level report does **not** carry artifact locations, so capture-ledger re-reads the
-`{taskId}_{correlationId}[_{labels}].result.json` manifest BrowserHive writes
-next to the artifacts. That file survives a BrowserHive restart, which is what
-makes it usable here.
+The level report does **not** carry artifact locations. It carries only where
+BrowserHive (or the sink) wrote the `.result.json` manifest next to the artifacts,
+so capture-ledger re-reads the manifest **at the reported location** — it never
+assembles a file name to look for. That file survives a BrowserHive restart, which is
+what makes it usable here. The capture's log is in that file too, and capture-ledger
+copies only its counts into `crawl_pages` ([Pages and their capture logs](/capture-ledger/archive-ledger/#pages-and-their-capture-logs)).
 
 Consequences worth knowing:
 
-- **A page reported `failed` may still have produced an archive.** If the result
-  aged out of BrowserHive's cache while the flow was waiting, the flow sees
-  `NOT_FOUND` and reports a failure — but the manifest is in the bucket, so
-  capture-ledger admits it anyway and corrects the `crawl_pages` row.
+- **The manifest wins over the reported status.** The manifest of a page reported
+  `failed` is read too, and if it says the capture succeeded, capture-ledger admits it
+  and corrects the `crawl_pages` row. BrowserHive now writes the manifest before it
+  answers, in one round trip, and the answer's report is the same content, so the two
+  hardly ever disagree — this is a guard for when the report and the record drift apart.
+- **A capture cut by the flow's deadline cannot be picked up.** The flow never got the
+  answer, so the report carries neither a `taskId` nor a manifest location. The manifest
+  BrowserHive wrote may be in the bucket, but nothing in the ledger leads to it.
 - A manifest that is not there yet is skipped rather than raised. Throwing would
   turn a late write into a 500 on the level report, stopping the crawl; the
   reconciler picks it up instead.

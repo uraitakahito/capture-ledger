@@ -63,7 +63,8 @@ pnpm run fga:reconcile --since-days 30
 ```
 
 結果は `pending`・`registered`・`skipped`（台帳が受け付けない manifest。成果物の無い
-cancelled など）・`missing`（報告された鍵に何も無い）で報告します。
+時間切れ・失敗など）・`missing`（報告された鍵に何も無い）・`counted`（取り込みのログの数を、
+まだ読んでいなかったページの行に埋めた数。[ページと取り込みのログ](#ページと取り込みのログ)）で報告します。
 
 **拾えないもの**（仕組み上そうなっています）:
 
@@ -100,11 +101,15 @@ pnpm run fga:drain       # 溜まったタプルを配送（API も定期的に�
 `taskId` を持つ**全件**について manifest を引き、成功していたと分かれば
 `crawl_pages` の記録を直します。
 
-**その手で拾えない食い違いが 1 つあります —— 切られた取り込み。** flow の deadline が
-取り込みの途中で尽きると、BrowserHive は（v9.1.0 以降）ページを壊して
-`ERROR_TYPE_CANCELLED` の manifest を書きます。成果物は無いので拾い直す先も無く、
-ページは失敗のまま —— それで正しい。bucket にこれが並ぶときは、flow の deadline が
-取り込みに要る時間より短いという意味で、直すのは flow の側です。
+**その手で拾えない取り込みが 1 つあります —— flow が切った取り込み。** flow の
+deadline（クロールを回す Windmill の flow を持つ
+[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) の
+`crawl_host`）が取り込みの途中で尽きると、BrowserHive はページを壊して `errorDetails.type` が
+`cancelled` の manifest を書きます。ところが flow は答えを受け取っていないので、報告に `taskId` も
+manifest の場所も載りません。`capture_submissions` の行が無く、段の登録も reconcile もその manifest
+を読みに行けないので、ページは失敗のまま（理由は deadline を過ぎたこと）で、
+そのページの取り込みのログも引けません（`not-captured`）。bucket にこれが並ぶときは、flow の
+deadline が取り込みに要る時間より短いという意味で、直すのは flow の側です。
 
 ### 帰属
 
@@ -131,16 +136,20 @@ curl http://localhost:7070/api/archives
 どちらのリクエストも形は route の JSON Schema で決まっています。説明ではなく
 検査そのものが契約です。
 
-|                              |          |                                                     |
-| ---------------------------- | -------- | --------------------------------------------------- |
-| `POST /api/archives/:id/url` | `id`     | UUID。違えば **400**（認可より前に落ちる）          |
-| `GET /api/archives`          | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から |
-| `GET /api/crawls`            | `state`  | `running` / `succeeded` / `failed`。違えば **400**  |
-|                              | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から |
+|                                       |          |                                                                         |
+| ------------------------------------- | -------- | ----------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`          | `id`     | UUID。違えば **400**（認可より前に落ちる）                              |
+| `GET /api/archives`                   | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
+| `GET /api/crawls`                     | `state`  | `running` / `succeeded` / `failed`。違えば **400**                      |
+|                                       | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
+| `GET /api/crawls/:id/pages`           | `after`  | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                 |
+|                                       | `limit`  | 1〜500。既定 100。外れは **400**                                        |
+| `GET /api/crawls/:id/pages/:page/log` | `page`   | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる） |
 
 `before` はカーソルで、直前に受け取った最後の行の `capturedAt`（クロールなら
 `startedAt`）を渡します。
-知らないクエリパラメータは拒否ではなく削除されます。
+知らないクエリパラメータは、拒否も削除もされず、そのまま残って無視されます（全文検索の `GET /api/search`
+だけは 400 で断ります）。
 
 クロールの一覧は `maySubmit` で絞ります —— アーカイブのように 1 行ずつ `can_view` を
 訊く形ではありません。認可モデルに `crawl` という型が無いためで、`can_submit` は
@@ -501,6 +510,63 @@ curl 'http://localhost:7070/api/decisions?domain=ads.example.com&days=90&action=
 そのホストとその下をラベルの境目で照らし、新しいクロールから並べる。`days` の既定は 90、
 `action` の既定は `skip` で、500 行で切ったときは `truncated` が言う。Windmill は run の中身を
 最長 30 日で消すが、この行はクロールの行がある限り残る。
+
+### ページと取り込みのログ
+
+クロールが触った URL は、取る前の pending も含めて 1 つずつ `crawl_pages` の行です。それを読む口が
+2 本あります。どちらも認可は `GET /api/crawls/:id` と同じ `maySubmit` で、許可の無い呼び出し元にも、
+無いクロールやページにも 404 を返します。
+
+```sh
+curl 'http://localhost:7070/api/crawls/9072b625-…/pages?limit=100'
+# → { "pages": [{ "id": "1234", "url": "https://…", "depth": 0, "state": "captured", "reason": null,
+#                 "taskId": "6f1c…", "archiveId": "a1b2…",
+#                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 } }, …],
+#     "next": "1300" }
+
+curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/log
+# → { "page": { …一覧と同じ形… },
+#     "log": { "lines": [{ "at": "2026-11-04T05:12:04.551Z", "ms": 4522, "dpr": 1, "source": "script",
+#                          "script": "egov-law-search", "level": "info", "msg": "…", "data": { … } }, …],
+#              "counts": { "debug": 0, "info": 12, "warn": 1, "error": 0 }, "dropped": 0 },
+#     "reason": null }
+```
+
+一覧は、ページがクロールに入った順に `limit` 本ずつ返ります。続きは、前の答えの `next` を `after`
+に渡して引きます（終わりなら `next` は `null`）。続きをヘッダでなく本文で言うのは、dashboard
+の中継が状態・content-type・本文のほかを落とすからです。`id` は `bigserial` を文字列にした物で、
+`reason` は `skip_reason` —— 取らなかった理由も、取れなかった理由も入ります。
+
+**capture-ledger は行を持ちません。** 行は取り込みのログ ——
+ページで走ったスクリプトが書いた物（`__bh.log`・`__bh.report`・投げた例外）、取り込みのページ自身の
+console、BrowserHive の出来事 —— で、BrowserHive（v24.0.0 から）が答えと、成果物の隣の
+`.result.json` に載せます。シークレットの値は、長さに依らず `***` に替えてあります。
+ログの口はそのたびに保管庫からこの file を読み、`log` を書かれたまま、届いた順で返します。
+capture-ledger が写すのは数だけで、段の登録が（読めなかったときは reconcile
+が）`crawl_pages.log_counts` に書くので、一覧は file を読みません。数を写すのは台帳に入れる前です ——
+時間切れや失敗の取り込みは WACZ が無く台帳に入りませんが、行と数は在り、
+行を読みたいのはむしろそのページです。`logCounts` が `null` なのは、その取り込みの `.result.json`
+から数を読んでいないときだけです。鍵の順は決まっていない（`jsonb` が並べ替える）ので、
+名前で引いてください。
+
+読めないときも 200 で、`"log": null` と理由（`reason`）を返します:
+
+| `reason`           | 理由                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------- |
+| `not-captured`     | 取り込みの答えが無い。`taskId` が無い（pending・skipped・flow の deadline で切った・断られた） |
+| `no-manifest`      | 答えはあるが、`.result.json` の場所が記録されていない（`manifestError`）                       |
+| `manifest-missing` | 記録した場所に何も無い                                                                         |
+| `manifest-invalid` | JSON でない、または契約に合わない（`readManifest` が断った）                                   |
+| `no-log`           | `log` が無い —— BrowserHive v24.0.0 より前が書いた                                             |
+
+保管庫に届かなければ 502 です。`GET /api/crawls/:id` の `failures` の各要素はページの
+id（`page`）を持つので、取れなかったページからそのまま行へ辿れます。
+
+穴が 2 つ残っています。`timeout`・`connection`・`internal` で落ちた取り込みは 1 度だけ撮り直され、
+台帳が持つのは 2 回目の `taskId` だけなので、1 回目のログは保管庫に在っても、ここからは辿れません。
+また口の認可は組織を見ない `maySubmit` で、クロールを始められる者は、どのクロールの行も ——
+スクリプトが報告した値も、取り込みのページが出した文も —— 読めます。`GET /api/crawls/:id`
+と同じ性質です。
 
 ## 全文検索
 

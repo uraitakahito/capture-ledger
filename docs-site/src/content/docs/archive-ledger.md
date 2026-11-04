@@ -67,8 +67,9 @@ pnpm run fga:reconcile --since-days 30
 ```
 
 Each run reports `pending`, `registered`, `skipped` (a manifest the ledger does not
-admit, such as a cancelled capture with no archive) and `missing` (nothing at the
-reported key).
+admit, such as a timed-out or failed capture with no archive), `missing` (nothing at the
+reported key) and `counted` (pages whose capture-log counts it filled in because they had
+not been read yet — see [Pages and their capture logs](#pages-and-their-capture-logs)).
 
 **What it cannot pick up**, by construction:
 
@@ -107,12 +108,16 @@ next to the artifacts, and where the two disagree the manifest wins. So the
 level handler looks the manifest up for **every** page that carried a task id,
 and corrects the `crawl_pages` row when the manifest says the capture succeeded.
 
-**One disagreement never resolves that way: a cancelled capture.** If the flow's
-deadline runs out mid-capture, BrowserHive (since v9.1.0) tears the page down and
-writes a manifest of its own saying `ERROR_TYPE_CANCELLED`. There are no
-artifacts to find, so the page stays failed — correctly. A run of those in the
-bucket means the flow's deadline is shorter than the pages it is being asked to
-capture, and the fix is on the flow's side.
+**One capture is never picked up that way: one the flow cut off.** If the flow's
+deadline (`crawl_host` in [capture-scheduler](https://github.com/uraitakahito/capture-scheduler), the
+Windmill flows that run crawls) runs out mid-capture, BrowserHive tears the
+page down and writes a manifest whose `errorDetails.type` is `cancelled`. But the flow
+never got the answer, so the report carries neither a `taskId` nor a manifest location.
+There is no `capture_submissions` row, neither the level handler nor reconcile can reach
+that manifest, the page stays failed (the reason is the passed deadline), and its capture
+log cannot be read either (`not-captured`). A run of those in the bucket means the flow's
+deadline is shorter than the pages it is being asked to capture, and the fix is on the
+flow's side.
 
 ### Attribution
 
@@ -140,16 +145,20 @@ curl http://localhost:7070/api/archives
 The shape of both requests is a JSON Schema on the route, so the checking is
 the contract rather than a description of it:
 
-|                              |          |                                                                                    |
-| ---------------------------- | -------- | ---------------------------------------------------------------------------------- |
-| `POST /api/archives/:id/url` | `id`     | a UUID — anything else is **400**, before authorization runs                       |
-| `GET /api/archives`          | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest |
-| `GET /api/crawls`            | `state`  | `running` / `succeeded` / `failed` — anything else is **400**                      |
-|                              | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest |
+|                                       |          |                                                                                          |
+| ------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`          | `id`     | a UUID — anything else is **400**, before authorization runs                             |
+| `GET /api/archives`                   | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
+| `GET /api/crawls`                     | `state`  | `running` / `succeeded` / `failed` — anything else is **400**                            |
+|                                       | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
+| `GET /api/crawls/:id/pages`           | `after`  | the previous answer's `next`: digits only, at most 18 — anything else is **400**         |
+|                                       | `limit`  | 1 to 500, default 100 — anything else is **400**                                         |
+| `GET /api/crawls/:id/pages/:page/log` | `page`   | a page id: digits only, at most 18 — anything else is **400**, before authorization runs |
 
 `before` is a cursor: pass the `capturedAt` (or, for crawls, the `startedAt`) of the
 last row you were given.
-Unknown query parameters are dropped rather than rejected.
+Unknown query parameters are neither rejected nor dropped: they stay and are ignored
+(only the full-text `GET /api/search` refuses them with a 400).
 
 The crawl list is gated on `maySubmit`, not on a per-row `can_view` the way archives
 are: the authorization model has no `crawl` type, and `can_submit` is defined as
@@ -546,6 +555,65 @@ The domain query covers the host and its subdomains at a label boundary, newest 
 first; `days` defaults to 90 and `action` to `skip`, and `truncated` says when the answer
 was cut at 500 rows. Windmill keeps a run's details for 30 days at most; these rows last as
 long as the crawl does.
+
+### Pages and their capture logs
+
+Every URL a crawl touched is a `crawl_pages` row — still pending, captured, failed or
+skipped — and two routes read them. Both are gated like `GET /api/crawls/:id`: `maySubmit`,
+with a 404 for a caller without it, as for a crawl or a page that does not exist.
+
+```sh
+curl 'http://localhost:7070/api/crawls/9072b625-…/pages?limit=100'
+# → { "pages": [{ "id": "1234", "url": "https://…", "depth": 0, "state": "captured", "reason": null,
+#                 "taskId": "6f1c…", "archiveId": "a1b2…",
+#                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 } }, …],
+#     "next": "1300" }
+
+curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/log
+# → { "page": { …the same shape… },
+#     "log": { "lines": [{ "at": "2026-11-04T05:12:04.551Z", "ms": 4522, "dpr": 1, "source": "script",
+#                          "script": "egov-law-search", "level": "info", "msg": "…", "data": { … } }, …],
+#              "counts": { "debug": 0, "info": 12, "warn": 1, "error": 0 }, "dropped": 0 },
+#     "reason": null }
+```
+
+The list comes in the order the pages entered the crawl, `limit` at a time; pass the
+previous answer's `next` as `after` for the rest (`next` is `null` at the end). The
+continuation is in the body rather than a header because the dashboard's relay passes on
+only the status, the content type and the body. `id` is the `bigserial` as a string, and
+`reason` is `skip_reason`, so it says why a page failed as well as why it was skipped.
+
+**capture-ledger does not keep the lines.** They are the capture's log — what the page's
+scripts wrote (`__bh.log`, `__bh.report`, the exceptions they threw), the captured page's own
+console, and BrowserHive's own events — which BrowserHive (from v24.0.0) puts in its answer and in
+the `.result.json` next to the artifacts, with secret values replaced by `***` whatever their
+length. The log route reads that file from the store each time and returns `log` exactly as
+written, in the order the lines arrived. Only the counts are copied, into
+`crawl_pages.log_counts`, when the level is registered (or by reconcile, when that could not read
+the manifest), so the list reads no files. The copy is taken before the archive is admitted: a
+timed-out or failed capture produced no WACZ and is not in the ledger, yet its lines and counts are
+there — and those are the pages whose lines you most want. `logCounts` is `null` exactly when the
+counts were not read from the capture's `.result.json`. Read its keys by name; their order is not
+fixed (`jsonb` reorders them).
+
+When the lines cannot be read the answer is still 200, with `"log": null` and a `reason`:
+
+| `reason`           | Why                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------- |
+| `not-captured`     | No capture answer: no `taskId` (pending, skipped, cut by the flow's deadline, or refused) |
+| `no-manifest`      | There was an answer, but no `.result.json` location was recorded (`manifestError`)        |
+| `manifest-missing` | Nothing at the recorded location                                                          |
+| `manifest-invalid` | The file is not JSON, or does not match the contract (`readManifest` refused it)          |
+| `no-log`           | The file has no `log` — BrowserHive before v24.0.0 wrote it                               |
+
+A store that cannot be reached is a 502. Each entry of `failures` in `GET /api/crawls/:id`
+carries the page's `page` id, so a failure leads straight to its lines.
+
+Two holes remain. A `timeout`, `connection` or `internal` failure is captured once more and only
+the second attempt's `taskId` is recorded, so the first attempt's log is in the store but cannot be
+reached from here. And the gate is `maySubmit`, which does not look at organizations: whoever may
+start crawls can read every crawl's lines — what the scripts reported and what the captured pages
+printed — just as with `GET /api/crawls/:id`.
 
 ## Full-text search
 

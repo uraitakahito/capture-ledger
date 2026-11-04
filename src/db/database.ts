@@ -134,8 +134,9 @@ export interface CrawlsTable {
   pagesCaptured: ColumnType<number, number | undefined, number>;
   error: ColumnType<string | null, string | null | undefined, string | null>;
   /**
-   * 成果物を置いた場所の接頭辞 (`org/<orgId>/<YYYY-MM>/`)。**置く側と探す側が読む
-   * 唯一の出どころ。**
+   * 成果物を置いた場所の接頭辞 (`org/<orgId>/<YYYY-MM>/`)。**置く側 (受け口) が読む
+   * 唯一の出どころ。** 探す側 (段の登録と reconcile) は読まない —— 報告が運んだ manifest の場所
+   * (`capture_submissions.manifest_key`・`014`) を読む。
    *
    * 更新側が `never` なのは、後から書き換えないから —— これは設定ではなく、
    * 既に置いた場所という事実。NULL は「記録が無い」であって「平ら」ではない。

@@ -32,7 +32,7 @@
  *
  * 問うのは DB の未登録の行だけで、S3 には鍵を指定した GetObject しか投げない。手間は
  * bucket の大きさではなく、未登録の取り込みの数で決まる。成果物の無い manifest
- * (cancelled など) は台帳が受け付けないので、回すたびに読み直す —— 以前と同じ。
+ * (時間切れ・失敗など) は台帳が受け付けないので、回すたびに読み直す —— 以前と同じ。
  */
 import type { Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
@@ -49,7 +49,7 @@ export interface ReconcileResult {
   pending: number;
   registered: number;
   /**
-   * manifest は在ったが台帳が受け付けなかった (成果物の無い cancelled など)、または
+   * manifest は在ったが台帳が受け付けなかった (成果物の無い時間切れ・失敗など)、または
    * 契約の形でなかった (v11 以前の protobuf JSON など。理由は warn に出る)。
    */
   skipped: number;
