@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CrawlScript } from "../src/db/database.js";
+import { createTsCompile } from "../src/config/ts-compile.js";
 import {
   attributeDiagnostics,
-  createTsCompile,
   TsCompileUnreachable,
   tsCompileAt,
 } from "../src/scripts/ts-compile.js";

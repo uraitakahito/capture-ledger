@@ -338,6 +338,28 @@ export interface CrawlDecisionsTable {
   samples: string[];
 }
 
+/**
+ * 派生の層 (`026`)。Claude が作った物を、証拠と分けて残す。いまの `kind` は `fix` だけ。
+ * `usd` は numeric なので、node-pg は文字列で返す。
+ */
+export interface DerivationsTable {
+  id: string;
+  kind: "fix";
+  orgId: string;
+  crawlId: string | null;
+  target: ColumnType<Record<string, unknown>, string, string>;
+  inputSha256: string;
+  model: string;
+  promptVersion: string;
+  effort: string;
+  rounds: number;
+  output: ColumnType<Record<string, unknown>, string, string>;
+  usage: ColumnType<Record<string, unknown>, string, string>;
+  usd: ColumnType<string, string, never>;
+  createdBy: string;
+  createdAt: ColumnType<Date, string | undefined, never>;
+}
+
 export interface Database {
   captureTargets: CaptureTargetsTable;
   archives: ArchivesTable;
@@ -348,4 +370,5 @@ export interface Database {
   crawlDecisions: CrawlDecisionsTable;
   scripts: ScriptsTable;
   hostTypes: HostTypesTable;
+  derivations: DerivationsTable;
 }

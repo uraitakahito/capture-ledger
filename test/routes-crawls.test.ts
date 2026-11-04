@@ -14,6 +14,8 @@ import {
   type CompileAnswer,
   type TsCompile,
 } from "../src/scripts/ts-compile.js";
+import type { DerivationStore, NewDerivation } from "../src/derivations/store.js";
+import type { FixModel, FixOutput, FixReply } from "../src/scripts/fix.js";
 
 /**
  * クロールを始める口の検査。
@@ -275,6 +277,15 @@ interface FakeTarget {
   orgId: string;
 }
 
+/** 台帳の受け皿の型 (`host_types`) の代役。直す係の決まりの文に載る。 */
+const FAKE_HOST_TYPES = {
+  version: 1,
+  sha256: "1".repeat(64),
+  createdAt: new Date(0),
+  source: "declare var __bh: { report(id: string, data: unknown): void };\n",
+  bytes: 64,
+};
+
 const fakeDb = (
   crawls: FakeCrawl[],
   targets: FakeTarget[] = [],
@@ -393,6 +404,15 @@ const fakeDb = (
      * なる (反証で素通りした)。偽物が制約を持っていると、消したことに気づけない。
      */
     select: () => {
+      if (table === "hostTypes") {
+        // `readHostTypes` の読み方 (いちばん新しい版の 1 行) だけを写す
+        const query = {
+          orderBy: () => query,
+          limit: () => query,
+          executeTakeFirst: async () => Promise.resolve(FAKE_HOST_TYPES),
+        };
+        return query;
+      }
       if (table === "scripts") {
         /**
          * `resolveScripts` の読み方を写す。**条件は指定されたものだけを当てる**
@@ -542,6 +562,10 @@ const depsWith = (opts: {
   windmill?: WindmillVariables;
   /** 型の検査の窓口。省けば無い配備 (取り直しの口が無い) */
   tsCompile?: TsCompile;
+  /** 直す係の Claude・派生の層・月の上限。3 つ揃えば直しの口が在る */
+  fixModel?: FixModel;
+  derivations?: DerivationStore;
+  claudeBudgetUsd?: number;
 }): CrawlRouteDeps =>
   ({
     db: fakeDb(
@@ -559,6 +583,9 @@ const depsWith = (opts: {
     capture: parseCaptureFormats("wacz", false),
     ...(opts.windmill && { windmill: opts.windmill }),
     ...(opts.tsCompile && { tsCompile: opts.tsCompile }),
+    ...(opts.fixModel && { fixModel: opts.fixModel }),
+    ...(opts.derivations && { derivations: opts.derivations }),
+    ...(opts.claudeBudgetUsd !== undefined && { claudeBudgetUsd: opts.claudeBudgetUsd }),
   }) as unknown as CrawlRouteDeps;
 
 describe("クロール route の認可と単一実行", () => {
@@ -1521,6 +1548,245 @@ describe("型の誤りを取り直す口", () => {
     const { tsCompile } = fakeCompile({ ok: true, typescript: "6.0.3", hostTypes: "v0.6.0" });
     const app = await buildApp({ ...unreachableDeps, tsCompile });
     const res = await app.inject({ method: "GET", url: "/api/crawls/not-a-uuid/diagnostics" });
+    await app.close();
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("直しの口", () => {
+  const INLINE = {
+    name: "press",
+    phase: "behavior",
+    source: "(() => {\n  const press = (el) => el.click();\n  void press;\n})();\n",
+  } as const;
+  const FIXED_LINE = "  const press = (el: HTMLElement) => el.click();";
+  const GOOD: FixOutput = {
+    edits: [{ from: 2, to: 2, text: FIXED_LINE }],
+    notes: [{ code: "TS7006", line: 2, why: "引数 el に型を書いた" }],
+  };
+  const BROKEN: CompileAnswer = {
+    ok: false,
+    typescript: "6.0.3",
+    diagnostics: [
+      {
+        file: "inline-press.ts",
+        line: 2,
+        col: 18,
+        code: "TS7006",
+        message: "Parameter 'el' implicitly has an 'any' type.",
+      },
+    ],
+  };
+  const PASSES: CompileAnswer = { ok: true, typescript: "6.0.3", hostTypes: "v0.6.0" };
+
+  const reply = (output: FixOutput | null): FixReply => ({
+    output,
+    content: [{ type: "text", text: JSON.stringify(output) }],
+    model: "claude-opus-5-5",
+    attempts: [
+      {
+        model: "claude-opus-5-5",
+        usage: {
+          input_tokens: 3100,
+          output_tokens: 900,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      },
+    ],
+    stopReason: "end_turn",
+  });
+
+  const fakes = (opts: { compile: CompileAnswer[]; replies?: FixReply[]; spent?: number }) => {
+    const compiled: (readonly CrawlScript[])[] = [];
+    const tsCompile: TsCompile = {
+      compile(scripts) {
+        compiled.push(scripts);
+        const next = opts.compile.shift();
+        return next === undefined
+          ? Promise.reject(new Error("検査が多すぎる"))
+          : Promise.resolve(next);
+      },
+    };
+    const proposed: unknown[] = [];
+    const fixModel: FixModel = {
+      effort: "medium",
+      propose(request) {
+        proposed.push(request);
+        const next = opts.replies?.shift();
+        return next === undefined
+          ? Promise.reject(new Error("頼みが多すぎる"))
+          : Promise.resolve(next);
+      },
+    };
+    const rows: NewDerivation[] = [];
+    const derivations: DerivationStore = {
+      spentThisMonth: () => Promise.resolve(opts.spent ?? 0),
+      record: (row) => {
+        rows.push(row);
+        return Promise.resolve();
+      },
+    };
+    return { compiled, proposed, rows, tsCompile, fixModel, derivations };
+  };
+
+  const startWithInline = async () => {
+    const crawls: FakeCrawl[] = [];
+    const app = await buildApp(depsWith({ crawls, allowed: true }));
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: SUBJECT,
+      payload: { seeds: [SEED], scripts: [{ inline: INLINE }, { catalog: "autoscroll" }] },
+    });
+    await app.close();
+    expect(res.statusCode).toBe(202);
+    return crawls;
+  };
+
+  const askFix = async (
+    crawls: FakeCrawl[],
+    f: ReturnType<typeof fakes> | undefined,
+    opts: { allowed?: boolean; id?: string; name?: string; budget?: number } = {},
+  ) => {
+    const app = await buildApp(
+      depsWith({
+        crawls,
+        allowed: opts.allowed ?? true,
+        ...(f && {
+          tsCompile: f.tsCompile,
+          fixModel: f.fixModel,
+          derivations: f.derivations,
+          claudeBudgetUsd: opts.budget ?? 5,
+        }),
+      }),
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/crawls/${opts.id ?? crawls[0]!.id}/inline/${opts.name ?? INLINE.name}/fix`,
+      headers: { ...SUBJECT, "content-type": "application/json" },
+      payload: {},
+    });
+    await app.close();
+    return res;
+  };
+
+  it("型の通る案なら 200 で、差分・理由・回数・費用を返し、派生の層に残す", async () => {
+    const crawls = await startWithInline();
+    const f = fakes({ compile: [BROKEN, PASSES], replies: [reply(GOOD)] });
+    const res = await askFix(crawls, f);
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{
+      rounds: number;
+      edits: unknown[];
+      notes: unknown[];
+      source: string;
+      compiled: unknown;
+      usage: { usd: number };
+    }>();
+    expect(body.rounds).toBe(1);
+    expect(body.edits).toEqual([
+      { from: 2, to: 2, before: ["  const press = (el) => el.click();"], after: [FIXED_LINE] },
+    ]);
+    expect(body.notes).toEqual(GOOD.notes);
+    expect(body.source).toContain(FIXED_LINE);
+    expect(body.compiled).toEqual({ typescript: "6.0.3", hostTypes: "v0.6.0" });
+    expect(body.usage.usd).toBeCloseTo(0.0304, 4);
+    expect(f.rows).toHaveLength(1);
+    expect(f.rows[0]).toMatchObject({
+      kind: "fix",
+      orgId: "acme",
+      crawlId: crawls[0]!.id,
+      target: { crawlId: crawls[0]!.id, inline: "press" },
+      model: "claude-opus-5-5",
+      promptVersion: "fix/1",
+      effort: "medium",
+      rounds: 1,
+      createdBy: "alice",
+      output: { kind: "fixed" },
+    });
+  });
+
+  it("組み合わせが型を通るなら 409 で、Claude を呼ばない", async () => {
+    const crawls = await startWithInline();
+    const f = fakes({ compile: [PASSES] });
+    const res = await askFix(crawls, f);
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: "scripts compile" });
+    expect(f.proposed).toHaveLength(0);
+    expect(f.rows).toHaveLength(0);
+  });
+
+  it("誤りが台帳のスクリプトにだけなら 422 で、Claude を呼ばない", async () => {
+    const crawls = await startWithInline();
+    const f = fakes({
+      compile: [
+        {
+          ok: false,
+          typescript: "6.0.3",
+          diagnostics: [{ file: "autoscroll.ts", line: 1, col: 1, code: "TS2304", message: "x" }],
+        },
+      ],
+    });
+    const res = await askFix(crawls, f);
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({
+      error: "no errors in this inline script",
+      diagnostics: [{ script: "autoscroll", code: "TS2304" }],
+    });
+    expect(f.proposed).toHaveLength(0);
+  });
+
+  it("組織の月の上限に届いていれば 429 で、Claude を呼ばない", async () => {
+    const crawls = await startWithInline();
+    const f = fakes({ compile: [BROKEN], spent: 5 });
+    const res = await askFix(crawls, f, { budget: 5 });
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toEqual({ error: "claude budget exhausted", spentUsd: 5, budgetUsd: 5 });
+    expect(f.proposed).toHaveLength(0);
+    expect(f.rows).toHaveLength(0);
+  });
+
+  it("2 回で通らなければ 422 で、最後の誤りと費用を返し、派生の層にも残す", async () => {
+    const crawls = await startWithInline();
+    const f = fakes({ compile: [BROKEN, BROKEN, BROKEN], replies: [reply(GOOD), reply(GOOD)] });
+    const res = await askFix(crawls, f);
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: "no fix passed the checks", rounds: 2 });
+    expect(res.json<{ usage: { usd: number } }>().usage.usd).toBeGreaterThan(0);
+    expect(f.rows).toHaveLength(1);
+    expect(f.rows[0]).toMatchObject({ rounds: 2, output: { kind: "failed" } });
+  });
+
+  it("鍵が無い配備では口を作らない", async () => {
+    const crawls = await startWithInline();
+    const res = await askFix(crawls, undefined);
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("許可の無い名乗り・台帳のスクリプト・無いクロールには 404（検査も Claude も呼ばない）", async () => {
+    const crawls = await startWithInline();
+    const f = fakes({ compile: [] });
+    expect((await askFix(crawls, f, { allowed: false })).statusCode).toBe(404);
+    expect((await askFix(crawls, f, { name: "autoscroll" })).statusCode).toBe(404);
+    expect((await askFix(crawls, f, { id: UUID })).statusCode).toBe(404);
+    expect(f.compiled).toHaveLength(0);
+    expect(f.proposed).toHaveLength(0);
+  });
+
+  it("本文に知らない鍵があれば、許可を見る前に 400", async () => {
+    const f = fakes({ compile: [] });
+    const app = await buildApp({
+      ...unreachableDeps,
+      tsCompile: f.tsCompile,
+      fixModel: f.fixModel,
+      derivations: f.derivations,
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/crawls/${UUID}/inline/press/fix`,
+      payload: { model: "claude-haiku-5-5" },
+    });
     await app.close();
     expect(res.statusCode).toBe(400);
   });

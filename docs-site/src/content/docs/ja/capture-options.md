@@ -179,6 +179,32 @@ ts-compile を host の `127.0.0.1:28080` に出しています）、無けれ�
 ts-compile-service しか呼ばないので GET で、許可はクロールのほかの口と同じです。サービスに届かなければ
 503 を返します。
 
+`POST /api/crawls/:id/inline/:name/fix`（本文は `{}`）は、その場の JS の型の誤りの直し方を Claude に訊き、
+**同じ検査に通った直ししか返しません**。台帳はまず組み合わせを検査し直してから、行番号つきのその場の JS・
+一緒に走るスクリプト（読むだけで、変えさせない）・誤り・受け皿の型（`host_types`）を Claude に渡し、
+行の範囲の置き換えと、誤りごとの 1 行の理由を返させます。置き換えを当て、`// @ts-nocheck`・`@ts-ignore`・
+`@ts-expect-error`・`as any`・`: any` を足した案、`import` か `export` を足した案（module になり、黙って
+走らなくなる）、元の行の半分（少なくとも 3 行は許す）を超えて置き換えた案は断り、ほかのスクリプトと
+一緒に ts-compile-service で検査します。通らなければ、同じ会話に継ぎ足してもう 1 度だけ訊きます
+（2 回まで）。ほかには何も送りません（頁の文字・変数の値・シークレットは送らない）。確かめるのは型だけで、
+動きが変わっていないかは差分を読んで確かめてください。
+
+| 答え                                                    | いつ                                                                         | Claude を呼んだか  |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------ |
+| 200 `{ rounds, source, edits, notes, compiled, usage }` | 検査に通った直しがある（`edits` は置き換えた範囲ごとの `before` と `after`） | 呼んだ             |
+| 409 `scripts compile`                                   | いまの組み合わせが型を通る（直す物が無い）                                   | 呼ばない           |
+| 422 `no errors in this inline script`                   | 誤りがこの JS に無い（ほかのスクリプトか lib に在る）                        | 呼ばない           |
+| 429 `claude budget exhausted`                           | 組織がこの月の上限に届いた                                                   | 呼ばない           |
+| 422 `no fix passed the checks`                          | 2 回で通らなかった（最後の誤りと断った理由つき）                             | 呼んだ             |
+| 422 `claude refused`                                    | 安全の判定で断られた                                                         | 呼んだ             |
+| 502 `claude failed`・503 `ts-compile unreachable`       | API か ts-compile-service が答えなかった                                     | 呼んだかもしれない |
+
+Claude を呼んだ頼みは、1 回ごとに表 `derivations` に 1 行残します（入力の digest・model・prompt の版・
+effort・回数・出力・usage・費用）。WACZ には書きません。組織ごとの月の上限は、その費用を足して数えます
+（`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`、既定 5）。口は `CAPTURE_LEDGER_ANTHROPIC_API_KEY` があるときだけ出し、
+鍵があって `CAPTURE_LEDGER_TS_COMPILE_URL` が無ければ API は起動で止まります。答えの `usage` に token の数と
+費用（`usd`）が載ります。
+
 最初の段の報告が来ると、各要素に `jsSha256` と `compiledWith`（`{ typescript, hostTypes }`）も
 付きます。その段が走らせた JavaScript の sha256 と、何で・何に向けて変換したか ——
 ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の `compiled`）で

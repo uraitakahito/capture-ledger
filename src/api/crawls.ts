@@ -46,6 +46,7 @@ import type {
   LogCounts,
 } from "../db/database.js";
 import {
+  readHostTypes,
   enabledLatest,
   INLINE_PREFIX,
   isInlineId,
@@ -68,6 +69,8 @@ import {
   TsCompileUnreachable,
   type TsCompile,
 } from "../scripts/ts-compile.js";
+import { FIX_PROMPT_VERSION, fixInline, type FixModel, type FixResult } from "../scripts/fix.js";
+import type { DerivationStore } from "../derivations/store.js";
 import {
   HOSTNAME,
   parseHttpUrl,
@@ -255,6 +258,15 @@ export interface CrawlRouteDeps {
    * loopback で呼ぶ。無ければ `GET /api/crawls/:id/diagnostics` を出さない (その配備に取り直しは無い)。
    */
   tsCompile?: TsCompile;
+  /**
+   * 直す係の Claude (`scripts/fix.ts`)。鍵が無ければ無い。`tsCompile` と `derivations` も揃ったときだけ
+   * `POST /api/crawls/:id/inline/:name/fix` を出す (案は型の検査に通してから返し、費用は派生の層に残すため)。
+   */
+  fixModel?: FixModel;
+  /** 派生の層 (`026`) の窓口。月の上限を数え、Claude を呼んだ回を残す。 */
+  derivations?: DerivationStore;
+  /** 組織ごとの月の上限 (USD)。 */
+  claudeBudgetUsd?: number;
 }
 
 interface CrawlBody {
@@ -425,7 +437,8 @@ type LogUnreadable =
   "not-captured" | "no-manifest" | "manifest-missing" | "manifest-invalid" | "no-log";
 
 export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps): void => {
-  const { db, fga, resolveIdentity, dispatch, capture, sink, tsCompile } = deps;
+  const { db, fga, resolveIdentity, dispatch, capture, sink, tsCompile, fixModel, derivations } =
+    deps;
 
   /**
    * 段を 1 つ Windmill へ投げる。**待たない** —— この Promise の行き先は `crawls` の行で、
@@ -1377,6 +1390,169 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       return reply.code(200).send({ page, log: report.log, reason: null });
     },
   );
+
+  /**
+   * 型で落ちたクロールの、その場の JS の直し方。**Claude の案は、クロールと同じ検査に通った物だけを返す**
+   * (`scripts/fix.ts`)。お金の掛かる Claude の前に、ただの検査と上限を済ませる —— 組み合わせが通る (409)・
+   * 誤りが台帳のスクリプトにだけ在る (422)・組織の月の上限に届いた (429) ときは、Claude を呼ばない。
+   * Claude を呼んだ回は、答えがどれでも派生の層 (`026`) に残す。本文は `{}` (何も選ばせない)。
+   */
+  if (tsCompile !== undefined && fixModel !== undefined && derivations !== undefined) {
+    const budgetUsd = deps.claudeBudgetUsd ?? 0;
+    const money = (usd: number) => Number(usd.toFixed(4));
+    const usageOf = (r: FixResult) => ({
+      inputTokens: r.usage.input_tokens,
+      outputTokens: r.usage.output_tokens,
+      cacheReadTokens: r.usage.cache_read_input_tokens,
+      cacheWriteTokens: r.usage.cache_creation_input_tokens,
+      usd: money(r.usd),
+    });
+    const outputOf = (r: FixResult): Record<string, unknown> => {
+      switch (r.kind) {
+        case "fixed":
+          return { kind: r.kind, hunks: r.hunks, notes: r.notes, compiled: r.compiled };
+        case "failed":
+          return { kind: r.kind, diagnostics: r.diagnostics, refusals: r.refusals };
+        case "refused":
+          return { kind: r.kind };
+        case "unreachable":
+        case "unavailable":
+          return { kind: r.kind, message: r.message };
+      }
+    };
+
+    app.post<{ Params: { id: string; name: string }; Body: Record<string, never> }>(
+      "/api/crawls/:id/inline/:name/fix",
+      {
+        schema: {
+          params: {
+            type: "object",
+            properties: {
+              id: { type: "string", format: "uuid" },
+              name: { type: "string", pattern: "^[a-z][a-z0-9-]*$", maxLength: 57 },
+            },
+            required: ["id", "name"],
+          },
+          body: { type: "object", additionalProperties: false },
+        },
+      },
+      async (request, reply) => {
+        const identity = await resolveIdentity(request);
+        if (!identity) return unauthorized(reply);
+        if (!(await maySubmit(fga, identity))) {
+          return reply.code(404).send({ error: "not found" });
+        }
+
+        const crawl = await db
+          .selectFrom("crawls")
+          .select(["scripts", "orgId"])
+          .where("id", "=", request.params.id)
+          .executeTakeFirst();
+        const inlineId = INLINE_PREFIX + request.params.name;
+        if (!crawl?.scripts.some((s) => s.id === inlineId)) {
+          return reply.code(404).send({ error: "not found" });
+        }
+
+        const scripts = crawl.scripts.map(toDispatched);
+        let checked;
+        try {
+          checked = await tsCompile.compile(scripts);
+        } catch (err) {
+          if (!(err instanceof TsCompileUnreachable)) throw err;
+          request.log.warn({ err }, "ts-compile-service did not answer");
+          return reply.code(503).send({ error: "ts-compile unreachable" });
+        }
+        if (checked.ok) {
+          return reply.code(409).send({
+            error: "scripts compile",
+            typescript: checked.typescript,
+            hostTypes: checked.hostTypes,
+          });
+        }
+        const diagnostics = attributeDiagnostics(
+          checked.diagnostics,
+          scripts.map((s) => s.id),
+        );
+        if (!diagnostics.some((d) => d.script === inlineId)) {
+          return reply.code(422).send({ error: "no errors in this inline script", diagnostics });
+        }
+
+        // 数えてから呼ぶので、同時の頼みは上限を少し越えうる (同時の頼みの数 × 1 回の費用まで)。止まるのは次の頼みから
+        const spent = await derivations.spentThisMonth(crawl.orgId);
+        if (spent >= budgetUsd) {
+          return reply
+            .code(429)
+            .send({ error: "claude budget exhausted", spentUsd: money(spent), budgetUsd });
+        }
+
+        const host = await readHostTypes(db);
+        const result = await fixInline({
+          scripts,
+          inlineId,
+          diagnostics,
+          typescript: checked.typescript,
+          hostTypes: host?.source ?? "(台帳に受け皿の型が無い。scripts import を流すと入る)",
+          tsCompile,
+          model: fixModel,
+        });
+        if (result.rounds > 0) {
+          await derivations.record({
+            kind: "fix",
+            orgId: crawl.orgId,
+            crawlId: request.params.id,
+            target: { crawlId: request.params.id, inline: request.params.name },
+            inputSha256: result.inputSha256,
+            model: result.models.join(","),
+            promptVersion: FIX_PROMPT_VERSION,
+            effort: fixModel.effort,
+            rounds: result.rounds,
+            output: outputOf(result),
+            usage: { ...result.usage },
+            usd: result.usd,
+            createdBy: identity.subject,
+          });
+        }
+        request.log.info(
+          {
+            crawlId: request.params.id,
+            inline: inlineId,
+            kind: result.kind,
+            rounds: result.rounds,
+            usd: money(result.usd),
+          },
+          "Fix proposed",
+        );
+
+        switch (result.kind) {
+          case "fixed":
+            return reply.code(200).send({
+              rounds: result.rounds,
+              source: result.source,
+              edits: result.hunks,
+              notes: result.notes,
+              compiled: result.compiled,
+              usage: usageOf(result),
+            });
+          case "failed":
+            return reply.code(422).send({
+              error: "no fix passed the checks",
+              rounds: result.rounds,
+              diagnostics: result.diagnostics,
+              refusals: result.refusals,
+              usage: usageOf(result),
+            });
+          case "refused":
+            return reply
+              .code(422)
+              .send({ error: "claude refused", rounds: result.rounds, usage: usageOf(result) });
+          case "unreachable":
+            return reply.code(503).send({ error: "ts-compile unreachable" });
+          case "unavailable":
+            return reply.code(502).send({ error: "claude failed", usage: usageOf(result) });
+        }
+      },
+    );
+  }
 
   /**
    * クロール 1 本で、規則がリンクをどう決めたか。**固定した規則と、段 × 規則 × ホスト名の数と、
