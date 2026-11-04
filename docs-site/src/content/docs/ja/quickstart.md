@@ -262,9 +262,12 @@ capture-scripts から入れた `egov-law-search`（札 `laws.e-gov.go.jp`）が
 以前の `POST /api/runs` がしていたのはこれです。行は足した順（`id` 順）に起点になるので、
 `{"fromTargets":{"limit":1}}` はいつもサンプルの 1 行目で、§4 で足した URL ではありません。
 
-クロールがどう終わったかは、同じヘッダで `GET /api/crawls/<crawlId>` に訊きます。落ちたなら `error` に
-「[段] 文」が、取れなかったページは `failures` に理由つきで、最後に投げた段の Windmill の run は
-`lastJob` に出ます（`http://127.0.0.1:8000/run/<lastJob.id>?workspace=crawler` で開けます）。
+クロールがどう終わったかは、同じヘッダで `GET /api/crawls/<crawlId>` に訊きます。落ちたなら `error`
+に「[段] 文」が、取れなかったページは `failures` に理由とページの id（`page`）つきで、
+最後に投げた段の Windmill の run は `lastJob`
+に出ます（`http://127.0.0.1:8000/run/<lastJob.id>?workspace=crawler` で開けます）。
+そのページの取り込みのログは `GET /api/crawls/<crawlId>/pages/<page>/log`
+が返します（[ページと取り込みのログ](/capture-ledger/ja/archive-ledger/#ページと取り込みのログ)）。
 
 ```sh
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<crawlId> \

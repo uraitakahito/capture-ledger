@@ -47,10 +47,10 @@ const onOther = `${id}-other`;
 // 宣言 (`024`) つきで取り込む 1 本。名前に `_` を含む宣言が読み返しても化けないことを見る
 const withDecl = `${id}-params`;
 // 中身の違う 2 本。古い版を読めたかを、中身で区別する
-const A = `// ${id} の v1\nglobalThis.__bh.report("${id}", { v: 1 });\n`;
-const B = `// ${id} の v2\nglobalThis.__bh.report("${id}", { v: 2 });\n`;
+const A = `// ${id} の v1\nglobalThis.__bh.report({ v: 1 });\n`;
+const B = `// ${id} の v2\nglobalThis.__bh.report({ v: 2 });\n`;
 // pid を書くので、手元の DB に向けても、既に在る型と同じ中身にはならない
-const TYPES = `// ${id}\ndeclare var __bh: { report(id: string, data: unknown): void };\n`;
+const TYPES = `// ${id}\ndeclare var __bh: { report(data: object): void };\n`;
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
 const work = mkdtempSync(join(tmpdir(), "scripts-smoke-"));

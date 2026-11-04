@@ -110,7 +110,7 @@ opinion, and that does make a new version.
 kept out of the default set: `import` disables every version of that id, so an older version cannot
 step in as the default. An entry without `default` (or with `true`) has the imported version enabled.
 `enable` and `disable` by hand last until the next `import`. Today only `autofetch` is out of the
-default set (capture-scripts v0.6.1): name it in `scripts` to run it.
+default set (capture-scripts v0.7.0): name it in `scripts` to run it.
 
 `import` also copies `types/host.d.ts` from the same directory — the types of the receptacle
 `__bh` — into `host_types`, which likewise adds a version only when the bytes change. It is a copy
@@ -124,9 +124,11 @@ and rejects a mismatch with `INVALID_ARGUMENT`, so that check can never be
 answering for capture-ledger's own arithmetic.
 
 `phase` says which of BrowserHive's two injection points to use. `behavior` runs
-after load, in the main frame, once, and can report through the receptacle.
-`preload` runs **before navigation**, in every frame including iframes, on every
-navigation, and **cannot report at all**.
+after load, in the main frame, once; through the receptacle it can write lines to the
+capture's log (`__bh.log`) and state its result once (`__bh.report`, one argument since
+capture-scripts v0.7.0). `preload` runs **before navigation**, in every frame including
+iframes, on every navigation, and **can neither write to the log nor report**. Reading
+the lines back is covered in [Pages and their capture logs](/capture-ledger/archive-ledger/#pages-and-their-capture-logs).
 
 ### Site scripts (`sites`)
 
@@ -277,7 +279,11 @@ how). When the crawl starts, the ledger asks Windmill — over the same URL and 
 whether the variable exists and is a secret, **without reading the value** (`variables/get` with
 `decrypt_secret=false`), and pins `{ path, editedAt }` on the row. The value is read only by the flow's
 `crawl_host`, right before the capture; it is never in the ledger, the webhook body, the archive
-(`settings.secrets` holds names only) or `GET /api/crawls/:id`. Before each later level the ledger re-reads
+(`settings.secrets` holds names only) or `GET /api/crawls/:id`. A script that writes the value into the
+capture's log (`__bh.log`, `__bh.report`, an exception's message) does not leak it either: BrowserHive
+replaces it with `***` **whatever its length** before keeping the line, so it is not in the `.result.json`
+or the log route for the page. Only the records are covered — the page's own JavaScript can read the value,
+and a script that sends it over the network leaves it in the WARC. Before each later level the ledger re-reads
 `editedAt`; a change does not stop the crawl, but is recorded as `rotated` (the depth that noticed it and
 the new time).
 

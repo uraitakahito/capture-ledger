@@ -171,6 +171,68 @@ describe("readManifest", () => {
     );
   });
 
+  /**
+   * v24.0.0 から、答えと manifest に取り込みのログ (`log`) が載る。任意の欄で既定値も無いので、照らしても
+   * 足されも削られもしない —— 1 ページのログの口は、読んだ物をそのまま返す。時刻は String、数は Integer で、
+   * Ajv の知らない format (date-time・double) を持たない (持てば、この file の import の時点で落ちる)。
+   */
+  const v24Log = {
+    lines: [
+      {
+        at: "2026-11-04T05:12:04.551Z",
+        ms: 4522,
+        dpr: 1,
+        source: "script",
+        script: "egov-law-search",
+        level: "info",
+        msg: "検索語を入れて押した",
+        data: { query: "個人情報", nested: { values: [1, "二", null] } },
+      },
+      {
+        at: "2026-11-04T05:12:14.873Z",
+        ms: 14873,
+        source: "page",
+        level: "error",
+        msg: "Uncaught",
+      },
+      {
+        at: "2026-11-04T05:12:15.000Z",
+        ms: 15000,
+        source: "browserhive",
+        level: "warn",
+        msg: "dropped 3 lines to stay within the capture's log limits",
+        data: '{"dropped":3',
+        truncated: true,
+      },
+    ],
+    counts: { debug: 0, info: 1, warn: 1, error: 1 },
+    dropped: 3,
+  };
+
+  it("v24.0.0 の manifest（log が在る）を読み、log は書かれたまま", () => {
+    const report = readManifest({ ...v12Manifest, log: structuredClone(v24Log) });
+    expect(report.log).toEqual(v24Log);
+  });
+
+  it("v24.0.0 より前の manifest（log が無い）も読み、log は無いまま（既定で補わない）", () => {
+    const report = readManifest(structuredClone(v12Manifest));
+    expect("log" in report).toBe(false);
+  });
+
+  it("log の行の level が契約に無い綴りなら、場所を挙げて断る", () => {
+    const line = { ...v24Log.lines[1], level: "trace" };
+    expect(() => readManifest({ ...v12Manifest, log: { ...v24Log, lines: [line] } })).toThrow(
+      /data\/log\/lines\/0\/level must be equal to one of the allowed values/,
+    );
+  });
+
+  it("log の counts に欠けた level があれば断る（数は 4 つとも必ず在る）", () => {
+    const three = { debug: 0, info: 1, warn: 1 };
+    expect(() => readManifest({ ...v12Manifest, log: { ...v24Log, counts: three } })).toThrow(
+      /data\/log\/counts must have required property 'error'/,
+    );
+  });
+
   /** BrowserHive が項目を足す版上げで、台帳が止まらないため。 */
   it("契約に無い項目は通す", () => {
     expect(readManifest({ ...v12Manifest, addedInV13: 1 }).taskId).toBe("01J8Z0");

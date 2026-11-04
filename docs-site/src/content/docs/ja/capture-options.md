@@ -104,7 +104,7 @@ pnpm run scripts disable autoscroll       # 既定から外す。名指しすれ
 **既定に入るかは、カタログが決めます。** `"default": false` の項目は既定に入りません。`import` はその id の
 全版を無効にします（最新版だけを無効にすると、古い版が既定に出てくるため）。`default` を省いた（`true` の）
 項目は、取り込んだ版を有効にします。`enable`・`disable` で手で替えた物は、次の `import` まで効きます。
-いま既定に入らないのは `autofetch` だけです（capture-scripts v0.6.1）。走らせるには `scripts` で名指しします。
+いま既定に入らないのは `autofetch` だけです（capture-scripts v0.7.0）。走らせるには `scripts` で名指しします。
 
 `import` は、同じ置き場所の `types/host.d.ts`（受け皿 `__bh` の型）も `host_types` に写します。
 こちらも中身が変わったときだけ版を足します。スクリプトを読む人に見せる写しで、クロールの変換が使う型は
@@ -115,9 +115,11 @@ ts-compile-service の pin です（`compiledWith.hostTypes` に出る）。フ�
 BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGUMENT` で拒みます ——
 生成列にしてあるので、あの照合が capture-ledger の数え間違いに答えていることはありえません。
 
-`phase` は BrowserHive の 2 つの注入口のどちらを使うかです。`behavior` は読み込みの後・
-主フレーム・1 回で、受け皿を通して報告できます。`preload` は**遷移の前**・iframe を含む
-全フレーム・遷移のたびに走り、**報告する手段を持ちません**。
+`phase` は BrowserHive の 2 つの注入口のどちらを使うかです。`behavior` は読み込みの後・主フレーム・1
+回で、受け皿を通して取り込みのログに行を書け（`__bh.log`）、結果を 1 回述べられます（`__bh.report`。
+capture-scripts v0.7.0 から引数は 1 つ）。`preload` は**遷移の前**・iframe
+を含む全フレーム・遷移のたびに走り、**ログに書く手段も報告する手段も持ちません**。書いた行の読み方は
+[ページと取り込みのログ](/capture-ledger/ja/archive-ledger/#ページと取り込みのログ)にあります。
 
 ### サイト用のスクリプト（`sites`）
 
@@ -259,7 +261,9 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 Windmill に「在るか・secret か」を訊き、**値は読まずに**（`variables/get` に `decrypt_secret=false`）、
 `{ path, editedAt }` を行に固定します。値を読むのは flow の `crawl_host` だけで、取り込みの直前に読みます。
 値は台帳にも webhook の本文にもアーカイブ（`settings.secrets` に在るのは名前だけ）にも `GET /api/crawls/:id`
-にも在りません。次の段を送る前に台帳は `editedAt` を読み直し、変わっていてもクロールは止めず、
+にも在りません。スクリプトが値を取り込みのログ（`__bh.log`・`__bh.report`・例外の文）に書いても、BrowserHive が
+**長さに依らず** `***` に替えてから行に残すので、`.result.json` と 1 ページのログの口にも在りません。
+隠せるのは記録からだけで、ページの JS からは読めますし、スクリプトが通信に載せれば WARC には残ります。次の段を送る前に台帳は `editedAt` を読み直し、変わっていてもクロールは止めず、
 `rotated`（気づいた段と新しい時刻）に残します。
 
 名前は `^[a-z][a-z0-9_]*$` で 64 字まで、1 クロールの変数は 32 個まで、値は 4,096 字までの文字列です。

@@ -33,6 +33,28 @@
                                     }
                                 },
                                 "Capture_example2": {
+                                    "summary": "スクリプトが終わらず時間切れ。それまでの行は log に残る",
+                                    "description": "スクリプトが 1 行書いた後、終わらない await で止まった。スクリプトの段の外枠 (予算と通信の静止待ちの和) を超えて取り込みは timeout になり、WACZ は作られない。行は書いたその場で届いているので、log に残る。",
+                                    "value": {
+                                        "url": "https://example.com/",
+                                        "captureFormats": {
+                                            "png": false,
+                                            "webp": false,
+                                            "html": false,
+                                            "links": false,
+                                            "mhtml": false,
+                                            "wacz": true
+                                        },
+                                        "behaviors": [
+                                            {
+                                                "id": "wait-forever",
+                                                "source": "(async () => { globalThis.__bh.log.info(\"検索語を入れて押した\", { query: \"個人情報\" }); await new Promise(() => {}); })();",
+                                                "sha256": "5d2facd6325ae84b83bcb80db8fb7d29d08b72a12157915f7b251af542825578"
+                                            }
+                                        ]
+                                    }
+                                },
+                                "Capture_example3": {
                                     "summary": "主文書が no-archive に当たって、形式を伏せた",
                                     "description": "PNG・HTML・WACZ を求めたが、読み込んだ文書が no-archive に当たった。status は success のまま、ページから作る形式の欄は無く (在るのは wacz だけ)、document が理由を名乗る。",
                                     "value": {
@@ -53,7 +75,7 @@
                                         ]
                                     }
                                 },
-                                "Capture_example3": {
+                                "Capture_example4": {
                                     "summary": "走行中の台に投げると Busy (429)",
                                     "description": "1 台 1 件。待たせずに断るので、呼ぶ側は別の台へ、無ければ少し待って戻る。",
                                     "value": {
@@ -144,6 +166,16 @@
                                                     "dom": {
                                                         "quietAtMs": 2004
                                                     }
+                                                },
+                                                "log": {
+                                                    "lines": [],
+                                                    "counts": {
+                                                        "debug": 0,
+                                                        "info": 0,
+                                                        "warn": 0,
+                                                        "error": 0
+                                                    },
+                                                    "dropped": 0
                                                 }
                                             },
                                             "manifest": {
@@ -152,6 +184,60 @@
                                         }
                                     },
                                     "Capture_example2": {
+                                        "summary": "スクリプトが終わらず時間切れ。それまでの行は log に残る",
+                                        "description": "スクリプトが 1 行書いた後、終わらない await で止まった。スクリプトの段の外枠 (予算と通信の静止待ちの和) を超えて取り込みは timeout になり、WACZ は作られない。行は書いたその場で届いているので、log に残る。",
+                                        "value": {
+                                            "taskId": "7c1d6a52-3f0e-4b8a-9d21-5e6f7a8b9c0d",
+                                            "report": {
+                                                "taskId": "7c1d6a52-3f0e-4b8a-9d21-5e6f7a8b9c0d",
+                                                "url": "https://example.com/",
+                                                "labels": [],
+                                                "status": "timeout",
+                                                "timestamp": "2026-11-04T00:00:47.512Z",
+                                                "captureProcessingTimeMs": 47512,
+                                                "artifacts": {},
+                                                "errorDetails": {
+                                                    "type": "timeout",
+                                                    "message": "Timeout: behaviors for https://example.com/ (45000ms)",
+                                                    "timeoutMs": 45000
+                                                },
+                                                "log": {
+                                                    "lines": [
+                                                        {
+                                                            "at": "2026-11-04T00:00:02.904Z",
+                                                            "ms": 2904,
+                                                            "dpr": 1,
+                                                            "source": "script",
+                                                            "script": "wait-forever",
+                                                            "level": "info",
+                                                            "msg": "検索語を入れて押した",
+                                                            "data": {
+                                                                "query": "個人情報"
+                                                            }
+                                                        },
+                                                        {
+                                                            "at": "2026-11-04T00:00:47.514Z",
+                                                            "ms": 47514,
+                                                            "source": "browserhive",
+                                                            "level": "error",
+                                                            "msg": "Timeout: behaviors for https://example.com/ (45000ms)"
+                                                        }
+                                                    ],
+                                                    "counts": {
+                                                        "debug": 0,
+                                                        "info": 1,
+                                                        "warn": 0,
+                                                        "error": 1
+                                                    },
+                                                    "dropped": 0
+                                                }
+                                            },
+                                            "manifest": {
+                                                "location": "s3://browserhive/7c1d6a52-3f0e-4b8a-9d21-5e6f7a8b9c0d_.result.json"
+                                            }
+                                        }
+                                    },
+                                    "Capture_example3": {
                                         "summary": "主文書が no-archive に当たって、形式を伏せた",
                                         "description": "PNG・HTML・WACZ を求めたが、読み込んだ文書が no-archive に当たった。status は success のまま、ページから作る形式の欄は無く (在るのは wacz だけ)、document が理由を名乗る。",
                                         "value": {
@@ -242,7 +328,7 @@
                                     "$ref": "#/components/schemas/BusyResponseContent"
                                 },
                                 "examples": {
-                                    "Capture_example3": {
+                                    "Capture_example4": {
                                         "summary": "走行中の台に投げると Busy (429)",
                                         "description": "1 台 1 件。待たせずに断るので、呼ぶ側は別の台へ、無ければ少し待って戻る。",
                                         "value": {
@@ -502,6 +588,125 @@
                     "webp"
                 ]
             },
+            "CaptureLog": {
+                "type": "object",
+                "description": "取り込み 1 本のログ。行が上限 (1 行 4 KiB、取り込み 1 本で 1,000 行・256 KiB) を超えたら、頭と尻を残して\n間を捨て、捨てた所に `browserhive` の `warn` の 1 行を置く。取り込みのページの行は全体の半分まで。\nreport とスクリプトの例外の行は捨てない。主文書を方針が伏せた取り込みでは、取り込みのページの行を残さず、\n残さなかった数の 1 行にする。シークレットの値は、どの行のどの深さからも長さに依らず `***` に替えてある。",
+                "properties": {
+                    "lines": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CaptureLogLine"
+                        },
+                        "description": "届いた順の行。`ms` は減らない。"
+                    },
+                    "counts": {
+                        "$ref": "#/components/schemas/CaptureLogCounts",
+                        "description": "level ごとの行の数。`lines` に無い行 (上限で捨てた・伏せた文書で残さなかった) も数える。"
+                    },
+                    "dropped": {
+                        "type": "number",
+                        "description": "`lines` に無い行の数。"
+                    }
+                },
+                "required": [
+                    "counts",
+                    "dropped",
+                    "lines"
+                ]
+            },
+            "CaptureLogCounts": {
+                "type": "object",
+                "description": "level ごとの行の数。",
+                "properties": {
+                    "debug": {
+                        "type": "number",
+                        "description": "`debug` の行の数。"
+                    },
+                    "info": {
+                        "type": "number",
+                        "description": "`info` の行の数。"
+                    },
+                    "warn": {
+                        "type": "number",
+                        "description": "`warn` の行の数。"
+                    },
+                    "error": {
+                        "type": "number",
+                        "description": "`error` の行の数。"
+                    }
+                },
+                "required": [
+                    "debug",
+                    "error",
+                    "info",
+                    "warn"
+                ]
+            },
+            "CaptureLogLevel": {
+                "type": "string",
+                "description": "行の重さ: `debug`・`info`・`warn`・`error`。",
+                "enum": [
+                    "debug",
+                    "info",
+                    "warn",
+                    "error"
+                ]
+            },
+            "CaptureLogLine": {
+                "type": "object",
+                "description": "取り込みのログの 1 行。",
+                "properties": {
+                    "at": {
+                        "type": "string",
+                        "description": "BrowserHive が行を受け取った時刻 (ISO 8601、BrowserHive の時計)。取り込みのページの時計は使わない。"
+                    },
+                    "ms": {
+                        "type": "number",
+                        "description": "取り込みの始まりからの ms (BrowserHive の時計)。届いた順に減らない。"
+                    },
+                    "dpr": {
+                        "type": "number",
+                        "description": "行が出た DPR の回の値。回の外の行 (形式・WACZ の段) には無い。"
+                    },
+                    "source": {
+                        "$ref": "#/components/schemas/CaptureLogSource"
+                    },
+                    "script": {
+                        "type": "string",
+                        "description": "書いたスクリプトの id。`source` が `script` のときだけ在る。"
+                    },
+                    "level": {
+                        "$ref": "#/components/schemas/CaptureLogLevel"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "description": "行の文。report の行は `report`。"
+                    },
+                    "data": {
+                        "description": "行に添えた値 (JSON)。report の行では、スクリプトが述べた data そのもの。1 行の上限で切った行では、\n元の値の JSON を切った文字になる。"
+                    },
+                    "truncated": {
+                        "type": "boolean",
+                        "description": "1 行の上限で `msg` か `data` を切った (受け皿が送る前に縮めたときも)。切っていなければ欄ごと無い。"
+                    }
+                },
+                "required": [
+                    "at",
+                    "level",
+                    "ms",
+                    "msg",
+                    "source"
+                ]
+            },
+            "CaptureLogSource": {
+                "type": "string",
+                "description": "行の出どころ: `script` は送られたスクリプト (`__bh.log`・`__bh.report`・投げた例外)、`page` は取り込みの\nページ自身 (console・捕まらなかった例外と、スクリプトの id を名乗らない受け皿の行)、`browserhive` は\nBrowserHive の出来事 (段の境目・時間切れ・捨てた行の数など)。",
+                "enum": [
+                    "script",
+                    "page",
+                    "browserhive"
+                ]
+            },
             "CaptureRequestContent": {
                 "type": "object",
                 "description": "Capture の要求。取り込みの中身を全部ここで決める —— 応答は結果そのもので、受理の印は無い。",
@@ -717,6 +922,10 @@
                     "windowsNotOpened": {
                         "type": "number",
                         "description": "頁が開こうとして、開かせなかったウィンドウの数。`status` が `success` のときだけ入る (0 のことがある)。\n取り込みは、頁にウィンドウを開かせない (頁にユーザー操作の印を渡さないので、browser が断る)。\nWACZ を求めたなら、開こうとした先は WARC に `window: not-opened` の metadata として 1 つずつ在り、数は一致する。\nWACZ を求めない取り込みでも数える。"
+                    },
+                    "log": {
+                        "$ref": "#/components/schemas/CaptureLog",
+                        "description": "取り込みのログ。スクリプト (`__bh.log`・`__bh.report`・投げた例外)、取り込みのページ自身の console、\nBrowserHive の出来事の行を、届いた順に持つ。成功でも、時間切れ・失敗・cancel でも入る。\n無いのは、取り込みに入る前に browser に繋がらなかったときだけ。\n行は WACZ を組む直前 (WACZ を作らない取り込みでは、結果を組むとき) に閉じる。閉じた後の出来事\n(保管庫に置く・置いた後の止め損ねの検査) の行は入らない。後から足した欄で、必須にしていない\n(足す前の版が書いた `.result.json` には無い)。"
                     }
                 },
                 "required": [

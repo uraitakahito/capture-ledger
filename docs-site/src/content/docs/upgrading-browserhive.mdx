@@ -9,10 +9,14 @@ capture-ledger is pinned to a **specific BrowserHive version**, not to `main`. T
 current pin is **{browserhivePin()}**.
 
 That comes from the `.upstream/browserhive` submodule — read at build time with
-`git describe --tags`, so this page cannot go stale. The submodule is the _only_
-upstream pin: it carries BrowserHive, the `chromium-server-docker` BrowserHive
-was tested against, the SeaweedFS config the stack mounts, and the OpenAPI
-document (`generated/openapi.json`) the manifest is checked against.
+`git describe --tags`, so this page cannot go stale. The submodule carries BrowserHive,
+the `chromium-server-docker` BrowserHive was tested against, the signing services
+(`wacz-signer`, `timestamp-authority`), and the OpenAPI document
+(`generated/openapi.json`) the manifest is checked against. It is not the only upstream
+pin: the object store's startup config comes from `.upstream/seaweedfs`, the WACZ viewer
+from `.upstream/replay`, the capture fixtures from `.upstream/capture-fixtures` and the
+scripts from `.upstream/capture-scripts`. Each is pinned to its own tag and none moves
+with this one (the head of `docker-compose.yml` says why the ones the stack builds from are separate).
 
 :::note[It used to be four places]
 The version was once written out in `package.json`, setup.sh (since removed)
@@ -89,3 +93,24 @@ the OpenAPI diff at all. Two examples from the 1.5.2 → 1.6.0 move:
 
 After bumping, read the upstream release notes for anything that touches
 `etc/seaweedfs/*`, the entrypoint, or the compose contract.
+
+### What the manifest check accepts
+
+The level handler, reconcile and the log route read every `.result.json` through
+`readManifest` (`src/archive/manifest.ts`), which checks it with Ajv against the copy of
+`CaptureResultReport`. What a bump changes there:
+
+- **Members the copy does not know pass.** A manifest from a newer BrowserHive is still
+  read, so a BrowserHive release does not stop the ledger before the copy is bumped.
+- **A member the contract gives a default is filled in when missing** (`useDefaults`), so
+  a member that later became required with an `@default` does not fail old manifests. One
+  that became required _without_ a default, or an enum value that was removed, does —
+  before bumping, compare `required` and `enum` between the old and the new `openapi.json`.
+- **An optional member stays absent.** `log` (v24.0.0) has no default, so a manifest
+  written before it reads without `log` rather than with an empty one — which is how the
+  log route can say `no-log` instead of showing an empty log.
+- **A `format` in the contract stops the API.** Ajv knows neither `date-time` nor `double`
+  (there is no ajv-formats), and compiling throws as soon as `src/archive/manifest.ts` is
+  imported: the API does not start, and every test that reads a manifest fails. Only the
+  schemas reachable from `CaptureResultReport` are compiled, so check those for a new
+  `format` before bumping.

@@ -35,8 +35,8 @@
 #   .upstream/capture-fixtures        取り込み対象のフィクスチャ (profile: capture-fixtures)
 #
 # capture-fixtures を browserhive 越しではなく **直接** vendor しているのは、あちらの pin が
-# 別の都合で動くため。browserhive が持つ capture-fixtures は v0.12.0 で、こちらが要る
-# `/links/*` はそれより後に入った —— 経由すると browserhive の版上げを待つことになる。
+# 別の都合で動くため。台帳の試験が要る頁 (`/links/*` など) が browserhive の pin に入るとは
+# 限らない —— 経由すると browserhive の版上げを待つことになる。版はそれぞれの submodule が持つ。
 #
 # 分けてあるのは、S3 が欲しいだけのときに browserhive 全体を要求しないため。
 # 以前は browserhive/etc/seaweedfs を mount していて、そうなっていた。
@@ -238,7 +238,7 @@ services:
   # 決まらないため (`pnpm run fga:deploy` が出力し、.env に入れる)。
   #
   # wacz-auth の署名サービス。browserhive のスタックにあるものと同じ構成で、
-  # build context だけ pin 済みの upstream (v5.7.0) の下を指す —— wacz-signer も
+  # build context だけ pin 済みの upstream (`.upstream/browserhive`) の下を指す —— wacz-signer も
   # timestamp-authority も、あちらの submodule として既に手元に在る。
   #
   # 独自の CA を発行するので、ここが作る署名を信頼する者は居ない。それでよく、

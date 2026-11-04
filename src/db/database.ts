@@ -134,8 +134,9 @@ export interface CrawlsTable {
   pagesCaptured: ColumnType<number, number | undefined, number>;
   error: ColumnType<string | null, string | null | undefined, string | null>;
   /**
-   * 成果物を置いた場所の接頭辞 (`org/<orgId>/<YYYY-MM>/`)。**置く側と探す側が読む
-   * 唯一の出どころ。**
+   * 成果物を置いた場所の接頭辞 (`org/<orgId>/<YYYY-MM>/`)。**置く側 (受け口) が読む
+   * 唯一の出どころ。** 探す側 (段の登録と reconcile) は読まない —— 報告が運んだ manifest の場所
+   * (`capture_submissions.manifest_key`・`014`) を読む。
    *
    * 更新側が `never` なのは、後から書き換えないから —— これは設定ではなく、
    * 既に置いた場所という事実。NULL は「記録が無い」であって「平ら」ではない。
@@ -297,6 +298,21 @@ export interface CrawlPagesTable {
   submittedAt: ColumnType<Date | null, string | null | undefined, string | null>;
   finishedAt: ColumnType<Date | null, string | null | undefined, string | null>;
   createdAt: ColumnType<Date, string | undefined, never>;
+  /**
+   * 取り込みのログの level ごとの行の数と、残さなかった行の数 (`025`)。`.result.json` の `log` から写す。
+   * NULL は「この行の取り込みの `.result.json` から数を読んでいない」—— 理由は列に残さない。
+   * 書くときは JSON の文字列 (`crawls.variables` と同じ扱い)。
+   */
+  logCounts: ColumnType<LogCounts | null, string | null | undefined, string | null>;
+}
+
+/** 取り込みのログの数 (`crawl_pages.log_counts`・`025`)。`log.counts` の 4 つに `log.dropped` を足した物。 */
+export interface LogCounts {
+  debug: number;
+  info: number;
+  warn: number;
+  error: number;
+  dropped: number;
 }
 
 export type CrawlPageState = "pending" | "captured" | "failed" | "skipped";

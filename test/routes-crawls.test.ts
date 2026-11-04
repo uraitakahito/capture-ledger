@@ -252,6 +252,8 @@ interface FakeScript {
 
 /** `crawl_pages` の 1 行。`GET /api/crawls/:id` の `failures` を見るのに要る欄だけ。 */
 interface FakePage {
+  /** bigserial —— node-pg は int8 を文字列で返す */
+  id: string;
   crawlId: string;
   url: string;
   depth: number;
@@ -768,7 +770,7 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
-  it("GET は最後の段の job と、取れなかったページとその理由を返す", async () => {
+  it("GET は最後の段の job と、取れなかったページとその理由とページの id を返す", async () => {
     const crawl: FakeCrawl = {
       id: UUID,
       seeds: [SEED],
@@ -806,6 +808,7 @@ describe("クロール route の認可と単一実行", () => {
     };
     const pages: FakePage[] = [
       {
+        id: "1",
         crawlId: UUID,
         url: "https://site.test/ok",
         depth: 0,
@@ -813,6 +816,7 @@ describe("クロール route の認可と単一実行", () => {
         skipReason: null,
       },
       {
+        id: "2",
         crawlId: UUID,
         url: "https://nonexistent.invalid/",
         depth: 0,
@@ -826,10 +830,16 @@ describe("クロール route の認可と単一実行", () => {
     expect(res.json()).toMatchObject({
       rules: [{ follow: "same-origin" }],
       lastJob: { id: "0193b6a1-3c1d-7a2e-9f00-1234567890ab", depth: 0 },
-      failures: [
-        { url: "https://nonexistent.invalid/", depth: 0, reason: "net::ERR_NAME_NOT_RESOLVED" },
-      ],
     });
+    // 欄は 4 つちょうど。ページの id から `/pages/:page/log` へ辿れる
+    expect(res.json<{ failures: unknown[] }>().failures).toEqual([
+      {
+        page: "2",
+        url: "https://nonexistent.invalid/",
+        depth: 0,
+        reason: "net::ERR_NAME_NOT_RESOLVED",
+      },
+    ]);
     await app.close();
   });
 

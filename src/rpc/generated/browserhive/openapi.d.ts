@@ -208,6 +208,65 @@ export interface components {
              */
             wacz: boolean;
         };
+        /**
+         * @description 取り込み 1 本のログ。行が上限 (1 行 4 KiB、取り込み 1 本で 1,000 行・256 KiB) を超えたら、頭と尻を残して
+         *     間を捨て、捨てた所に `browserhive` の `warn` の 1 行を置く。取り込みのページの行は全体の半分まで。
+         *     report とスクリプトの例外の行は捨てない。主文書を方針が伏せた取り込みでは、取り込みのページの行を残さず、
+         *     残さなかった数の 1 行にする。シークレットの値は、どの行のどの深さからも長さに依らず `***` に替えてある。
+         */
+        CaptureLog: {
+            /** @description 届いた順の行。`ms` は減らない。 */
+            lines: components["schemas"]["CaptureLogLine"][];
+            /** @description level ごとの行の数。`lines` に無い行 (上限で捨てた・伏せた文書で残さなかった) も数える。 */
+            counts: components["schemas"]["CaptureLogCounts"];
+            /** @description `lines` に無い行の数。 */
+            dropped: number;
+        };
+        /** @description level ごとの行の数。 */
+        CaptureLogCounts: {
+            /** @description `debug` の行の数。 */
+            debug: number;
+            /** @description `info` の行の数。 */
+            info: number;
+            /** @description `warn` の行の数。 */
+            warn: number;
+            /** @description `error` の行の数。 */
+            error: number;
+        };
+        /**
+         * @description 行の重さ: `debug`・`info`・`warn`・`error`。
+         * @enum {string}
+         */
+        CaptureLogLevel: "debug" | "info" | "warn" | "error";
+        /** @description 取り込みのログの 1 行。 */
+        CaptureLogLine: {
+            /** @description BrowserHive が行を受け取った時刻 (ISO 8601、BrowserHive の時計)。取り込みのページの時計は使わない。 */
+            at: string;
+            /** @description 取り込みの始まりからの ms (BrowserHive の時計)。届いた順に減らない。 */
+            ms: number;
+            /** @description 行が出た DPR の回の値。回の外の行 (形式・WACZ の段) には無い。 */
+            dpr?: number;
+            source: components["schemas"]["CaptureLogSource"];
+            /** @description 書いたスクリプトの id。`source` が `script` のときだけ在る。 */
+            script?: string;
+            level: components["schemas"]["CaptureLogLevel"];
+            /** @description 行の文。report の行は `report`。 */
+            msg: string;
+            /**
+             * @description 行に添えた値 (JSON)。report の行では、スクリプトが述べた data そのもの。1 行の上限で切った行では、
+             *     元の値の JSON を切った文字になる。
+             */
+            data?: unknown;
+            /** @description 1 行の上限で `msg` か `data` を切った (受け皿が送る前に縮めたときも)。切っていなければ欄ごと無い。 */
+            truncated?: boolean;
+        };
+        /**
+         * @description 行の出どころ: `script` は送られたスクリプト (`__bh.log`・`__bh.report`・投げた例外)、`page` は取り込みの
+         *     ページ自身 (console・捕まらなかった例外と、スクリプトの id を名乗らない受け皿の行)、`browserhive` は
+         *     BrowserHive の出来事 (段の境目・時間切れ・捨てた行の数など)。
+         * @enum {string}
+         */
+        CaptureLogSource: "script" | "page" | "browserhive";
         /** @description Capture の要求。取り込みの中身を全部ここで決める —— 応答は結果そのもので、受理の印は無い。 */
         CaptureRequestContent: {
             /**
@@ -376,6 +435,15 @@ export interface components {
              *     WACZ を求めない取り込みでも数える。
              */
             windowsNotOpened?: number;
+            /**
+             * @description 取り込みのログ。スクリプト (`__bh.log`・`__bh.report`・投げた例外)、取り込みのページ自身の console、
+             *     BrowserHive の出来事の行を、届いた順に持つ。成功でも、時間切れ・失敗・cancel でも入る。
+             *     無いのは、取り込みに入る前に browser に繋がらなかったときだけ。
+             *     行は WACZ を組む直前 (WACZ を作らない取り込みでは、結果を組むとき) に閉じる。閉じた後の出来事
+             *     (保管庫に置く・置いた後の止め損ねの検査) の行は入らない。後から足した欄で、必須にしていない
+             *     (足す前の版が書いた `.result.json` には無い)。
+             */
+            log?: components["schemas"]["CaptureLog"];
         };
         /**
          * @description capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が
