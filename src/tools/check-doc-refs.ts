@@ -39,13 +39,12 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT } from "./root.js";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DOCS = resolve(ROOT, "docs-site/src/content/docs");
 const JA = join(DOCS, "ja");
 
-const isPage = (name) => /\.mdx?$/.test(name);
+const isPage = (name: string) => /\.mdx?$/.test(name);
 
 /**
  * ページを再帰的に集め、`dir` からの相対パスで返す (`databases/urls.md` の形)。
@@ -56,7 +55,7 @@ const isPage = (name) => /\.mdx?$/.test(name);
  *
  * `ja` は英語ページの隣にある翻訳の入れ物なので、走査から外す。
  */
-const pagesIn = (dir, prefix = "") =>
+const pagesIn = (dir: string, prefix = ""): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     if (entry.isDirectory()) {
       if (prefix === "" && entry.name === "ja") return [];
@@ -65,7 +64,7 @@ const pagesIn = (dir, prefix = "") =>
     return entry.isFile() && isPage(entry.name) ? [`${prefix}${entry.name}`] : [];
   });
 
-const problems = [];
+const problems: string[] = [];
 
 // ─── 1. 英語 ↔ 日本語のページの対応 ────────────────────────────────────────
 const en = pagesIn(DOCS);
@@ -83,7 +82,7 @@ for (const page of ja) {
 }
 
 // ─── 2. コードスパンに書かれたソースのパス ─────────────────────────────────
-const walk = (dir) =>
+const walk = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const p = join(dir, entry.name);
     return entry.isDirectory() ? walk(p) : [p];
@@ -94,6 +93,7 @@ for (const file of walk(DOCS).filter((f) => isPage(f))) {
   const rel = relative(ROOT, file);
 
   for (const [, path] of text.matchAll(/`(src\/[A-Za-z0-9_\-/]+\.ts)`/g)) {
+    if (path === undefined) continue;
     if (!existsSync(resolve(ROOT, path))) {
       problems.push(`${rel}: \`${path}\` does not exist (renamed or moved?)`);
     }
@@ -106,6 +106,7 @@ for (const file of walk(DOCS).filter((f) => isPage(f))) {
   // ビルドしたと報告して 0 で終わる。ビルドに頼ると、ドキュメントが黙って空の
   // コードフェンスを出すことになる。
   for (const [, path, region] of text.matchAll(/file="([^"#]+)#([^"]+)"/g)) {
+    if (path === undefined || region === undefined) continue;
     const abs = resolve(ROOT, path);
     if (!existsSync(abs)) {
       problems.push(`${rel}: file="${path}" does not exist`);
@@ -132,12 +133,19 @@ for (const file of walk(DOCS).filter((f) => isPage(f))) {
 const SHOTS_DIR = resolve(ROOT, "docs-site/src/assets/picker");
 const manifestPath = join(SHOTS_DIR, "shots-manifest.json");
 
+/** shots-manifest.json のうち、この検査が読む欄だけ。 */
+interface ShotsManifest {
+  source: string;
+  sourceSha256: string;
+  shots: string[];
+}
+
 if (!existsSync(manifestPath)) {
   problems.push(
     "docs-site/src/assets/picker/shots-manifest.json is missing (run `pnpm run docs:shots`)",
   );
 } else {
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as ShotsManifest;
   const sourceNow = createHash("sha256")
     .update(readFileSync(resolve(ROOT, manifest.source)))
     .digest("hex");
@@ -153,10 +161,11 @@ if (!existsSync(manifestPath)) {
   const listed = new Set(manifest.shots);
   // ページが import している PNG。`../../assets/picker/x.png` (英語) と
   // `../../../assets/picker/x.png` (日本語) の両方を拾う。
-  const imported = new Map();
+  const imported = new Map<string, string>();
   for (const file of walk(DOCS).filter((f) => isPage(f))) {
     const text = readFileSync(file, "utf8");
     for (const [, name] of text.matchAll(/from\s+"(?:\.\.\/)+assets\/picker\/([^"]+\.png)"/g)) {
+      if (name === undefined) continue;
       imported.set(name, relative(ROOT, file));
     }
   }

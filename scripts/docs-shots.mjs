@@ -4,7 +4,7 @@
  *
  * docs-site/src/assets/picker/ の PNG は全部この script の生成物で、手で撮った絵は 1 枚も無い。
  * 絵は画面の書き写しで、**書き写しは腐る** —— だから撮ったときの画面のソース
- * (`src/api/picker.ts`) の sha256 を shots-manifest.json に控え、`scripts/check-doc-refs.mjs` が
+ * (`src/api/picker.ts`) の sha256 を shots-manifest.json に控え、`src/tools/check-doc-refs.ts` が
  * 「いまのソースと控えが一致すること」を CI で検める。**画面を変えたら、この script を回し直す
  * こと。** capture-scheduler の管理画面のページ (compose の pin と manifest の版) と同じ考え方で、
  * こちらは自分たちの画面なので、比べるのはソースのハッシュになる。

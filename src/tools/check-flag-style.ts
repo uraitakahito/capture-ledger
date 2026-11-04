@@ -20,10 +20,8 @@
  * `pnpm run build`・空白・ハイフン 2 つ・空白・`--watch` と書いて走らせ直すこと。
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
+import { join, relative } from "node:path";
+import { ROOT } from "./root.js";
 
 /**
  * 走査しないもの。`.upstream` は別の repo の写しで、綴りを決めるのは向こう側。
@@ -34,8 +32,14 @@ const SKIP = new Set(["node_modules", ".git", ".upstream", "dist", ".astro", "co
 /** `pnpm run <script> -- -<何か>`。CI の workflow に在った grep と同じ形。 */
 const PATTERN = /pnpm run [a-z:]+ -- -/;
 
-const walk = (dir) => {
-  const found = [];
+interface Hit {
+  path: string;
+  line: number;
+  text: string;
+}
+
+const walk = (dir: string): Hit[] => {
+  const found: Hit[] = [];
   for (const entry of readdirSync(dir)) {
     if (SKIP.has(entry)) continue;
     const path = join(dir, entry);

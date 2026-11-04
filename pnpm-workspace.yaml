@@ -44,7 +44,7 @@ allowBuilds:
 #
 # **override が要るのは、要求元の宣言した範囲が修正版と交わらないときだけ。** 交わるなら
 # lockfile の更新で足り、後戻りは audit が止める。役目を終えた override は黙って版を縛り
-# 続けるので、`pnpm run check:overrides` (scripts/check-overrides.mjs) が見張っている ——
+# 続けるので、`pnpm run check:overrides` (src/tools/check-overrides.ts) が見張っている ——
 # 要らなくなったものは CI が名指しする。
 #
 # **下限は「修正版そのもの」に置くこと。** override は範囲を狭めるだけで lockfile を進める

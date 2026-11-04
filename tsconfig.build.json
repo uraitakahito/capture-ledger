@@ -28,5 +28,7 @@
     "tsBuildInfoFile": "./.tsbuildinfo"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "test", "**/*.test.ts"]
+  // src/tools/ holds the repo tools. tsconfig.tools.json emits them on its own, so they
+  // stay out of the production dist and the image.
+  "exclude": ["node_modules", "dist", "test", "**/*.test.ts", "src/tools"]
 }

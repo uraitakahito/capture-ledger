@@ -4,7 +4,7 @@
  * 読み口 (`optional`) は `src/config/env.ts` の同名の関数と **同じ意味** を持つ
  * 双子。双子になっているのは、scripts が .mjs で TypeScript を import できない
  * ため。意味がずれると「src では既定値、scripts では空文字」という気づきにくい
- * 差が生まれるので、`check-env.mjs` が両方を **振る舞いで** 突き合わせている。
+ * 差が生まれるので、`check-env.ts` が両方を **振る舞いで** 突き合わせている。
  *
  * 空文字を「無い」と同じに扱うのは POSIX の `${VAR:-word}` 側の意味。
  * `??` は `${VAR-word}` 側 (未設定のときだけ既定値) なので、ここでは使わない。
@@ -18,7 +18,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // cwd に依存させない。scripts/ から走らせても repo の root から走らせても、
-// 書く先は同じ 1 枚であること (`check-env.mjs` と同じ理由)。
+// 書く先は同じ 1 枚であること (`check-env.ts` と同じ理由)。
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 export const optional = (name, fallback) => {

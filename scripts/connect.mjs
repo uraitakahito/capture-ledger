@@ -17,7 +17,7 @@
  * 相手のファイルをそのまま環境に流し込むと、向こうの都合でこちらの設定が変わる。
  * かといって名前の一覧をここに書き写すと、向こうが 1 行足した日に腐る。
  * **この repo の `.env.example` が宣言している名前だけを受ける** ——
- * あれは `scripts/check-env.mjs` が「コードが実際に読む名前」と突き合わせているので、
+ * あれは `src/tools/check-env.ts` が「コードが実際に読む名前」と突き合わせているので、
  * 写しではなく実体そのもの。知らない名前は写さずに **名指しで言う** (黙って捨てない)。
  *
  * ## 値は印字しない
@@ -78,7 +78,7 @@ const parse = (source) => {
 
 const template = resolve(ROOT, ".env.example");
 if (!existsSync(template)) die(`.env.example がありません: ${template}`);
-// コメント行も「宣言されている」と数える (`check-env.mjs` と同じ読み方)。
+// コメント行も「宣言されている」と数える (`check-env.ts` と同じ読み方)。
 const declared = new Set(
   readFileSync(template, "utf8")
     .split("\n")

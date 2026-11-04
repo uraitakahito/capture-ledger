@@ -41,11 +41,10 @@
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { ROOT } from "./root.js";
 
-const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const SELF = "scripts/check-terms.mjs";
+const SELF = "src/tools/check-terms.ts";
 /** 許す形。足すときは、その形が seed の意味を持ちえないことを確かめる。 */
 const ALLOWED = /種類|種別|\d\s?種/gu;
 /**
@@ -58,7 +57,12 @@ const OKOSU =
 /** 「網」のうち許す熟語。足すときは、その形が network の意味を持ちえないことを確かめる。 */
 const AMI_ALLOWED = /安全網|網羅/gu;
 
-const RULES = [
+interface Rule {
+  find: (line: string) => boolean;
+  say: string;
+}
+
+const RULES: Rule[] = [
   {
     find: (line) => line.replace(ALLOWED, "").includes("種"),
     say: "「種」が残っています。クロールの seed は「起点」と書きます（本で数えるなら「起点の URL が N 本」）。",
@@ -85,7 +89,7 @@ const files = execFileSync("git", ["-C", ROOT, "ls-files", "-z"], { encoding: "u
   .split("\0")
   .filter((f) => f !== "" && f !== SELF && f !== "pnpm-lock.yaml" && !f.startsWith(".upstream/"));
 
-const hits = RULES.map(() => []);
+const found = RULES.map((rule) => ({ ...rule, hits: [] as string[] }));
 for (const file of files) {
   let text;
   try {
@@ -95,16 +99,16 @@ for (const file of files) {
   }
   if (text.includes("\0")) continue; // 画像などの binary
   text.split("\n").forEach((line, i) => {
-    RULES.forEach((rule, r) => {
-      if (rule.find(line)) hits[r].push(`${file}:${String(i + 1)}: ${line.trim()}`);
+    found.forEach((rule) => {
+      if (rule.find(line)) rule.hits.push(`${file}:${String(i + 1)}: ${line.trim()}`);
     });
   });
 }
 
-for (const [r, rule] of RULES.entries()) {
-  if (hits[r].length === 0) continue;
+for (const rule of found) {
+  if (rule.hits.length === 0) continue;
   console.error(rule.say);
-  for (const hit of hits[r]) console.error(`  ${hit}`);
+  for (const hit of rule.hits) console.error(`  ${hit}`);
 }
-if (hits.some((list) => list.length > 0)) process.exit(1);
+if (found.some((rule) => rule.hits.length > 0)) process.exit(1);
 console.log(`check:terms: ${String(files.length)} ファイルを見て、0 件`);

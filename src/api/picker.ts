@@ -50,7 +50,7 @@ export const replayOriginFromEnv = (): string => optional("REPLAY_ORIGIN", "http
  * 何を入れるかは画面を見ても分からず、docs に書いても、ここから行く道が無ければ同じ所で止まる
  * (2026-09-19 に実際に止まった)。
  *
- * 宛先のページが在ることは `scripts/check-doc-refs.mjs` が見ている —— ページの名前を変えたら、
+ * 宛先のページが在ることは `src/tools/check-doc-refs.ts` が見ている —— ページの名前を変えたら、
  * ここも直さないと CI が落ちる。
  */
 export const PICKER_DOCS_URL = "https://uraitakahito.github.io/capture-ledger/ja/picker/";

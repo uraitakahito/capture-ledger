@@ -13,6 +13,7 @@ export default tseslint.config(
       // the root tsconfig cannot see.
       "docs-site/**",
       // Repo tooling run directly by node, outside the TS project.
+      // FIXME(CAPTURE-26): drop once the last .mjs tool has moved to src/tools/.
       "scripts/**",
       // Upstream source, vendored as a submodule. It has its own lint setup;
       // linting it from here just reports on somebody else's code.
@@ -61,6 +62,52 @@ export default tseslint.config(
           selector: 'TSAsExpression > TSAsExpression[typeAnnotation.type="TSUnknownKeyword"]',
           message:
             "`as unknown as T` bypasses the type checker. Build the right type, or if this is a mock, disable the rule here with a reason.",
+        },
+      ],
+    },
+  },
+  {
+    // Keep src from importing the repo tools (src/tools/).
+    //
+    // The tools are left out of the production build (tsconfig.build.json), but tsc follows
+    // imports: a src module importing a tool would put that tool in the production dist and
+    // the image. An editor's auto-import is enough to do it, so the linter refuses it.
+    files: ["src/**/*.ts"],
+    ignores: ["src/tools/**"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "(^|/)tools/",
+              message:
+                "src must not import the repo tools (src/tools/); they stay out of the production build.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Tools read env through config/read-env.js, not config/env.js.
+    //
+    // Importing env.ts runs guardEnv(), which exits on any of the API's variables set to the
+    // empty string — a tool would stop over a variable it never reads. Type-only imports are
+    // erased, so they are allowed.
+    files: ["src/tools/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              regex: "(^|/)config/env\\.js$",
+              allowTypeImports: true,
+              message:
+                "Tools import config/read-env.js (importing env.ts runs guardEnv as a side effect).",
+            },
+          ],
         },
       ],
     },

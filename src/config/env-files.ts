@@ -32,7 +32,7 @@ export interface EnvFileFacts {
 }
 
 /**
- * `KEY=` の形で始まる行の名前。`.env.example` の検査 (`scripts/check-env.mjs`) と
+ * `KEY=` の形で始まる行の名前。`.env.example` の検査 (`src/tools/check-env.ts`) と
  * 同じ読み方に揃えてある。
  */
 const declaredNames = (source: string): string[] =>

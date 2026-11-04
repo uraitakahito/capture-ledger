@@ -60,7 +60,7 @@ OpenFGA の 2 つの ID は、走らせてみないと決まらないので雛�
 （`pnpm run fga:deploy` が `.env.local` に書きます。
 [アーカイブ台帳](/capture-ledger/ja/archive-ledger/#セットアップ)を参照）。
 
-`scripts/check-env.mjs`（`pnpm run check` に含まれ、CI では独立したステップ）が、
+`src/tools/check-env.ts`（`pnpm run check` に含まれ、CI では独立したステップ）が、
 コードの読み取りと `.env.example` の宣言を両方向で突き合わせます。古い雛形は
 雛形が無いより悪い —— 信用して使われるので、足りないときに疑う先が残りません。
 
@@ -118,7 +118,7 @@ NAME=value     # 値を渡す
 ```
 
 生の `NAME=` を書けるのは**必須のもの（`REQUIRED_ENV`）だけ**です。必須の空は `collectEnv` が
-「不足」として報告します。この規則も `check-env.mjs` が検査しています。
+「不足」として報告します。この規則も `src/tools/check-env.ts` が検査しています。
 
 ## 日々のコマンド
 

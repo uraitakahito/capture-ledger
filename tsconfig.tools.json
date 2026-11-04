@@ -1,0 +1,22 @@
+{
+  // Emits the repo tools (src/tools/) to dist/tools/. Every tool script in package.json
+  // runs `pnpm run build:tools` first and then the emitted .js.
+  //
+  // **No type checking here (noCheck).** Types are checked by `pnpm run typecheck`
+  // (tsconfig.json and src/tools/docs-shots), which `check` and CI run. A type-checking
+  // emit would stop every tool — dev:down included — on a day the tree has a type error,
+  // which is exactly the day cleanup is needed. Only a syntax error stops this emit.
+  //
+  // Extends the production emit config, so the src modules a tool imports are written to
+  // dist/ with the same contents the production build gives them (same sha256).
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noCheck": true,
+    // Nobody reads the tools' types; also keeps the production .d.ts files untouched.
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src/tools/**/*.ts"],
+  // Replaces the inherited exclude, which leaves src/tools out.
+  "exclude": ["node_modules", "dist"]
+}

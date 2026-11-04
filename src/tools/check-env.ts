@@ -15,7 +15,7 @@
  * 増やしたり変えたりしたら PATTERNS も直すこと。直し忘れると、読まれている変数が
  * 「もう誰も読まない」として大量に報告される。
  *
- * しかも 1 は `env.ts` の外 (`config/identity.ts`) でも使われ、3 は `scripts/`
+ * しかも 1 は `env.ts` の外 (`api/server.ts` など) でも使われ、3 は道具 (`src/tools/`)
  * でも使われる。だから「`env.ts` を読めば分かる」は成り立たないし、
  * 手で数えれば取りこぼす。
  *
@@ -28,12 +28,10 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
+import { ROOT } from "./root.js";
 
-// cwd に依存させない。scripts/ から走らせても repo の root から走らせても同じ
-// 結果になること。相対パスで書くと、CI と手元で答えが変わりうる。
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
-
+// FIXME(CAPTURE-26): 道具が全部 src/tools/ に移ったら ["src"] に (scripts/ の .mjs を読むのはそれまで)
 const SOURCE_DIRS = ["src", "scripts"];
 const TEMPLATE = ".env.example";
 
@@ -46,7 +44,7 @@ const PATTERNS = [
   /process\.env\[\s*"([A-Z_0-9]+)"\s*\]/g,
 ];
 
-const walk = (dir) =>
+const walk = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     return entry.isDirectory() ? walk(path) : [path];
@@ -56,7 +54,7 @@ const walk = (dir) =>
  * 見る物が 1 本も無い場所は落とす。置き場所を移したのに SOURCE_DIRS を直していない印で、
  * 黙って 0 本を読むと、そこでの読み取りが「誰も読まない」に化けるか、まるごと見落とされる。
  */
-const sourceFiles = (dir) => {
+const sourceFiles = (dir: string) => {
   const files = walk(resolve(ROOT, dir)).filter((f) => /\.(ts|mjs)$/.test(f));
   if (files.length === 0) {
     console.error(
@@ -68,13 +66,14 @@ const sourceFiles = (dir) => {
 };
 
 /** name -> 最初に見つけたファイル。直す人には「どこで読まれているか」が要る。 */
-const used = new Map();
+const used = new Map<string, string>();
 for (const dir of SOURCE_DIRS) {
   for (const file of sourceFiles(dir)) {
     const source = readFileSync(file, "utf8");
     for (const pattern of PATTERNS) {
-      for (const match of source.matchAll(pattern)) {
-        if (!used.has(match[1])) used.set(match[1], relative(ROOT, file));
+      for (const [, name] of source.matchAll(pattern)) {
+        if (name === undefined) continue;
+        if (!used.has(name)) used.set(name, relative(ROOT, file));
       }
     }
   }
@@ -92,19 +91,22 @@ const liveEmpty = templateLines.flatMap(
 );
 
 /** `as const` の配列から名前を取り出す。env.ts と scripts/env.mjs の一覧用。 */
-const listFrom = (source, constName) => {
-  const block = new RegExp(`${constName}\\s*=\\s*\\[([^\\]]*)\\]`).exec(source);
-  return block === null ? [] : [...block[1].matchAll(/"([A-Z_0-9]+)"/g)].map((m) => m[1]);
+const listFrom = (source: string, constName: string) => {
+  const block = new RegExp(`${constName}\\s*=\\s*\\[([^\\]]*)\\]`).exec(source)?.[1];
+  return block === undefined
+    ? []
+    : [...block.matchAll(/"([A-Z_0-9]+)"/g)].flatMap(([, name]) => name ?? []);
 };
 
 const envTs = readFileSync(resolve(ROOT, "src/config/env.ts"), "utf8");
 const required = new Set(listFrom(envTs, "REQUIRED_ENV"));
 const optional = new Set(listFrom(envTs, "OPTIONAL_ENV"));
 const scriptEnv = new Set(
+  // FIXME(CAPTURE-26): env を移したら src/tools/env.ts を読む
   listFrom(readFileSync(resolve(ROOT, "scripts/env.mjs"), "utf8"), "SCRIPT_ENV"),
 );
 
-const problems = [];
+const problems: string[] = [];
 for (const [name, file] of used) {
   if (!declared.has(name)) {
     problems.push(`${TEMPLATE} に無い: ${name}  (${file} が読んでいる)`);
@@ -164,7 +166,11 @@ for (const name of liveEmpty) {
 // ─── D. scripts/env.mjs の optional が env.ts のものと同じ意味か ───────────
 // 実装の文字列ではなく **振る舞い** で比べる。実装が変わっても意味が同じなら通る。
 {
-  const { optional: scriptOptional } = await import(new URL("./env.mjs", import.meta.url).href);
+  // FIXME(CAPTURE-26): env を移したら、写しが消えるのでこの節ごと消す
+  // 戻り値は unknown で受ける。合っているかはこの節が確かめるので、型で先に名乗らせない。
+  const { optional: scriptOptional } = (await import(
+    pathToFileURL(resolve(ROOT, "scripts/env.mjs")).href
+  )) as { optional: (name: string, fallback: string) => unknown };
   const probe = "__CHECK_ENV_PROBE__";
   const cases = [
     [undefined, "FALLBACK"],

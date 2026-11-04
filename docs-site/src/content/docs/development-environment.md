@@ -63,7 +63,7 @@ drifts from the first. The two OpenFGA ids do not exist until something has run,
 so the template carries only their names — `pnpm run fga:deploy` writes them into
 `.env.local`; see [Archive ledger](/capture-ledger/archive-ledger/#setup).
 
-`scripts/check-env.mjs` (part of `pnpm run check`, and a step of its own in CI)
+`src/tools/check-env.ts` (part of `pnpm run check`, and a step of its own in CI)
 compares the names the code reads against the names `.env.example` declares, in
 both directions. A stale template is worse than no template: it gets trusted,
 so when something is missing there is nothing left to suspect.
@@ -125,7 +125,7 @@ NAME=value     # pass a value
 ```
 
 A bare `NAME=` is allowed **only for the required variables** (`REQUIRED_ENV`), whose
-emptiness is reported as "missing" by `collectEnv`. `check-env.mjs` enforces
+emptiness is reported as "missing" by `collectEnv`. `src/tools/check-env.ts` enforces
 that rule too.
 
 ## Daily commands

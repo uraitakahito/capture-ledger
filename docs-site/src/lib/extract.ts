@@ -40,7 +40,7 @@ const read = (rel: string): string => readFileSync(resolve(ROOT, rel), "utf8");
  *
  * region を参照しているページ（capture-options / url-source と各 ja）は全部
  * .md なので、region に関してはビルドはガードにならない。非ゼロで落ちるのは
- * scripts/check-doc-refs.mjs の方で、CI が site:check を走らせるのはこのため。
+ * src/tools/check-doc-refs.ts の方で、CI が site:check を走らせるのはこのため。
  */
 export function sourceRegion(file: string, region: string): string {
   const re = new RegExp(
