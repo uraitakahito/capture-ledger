@@ -13,8 +13,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
+import { ROOT } from "./root.js";
+import type { HostProcess } from "./daemons.js";
 import {
   HOST_PROCESSES,
   behindHead,
@@ -23,16 +24,18 @@ import {
   containersByDomain,
   inspect,
   runningBuild,
-} from "./daemons.mjs";
-
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
+} from "./daemons.js";
 
 /**
  * 左の見出しを揃える。**`padEnd` は使えない** —— 数えるのは UTF-16 の要素数なので、
  * 「コンテナ」(4 要素・8 桁) と「設定」(2 要素・4 桁) が別の幅になる。
  */
-const width = (text) => [...text].reduce((n, ch) => n + (ch.codePointAt(0) > 0x7f ? 2 : 1), 0);
-const row = (label, text) => `${label}${" ".repeat(Math.max(1, 12 - width(label)))}${text}`;
+const width = (text: string) =>
+  // 1 文字ずつなので code point は必ず在る。`?? 0` は型を絞るためで、そこへは来ない
+  // (来ても `undefined > 0x7f` と同じく 1 桁に数える)。
+  [...text].reduce((n, ch) => n + ((ch.codePointAt(0) ?? 0) > 0x7f ? 2 : 1), 0);
+const row = (label: string, text: string) =>
+  `${label}${" ".repeat(Math.max(1, 12 - width(label)))}${text}`;
 
 // ── コンテナ ────────────────────────────────────────────────────────
 const counts = containersByDomain();
@@ -56,7 +59,7 @@ if (counts === undefined) {
  * 見た validator は v0.28.1 のまま 2 日動いていて、その間に v0.29.0 と v0.30.0 が
  * 出ていた。この画面には「居る」とだけ出ていた。
  */
-const buildLine = async (spec) => {
+const buildLine = async (spec: HostProcess) => {
   const running = await runningBuild(spec);
   if (running === undefined)
     return `版を訊けない (:${String(spec.port)}${spec.identity} が答えない)`;
@@ -104,14 +107,14 @@ for (const [index, spec] of HOST_PROCESSES.entries()) {
 // ── 設定 ────────────────────────────────────────────────────────────
 // 名前を数えずに、**どの道具が走ったか** を訊く。`.env.local` に在る名前が
 // そのまま「fga:deploy を打ったか」「connect を打ったか」の答えになる。
-const declares = (file, name) => {
+const declares = (file: string, name: string) => {
   const path = resolve(ROOT, file);
   if (!existsSync(path)) return false;
   return readFileSync(path, "utf8")
     .split("\n")
     .some((line) => line.startsWith(`${name}=`));
 };
-const mark = (ok) => (ok ? "✓" : "✗");
+const mark = (ok: boolean) => (ok ? "✓" : "✗");
 const files = [".env", ".env.local"]
   .map((file) => `${file} ${mark(existsSync(resolve(ROOT, file)))}`)
   .join("   ");
@@ -141,7 +144,7 @@ if (!existsSync(cli)) {
     console.log(row("スクリプト", `読めない (${why})`));
   } else {
     const lines = `${listed.stdout ?? ""}`.trim().split("\n").filter(Boolean);
-    console.log(row("スクリプト", lines.length === 0 ? "空 (何も走らない)" : lines[0]));
+    console.log(row("スクリプト", lines[0] ?? "空 (何も走らない)"));
     for (const line of lines.slice(1)) console.log(row("", line));
   }
 }

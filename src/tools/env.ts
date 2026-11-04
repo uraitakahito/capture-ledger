@@ -1,10 +1,8 @@
 /**
- * scripts/ 用の環境変数の読み口と、生成した値の書き口。
+ * 道具 (src/tools/) 用の環境変数の読み口と、生成した値の書き口。
  *
- * 読み口 (`optional`) は `src/config/env.ts` の同名の関数と **同じ意味** を持つ
- * 双子。双子になっているのは、scripts が .mjs で TypeScript を import できない
- * ため。意味がずれると「src では既定値、scripts では空文字」という気づきにくい
- * 差が生まれるので、`check-env.ts` が両方を **振る舞いで** 突き合わせている。
+ * 読み口 (`optional`) は `src/config/read-env.ts` のものを、そのまま配る。src と同じ
+ * 1 つの実装なので、「src では既定値、道具では空文字」という差は生まれない。
  *
  * 空文字を「無い」と同じに扱うのは POSIX の `${VAR:-word}` 側の意味。
  * `??` は `${VAR-word}` 側 (未設定のときだけ既定値) なので、ここでは使わない。
@@ -15,19 +13,12 @@
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { ROOT } from "./root.js";
 
-// cwd に依存させない。scripts/ から走らせても repo の root から走らせても、
-// 書く先は同じ 1 枚であること (`check-env.ts` と同じ理由)。
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
-
-export const optional = (name, fallback) => {
-  const value = process.env[name];
-  return value === undefined || value === "" ? fallback : value;
-};
+export { optional } from "../config/read-env.js";
 
 /**
- * scripts/ が読む環境変数。`guardEnv` の検査対象そのもの。
+ * 道具が読む環境変数。`guardEnv` の検査対象そのもの。
  *
  * どれも既定値を持つ。必須のものは無いので、required との区別は要らない。
  */
@@ -37,7 +28,7 @@ export const SCRIPT_ENV = [
   "CAPTURE_LEDGER_FGA_STORE_NAME",
   "CAPTURE_LEDGER_FGA_IMAGE",
   "CAPTURE_LEDGER_FGA_DATASTORE_URI",
-];
+] as const;
 
 /**
  * 「空で設定されている」変数を起動時に落とす。`src/config/env.ts` の同名の
@@ -47,7 +38,7 @@ export const SCRIPT_ENV = [
  * よっては既定値を失ったまま進み、ずっと後の無関係な場所で壊れる。
  * 行ごと消せば既定値が効くので、**空文字は「無い」より悪い**。
  *
- * module body で呼ぶこと。scripts はどれもトップレベルで env を読むので、
+ * module body で呼ぶこと。道具はどれもトップレベルで env を読むので、
  * 関数の中から呼ぶ形にすると間に合わない。
  */
 export const guardEnv = () => {
@@ -84,16 +75,13 @@ const ENV_LOCAL_HEADER = `# capture-ledger の道具が書くファイル。**�
  *
  * 書き換えるのは **この repo の中だけ**。他の repo の `.env` に書きに行く道具は
  * 作らない —— 走らせた repo の外が変わるのは予想に反する。
- *
- * @param {Record<string, string>} values
- * @returns {{ path: string, added: string[], updated: string[] }}
  */
-export const upsertEnvLocal = (values) => {
+export const upsertEnvLocal = (values: Record<string, string>) => {
   const path = resolve(ROOT, ENV_LOCAL);
   const before = existsSync(path) ? readFileSync(path, "utf8") : ENV_LOCAL_HEADER;
   const lines = before.split("\n");
-  const added = [];
-  const updated = [];
+  const added: string[] = [];
+  const updated: string[] = [];
 
   for (const [name, value] of Object.entries(values)) {
     if (!/^[A-Z_0-9]+$/.test(name)) throw new Error(`環境変数の名前として書けない: ${name}`);

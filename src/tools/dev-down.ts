@@ -22,11 +22,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { HOST_PROCESSES, inspect, stop } from "./daemons.mjs";
+import { ROOT } from "./root.js";
+import { HOST_PROCESSES, inspect, stop } from "./daemons.js";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /** 隣の repo。**書き込みはしない** —— 向こうの停止は向こうのコマンドに任せる。 */
 const SCHEDULER = resolve(ROOT, "../capture-scheduler");
 
@@ -62,10 +61,18 @@ for (const spec of HOST_PROCESSES) {
 }
 
 // ── ② コンテナ ──────────────────────────────────────────────────────
+interface Stack {
+  label: string;
+  cwd: string;
+  show: string;
+  // 先頭を打つコマンドとして取り出すので、空にできない形にしておく。
+  cmd: [string, ...string[]];
+}
+
 // **それぞれの repo のコマンドで落とす。** 生の container-compose を叩かないのは、
 // capture-ledger 側は profile の組み合わせを stack.sh が決めているため
 // (署名を有効にしていると、profile 抜きの down は wacz-signer を残す)。
-const stacks = [
+const stacks: Stack[] = [
   {
     label: "capture-ledger",
     cwd: ROOT,

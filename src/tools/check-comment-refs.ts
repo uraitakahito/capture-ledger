@@ -46,13 +46,12 @@ import { join, resolve, relative } from "node:path";
 import { ROOT } from "./root.js";
 
 /**
- * 走査するのはこの 3 つ。生成物と依存は入っていない。
+ * 走査するのはこの 2 つ。生成物と依存は入っていない。
  *
  * 無い場所や、見るファイルが 1 本も無い場所は落とす。置き場所を移したのに ROOTS を直して
  * いないと、そこのコメントを黙って見なくなり、腐った参照が緑のまま残るため。
  */
-// FIXME(CAPTURE-26): 道具が全部 src/tools/ に移ったら "scripts" を外す
-const ROOTS = ["src", "test", "scripts"];
+const ROOTS = ["src", "test"];
 
 /**
  * package.json のコメントも見る。JSON にはコメントの構文が無いので、この repo は先頭の `//` という

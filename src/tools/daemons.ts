@@ -34,13 +34,13 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
+import { ROOT } from "./root.js";
+
 /** dashboard は隣の repo で走る。**cwd が違うので、根も 1 本ごとに持たせる。** */
-const DASHBOARD = fileURLToPath(new URL("../../dashboard/", import.meta.url));
+const DASHBOARD = resolve(ROOT, "../dashboard");
 /** WACZ を検証する daemon も隣の repo。 */
-const VALIDATOR = fileURLToPath(new URL("../../wacz-validator/", import.meta.url));
+const VALIDATOR = resolve(ROOT, "../wacz-validator");
 
 /**
  * 2 つの path が同じディレクトリを指すか。
@@ -50,7 +50,16 @@ const VALIDATOR = fileURLToPath(new URL("../../wacz-validator/", import.meta.url
  * dev:up が `--dashboard` の既定を `resolve()` で作った日に、動いている dashboard が
  * **「別のものが握っている」**と報告された (実測)。`resolve` で両側を揃える。
  */
-const sameDir = (a, b) => a !== undefined && resolve(a) === resolve(b);
+const sameDir = (a: string | undefined, b: string) => a !== undefined && resolve(a) === resolve(b);
+
+export interface HostProcess {
+  name: string;
+  port: number;
+  root: string;
+  entry: string;
+  run: string;
+  identity?: string;
+}
 
 /**
  * ホストに残るもの。**compose では消えない** —— どれもコンテナではないので、
@@ -60,7 +69,7 @@ const sameDir = (a, b) => a !== undefined && resolve(a) === resolve(b);
  * 使う cwd はこの repo の根と一致しないので、`ROOT` 固定にすると「自分のものではない」
  * と言い続けることになる (実装中に実際にそうなった)。
  */
-export const HOST_PROCESSES = [
+export const HOST_PROCESSES: HostProcess[] = [
   {
     name: "issuer",
     port: 9099,
@@ -99,17 +108,24 @@ export const HOST_PROCESSES = [
   },
 ];
 
-const capture = (cmd, args) => {
+const capture = (cmd: string, args: string[]) => {
   const result = spawnSync(cmd, args, { encoding: "utf8" });
   return result.status === 0 ? (result.stdout ?? "") : "";
 };
 
 /** その port を LISTEN している PID。`lsof` が無ければ空。 */
-export const listeners = (port) =>
+export const listeners = (port: number) =>
   capture("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"])
     .split("\n")
     .map((line) => Number.parseInt(line, 10))
     .filter((pid) => Number.isInteger(pid));
+
+interface ProcessInfo {
+  pid: number;
+  startedAt: string;
+  command: string;
+  cwd: string | undefined;
+}
 
 /**
  * 起動時刻・コマンド行・cwd。居なければ undefined。
@@ -119,7 +135,7 @@ export const listeners = (port) =>
  * **コマンド行の先頭を時刻として食う**。実際に食った。時刻は表示するだけなので、
  * 割らずにそのまま持つ。
  */
-export const describe = (pid) => {
+export const describe = (pid: number): ProcessInfo | undefined => {
   const startedAt = capture("ps", ["-p", String(pid), "-o", "lstart="]).trim();
   if (startedAt === "") return undefined;
   const command = capture("ps", ["-p", String(pid), "-o", "command="]).trim();
@@ -137,8 +153,8 @@ export const describe = (pid) => {
  * 複数返りうる (別の clone が同じ port を取れることは無いが、lsof は
  * 同じプロセスの複数の socket を返しうる)。PID で畳む。
  */
-export const inspect = (spec) => {
-  const seen = new Map();
+export const inspect = (spec: HostProcess) => {
+  const seen = new Map<number, ProcessInfo & { ours: boolean }>();
   for (const pid of listeners(spec.port)) {
     if (seen.has(pid)) continue;
     const info = describe(pid);
@@ -154,14 +170,15 @@ export const inspect = (spec) => {
  * 答えない・形が違うときは undefined —— **訊けないことを、名乗らないことと混ぜない**
  * (呼ぶ側は「訊けない」と書く)。
  */
-export const runningBuild = async (spec) => {
+export const runningBuild = async (spec: HostProcess) => {
   if (spec.identity === undefined) return undefined;
   try {
     const response = await fetch(`http://127.0.0.1:${String(spec.port)}${spec.identity}`, {
       signal: AbortSignal.timeout(2000),
     });
     if (!response.ok) return undefined;
-    const { version, gitSha } = await response.json();
+    // 中身の型は信じず、下の typeof で確かめる。null が来たら分割代入が投げ、catch に落ちる。
+    const { version, gitSha } = (await response.json()) as { version?: unknown; gitSha?: unknown };
     return typeof version === "string" && typeof gitSha === "string"
       ? { version, gitSha }
       : undefined;
@@ -171,7 +188,7 @@ export const runningBuild = async (spec) => {
 };
 
 /** 根の HEAD (40 桁) と、未コミットの変更の有無。git が答えなければ undefined。 */
-export const checkoutOf = (root) => {
+export const checkoutOf = (root: string) => {
   const head = capture("git", ["-C", root, "rev-parse", "HEAD"]).trim();
   if (!/^[0-9a-f]{40}$/.test(head)) return undefined;
   const dirty = capture("git", ["-C", root, "status", "--porcelain"]).trim() !== "";
@@ -191,7 +208,10 @@ export const checkoutOf = (root) => {
  *
  * @returns "same" | "differs" | "unsure"
  */
-export const compareBuild = (running, checkout) => {
+export const compareBuild = (
+  running: { gitSha: string },
+  checkout: { head: string; dirty: boolean },
+) => {
   const dirty = running.gitSha.endsWith("-dirty");
   const sha = dirty ? running.gitSha.slice(0, -"-dirty".length) : running.gitSha;
   // "nogit" (git の無い所で建てた) や空は比べようがない。空のまま前方一致を
@@ -208,7 +228,7 @@ export const compareBuild = (running, checkout) => {
  * 別の branch にいるときは、動いている build のほうが新しいか、どちらでもない。
  * git が知らない commit (消えた branch で建てた) も「祖先ではない」に落とす。
  */
-export const behindHead = (root, sha) =>
+export const behindHead = (root: string, sha: string) =>
   spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", sha, "HEAD"]).status === 0;
 
 /**
@@ -220,7 +240,10 @@ export const behindHead = (root, sha) =>
  *
  * @returns "stopped" | "gone" | "running"
  */
-export const stop = async (pid, { timeoutMs = 10_000, stepMs = 100 } = {}) => {
+export const stop = async (
+  pid: number,
+  { timeoutMs = 10_000, stepMs = 100 }: { timeoutMs?: number; stepMs?: number } = {},
+) => {
   try {
     process.kill(pid, "SIGTERM");
   } catch {
@@ -234,6 +257,14 @@ export const stop = async (pid, { timeoutMs = 10_000, stepMs = 100 } = {}) => {
 };
 
 /**
+ * `container ls --format json` の 1 行のうち、読むところだけ。形は確かめない ——
+ * どの段も `?.` で辿るので、違う形でも投げずに undefined になり、下の typeof で落ちる。
+ */
+interface ContainerRow {
+  configuration?: { dns?: { domain?: unknown } };
+}
+
+/**
  * 動いているコンテナを、DNS ドメインごとに数える。
  *
  * `container ls` が使えない (入っていない・落ちている) ときは undefined。
@@ -242,14 +273,14 @@ export const stop = async (pid, { timeoutMs = 10_000, stepMs = 100 } = {}) => {
 export const containersByDomain = () => {
   const out = capture("container", ["ls", "--format", "json"]);
   if (out.trim() === "") return undefined;
-  let rows;
+  let rows: unknown;
   try {
     rows = JSON.parse(out);
   } catch {
     return undefined;
   }
-  const counts = new Map();
-  for (const row of Array.isArray(rows) ? rows : []) {
+  const counts = new Map<string, number>();
+  for (const row of Array.isArray(rows) ? (rows as (ContainerRow | null)[]) : []) {
     const domain = row?.configuration?.dns?.domain;
     if (typeof domain !== "string" || domain === "") continue;
     counts.set(domain, (counts.get(domain) ?? 0) + 1);

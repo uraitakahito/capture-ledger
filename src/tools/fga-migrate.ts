@@ -16,7 +16,7 @@
  * セットアップのスクリプトからも CI からも安全に呼べる。
  */
 import { spawnSync } from "node:child_process";
-import { guardEnv, optional } from "./env.mjs";
+import { guardEnv, optional } from "./env.js";
 
 guardEnv();
 
@@ -30,7 +30,7 @@ const URI = optional(
 const ATTEMPTS = 30;
 const DELAY_MS = 1000;
 
-const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
   const result = spawnSync(
