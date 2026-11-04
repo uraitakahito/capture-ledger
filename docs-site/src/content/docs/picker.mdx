@@ -208,16 +208,19 @@ An API under the dev headers that listens on `0.0.0.0` shows a red notice at the
 
 ## After clicking a row
 
-Clicking a row opens replay in a new tab. The URL is built from where replay lives and the key of
-that WACZ (`objectKey`):
+Clicking a row opens replay in a new tab, on the captured URL as it was at the capture time. The URL
+is built from where replay lives, the key of that WACZ (`objectKey`), and the captured URL and time
+(`ts` is the time in UTC, 14 digits):
 
 ```
-http://127.0.0.1:8899/?source=/wacz/<objectKey>
+http://127.0.0.1:8899/?source=/wacz/<objectKey>#view=replay&url=<captured URL>&ts=<YYYYMMDDhhmmss>
 ```
 
-replay first shows the list of pages inside that WACZ. One picker row is the capture of one page, so
-there is normally one entry. **Click its title and playback starts.** The bar at the top shows the
-original URL and the capture time; below it is the page as it was captured.
+**Playback starts at once.** The bar at the top shows the original URL and the capture time; below it
+is the page as it was captured, with the page's own scripts running. The DOM snapshots BrowserHive
+took (before and after the capture's scripts, say) are rows of replay's Pages tab; their URLs start
+with `urn:browserhive:snapshot:`. Without the part after `#`, replay opens that tab with the newest
+row first, and the captured document is the last row.
 
 Where replay lives comes from `REPLAY_ORIGIN` in `.env` (default `http://127.0.0.1:8899`). The replay
 container is started along with the rest by `pnpm run stack:up`.

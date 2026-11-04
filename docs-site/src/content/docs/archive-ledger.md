@@ -655,8 +655,15 @@ after the scripts). The line's `url` is the snapshot's urn, shaped like
 end. capture-ledger indexes each line as its own hit and puts the point in
 `stage`. When both the before-search and after-search points of one archive
 match, you get two hits. Authorization is per archive, so both get the same
-answer. A capture with no snapshot at all (a withheld document, say) keeps a
-single line for the requested URL, and its `stage` is `null`.
+answer.
+
+From WACZ Profile 1.18.0 the first line is always the captured document's: it
+has no `stage`, its `url` is the requested URL, and its title and text were read
+after the scripts — close to the `after-behaviors` line again. Indexing both
+would make one archive answer twice for the same words, so capture-ledger leaves
+the document's line out when the archive has snapshot lines. A capture with no
+snapshot at all (a withheld document, say) has only the document's line; that
+line is indexed, and its `stage` is `null`.
 
 ### The index does not know who may see what
 

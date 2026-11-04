@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import Fastify from "fastify";
-import { PICKER_DOCS_URL, registerPicker, type PickerOptions } from "../src/api/picker.js";
+import {
+  PICKER_DOCS_URL,
+  registerPicker,
+  replayHref,
+  type PickerOptions,
+} from "../src/api/picker.js";
 
 /**
  * picker は route が返す 1 枚の HTML。DB も OpenFGA も要らないので、route だけを立てて見る。
@@ -45,6 +50,58 @@ describe("picker の画面", () => {
     const body = await open({ replayOrigin: "http://replay.test:9000" });
     expect(body).toContain('const REPLAY_ORIGIN = "http://replay.test:9000";');
     expect(body).not.toContain("127.0.0.1:8899");
+    // 行のリンクは、下の replayHref と同じ関数で組む。
+    expect(body).toContain("const replayHref = ");
+    expect(body).toContain("const href = replayHref(REPLAY_ORIGIN, a)");
+  });
+});
+
+describe("行のリンク", () => {
+  const ORIGIN = "http://127.0.0.1:8899";
+  const KEY = "task-a_corr-b.wacz";
+
+  it("取り込んだ URL を撮った時刻で直に開く —— ts は UTC の 14 桁", () => {
+    expect(
+      replayHref(ORIGIN, {
+        objectKey: KEY,
+        sourceUrl: "https://www.apple.com/jp/",
+        capturedAt: "2026-11-04T10:39:16.120Z",
+      }),
+    ).toBe(
+      `${ORIGIN}/?source=/wacz/${KEY}#view=replay&url=https%3A%2F%2Fwww.apple.com%2Fjp%2F&ts=20261104103916`,
+    );
+  });
+
+  it("url は BrowserHive がページ一覧の 1 行目に書く形 —— 末尾の / を足し、断片を除く", () => {
+    const href = replayHref(ORIGIN, {
+      objectKey: KEY,
+      sourceUrl: "http://site.test#top",
+      capturedAt: "2026-11-04T10:39:16Z",
+    });
+    expect(new URLSearchParams(href.slice(href.indexOf("#") + 1)).get("url")).toBe(
+      "http://site.test/",
+    );
+  });
+
+  it("鍵の / や ?、URL の & や # は、それぞれの所で符号にする", () => {
+    const href = replayHref(ORIGIN, {
+      objectKey: "a/b?c.wacz",
+      sourceUrl: "https://site.test/search?q=a&b=1",
+      capturedAt: "2026-11-04T10:39:16Z",
+    });
+    expect(href.slice(0, href.indexOf("#"))).toBe(`${ORIGIN}/?source=/wacz/a%2Fb%3Fc.wacz`);
+    expect(new URLSearchParams(href.slice(href.indexOf("#") + 1)).get("url")).toBe(
+      "https://site.test/search?q=a&b=1",
+    );
+  });
+
+  it.each([
+    ["時刻が無い", { sourceUrl: "https://site.test/" }],
+    ["時刻が読めない", { sourceUrl: "https://site.test/", capturedAt: "" }],
+    ["URL が無い", { capturedAt: "2026-11-04T10:39:16Z" }],
+    ["URL が読めない", { sourceUrl: "not a url", capturedAt: "2026-11-04T10:39:16Z" }],
+  ])("%s なら、一覧を開く形のまま", (_, rest) => {
+    expect(replayHref(ORIGIN, { objectKey: KEY, ...rest })).toBe(`${ORIGIN}/?source=/wacz/${KEY}`);
   });
 });
 
