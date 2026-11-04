@@ -76,8 +76,8 @@ export interface SearchRouteDeps {
 }
 
 /**
- * クロール 1 本ぶんの、まだ索引に載せていないアーカイブ。`crawl_pages.task_id` が台帳と繋ぐ唯一の鍵で、
- * `archives` はクロールを知らない (知るべきでもない —— 台帳が運ぶのは在り処と来歴だけ)。
+ * クロール 1 本ぶんの、まだ索引に載せていないアーカイブ。繋ぐのは `crawl_pages.task_id` —— `archives.crawl_id`
+ * (`027`。合本のために足した来歴の列) は 027 より前の行で空なので、ここでは使わない。
  *
  * **型が揃っていないので cast する。** `archives.task_id` は `uuid` (`002`)、
  * `crawl_pages.task_id` は `text` (`008`) で、素の比較は

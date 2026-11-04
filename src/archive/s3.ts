@@ -1,6 +1,6 @@
 /**
  * 台帳のための S3 アクセス: 結果 manifest を読むこと、アーカイブ本体を取ること、
- * 受け口が受けた成果物を置くこと。
+ * 受け口が受けた成果物と、クロールの合本 (`replay-bundle/write.ts`) を置くこと。
  *
  * **bucket は列挙しない。** 読むのは、書いた本人が答えた鍵 (段の報告が運び、
  * `capture_submissions` に書き留めたもの) だけ。以前は一覧を URL 符号化から戻して
@@ -87,8 +87,9 @@ const isNotFound = (cause: unknown): boolean => {
  * **冪等であること。** 同じ鍵に 2 度書けば上書きされる —— BrowserHive が再送しうるので、
  * 連番を振ると再送のたびに object が増える。鍵は呼ぶ側が決める。
  *
- * ledger が S3 に**書く**のはここだけ。他はすべて読み取りで、書くのは BrowserHive の
- * 仕事だった —— 成果物を受け口で受け取る構成にしたときに、この 1 か所が要る。
+ * ledger が S3 に**書く**のはこの関数だけで、呼ぶのは 2 か所: 受け口 (`api/sink.ts`。BrowserHive の成果物を
+ * 受け取る構成のとき) と合本 (`replay-bundle/write.ts`。版ごとの置き場に 1 度だけ書き、書き換えない)。
+ * 他はすべて読み取り。
  */
 export const putObject = async (
   s3: S3Client,

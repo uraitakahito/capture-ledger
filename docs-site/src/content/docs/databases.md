@@ -32,6 +32,7 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 | [`capture_targets`](/capture-ledger/databases/capture-targets/)         | What to capture                                                                                                       |
 | [`capture_submissions`](/capture-ledger/databases/capture-submissions/) | What was submitted; the only source of organizations                                                                  |
 | [`archives`](/capture-ledger/databases/archives/)                       | The ledger — captures that produced an archive                                                                        |
+| `archive_pages`                                                         | One row per line of an archive's page list (`pages/pages.jsonl`), read once for the crawl's replay bundle             |
 | [`fga_outbox`](/capture-ledger/databases/fga-outbox/)                   | Tuples waiting to reach OpenFGA                                                                                       |
 | `crawls`                                                                | One row per crawl — its policy, state and stop reason                                                                 |
 | `crawl_pages`                                                           | One row per URL a crawl touched (pending ones too); also the dedup index, and the capture log's counts (`log_counts`) |

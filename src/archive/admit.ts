@@ -49,10 +49,14 @@ export interface AdmitResult {
  * `?? null` を落として `?.` だけにすると `undefined` が入り、Kysely は列を
  * 省いて既定値に落とす —— 「報告が届かなかった」が「NULL」ではなく「既定」に
  * 化けるので、両方とも明示する。
+ *
+ * `crawlId` (`027`) は報告からは読まない。BrowserHive の `correlationId` はクロールが crawl id を渡す
+ * **申し合わせ**で、投げ方が変わると黙って別の値になる。呼ぶ側が記録から知っている値を渡す。
  */
 export const archiveRow = (
   report: CaptureResultReport,
   location: { bucket: string; key: string },
+  crawlId: string | null,
 ): {
   taskId: string;
   correlationId: string | null;
@@ -63,6 +67,7 @@ export const archiveRow = (
   waczComplete: boolean | null;
   signed: boolean | null;
   capturedAt: string;
+  crawlId: string | null;
 } => ({
   taskId: report.taskId,
   correlationId: report.correlationId ?? null,
@@ -75,6 +80,7 @@ export const archiveRow = (
   // (`false`) とは別の主張で、後者は配備の異常を意味する。
   signed: report.signature?.signed ?? null,
   capturedAt: report.timestamp,
+  crawlId,
 });
 
 export const admitArchive = async (
@@ -88,6 +94,11 @@ export const admitArchive = async (
    * 投げたものがそれ。その場合、組織のメンバーは読めるが、削除できる者は居ない。
    */
   submittedBy: string | null,
+  /**
+   * どのクロールの取り込みか (`027`)。段の登録は報告を受けたクロールの id を、reconcile は `crawl_pages` の
+   * `task_id` から引いた id を渡す。分からなければ `null` (合本に入らない)。
+   */
+  crawlId: string | null,
 ): Promise<AdmitResult> => {
   // 失敗した取り込みは何もアップロードしていない。それを記録すると、署名の
   // エンドポイントが存在しないオブジェクトの URL を配ることになる —— 404 に対して
@@ -114,7 +125,7 @@ export const admitArchive = async (
   return db.transaction().execute(async (trx) => {
     const inserted = await trx
       .insertInto("archives")
-      .values(archiveRow(report, { bucket, key }))
+      .values(archiveRow(report, { bucket, key }, crawlId))
       // 段の登録と reconciler の両方が同じ取り込みに辿り着けるし、どちらも
       // 再実行されうる。unique index があるので、それは重複ではなく無操作になる。
       .onConflict((oc) => oc.columns(["bucket", "objectKey"]).doNothing())

@@ -1,0 +1,106 @@
+{
+  "description": "合本の正規化の試験の例。WHATWG の URL の直列化から fragment を外した物（capture-ledger の parseHttpUrl と同じ）。http(s) でなければ null。",
+  "version": 1,
+  "cases": [
+    {
+      "input": "http://Example.TEST/Path",
+      "canonical": "http://example.test/Path"
+    },
+    {
+      "input": "HTTP://example.test/",
+      "canonical": "http://example.test/"
+    },
+    {
+      "input": "http://example.test",
+      "canonical": "http://example.test/"
+    },
+    {
+      "input": "http://example.test:80/a",
+      "canonical": "http://example.test/a"
+    },
+    {
+      "input": "https://example.test:443/a",
+      "canonical": "https://example.test/a"
+    },
+    {
+      "input": "http://example.test:8080/a",
+      "canonical": "http://example.test:8080/a"
+    },
+    {
+      "input": "http://example.test/a#frag",
+      "canonical": "http://example.test/a"
+    },
+    {
+      "input": "http://example.test/a?b=1#frag",
+      "canonical": "http://example.test/a?b=1"
+    },
+    {
+      "input": "http://example.test/a/./b/../c",
+      "canonical": "http://example.test/a/c"
+    },
+    {
+      "input": "http://example.test/a b",
+      "canonical": "http://example.test/a%20b"
+    },
+    {
+      "input": "http://example.test/%7Efoo",
+      "canonical": "http://example.test/%7Efoo"
+    },
+    {
+      "input": "http://example.test/%7efoo",
+      "canonical": "http://example.test/%7efoo"
+    },
+    {
+      "input": "http://example.test/a/",
+      "canonical": "http://example.test/a/"
+    },
+    {
+      "input": "http://example.test/A",
+      "canonical": "http://example.test/A"
+    },
+    {
+      "input": "http://example.test/?",
+      "canonical": "http://example.test/?"
+    },
+    {
+      "input": "http://example.test/#",
+      "canonical": "http://example.test/"
+    },
+    {
+      "input": "http://example.test/a?z=1&a=2",
+      "canonical": "http://example.test/a?z=1&a=2"
+    },
+    {
+      "input": "http://bücher.test/",
+      "canonical": "http://xn--bcher-kva.test/"
+    },
+    {
+      "input": "http://user:pass@example.test/a",
+      "canonical": "http://user:pass@example.test/a"
+    },
+    {
+      "input": "http://example.test./a",
+      "canonical": "http://example.test./a"
+    },
+    {
+      "input": "https://example.test/日本語?q=検索",
+      "canonical": "https://example.test/%E6%97%A5%E6%9C%AC%E8%AA%9E?q=%E6%A4%9C%E7%B4%A2"
+    },
+    {
+      "input": "mailto:someone@example.test",
+      "canonical": null
+    },
+    {
+      "input": "ftp://example.test/file",
+      "canonical": null
+    },
+    {
+      "input": "not a url",
+      "canonical": null
+    },
+    {
+      "input": "",
+      "canonical": null
+    }
+  ]
+}

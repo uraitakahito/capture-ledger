@@ -29,8 +29,11 @@ import { ROOT } from "./root.js";
  */
 const SKIP = new Set(["node_modules", ".git", ".upstream", "dist", ".astro", "coverage"]);
 
-/** `pnpm run <script> -- -<何か>`。CI の workflow に在った grep と同じ形。 */
-const PATTERN = /pnpm run [a-z:]+ -- -/;
+/**
+ * `pnpm run <script> -- -<何か>`。CI の workflow に在った grep の形に、script の名前の `-` を足した物
+ * (`[a-z:]+` だけだと `check-env`・`replay-bundle:rebuild` のような名前の誤りを素通りした)。
+ */
+const PATTERN = /pnpm run [a-z:-]+ -- -/;
 
 interface Hit {
   path: string;

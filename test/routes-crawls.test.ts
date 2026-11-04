@@ -203,6 +203,15 @@ describe("クロール route の入力検証", () => {
   });
 });
 
+/** 合本がまだ無い行の欄 (`027`)。本物の行は null を持つ。 */
+const NO_REPLAY_BUNDLE = {
+  replayBundleRev: null,
+  replayBundleKey: null,
+  replayBundlePages: null,
+  replayBundleBuiltAt: null,
+  replayBundleError: null,
+};
+
 /** 認可と単一実行を見るための、最小の偽物。 */
 interface FakeCrawl {
   id: string;
@@ -230,6 +239,15 @@ interface FakeCrawl {
    * (`capture-ledger には DB 試験が無い`)。
    */
   waczCount?: number;
+  /**
+   * 合本の欄 (`027`)。**本物の行は必ず持つ** (列が nullable なだけで、行から欄が消えることは無い) —— 偽物の
+   * 行を作る所 (下の insert と一覧の `row`) は null で埋める。
+   */
+  replayBundleRev?: number | null;
+  replayBundleKey?: string | null;
+  replayBundlePages?: number | null;
+  replayBundleBuiltAt?: Date | null;
+  replayBundleError?: string | null;
   /** 解決済みの顔ぶれ。**行に固定されたもの**で、段ごとに引き直さない (`018`)。 */
   scripts: FakeScript[];
   /** クロールごとの値 (`024`)。本物の行は必ず持つ (NOT NULL DEFAULT) */
@@ -355,6 +373,7 @@ const fakeDb = (
           pagesDiscovered: 0,
           pagesCaptured: 0,
           error: null,
+          ...NO_REPLAY_BUNDLE,
         });
         await Promise.resolve();
       },
@@ -817,6 +836,7 @@ describe("クロール route の認可と単一実行", () => {
       error: null,
       lastJobId: "0193b6a1-3c1d-7a2e-9f00-1234567890ab",
       lastJobDepth: 0,
+      ...NO_REPLAY_BUNDLE,
       scripts: [
         {
           id: "autoscroll",
@@ -890,13 +910,56 @@ describe("クロール route の認可と単一実行", () => {
       error: null,
       lastJobId: null,
       lastJobDepth: null,
+      ...NO_REPLAY_BUNDLE,
       scripts: [],
       variables: {},
       secrets: {},
     } satisfies FakeCrawl;
     const app = await buildApp(depsWith({ crawls: [crawl], allowed: true }));
     const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
-    expect(res.json()).toMatchObject({ lastJob: null, failures: [] });
+    expect(res.json()).toMatchObject({ lastJob: null, failures: [], replayBundle: null });
+    await app.close();
+  });
+
+  it("GET は台帳が指す合本の鍵・版・頁の数・時刻と、その後に書けなかった理由を返す", async () => {
+    const crawl = {
+      id: UUID,
+      seeds: [SEED],
+      rules: [{ follow: "same-origin" }],
+      state: "succeeded",
+      maxDepth: 1,
+      maxPages: 30,
+      perHostDelayMs: 2000,
+      hostParallelism: 4,
+      orgId: "acme",
+      requestedBy: "alice",
+      stopReason: "completed",
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      pagesDiscovered: 3,
+      pagesCaptured: 3,
+      error: null,
+      lastJobId: null,
+      lastJobDepth: null,
+      // r2 を書けた後、r3 が書けなかった
+      replayBundleRev: 2,
+      replayBundleKey: `org/acme/crawls/${UUID}/r2/replay.json`,
+      replayBundlePages: 6,
+      replayBundleBuiltAt: new Date("2026-11-05T03:30:00.000Z"),
+      replayBundleError: "could not write r3 to the store: Access Denied",
+      scripts: [],
+      variables: {},
+      secrets: {},
+    } satisfies FakeCrawl;
+    const app = await buildApp(depsWith({ crawls: [crawl], allowed: true }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    expect(res.json<{ replayBundle: unknown }>().replayBundle).toEqual({
+      key: `org/acme/crawls/${UUID}/r2/replay.json`,
+      rev: 2,
+      pages: 6,
+      builtAt: "2026-11-05T03:30:00.000Z",
+      error: "could not write r3 to the store: Access Denied",
+    });
     await app.close();
   });
 });
@@ -1813,6 +1876,7 @@ describe("クロールの一覧", () => {
     // { id: undefined } になる —— 偽物の形が本物と違うと、試験が嘘をつく。
     lastJobId: null,
     lastJobDepth: null,
+    ...NO_REPLAY_BUNDLE,
     scripts: [],
     variables: {},
     secrets: {},
@@ -1916,6 +1980,45 @@ describe("クロールの一覧", () => {
   it("起こしていない段の run は null", async () => {
     const res = await list(depsWith({ crawls: [NEW], allowed: true }));
     expect(res.json<{ crawls: ListedCrawl[] }>().crawls[0]?.lastJob).toBeNull();
+  });
+
+  it("合本の欄を行に載せる（書けた合本も、書けなかった記録も無ければ null）", async () => {
+    // 行の列から組む —— dashboard は走っているクロールを 2 秒ごとに引くので、保管庫は読まない
+    const bundled = row({
+      id: "55555555-5555-4555-8555-555555555555",
+      startedAt: new Date(5),
+      replayBundleRev: 3,
+      replayBundleKey: "org/acme/crawls/55555555-5555-4555-8555-555555555555/r3/replay.json",
+      replayBundlePages: 12,
+      replayBundleBuiltAt: new Date("2026-11-05T03:30:00.000Z"),
+      replayBundleError: null,
+    });
+    const res = await list(depsWith({ crawls: [bundled, NEW], allowed: true }));
+    const crawls = res.json<{ crawls: (ListedCrawl & { replayBundle: unknown })[] }>().crawls;
+    expect(crawls[0]?.replayBundle).toEqual({
+      key: "org/acme/crawls/55555555-5555-4555-8555-555555555555/r3/replay.json",
+      rev: 3,
+      pages: 12,
+      builtAt: "2026-11-05T03:30:00.000Z",
+      error: null,
+    });
+    expect(crawls[1]?.replayBundle).toBeNull();
+  });
+
+  it("1 度も書けずに失敗だけなら、合本の欄は error だけが値を持つ", async () => {
+    const failed = row({
+      id: "66666666-6666-4666-8666-666666666666",
+      startedAt: new Date(6),
+      replayBundleError: "could not write r1 to the store: Access Denied",
+    });
+    const res = await list(depsWith({ crawls: [failed], allowed: true }));
+    expect(res.json<{ crawls: { replayBundle: unknown }[] }>().crawls[0]?.replayBundle).toEqual({
+      key: null,
+      rev: null,
+      pages: null,
+      builtAt: null,
+      error: "could not write r1 to the store: Access Denied",
+    });
   });
 });
 

@@ -47,6 +47,37 @@ export interface ArchivesTable {
   indexedAt: ColumnType<Date | null, string | null | undefined, string | null>;
   capturedAt: ColumnType<Date, string, string>;
   createdAt: ColumnType<Date, string | undefined, never>;
+  /**
+   * どのクロールの取り込みか (`027`)。受けるときに入れる (`archive/admit.ts`)。NULL は 027 より前の行か、
+   * クロールの外の取り込み。更新するのは作り直しの道具だけ (027 より前の行をクロールに繋ぐ)。
+   */
+  crawlId: ColumnType<string | null, string | null, string>;
+  /** WACZ のファイル全体の sha256 (16 進の小文字)。検めたときに入る (`027`)。 */
+  waczSha256: ColumnType<string | null, never, string>;
+  /** WACZ の大きさ。bigint なので node-pg は文字列で返す。 */
+  waczBytes: ColumnType<string | null, never, number>;
+  /** 記録が 0 の WACZ (索引が空、または `waczStats.totalRecorded` が 0)。合本から外す (`027`)。 */
+  indexEmpty: ColumnType<boolean | null, never, boolean>;
+  /** 検めた時刻。NULL は「まだ」。検めた行は上の 3 つを必ず持つ (CHECK)。 */
+  inspectedAt: ColumnType<Date | null, never, string>;
+  /** その WACZ が最初に入った合本の版 (`027`)。 */
+  replayBundleRev: ColumnType<number | null, never, number>;
+}
+
+/**
+ * WACZ の `pages/pages.jsonl` の頁の行 1 つ (`027`)。合本の `pages.json` はここから組む。
+ * 主キーは (archiveId, ordinal)。`pageId` は行の `id`。
+ */
+export interface ArchivePagesTable {
+  archiveId: string;
+  ordinal: number;
+  pageId: string | null;
+  url: string;
+  ts: string | null;
+  title: string | null;
+  stage: string | null;
+  /** 正規化した URL。文書の行だけが持つ (写しの行は空)。 */
+  keys: ColumnType<string[], string[], never>;
 }
 
 /**
@@ -150,6 +181,20 @@ export interface CrawlsTable {
    */
   lastJobId: ColumnType<string | null, string | null | undefined, string | null>;
   lastJobDepth: ColumnType<number | null, number | null | undefined, number | null>;
+  /**
+   * 合本の版の払い出し (`027`)。次に払い出す版で、合本を作るたびに行の更新で 1 つ進める。
+   */
+  replayBundleNextRev: ColumnType<number, never, number>;
+  /**
+   * 台帳が指す合本 (書き終えた版のうち最も大きい物) の版・`replay.json` の鍵・頁の数・書いた時刻 (`027`)。
+   * **前へだけ進める** —— 書き終えた版がいまより大きいときだけ差し替える (`replay-bundle/write.ts`)。
+   */
+  replayBundleRev: ColumnType<number | null, never, number>;
+  replayBundleKey: ColumnType<string | null, never, string>;
+  replayBundlePages: ColumnType<number | null, never, number>;
+  replayBundleBuiltAt: ColumnType<Date | null, never, string>;
+  /** 合本を書けなかった理由。次に書けたら消す。クロールは止めない (`027`)。 */
+  replayBundleError: ColumnType<string | null, never, string | null>;
 }
 
 /**
@@ -363,6 +408,7 @@ export interface DerivationsTable {
 export interface Database {
   captureTargets: CaptureTargetsTable;
   archives: ArchivesTable;
+  archivePages: ArchivePagesTable;
   fgaOutbox: FgaOutboxTable;
   captureSubmissions: CaptureSubmissionsTable;
   crawls: CrawlsTable;

@@ -16,6 +16,7 @@ import type { CaptureResultReport } from "../src/archive/manifest.js";
  *   null   —— そもそも求めていない (正常)
  */
 const LOCATION = { bucket: "browserhive", key: "task_.wacz" };
+const CRAWL = "d272d256-e528-4581-bb4e-8d9477d78196";
 
 const report = (over: Partial<CaptureResultReport> = {}): CaptureResultReport => ({
   taskId: "550e8400-e29b-41d4-a716-446655440000",
@@ -29,7 +30,7 @@ const report = (over: Partial<CaptureResultReport> = {}): CaptureResultReport =>
 
 describe("archiveRow", () => {
   it("署名された取り込みは signed: true で台帳に載る", () => {
-    expect(archiveRow(report({ signature: { signed: true } }), LOCATION).signed).toBe(true);
+    expect(archiveRow(report({ signature: { signed: true } }), LOCATION, CRAWL).signed).toBe(true);
   });
 
   /**
@@ -38,19 +39,37 @@ describe("archiveRow", () => {
    * 「NULL」ではなく「既定」に化ける。
    */
   it("署名を求めていない取り込みは null になる（undefined ではない）", () => {
-    const row = archiveRow(report(), LOCATION);
+    const row = archiveRow(report(), LOCATION, CRAWL);
     expect(row.signed).toBeNull();
     expect(Object.hasOwn(row, "signed")).toBe(true);
   });
 
   /** `false` と `null` は別の主張。潰すと配備の異常が正常と同じ見た目になる。 */
   it("署名の報告が届いて付いていなければ false で、null と区別される", () => {
-    expect(archiveRow(report({ signature: { signed: false } }), LOCATION).signed).toBe(false);
+    expect(archiveRow(report({ signature: { signed: false } }), LOCATION, CRAWL).signed).toBe(
+      false,
+    );
   });
 
   it("completeness も同じ 3 状態を保つ", () => {
-    expect(archiveRow(report(), LOCATION).waczComplete).toBeNull();
+    expect(archiveRow(report(), LOCATION, CRAWL).waczComplete).toBeNull();
     const complete = { complete: true, bodylessUrls: [], truncatedUrls: [] };
-    expect(archiveRow(report({ completeness: complete }), LOCATION).waczComplete).toBe(true);
+    expect(archiveRow(report({ completeness: complete }), LOCATION, CRAWL).waczComplete).toBe(true);
+  });
+
+  /**
+   * クロールの id (`027`) は呼ぶ側が記録から渡す。報告の `correlationId` はクロールが crawl id を渡す申し合わせで、
+   * 投げ方が変わると黙って別の値になる —— 見本はわざと別の値にしてある。
+   */
+  it("クロールの id は渡された物を書き、報告の correlationId からは読まない", () => {
+    const row = archiveRow(report({ correlationId: "something-else" }), LOCATION, CRAWL);
+    expect(row.crawlId).toBe(CRAWL);
+    expect(row.correlationId).toBe("something-else");
+  });
+
+  it("クロールの外の取り込みは crawlId が null（undefined ではない）", () => {
+    const row = archiveRow(report(), LOCATION, null);
+    expect(row.crawlId).toBeNull();
+    expect(Object.hasOwn(row, "crawlId")).toBe(true);
   });
 });
