@@ -9,13 +9,20 @@
  *
  * ## 並び
  *
- * - `resources`: **起点 (深さ 0) の WACZ を先頭に**、深さ・撮った時刻の順。replay は、頁の中で見つからない物を
- *   先頭の 3 本だけ試すので、起点の頁が読む物が先頭に要る
+ * - `resources`: **起点 (深さ 0) の WACZ を先頭に**、深さ・撮った時刻の順。決まった順にして、人が読む順と、
+ *   版どうしで比べられる形にするため。replay (ReplayWeb.page 2.5.0) が頁の中で見つからない物 (favicon など) を
+ *   探す 3 本は、この並びではなく WACZ の名前の順で選ばれる (replay の docs/replay-bundle.md。段 1 で確かめた)
  * - `initialPages`: 文書の行だけ、起点の頁を先頭に深さ・時刻の順で 25 行まで。replay は一覧の 1 ページ目をここから
  *   作る (問いの口は検索と 2 ページ目以降だけ)。写しの行は入れない
  * - `pages.json`: 並びの約束は無い (server が自分で引けるように持つ)。ここでは `resources` の順・行の順
  *
- * ## 記録が 0 の WACZ は外す
+ * ## 行の id は必ず文字列
+
+replay の server は `id` を文字列に限って読む (null の行が 1 つでもあると `/q/` が 502)。BrowserHive の
+pages.jsonl の行は id を持つが、契約の外の WACZ では欠けうる (`archive_pages.page_id` が null)。そのときは
+`<filename>#<ordinal>` を振る —— filename はクロールの中で一意、ordinal は WACZ の中で一意なので、合本の中で一意。
+
+## 記録が 0 の WACZ は外す
  *
  * `indexes/index.cdxj` が空、または BrowserHive の答えの `waczStats.totalRecorded` が 0 の WACZ (`index_empty`)。
  * replay は長さ 0 の Range を求め、保管庫の 416 で JSON を読み直し続ける。`resources` にも `pages.json` にも入れず、
@@ -108,7 +115,7 @@ export interface ReplayResource {
 }
 
 export interface InitialPage {
-  id: string | null;
+  id: string;
   url: string;
   ts: string | null;
   title: string | null;
@@ -136,7 +143,8 @@ export interface ReplayJson {
 }
 
 export interface PagesJsonRow {
-  id: string | null;
+  /** 行の id。無い行には `<filename>#<ordinal>` (上の「行の id は必ず文字列」) */
+  id: string;
   url: string;
   ts: string | null;
   title: string | null;
@@ -229,7 +237,7 @@ export const composeReplayBundle = (input: ComposeInput): ReplayBundle => {
     const rows = [...(rowsOf.get(archive.id) ?? [])].sort((a, b) => a.ordinal - b.ordinal);
     for (const row of rows) {
       pages.push({
-        id: row.pageId,
+        id: row.pageId ?? `${filename}#${String(row.ordinal)}`,
         url: row.url,
         ts: row.ts,
         title: row.title,

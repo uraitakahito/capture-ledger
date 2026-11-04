@@ -783,9 +783,11 @@ read the WACZ again. A document line also gets `keys` — the requested URL and 
 
 A WACZ that recorded nothing — an empty index, or `waczStats.totalRecorded` of 0 — is left out
 (`skipped`): replay would ask for a zero-length range and keep re-reading the JSON on the store's
-answer, a 416. `resources` starts with the seeds' WACZs (replay tries only the first three for
-something a page does not hold), then goes by depth and capture time. `initialPages`, the list
-replay shows first, holds document lines, seeds first.
+answer, a 416. `resources` starts with the seeds' WACZs, then goes by depth and capture time — a
+fixed order, not a hint: the three WACZs replay tries for something a page does not hold are picked
+by name, not by this order. `initialPages`, the list replay shows first, holds document lines,
+seeds first. A line without an `id` (a WACZ from outside the contract) gets
+`<filename>#<its position>`, because replay's server cannot read a line whose `id` is not a string.
 
 ### Reading it back
 

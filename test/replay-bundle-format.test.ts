@@ -326,6 +326,23 @@ describe("合本を組む", () => {
     expect(bundle.replayJson.totalPages).toBe(6);
   });
 
+  it("id の無い行には <filename>#<ordinal> を振る（replay は id を文字列に限って読む）", () => {
+    const base = input();
+    const pages = base.pages.map((page) =>
+      page.archiveId === "a" ? { ...page, pageId: null } : page,
+    );
+    const bundle = composeReplayBundle({ ...base, pages });
+    const filename = `a_${CRAWL}.wacz`;
+    expect(bundle.pagesJson.pages.slice(0, 2).map((page) => page.id)).toEqual([
+      `${filename}#0`,
+      `${filename}#1`,
+    ]);
+    // 一覧の 1 ページ目 (起点が先頭) にも同じ id が出る
+    expect(bundle.replayJson.initialPages[0]?.id).toBe(`${filename}#0`);
+    // id を持つ行はそのまま
+    expect(bundle.pagesJson.pages.map((page) => page.id)).toContain("b");
+  });
+
   it("記録が 0 の WACZ は resources にも pages.json にも入れず、数だけ skipped に残す", () => {
     const base = input();
     const bundle = composeReplayBundle({
