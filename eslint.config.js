@@ -12,9 +12,6 @@ export default tseslint.config(
       // types; linting it from here fails on generated .astro/ modules that
       // the root tsconfig cannot see.
       "docs-site/**",
-      // Repo tooling run directly by node, outside the TS project.
-      // FIXME(CAPTURE-26): drop once the last .mjs tool has moved to src/tools/.
-      "scripts/**",
       // Upstream source, vendored as a submodule. It has its own lint setup;
       // linting it from here just reports on somebody else's code.
       ".upstream/**",

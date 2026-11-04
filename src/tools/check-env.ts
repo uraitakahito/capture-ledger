@@ -28,11 +28,9 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { ROOT } from "./root.js";
 
-// FIXME(CAPTURE-26): 道具が全部 src/tools/ に移ったら ["src"] に (scripts/ の .mjs を読むのはそれまで)
-const SOURCE_DIRS = ["src", "scripts"];
+const SOURCE_DIRS = ["src"];
 const TEMPLATE = ".env.example";
 
 // 開き括弧の後の空白を許すこと。prettier は長い呼び出しを改行するので、
@@ -90,7 +88,7 @@ const liveEmpty = templateLines.flatMap(
   (line) => /^([A-Z_0-9]+)=\s*$/.exec(line)?.slice(1, 2) ?? [],
 );
 
-/** `as const` の配列から名前を取り出す。env.ts と scripts/env.mjs の一覧用。 */
+/** `as const` の配列から名前を取り出す。env.ts と src/tools/env.ts の一覧用。 */
 const listFrom = (source: string, constName: string) => {
   const block = new RegExp(`${constName}\\s*=\\s*\\[([^\\]]*)\\]`).exec(source)?.[1];
   return block === undefined
@@ -102,8 +100,7 @@ const envTs = readFileSync(resolve(ROOT, "src/config/env.ts"), "utf8");
 const required = new Set(listFrom(envTs, "REQUIRED_ENV"));
 const optional = new Set(listFrom(envTs, "OPTIONAL_ENV"));
 const scriptEnv = new Set(
-  // FIXME(CAPTURE-26): env を移したら src/tools/env.ts を読む
-  listFrom(readFileSync(resolve(ROOT, "scripts/env.mjs"), "utf8"), "SCRIPT_ENV"),
+  listFrom(readFileSync(resolve(ROOT, "src/tools/env.ts"), "utf8"), "SCRIPT_ENV"),
 );
 
 const problems: string[] = [];
@@ -143,7 +140,7 @@ for (const [name, file] of used) {
   problems.push(
     `検査の一覧に無い: ${name}  (${file} が読んでいる)\n` +
       "    src/config/env.ts の REQUIRED_ENV / OPTIONAL_ENV か、\n" +
-      "    scripts/env.mjs の SCRIPT_ENV に足すこと。",
+      "    src/tools/env.ts の SCRIPT_ENV に足すこと。",
   );
 }
 for (const name of [...required, ...optional, ...scriptEnv]) {
@@ -161,35 +158,6 @@ for (const name of liveEmpty) {
         "    写すと空文字がセットされ、既定値を潰す。値を書くかコメントにすること。",
     );
   }
-}
-
-// ─── D. scripts/env.mjs の optional が env.ts のものと同じ意味か ───────────
-// 実装の文字列ではなく **振る舞い** で比べる。実装が変わっても意味が同じなら通る。
-{
-  // FIXME(CAPTURE-26): env を移したら、写しが消えるのでこの節ごと消す
-  // 戻り値は unknown で受ける。合っているかはこの節が確かめるので、型で先に名乗らせない。
-  const { optional: scriptOptional } = (await import(
-    pathToFileURL(resolve(ROOT, "scripts/env.mjs")).href
-  )) as { optional: (name: string, fallback: string) => unknown };
-  const probe = "__CHECK_ENV_PROBE__";
-  const cases = [
-    [undefined, "FALLBACK"],
-    ["", "FALLBACK"],
-    ["x", "x"],
-  ];
-  for (const [value, want] of cases) {
-    if (value === undefined) delete process.env[probe];
-    else process.env[probe] = value;
-    const got = scriptOptional(probe, "FALLBACK");
-    if (got !== want) {
-      problems.push(
-        `scripts/env.mjs の optional がずれている: ` +
-          `${JSON.stringify(value)} -> ${JSON.stringify(got)} (期待 ${JSON.stringify(want)})\n` +
-          "    src/config/env.ts の optional と同じ意味でなければならない。",
-      );
-    }
-  }
-  delete process.env[probe];
 }
 
 if (problems.length > 0) {

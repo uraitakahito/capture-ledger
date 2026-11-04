@@ -26,11 +26,9 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { upsertEnvLocal } from "./env.mjs";
-
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
+import { ROOT } from "./root.js";
+import { upsertEnvLocal } from "./env.js";
 
 /** 既定の相手。crawler の 9 つの repo は横並びに clone してある。 */
 const DEFAULT_DIR = "../capture-scheduler";
@@ -44,12 +42,12 @@ const HANDOFF = ".dev/capture-ledger.env";
  * 表示用の path。遠くの場所を `../../../..` と書いても読めないので、
  * repo から見て素直に書けるときだけ相対にする。
  */
-const shown = (path) => {
+const shown = (path: string) => {
   const rel = relative(ROOT, path);
   return rel.startsWith("../..") ? path : rel;
 };
 
-const die = (message) => {
+const die = (message: string) => {
   process.stderr.write(`${message}\n`);
   process.exit(1);
 };
@@ -67,11 +65,12 @@ if (!existsSync(handoff)) {
 }
 
 /** `NAME=VALUE` の行だけを読む。コメントと空行は飛ばす。 */
-const parse = (source) => {
-  const values = {};
+const parse = (source: string) => {
+  const values: Record<string, string> = {};
   for (const line of source.split("\n")) {
-    const match = /^\s*([A-Z_0-9]+)=(.*)$/.exec(line);
-    if (match) values[match[1]] = match[2];
+    const [, name, value] = /^\s*([A-Z_0-9]+)=(.*)$/.exec(line) ?? [];
+    // 当たれば組は 2 つとも埋まる (値は空のこともある)。undefined と比べるのは型を絞るため
+    if (name !== undefined && value !== undefined) values[name] = value;
   }
   return values;
 };
@@ -86,8 +85,8 @@ const declared = new Set(
 );
 
 const incoming = parse(readFileSync(handoff, "utf8"));
-const accepted = {};
-const unknown = [];
+const accepted: Record<string, string> = {};
+const unknown: string[] = [];
 for (const [name, value] of Object.entries(incoming)) {
   if (declared.has(name)) accepted[name] = value;
   else unknown.push(name);

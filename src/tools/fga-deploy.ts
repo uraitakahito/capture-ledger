@@ -27,7 +27,7 @@
 import { spawnSync } from "node:child_process";
 import { relative } from "node:path";
 
-import { guardEnv, optional, upsertEnvLocal } from "./env.mjs";
+import { guardEnv, optional, upsertEnvLocal } from "./env.js";
 
 guardEnv();
 
@@ -35,7 +35,7 @@ const API_URL = optional("CAPTURE_LEDGER_FGA_API_URL", "http://localhost:8090");
 const API_TOKEN = optional("CAPTURE_LEDGER_FGA_API_TOKEN", "dev-key");
 const STORE_NAME = optional("CAPTURE_LEDGER_FGA_STORE_NAME", "wacz-validator");
 
-const fga = (args) => {
+const fga = (args: string[]) => {
   const result = spawnSync("fga", args, {
     encoding: "utf8",
     env: { ...process.env, FGA_API_URL: API_URL, FGA_API_TOKEN: API_TOKEN },
@@ -47,19 +47,37 @@ const fga = (args) => {
   return result.stdout;
 };
 
+/**
+ * `fga` の答えのうち、ここが読む欄だけ。欄はどれも省略可にしてある —— 答えの形を信じずに
+ * 読み、id が取れなければ答えごと見せて落とす (下の 2 つの throw)。`store list` の 1 件と
+ * `store create` の答えは同じ変数で受けるので、1 つの型にまとめた。
+ */
+interface StoreReply {
+  id?: string;
+  name?: string;
+  store?: { id?: string };
+}
+interface StoreList {
+  stores?: StoreReply[];
+}
+interface WrittenModel {
+  authorization_model_id?: string;
+}
+
 const findStore = () => {
-  const listed = JSON.parse(fga(["store", "list"]));
+  const listed = JSON.parse(fga(["store", "list"])) as StoreList;
   return (listed.stores ?? []).find((s) => s.name === STORE_NAME);
 };
 
-const store = findStore() ?? JSON.parse(fga(["store", "create", "--name", STORE_NAME]));
+const store =
+  findStore() ?? (JSON.parse(fga(["store", "create", "--name", STORE_NAME])) as StoreReply);
 // `store create` は store を入れ子で返し、`store list` は平らに返す。
 const storeId = store.id ?? store.store?.id;
 if (!storeId) throw new Error(`could not determine store id from: ${JSON.stringify(store)}`);
 
 const written = JSON.parse(
   fga(["model", "write", "--store-id", storeId, "--file", "fga/model.fga"]),
-);
+) as WrittenModel;
 const modelId = written.authorization_model_id;
 if (!modelId) throw new Error(`could not determine model id from: ${JSON.stringify(written)}`);
 

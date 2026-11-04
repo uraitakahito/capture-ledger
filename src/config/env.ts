@@ -24,7 +24,7 @@ export { optional, required };
  * 空は `collectEnv` が「不足」として報告するので、`guardEnv` は見ない。
  * 同じ誤りを 2 か所から報告すると、どちらを直せばよいのか分からなくなる。
  *
- * `scripts/` だけが読む変数はここには入らない (`scripts/env.mjs` の SCRIPT_ENV)。
+ * 道具 (src/tools/) だけが読む変数はここには入らない (`src/tools/env.ts` の SCRIPT_ENV)。
  */
 export const REQUIRED_ENV = [
   "CAPTURE_LEDGER_S3_ENDPOINT",

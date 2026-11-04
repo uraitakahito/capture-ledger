@@ -36,15 +36,14 @@ import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs"
 import { connect } from "node:net";
 import { relative, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
 
-import { HOST_PROCESSES, inspect, runningBuild, stop } from "./daemons.mjs";
-
-const ROOT = fileURLToPath(new URL("..", import.meta.url));
+import { ROOT } from "./root.js";
+import type { HostProcess } from "./daemons.js";
+import { HOST_PROCESSES, inspect, runningBuild, stop } from "./daemons.js";
 
 const argv = process.argv.slice(2);
 /** 旗の値を 1 つ取る。commander を使わないのは、この script が build を要らないため。 */
-const flag = (name) => {
+const flag = (name: string) => {
   const at = argv.indexOf(name);
   return at === -1 ? undefined : argv[at + 1];
 };
@@ -66,7 +65,7 @@ const whoami = (spawnSync("whoami", { encoding: "utf8" }).stdout ?? "").trim() |
  * 黙ってずれる —— 実際、validator を足した瞬間に dashboard の段が validator の
  * コマンドを打ち始めた (--dry-run で気づいた)。
  */
-const spec = (name) => {
+const spec = (name: string) => {
   const found = HOST_PROCESSES.find((one) => one.name === name);
   if (found === undefined) throw new Error(`unknown host process: ${name}`);
   return found;
@@ -82,6 +81,30 @@ const dashboard = {
   root: resolve(ROOT, flag("--dashboard") ?? "../dashboard"),
 };
 
+// `port` か `url` のどちらか一方。もう片方を `?: undefined` にしておくと、probe が
+// `url` を見ただけで `port` を number に絞れる。
+type Target = { port: number; url?: undefined } | { url: string; port?: undefined };
+
+// 段は 2 種類。どちらの段でも読む鍵は、持たない側にも `?: undefined` と書く ——
+// 読めるうえに、`step.daemon === undefined` で段の種類が絞れる。
+interface ShellStep {
+  id: string;
+  run: string;
+  cwd?: string;
+  skipIf?: Target & { label: string };
+  waitFor?: Target & { label: string; timeoutMs?: number };
+  daemon?: undefined;
+}
+interface DaemonStep {
+  id: string;
+  daemon: HostProcess;
+  ready: string;
+  cwd?: undefined;
+  skipIf?: undefined;
+  waitFor?: undefined;
+}
+type Step = ShellStep | DaemonStep;
+
 /**
  * 段の表。**この表がそのまま手順書。**
  *
@@ -89,7 +112,7 @@ const dashboard = {
  * 「前の段のコンテナが港を開けるまで」を待つ —— `stack:up` はコンテナを作るところまでで、
  * postgres が接続を受けるところまでは待たない。
  */
-const STEPS = [
+const STEPS: Step[] = [
   {
     id: "store",
     run: "sh .upstream/seaweedfs/scripts/stack.sh up",
@@ -167,7 +190,7 @@ if (argv.includes("--from") && STEPS.every((step) => step.id !== from)) {
 const startAt = from === undefined ? 0 : STEPS.findIndex((step) => step.id === from);
 
 /** 打つときと同じ形で出す。**別の repo で走るものは `cd` から書く。** */
-const shown = (step) => {
+const shown = (step: Step) => {
   const where = step.cwd ?? step.daemon?.root;
   const cd = where === undefined || where === ROOT ? "" : `cd ${relative(ROOT, where)} && `;
   return step.daemon === undefined
@@ -186,13 +209,13 @@ if (dryRun) {
 }
 
 // ── 道具 ────────────────────────────────────────────────────────────
-const seconds = (ms) => `${(ms / 1000).toFixed(1)}s`;
+const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
 /**
  * 1 回だけ訊く。**loopback にしか訊かない** —— コンテナの名前は node から届かない
  * (macOS 26 は Apple 署名でないバイナリをコンテナの subnet へ通さない)。
  */
-const probe = async ({ port, url }) => {
+const probe = async ({ port, url }: Target) => {
   if (url !== undefined) {
     try {
       return (await fetch(url)).ok;
@@ -200,7 +223,7 @@ const probe = async ({ port, url }) => {
       return false;
     }
   }
-  return new Promise((done) => {
+  return new Promise<boolean>((done) => {
     const socket = connect({ host: "127.0.0.1", port });
     socket.setTimeout(1000);
     socket.on("connect", () => {
@@ -217,7 +240,7 @@ const probe = async ({ port, url }) => {
 };
 
 /** 答えるまで待つ。**時間切れも答え** なので、投げずに false を返す。 */
-const waitFor = async (target, timeoutMs) => {
+const waitFor = async (target: Target, timeoutMs: number) => {
   const deadline = Date.now() + timeoutMs;
   do {
     if (await probe(target)) return true;
@@ -226,8 +249,8 @@ const waitFor = async (target, timeoutMs) => {
   return false;
 };
 
-const runShell = (step) =>
-  new Promise((done) => {
+const runShell = (step: ShellStep) =>
+  new Promise<number>((done) => {
     const child = spawn("/bin/sh", ["-c", step.run], {
       cwd: step.cwd ?? ROOT,
       stdio: "inherit",
@@ -242,7 +265,7 @@ const runShell = (step) =>
  * だけなので、`connect` や `fga:deploy` の後に古いプロセスが残っていると、
  * 「値は入っているのに効かない」になる。
  */
-const startDaemon = async (step) => {
+const startDaemon = async (step: DaemonStep) => {
   mkdirSync(LOGS, { recursive: true });
   const logPath = resolve(LOGS, `${step.id}.log`);
 
