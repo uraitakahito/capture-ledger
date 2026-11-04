@@ -9,7 +9,7 @@
  */
 import Fastify, { type FastifyError } from "fastify";
 import { Command, Option } from "commander";
-import { collectEnv, fgaFrom, storageFrom, searchConfig } from "../config/env.js";
+import { collectEnv, fgaFrom, storageFrom, searchFrom } from "../config/env.js";
 import { envFilesNote, readEnvFiles } from "../config/env-files.js";
 import { createKyselyClient } from "../db/kysely.js";
 import { createFgaClient } from "../fga/client.js";
@@ -28,7 +28,7 @@ import { claudeBudgetUsd, createFixModel } from "../config/claude.js";
 import { derivationStoreOf } from "../derivations/store.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerSinkRoutes, type SinkConfig } from "./sink.js";
-import { createSearchClient } from "../search/client.js";
+import { createSearchClient, ensureSearchReady } from "../search/client.js";
 import { createWindmillDispatcher } from "../crawl/dispatch.js";
 import { createWindmillVariables } from "../crawl/windmill-variables.js";
 import { optional } from "../config/env.js";
@@ -69,9 +69,10 @@ const start = async (options: ServerOptions): Promise<void> => {
   // S3 と OpenFGA を **1 つの collectEnv の中で** 建てる。別々に呼ぶと 1 つ目が
   // 投げた時点で 2 つ目は評価されないので、S3 の 4 個を直したあとに FGA の 2 個が
   // 出てきて往復が 2 回になる。
-  const { storage, fgaSettings } = collectEnv((need) => ({
+  const { storage, fgaSettings, searchSettings } = collectEnv((need) => ({
     storage: storageFrom(need),
     fgaSettings: fgaFrom(need),
+    searchSettings: searchFrom(need),
   }));
   const db = createKyselyClient(options.databaseUrl);
   const fga = createFgaClient(fgaSettings);
@@ -208,21 +209,24 @@ const start = async (options: ServerOptions): Promise<void> => {
     });
   }
 
-  // 全文検索の口。クロールと同じ形 —— 設定が無ければ出さない。索引を持たない配備が
-  // ありうるし、そこでは 404 が正しい答え。
-  const searchSettings = searchConfig();
-  if (searchSettings === undefined) {
-    logger.info("CAPTURE_LEDGER_OPENSEARCH_URL is not set — /api/search is not served");
-  } else {
-    registerSearchRoutes(app, {
-      db,
-      fga,
-      s3,
-      search: createSearchClient(searchSettings),
-      index: searchSettings.index,
-      resolveIdentity,
-    });
-  }
+  // 全文検索の口。**必須** (CAPTURE-53) —— 宛先は上の collectEnv が他の設定と一緒に求める。
+  // 起動の時に OpenSearch に繋いで索引を作る (無ければ)。答えなければここで止まる。以前の
+  // 「設定が無ければ口を出さない」形では、flow の索引の段が 404 を「飛ばした」として緑で終わり、
+  // 検索が無いことに誰も気づかなかった。
+  const search = createSearchClient(searchSettings);
+  await ensureSearchReady(search, searchSettings);
+  logger.info(
+    { url: searchSettings.url, index: searchSettings.index },
+    "Full-text search is ready",
+  );
+  registerSearchRoutes(app, {
+    db,
+    fga,
+    s3,
+    search,
+    index: searchSettings.index,
+    resolveIdentity,
+  });
 
   const drainTimer = setInterval(() => {
     void drainOutbox(db, fga).catch((err: unknown) => {
@@ -257,7 +261,6 @@ const start = async (options: ServerOptions): Promise<void> => {
     devIdentity: process.env["CAPTURE_LEDGER_DEV_IDENTITY"] === "1",
     crawls: dispatch !== undefined,
     sink: sink !== undefined,
-    search: searchSettings !== undefined,
   });
   for (const note of notes) logger[note.level](note.fields ?? {}, note.msg);
 };

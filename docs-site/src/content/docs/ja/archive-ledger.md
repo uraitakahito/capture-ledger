@@ -570,24 +570,39 @@ id（`page`）を持つので、取れなかったページからそのまま行
 
 ## 全文検索
 
-既定では立ちません。索引を持たない配備がありうるので、`CAPTURE_LEDGER_OPENSEARCH_URL` を
-設定しない限り **口ごと出しません**（404 が返ります ― その配備にこの能力は本当に
-無いので、正しい答えです）。
+**必須です。** API は `CAPTURE_LEDGER_OPENSEARCH_URL` をほかの必須の設定と一緒に読み、
+起動の時に OpenSearch に索引を訊きます（無ければ mapping ごと作ります）。URL が無いか、
+OpenSearch が答えなければ、API は起動しません。以前は任意で、URL が無ければ口を出さず、
+クロールの flow の索引の段は 404 を「飛ばした」として受け、検索が無いまま全部が緑でした。
+
+開発では `pnpm run dev:up` が起こします。段 `search` が compose の profile `search` の
+`opensearch` だけを名指しで起こし（名前を付け忘れると全部のコンテナが作り直されます）、
+段 `search-connect` が cluster の health が yellow になるのを待って、URL を `.env.local` に
+書きます。答えるかと索引の件数は `pnpm run dev:status` が言い、`pnpm run dev:down` が止めます。
 
 ```sh
-pnpm run stack:up --profile search
-# .env に CAPTURE_LEDGER_OPENSEARCH_URL=http://127.0.0.1:9200
+# OpenSearch だけ（段 search が起こす物。段は 9200 が答えていれば飛ばす）
+pnpm run stack:up --profile search opensearch
+pnpm run search:connect
+# dev:up を段 search から続ける（後ろの段も走る）
+pnpm run dev:up --from search
 ```
 
 ```sh
-# クロール 1 本ぶんを索引に載せる（クロールの flow が最後に自動で叩きます）
+# クロール 1 本ぶんを索引に載せる（クロールの flow の最後の段が叩きます）
 curl -X POST .../api/crawls/<id>/index
-# → 202 { "indexed": 6, "pages": 6 }
+# → 202 { "pending": 6, "indexed": 6, "failed": 0, "pages": 12 }
+# → 503 { "error": "search unavailable", … } OpenSearch が答えないとき
 
 # 引く
 curl ".../api/search?q=responsive"
-# → { "hits": [ { "archiveId": "…", "stage": "after-load", "url": "…", "title": "responsive", … } ], "total": 3 }
+# → { "hits": [ { "archiveId": "…", "stage": "after-load", "url": "…", "title": "responsive", … } ], "total": 2 }
 ```
+
+`pending` はこのクロールのまだ載せていないアーカイブの数、`failed` は入らなかった数です。
+入らなかったアーカイブは `indexed_at` が空のまま残るので、もう一度この口を叩くか
+`pnpm run search:reindex` で拾い直します（自分で拾い直す係はありません）。クロールの flow は、
+`failed` が 1 以上・404・503 を誤りにします。
 
 ### 本文はアーカイブから採ります
 
@@ -622,22 +637,29 @@ WACZ Profile 1.18.0 から、1 行目はいつでも取り込んだ文書の行�
 **索引が認可の権威になり、1 つの事実に住処が 2 つできます**。片方を直しても
 両方とも動いているように見えるので、認可の素通りが静かに残ります。
 
-:::caution[件数とページングは正確ではありません]
-`total` は索引が数えた生の件数で、**認可で落ちたぶんを含みます**。50 件求めて
-30 件返ることがあります。見てよいものだけを数えるには数える前に認可を掛ける
-しかなく、それは上の「索引に権限を持たせる」に戻ります。数の正確さより、
-権威が 1 つであることを採っています。
+:::caution[ページングはありません]
+50 件求めて 30 件返ることがあります。見てはいけない当たりは、問い合わせの後で落とすからです。
+`total` は返した当たりの数で、索引が数えた生の件数ではありません ― 生の件数は、見てはいけない
+アーカイブに何件当たったかを教えてしまいます（CAPTURE-53 の前は生の件数を返していました）。
+索引の側で見てよいものだけを数えるには、数える前に認可を掛けるしかなく、それは上の
+「索引に権限を持たせる」に戻ります。
 :::
 
 ### 索引を作り直す
 
 ```sh
-# mapping か解析器を変えたときだけ、先に索引を消す
-curl -X DELETE http://127.0.0.1:9200/capture-pages
+pnpm run search:reindex                # 全部のアーカイブ
+pnpm run search:reindex --crawl <id>   # 1 本のクロールぶん
 ```
 
-```sql
-UPDATE archives SET indexed_at = NULL;
+`archives.indexed_at` を空にして、アーカイブを入れ直します。台帳・保管庫・OpenSearch を直に
+読み書きし、アクセストークンは使いません。打つのは、OpenSearch を作り直したとき（compose の
+サービスは volume を持たないので、台帳は「載せた」と言ったまま索引だけが空になります）と、
+索引を消したときです。
+
+```sh
+# mapping か解析器を変えたときだけ、先に索引を消す
+curl -X DELETE http://127.0.0.1:9200/capture-pages
 ```
 
 索引の状態は `archives.indexed_at` の列 1 つで、本文は保存していません

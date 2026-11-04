@@ -64,14 +64,14 @@ export const ENV_LOCAL = ".env.local";
 const ENV_LOCAL_HEADER = `# capture-ledger の道具が書くファイル。**手で書かない**（手で書くのは .env）。
 #
 # node は --env-file-if-exists=.env の後にこれを読むので、名前が重なればこちらが勝つ。
-# 書くのは pnpm run fga:deploy と pnpm run connect。消してよい —— どちらも作り直せる。
+# 書くのは pnpm run fga:deploy・connect・search:connect。消してよい —— どれも作り直せる。
 `;
 
 /**
  * `.env.local` に `名前=値` を書き足す（同じ名前が在れば、その行を置き換える）。
  *
- * 他の行は順番ごと保つ。生成物とはいえ 2 つの道具が書くので、片方がもう片方の
- * 行を消してはいけない（`fga:deploy` と `connect` は互いの値を知らない）。
+ * 他の行は順番ごと保つ。生成物とはいえ複数の道具が書くので、ある道具がほかの道具の
+ * 行を消してはいけない（`fga:deploy`・`connect`・`search:connect` は互いの値を知らない）。
  *
  * 書き換えるのは **この repo の中だけ**。他の repo の `.env` に書きに行く道具は
  * 作らない —— 走らせた repo の外が変わるのは予想に反する。

@@ -75,8 +75,9 @@ OpenFGA の 2 つの ID は、走らせてみないと決まらないので雛�
 | `.env`       | 人     | `.env.example` の写し。**手で直すのはこちらだけ**      |
 | `.env.local` | 道具   | 走らせてみないと決まらない値。git は無視する（生成物） |
 
-`.env.local` に書く道具は 2 つです。`pnpm run fga:deploy`（OpenFGA の store id と
-model id）と、`pnpm run connect`（capture-scheduler が渡す 4 行 —— クイックスタート §7）。
+`.env.local` に書く道具は、`pnpm run fga:deploy`（OpenFGA の store id と model id）、
+`pnpm run connect`（capture-scheduler が渡す 4 行 —— クイックスタート §7）、
+`pnpm run search:connect`（OpenSearch が答えた後の宛先 —— クイックスタート §3）です。
 分けてあるのは持ち主が違うからで、道具が人の書いた行を並べ替えたり消したりすると、
 次に何が起きたのか追えなくなります。
 
@@ -88,7 +89,7 @@ config: .env (16 names), .env.local (6 names) — .env.local wins for CAPTURE_LE
 
 「`.env` を直したのに効かない」ときは、この行に名前が出ていないかを見ます。出ていれば
 `.env.local` が勝っています。古い `.env.local` を疑うなら **作り直すのがいちばん速い** ——
-`fga:deploy` も `connect` も、何度打っても構いません。
+`fga:deploy` も `connect` も `search:connect` も、何度打っても構いません。
 
 この行が出すのは**名前だけで、値は出しません**。token が混じるうえ、出どころの説明に
 値は要らないからです。端末で渡した値は、どちらのファイルにも勝ちます。
@@ -126,7 +127,7 @@ NAME=value     # 値を渡す
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm run dev:up`                         | 立ち上げの段を順に。`--dry-run` で一覧、`--from <段>` で途中から。                                                                 |
 | `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                                                                           |
-| `pnpm run dev:down`                       | ホストで動かしたもの → 両 repo のコンテナ。共有 store は落とさない。                                                               |
+| `pnpm run dev:down`                       | ホストで動かしたもの → 両 repo のコンテナ（OpenSearch も）。共有 store は落とさない。                                              |
 | `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                                                                    |
 | `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                                                                               |
 | `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                                                                    |

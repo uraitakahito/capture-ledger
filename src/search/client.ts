@@ -20,12 +20,37 @@
  */
 import { Client } from "@opensearch-project/opensearch";
 import type { SearchConfig } from "../config/env.js";
+import { ExplainedError } from "../errors.js";
 import { createChildLogger } from "../logger.js";
 
 const log = createChildLogger({ module: "search-client" });
 
 export const createSearchClient = (config: SearchConfig): Client =>
   new Client({ node: config.url });
+
+/** OpenSearch に届かない。`FgaUnreachableError` と同じ形で、文だけで次の一手が分かるように書く。 */
+export class SearchUnreachableError extends ExplainedError {
+  constructor(url: string, detail: string) {
+    super(
+      `OpenSearch (${url}) に届きません —— 全文検索は必須です。dev なら pnpm run dev:up --from search (OpenSearch を起こし、後ろの段も続ける)\n` +
+        `  ${detail}`,
+    );
+    this.name = "SearchUnreachableError";
+  }
+}
+
+/**
+ * 起動の時に、OpenSearch が答えることを確かめ、索引が無ければ作る。答えなければ投げる ——
+ * 検索は必須なので、検索の無いまま待ち受けない (CAPTURE-53)。以前は最初の索引の時まで
+ * 誰も OpenSearch に触れず、届かないことが起動の後まで見えなかった。
+ */
+export const ensureSearchReady = async (client: Client, config: SearchConfig): Promise<void> => {
+  try {
+    await ensureIndex(client, config.index);
+  } catch (err) {
+    throw new SearchUnreachableError(config.url, err instanceof Error ? err.message : String(err));
+  }
+};
 
 /**
  * 索引が無ければ作る。あれば何もしない。
