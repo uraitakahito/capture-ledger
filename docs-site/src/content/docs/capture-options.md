@@ -180,6 +180,16 @@ mebibyte. The source itself comes from `GET /api/crawls/:id/inline/:name`, as
 JavaScript, so that route is the one place to get back what you wrote. Registered scripts answer 404
 there.
 
+When a crawl failed the type check, `GET /api/crawls/:id/diagnostics` re-reads its errors. The ledger
+sends the scripts pinned on the crawl to ts-compile-service again, in the shape the webhook carried,
+so the service checks the same set the flow's compile step did and returns the same errors — all of
+them, by line and column, as `{ typescript, diagnostics: [{ script, line, col, code, message }] }`
+(an error outside the scripts, in a type library, keeps its `file` instead of a `script`). A set that
+type-checks answers with an empty `diagnostics` and the `hostTypes` it was checked against. The route
+needs `CAPTURE_LEDGER_TS_COMPILE_URL` — capture-scheduler's compose publishes ts-compile on the host at
+`127.0.0.1:28080` — and is not served without it. It changes nothing and calls only ts-compile-service,
+so it is a GET with the same permission as the crawl's other routes; an unreachable service is a 503.
+
 Once the first level has been reported, each entry also carries `jsSha256` and
 `compiledWith` (`{ typescript, hostTypes }`): the hash of the JavaScript that level ran,
 and what produced it, as ts-compile-service answered and the flow reported
@@ -228,8 +238,8 @@ Besides naming registered scripts, a `scripts` element can carry a script writte
 - **`name` matches `^[a-z][a-z0-9-]*$`, at most 64 characters with the prefix**, which is the id
   rule of ts-compile-service. Anything else is a 400 from `POST`.
 - **It must type-check as strict TypeScript.** Each level starts with ts-compile-service checking it
-  together with the registered scripts, and a single error fails the level (the diagnostics end up in
-  `error`). Wrap it in an IIFE: scripts of one level are checked as one program, so top-level names
+  together with the registered scripts, and a single error fails the level (the first diagnostics end up in
+  `error`, cut to the ledger's 2,000 characters; `GET /api/crawls/:id/diagnostics` re-reads them all). Wrap it in an IIFE: scripts of one level are checked as one program, so top-level names
   clash with each other and with DOM globals such as `name`. An `export` type-checks but is a syntax
   error in the page, where nothing then runs. To skip the type check, start with `// @ts-nocheck`
   (syntax is still checked).

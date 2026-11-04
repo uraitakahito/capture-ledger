@@ -23,6 +23,7 @@ import { registerScriptsRoute } from "./scripts.js";
 import { registerPicker, replayOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
+import { createTsCompile } from "../scripts/ts-compile.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerSinkRoutes, type SinkConfig } from "./sink.js";
 import { createSearchClient } from "../search/client.js";
@@ -164,6 +165,14 @@ const start = async (options: ServerOptions): Promise<void> => {
           "crawls whose scripts declare secrets are refused",
       );
     }
+    // 型の検査の窓口 (ts-compile-service を host の loopback で)。無ければ取り直しの口を出さない ——
+    // その配備に取り直しは無い、が正しい答えなので 404。
+    const tsCompile = createTsCompile();
+    if (tsCompile === undefined) {
+      logger.info(
+        "CAPTURE_LEDGER_TS_COMPILE_URL is not set — /api/crawls/:id/diagnostics is not served",
+      );
+    }
     registerCrawlRoutes(app, {
       db,
       fga,
@@ -173,6 +182,7 @@ const start = async (options: ServerOptions): Promise<void> => {
       dispatch,
       ...(sink && { sink }),
       ...(windmill && { windmill }),
+      ...(tsCompile && { tsCompile }),
       capture,
     });
   }

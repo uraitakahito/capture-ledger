@@ -227,6 +227,11 @@ There is no BrowserHive address here any more. The two HTTP endpoints the stack
 publishes, `localhost:50051` and `localhost:50052` — one BrowserHive per Chromium —
 are for curl and for the flow, not for capture-ledger.
 
+capture-ledger does call **ts-compile-service**, which is not in this stack: capture-scheduler's compose
+runs it and publishes it on `127.0.0.1:28080` (from capture-scheduler v0.28.0). Set
+`CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` to serve `GET /api/crawls/:id/diagnostics`;
+capture-scheduler's `pnpm run doctor` checks the port (`host→ts-compile`).
+
 The `pnpm run` scripts read that `.env` themselves
 (`node --env-file-if-exists=.env`) — no shell `export` needed. **Variables
 already in the environment win**, so `DATABASE_URL=... pnpm run db:migrate`

@@ -167,6 +167,16 @@ source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source
 アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこの口だけです。台帳のスクリプトには 404 を
 返します。
 
+型の検査で落ちたクロールの誤りは、`GET /api/crawls/:id/diagnostics` で読み直せます。台帳は、そのクロールに
+固定したスクリプトの写しを、webhook と同じ形で ts-compile-service に送り直します。flow の compile の段と
+同じ組み合わせを検査するので、同じ誤りが、全部、行と列で返ります ——
+`{ typescript, diagnostics: [{ script, line, col, code, message }] }`（スクリプトの外、型の lib の誤りは、
+`script` の代わりに `file` を持ちます）。通る組み合わせなら `diagnostics` は空で、検査に使った
+`hostTypes` も返します。この口には `CAPTURE_LEDGER_TS_COMPILE_URL` が要り（capture-scheduler の compose が
+ts-compile を host の `127.0.0.1:28080` に出しています）、無ければ口を出しません。何も書き換えず、
+ts-compile-service しか呼ばないので GET で、許可はクロールのほかの口と同じです。サービスに届かなければ
+503 を返します。
+
 最初の段の報告が来ると、各要素に `jsSha256` と `compiledWith`（`{ typescript, hostTypes }`）も
 付きます。その段が走らせた JavaScript の sha256 と、何で・何に向けて変換したか ——
 ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の `compiled`）で
@@ -212,7 +222,8 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 - **`name` は `^[a-z][a-z0-9-]*$` で、`inline-` と合わせて 64 字まで。** ts-compile-service の id と
   同じ綴りで、合わなければ `POST` が 400 で断ります。
 - **書けるのは、strict の TypeScript として型が通る JS です。** 段の最初に ts-compile-service が
-  台帳のスクリプトと一緒に型を検査し、1 本でも誤りがあれば段ごと落ちます（`error` に診断が残ります）。
+  台帳のスクリプトと一緒に型を検査し、1 本でも誤りがあれば段ごと落ちます（`error` に最初の診断が、台帳の上限の 2,000 字まで残ります。
+  全部を読み直すのは `GET /api/crawls/:id/diagnostics`）。
   IIFE で包んでください。同じ段の JS は 1 つの program で検査されるので、top-level の名前は
   ほかの JS や DOM の大域（`name` など）とぶつかります。`export` を書くと型は通りますが、
   ページでは構文エラーになり、何も走りません。型の検査を外すなら、1 行目に `// @ts-nocheck`

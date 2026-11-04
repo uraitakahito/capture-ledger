@@ -8,7 +8,12 @@ import {
 } from "../src/api/crawls.js";
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
 import { WindmillUnreachable, type WindmillVariables } from "../src/crawl/windmill-variables.js";
-import type { CrawlRule, CrawlSecret, ScriptParam } from "../src/db/database.js";
+import type { CrawlRule, CrawlScript, CrawlSecret, ScriptParam } from "../src/db/database.js";
+import {
+  TsCompileUnreachable,
+  type CompileAnswer,
+  type TsCompile,
+} from "../src/scripts/ts-compile.js";
 
 /**
  * クロールを始める口の検査。
@@ -533,6 +538,8 @@ const depsWith = (opts: {
   scripts?: FakeScript[];
   /** Windmill の変数の窓口。省けば無い配備 (シークレットを宣言したクロールは 400) */
   windmill?: WindmillVariables;
+  /** 型の検査の窓口。省けば無い配備 (取り直しの口が無い) */
+  tsCompile?: TsCompile;
 }): CrawlRouteDeps =>
   ({
     db: fakeDb(
@@ -549,6 +556,7 @@ const depsWith = (opts: {
     // 6 つ全部を返す約束を破っても、この試験は気づかない。
     capture: parseCaptureFormats("wacz", false),
     ...(opts.windmill && { windmill: opts.windmill }),
+    ...(opts.tsCompile && { tsCompile: opts.tsCompile }),
   }) as unknown as CrawlRouteDeps;
 
 describe("クロール route の認可と単一実行", () => {
@@ -1359,6 +1367,155 @@ describe("走らせるものの解決", () => {
  * 並びは**偽物に並べさせて**いる。入力をわざと古い順で渡すので、本物から
  * `orderBy` が消えれば、この試験は赤くなる。
  */
+describe("型の誤りを取り直す口", () => {
+  const INLINE = {
+    name: "close-banner",
+    phase: "behavior",
+    source: "const close = (el) => el.click();\n",
+  } as const;
+  const DIAGNOSTIC = {
+    file: "inline-close-banner.ts",
+    line: 1,
+    col: 16,
+    code: "TS7006",
+    message: "Parameter 'el' implicitly has an 'any' type.",
+  };
+
+  /** その場の JS と台帳のスクリプトで 1 本始め、webhook に渡った列をそのまま控える。 */
+  const startCapturing = async () => {
+    const crawls: FakeCrawl[] = [];
+    const sent: CrawlScript[][] = [];
+    const app = await buildApp(
+      depsWith({
+        crawls,
+        allowed: true,
+        dispatch: (crawl) => {
+          sent.push(crawl.scripts);
+          return Promise.resolve(undefined);
+        },
+      }),
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: SUBJECT,
+      payload: { seeds: [SEED], scripts: [{ inline: INLINE }, { catalog: "autoscroll" }] },
+    });
+    await app.close();
+    expect(res.statusCode).toBe(202);
+    return { crawls, sent };
+  };
+
+  /** 頼まれた列を控えて、決めた答えを返す偽の窓口。 */
+  const fakeCompile = (answer: CompileAnswer | Error) => {
+    const asked: (readonly CrawlScript[])[] = [];
+    const tsCompile: TsCompile = {
+      compile(scripts) {
+        asked.push(scripts);
+        return answer instanceof Error ? Promise.reject(answer) : Promise.resolve(answer);
+      },
+    };
+    return { asked, tsCompile };
+  };
+
+  const ask = async (
+    crawls: FakeCrawl[],
+    tsCompile: TsCompile | undefined,
+    opts: { allowed?: boolean; id?: string } = {},
+  ) => {
+    const app = await buildApp(
+      depsWith({ crawls, allowed: opts.allowed ?? true, ...(tsCompile && { tsCompile }) }),
+    );
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/crawls/${opts.id ?? crawls[0]!.id}/diagnostics`,
+    });
+    await app.close();
+    return res;
+  };
+
+  it("落ちたクロールの組み合わせを、webhook と同じ形で ts-compile に送り直す", async () => {
+    const { crawls, sent } = await startCapturing();
+    const { asked, tsCompile } = fakeCompile({
+      ok: false,
+      typescript: "6.0.3",
+      diagnostics: [DIAGNOSTIC],
+    });
+    await ask(crawls, tsCompile);
+    expect(asked).toHaveLength(1);
+    // 台帳のスクリプトも入っている —— 一緒に走る物の重なり (TS2451) は、組み合わせでしか起きない
+    expect(asked[0]!.map((s) => s.id)).toEqual(["inline-close-banner", "autoscroll"]);
+    expect(asked[0]).toEqual(sent[0]);
+  });
+
+  it("誤りを、スクリプトの id・行・列・code・文で返す", async () => {
+    const { crawls } = await startCapturing();
+    const { tsCompile } = fakeCompile({
+      ok: false,
+      typescript: "6.0.3",
+      diagnostics: [DIAGNOSTIC, { file: "lib.dom.d.ts", code: "TS2300", message: "dup" }],
+    });
+    const res = await ask(crawls, tsCompile);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      typescript: "6.0.3",
+      diagnostics: [
+        {
+          script: "inline-close-banner",
+          line: 1,
+          col: 16,
+          code: "TS7006",
+          message: DIAGNOSTIC.message,
+        },
+        { file: "lib.dom.d.ts", code: "TS2300", message: "dup" },
+      ],
+    });
+  });
+
+  it("通る組み合わせなら、誤りは空で、受け皿の型の版も返す", async () => {
+    const { crawls } = await startCapturing();
+    const { tsCompile } = fakeCompile({ ok: true, typescript: "6.0.3", hostTypes: "v0.6.0" });
+    const res = await ask(crawls, tsCompile);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ typescript: "6.0.3", hostTypes: "v0.6.0", diagnostics: [] });
+  });
+
+  it("ts-compile に届かなければ 503", async () => {
+    const { crawls } = await startCapturing();
+    const { tsCompile } = fakeCompile(new TsCompileUnreachable("POST …/compile: ECONNREFUSED"));
+    const res = await ask(crawls, tsCompile);
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: "ts-compile unreachable" });
+  });
+
+  it("窓口が無い配備では口を作らない", async () => {
+    const { crawls } = await startCapturing();
+    const res = await ask(crawls, undefined);
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).not.toHaveProperty("diagnostics");
+  });
+
+  it("許可の無い名乗りにも、無いクロールにも 404（ts-compile は呼ばない）", async () => {
+    const { crawls } = await startCapturing();
+    const { asked, tsCompile } = fakeCompile({
+      ok: true,
+      typescript: "6.0.3",
+      hostTypes: "v0.6.0",
+    });
+    expect((await ask(crawls, tsCompile, { allowed: false })).statusCode).toBe(404);
+    expect((await ask(crawls, tsCompile, { id: UUID })).statusCode).toBe(404);
+    expect(asked).toHaveLength(0);
+  });
+
+  it("id の綴りが違えば、許可を見る前に 400", async () => {
+    const { tsCompile } = fakeCompile({ ok: true, typescript: "6.0.3", hostTypes: "v0.6.0" });
+    const app = await buildApp({ ...unreachableDeps, tsCompile });
+    const res = await app.inject({ method: "GET", url: "/api/crawls/not-a-uuid/diagnostics" });
+    await app.close();
+    expect(res.statusCode).toBe(400);
+  });
+});
+
 describe("クロールの一覧", () => {
   const row = (over: Partial<FakeCrawl> & { id: string; startedAt: Date }): FakeCrawl => ({
     seeds: [SEED],
