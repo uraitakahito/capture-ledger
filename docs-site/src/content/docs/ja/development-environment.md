@@ -219,6 +219,11 @@ BrowserHive の在り処はもうここにありません。スタックが公�
 口 `localhost:50051` と `localhost:50052`（Chromium 1 台に BrowserHive 1 つ）は、
 curl と flow のためのもので、capture-ledger のためではありません。
 
+台帳は **ts-compile-service** を呼びます。このスタックには無く、capture-scheduler の compose が
+動かして、host の `127.0.0.1:28080` に出しています（capture-scheduler v0.28.0 から）。
+`CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` を書くと、`GET /api/crawls/:id/diagnostics`
+が出ます。口は capture-scheduler の `pnpm run doctor` が見ます（`host→ts-compile`）。
+
 `pnpm run` 系のコマンドはこの `.env` を自分で読みます
 （`node --env-file-if-exists=.env`）。シェルで `export` する必要はありません。
 **すでに環境にある変数のほうが優先される**ので、一時的に別の DB を向きたいときは

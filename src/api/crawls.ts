@@ -62,6 +62,11 @@ import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
 import { checkValues, type DeclaredSecret } from "../crawl/values.js";
 import { WindmillUnreachable, type WindmillVariables } from "../crawl/windmill-variables.js";
 import {
+  attributeDiagnostics,
+  TsCompileUnreachable,
+  type TsCompile,
+} from "../scripts/ts-compile.js";
+import {
   HOSTNAME,
   parseHttpUrl,
   siteOf,
@@ -234,6 +239,11 @@ export interface CrawlRouteDeps {
    * クロールは 400 で止まる (値を解く flow が無いので)。
    */
   windmill?: WindmillVariables;
+  /**
+   * 型の検査の窓口 (`scripts/ts-compile.ts`)。flow の compile の段と同じ ts-compile-service を、host の
+   * loopback で呼ぶ。無ければ `GET /api/crawls/:id/diagnostics` を出さない (その配備に取り直しは無い)。
+   */
+  tsCompile?: TsCompile;
 }
 
 interface CrawlBody {
@@ -302,7 +312,7 @@ interface LevelBody {
  * flow へ渡す形は変えない。報告で写した JS の hash と変換の記録は台帳の物で、
  * 変換サービスと BrowserHive には見せない (見せても読まないが、契約を 1 つに保つ)。
  */
-const toDispatched = ({
+export const toDispatched = ({
   id,
   version,
   phase,
@@ -336,7 +346,7 @@ const secretsOf = (
     }));
 
 export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps): void => {
-  const { db, fga, resolveIdentity, dispatch, capture, sink } = deps;
+  const { db, fga, resolveIdentity, dispatch, capture, sink, tsCompile } = deps;
 
   /**
    * 段を 1 つ Windmill へ投げる。**待たない** —— この Promise の行き先は `crawls` の行で、
@@ -1084,6 +1094,68 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       });
     },
   );
+
+  /**
+   * クロール 1 本の組み合わせを、ts-compile-service に送り直した型の誤り。**落ちたクロールの誤りを
+   * 行と列で読み直す口** —— 行の失敗の文は台帳の上限の 2,000 字で切られ、最初の数件しか無い。
+   *
+   * 送るのは、始めたときに行へ固定した写しを webhook と同じ形 (`toDispatched`) にした物で、flow の
+   * compile の段が送ったのと同じ組み合わせ。だから同じ版のサービスなら、同じ誤りが返る。通る
+   * 組み合わせなら `diagnostics` は空。`script` は誤りの在るスクリプトの id (受け皿の型や lib の
+   * 誤りは `file` のまま)。Claude は呼ばない —— 読むだけの口なので GET。
+   */
+  if (tsCompile !== undefined) {
+    app.get<{ Params: { id: string } }>(
+      "/api/crawls/:id/diagnostics",
+      {
+        schema: {
+          params: {
+            type: "object",
+            properties: { id: { type: "string", format: "uuid" } },
+            required: ["id"],
+          },
+        },
+      },
+      async (request, reply) => {
+        const identity = await resolveIdentity(request);
+        if (!identity) return unauthorized(reply);
+        if (!(await maySubmit(fga, identity))) {
+          return reply.code(404).send({ error: "not found" });
+        }
+
+        const crawl = await db
+          .selectFrom("crawls")
+          .select(["scripts"])
+          .where("id", "=", request.params.id)
+          .executeTakeFirst();
+        if (crawl === undefined) return reply.code(404).send({ error: "not found" });
+
+        const scripts = crawl.scripts.map(toDispatched);
+        let answer;
+        try {
+          answer = await tsCompile.compile(scripts);
+        } catch (err) {
+          if (!(err instanceof TsCompileUnreachable)) throw err;
+          request.log.warn({ err }, "ts-compile-service did not answer");
+          return reply.code(503).send({ error: "ts-compile unreachable" });
+        }
+        if (answer.ok) {
+          return reply.code(200).send({
+            typescript: answer.typescript,
+            hostTypes: answer.hostTypes,
+            diagnostics: [],
+          });
+        }
+        return reply.code(200).send({
+          typescript: answer.typescript,
+          diagnostics: attributeDiagnostics(
+            answer.diagnostics,
+            scripts.map((s) => s.id),
+          ),
+        });
+      },
+    );
+  }
 
   /**
    * クロール 1 本で、規則がリンクをどう決めたか。**固定した規則と、段 × 規則 × ホスト名の数と、
