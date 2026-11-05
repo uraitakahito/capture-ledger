@@ -685,7 +685,8 @@ OpenSearch が推測します（エラーは出ません）。
 ```sh
 # クロールの flow のための口。段を報告した後・その段を索引に載せる前に叩く
 curl -X POST .../api/crawls/<id>/replay-bundle -H 'content-type: application/json' -d '{"depth":1}'
-# → 200 { "rev": 3, "pages": 18, "members": 6, "skipped": 0, "failed": 0, "error": null }
+# → 200 { "rev": 3, "pages": 18, "members": 6, "skipped": 0, "failed": 0, "error": null,
+#         "signed": false, "signError": null, "digestKey": null }
 ```
 
 叩くたびに**新しい版**（`rev`）を書きます。版の番号はクロールの行が払い出し
@@ -697,14 +698,17 @@ curl -X POST .../api/crawls/<id>/replay-bundle -H 'content-type: application/jso
 本文の `depth` は記録するだけです（`replay.json` の `replayBundle.depth`）。版ではありません ――
 作り直しで同じ深さを 2 度書くためです。
 
-| 欄        | 意味                                                                                     |
-| --------- | ---------------------------------------------------------------------------------------- |
-| `rev`     | 書いた（書こうとした）版。入れる WACZ が無く、何も書かなかったときは `null`              |
-| `pages`   | `pages.json` の行の数（`totalPages`）                                                    |
-| `members` | `resources` に入れた WACZ の数                                                           |
-| `skipped` | 記録が 0 で外した WACZ の数（下）                                                        |
-| `failed`  | 読めなかった WACZ の数（保管庫に無い・zip でない・保管庫に届かない）。次の合本が読み直す |
-| `error`   | 書けなかった理由。書けたら `null`                                                        |
+| 欄          | 意味                                                                                                                    |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `rev`       | 書いた（書こうとした）版。入れる WACZ が無く、何も書かなかったときは `null`                                             |
+| `pages`     | `pages.json` の行の数（`totalPages`）                                                                                   |
+| `members`   | `resources` に入れた WACZ の数                                                                                          |
+| `skipped`   | 記録が 0 で外した WACZ の数（下）                                                                                       |
+| `failed`    | 読めなかった WACZ の数（保管庫に無い・zip でない・保管庫に届かない）。次の合本が読み直す                                |
+| `error`     | 書けなかった理由。書けたら `null`                                                                                       |
+| `signed`    | 署名して `replay-digest.json` を書いたか（[合本の署名](#合本の署名)）                                                   |
+| `signError` | 終わったクロールの合本に署名しなかった（できなかった）理由。署名した・走っているクロール・署名の設定が無いときは `null` |
+| `digestKey` | 書いた `replay-digest.json` の鍵。署名しなかったら `null`                                                               |
 
 **書けなくても 200 です。** 理由を `error` と `crawls.replay_bundle_error` に残します（後の版が
 書けたら消えます）。合本は撮った物から作る派生物で、flow の段を誤りにすると、次の段が既に走って
@@ -721,7 +725,8 @@ UUID でない・本文が `{depth}` でない）は索引の口と同じです�
 `document.url`（リダイレクトの後）を `parseHttpUrl` と同じ形に正規化した物で、replay の server が
 頁を引く鍵です。写しの行には付けません。
 
-記録が 0 の WACZ（索引が空か、`waczStats.totalRecorded` が 0）は外します（`skipped`）。replay が
+記録が 0 の WACZ（索引が空か、`waczStats.totalRecorded` が 0）は外します（`skipped`。名前と sha256 は
+`replayBundle.skippedResources` に残ります）。replay が
 長さ 0 の Range を求め、保管庫の 416 で JSON を読み直し続けるからです。`resources` は起点の WACZ を
 先頭に、続けて深さ・撮った時刻の順です（決まった順にするためです。replay が、頁が持たない物を探す
 3 本は、この並びではなく WACZ の名前の順で選ばれます）。
@@ -732,8 +737,11 @@ UUID でない・本文が `{depth}` でない）は索引の口と同じです�
 ### 読み返す
 
 `GET /api/crawls` と `GET /api/crawls/:id` は `replayBundle` を持ちます: クロールが指す版の
-`{ key, rev, pages, builtAt, error }`（`key` はその `replay.json` の鍵）で、書けた版も失敗も
-無ければ `null` です。最初の版が書ける前の失敗は、`error` だけが値を持ちます。
+`{ key, rev, pages, builtAt, error, signedRev, digestKey, signError }`（`key` はその `replay.json` の鍵）で、
+書けた版も失敗も無ければ `null` です。最初の版が書ける前の失敗は、`error` だけが値を持ちます。
+`signedRev` と `digestKey` は署名した版のうち最も大きい物と、その `replay-digest.json` の鍵で、**指す版とは別に
+前へだけ進みます**。`signedRev === rev` なら、クロールが指す合本は署名されています。`signError` は指す版に署名
+しなかった理由です（走っているクロールの版と、署名の設定が無い配備では `null`）。
 `GET /api/crawls/:id/pages` の頁は `capturedAt` と `bundledRev`（その WACZ が最初に入った版）を持ち、
 `bundledRev ≤ replayBundle.rev` なら、その頁はクロールが指す合本の中にあります。
 
@@ -750,13 +758,186 @@ pnpm run replay-bundle:rebuild --crawl <id>
 同じ形で新しい版を書きます。台帳と保管庫を直に読み書きし、アクセストークンは使いません。打つのは、
 合本に入らなかった物があるときです: 最後の段の後に reconcile が受けた取り込み、合本を書けなかった段、
 migration `027` より前のクロール（先に、そのクロールのアーカイブを `crawl_pages.task_id` で
-クロールに繋ぎます）。
+クロールに繋ぎます）。署名も API と同じに判定するので、**署名の付かなかった終わったクロールに署名し直すのも
+これ**です（新しい版を書いて署名します）。書けなかった・読めなかった WACZ が在る・署名が付かなかった、の
+どれでも終了コード 1 です。
 
 :::caution[1 つの物が、クロールの鍵を全部並べる]
 bucket は replay の `/wacz/` を通して匿名で読めるので、合本はクロールの WACZ の鍵を全部、
 1 か所に並べます。WACZ 1 本ずつが既に持っている露出が、1 か所に集まった形です。
 `pnpm run store:wipe` の後は、`replay_bundle_key` は何も無い所を指します。
 :::
+
+### 合本の署名
+
+終わったクロールの合本には、署名を付けます（CAPTURE-61）。台帳は `replay.json` のバイト列の sha256 を
+[wacz-signer](https://github.com/uraitakahito/wacz-signer) の `/sign` に送って署名を貰い、**置く前に自分で検め**、
+同じ置き場に `replay-digest.json` を書きます。形は WACZ の `datapackage-digest.json` と同じ
+`{ "path": "replay.json", "hash": "sha256:…", "signedData": { … } }` で、`hash` は台帳が計った値、`signedData` は
+wacz-signer の答えの 9 つの欄（`hash`・`created`・`software`・`version`・`signature`・`domain`・`domainCert`・
+`timeSignature`・`timestampCert`）そのものです。
+
+署名するのは、次の 3 つが揃ったときだけです:
+
+- 署名の設定が在る（下の[署名の設定](#署名の設定)）
+- クロールが終わっている（`succeeded`・`failed`）。状態は、版を払い出す更新の returning で、クロールの行の鍵の
+  下で読みます —— その版の中身を読んだ時の状態です
+- まだ検めていない WACZ が 0 本。検められなかった WACZ は合本に入らないので、署名すると「このクロールの WACZ は
+  これで全部」と言ってしまいます
+
+走っているクロールの段の合本には署名しません。`POST /api/crawls/:id/failed` で締めたときと、次の段を投げられずに
+締めたときは、**台帳が締めた後に合本を 1 本書きます**（その後に段は来ないので、ほかに書く者が居ません）。
+段の報告は、締めたクロールを `succeeded` に戻しません（条件は行の更新の中で見ます）。
+
+書く順は `pages.json` → `replay-digest.json` → `replay.json` です。入口の `replay.json` が現れた時点で、それを覆う
+digest も在ります。署名を頼むのは版の払い出しのトランザクションの外で、TSA との往復を待つ間、クロールの行の鍵を
+持ちません。
+
+**署名が付かなくても合本は書きます**（replay は開けます）。wacz-signer が答えない・TSA に届かない（`502`）・返って
+きた署名が検めを通らない・まだ検めていない WACZ が残る、のどれでも、理由を `signError` と
+`crawls.replay_bundle_sign_error` に残します。署名し直すのは[作り直しの道具](#合本を作り直す)で、新しい版を書いて
+署名します（前の置き場に digest を足すことはしません —— 版ごとの置き場は書いたら変えません）。
+
+#### 何を証すか
+
+署名が覆うのは `replay.json` のバイト列です。クロールについて証したい事は、どれもその中に書きます:
+
+| 欄                                                    | 何か                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------- |
+| `resources[].hash`                                    | WACZ ごとの sha256（台帳が WACZ を 1 度読んで計った物） |
+| `replayBundle.pagesHash`                              | `pages.json` のバイト列の sha256                        |
+| `replayBundle.skippedResources`                       | 記録が 0 で外した WACZ の名前と sha256                  |
+| `replayBundle.crawlState`・`stopReason`・`finishedAt` | 版を払い出した時のクロールの状態                        |
+| `replayBundle.crawlId`・`rev`・`pagesQueryUrl`        | どのクロールの何版で、どこに置いたか                    |
+
+だから署名 1 つで、このクロールに**どの WACZ がどの中身で属すか**と、クロールが**どの状態で終わったか**を、
+第三者が確かめられます。形の `version` は 1 のままです（欄を足しただけで、replay は `replayBundle` を読みません）。
+
+#### 何を証さないか
+
+- **`builtAt` は台帳の時計の主張にすぎません。** 時刻として確かなのは、時刻印の genTime（TSA が押した時刻）だけ
+  です。`finishedAt` も台帳の時計です
+- 「このクロールの WACZ はこれで全部」は、台帳がその時に知っていた範囲です。報告の届かなかった取り込み（落ちた段の
+  途中までに撮れた物）は入りません。後から reconcile が受けた物は、作り直せば次の版に入ります
+- WACZ の中の署名（各 WACZ の `datapackage-digest.json`）は照らしません。合本の署名が言うのは、WACZ のバイト列が
+  合本の言う物と同じことまでです
+- `skippedResources` は名前と sha256 だけで、在り処を持ちません
+- dev の CA と TSA は、信じる者の居ない開発用です。誰を信じるかは、検める人が錨（根）で決めます
+- `genTime` が真であることの立証はしません。漏れた TSA の鍵は、自分の有効期間の内に遡った時刻印をなお作れます
+  （RFC 3161 に残る制約で、塞ぐには独立した時刻源が要ります）
+
+#### 署名の設定
+
+| 変数                                     | 意味                                                            |
+| ---------------------------------------- | --------------------------------------------------------------- |
+| `CAPTURE_LEDGER_SIGNER_URL`              | wacz-signer の `/sign`                                          |
+| `CAPTURE_LEDGER_SIGNER_TOKEN`            | その Bearer                                                     |
+| `CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR`     | 署名の鎖を照らす根（PEM のファイル）                            |
+| `CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR` | 時刻印の局の鎖を照らす根（PEM のファイル）                      |
+| `CAPTURE_LEDGER_SIGNER_TIMEOUT_MS`       | 署名を待つ時間（既定 10 秒。wacz-signer は TSA との往復を待つ） |
+| `CAPTURE_LEDGER_OPENSSL_BIN`             | 時刻印を検める openssl（既定は `PATH` の `openssl`）            |
+
+**上の 4 つで 1 組です。** 揃えば署名し、どれも無ければ署名しません。**一部だけなら起動で止まります** —— 錨が無い
+と返ってきた署名を置く前に検められず、宛先が無いと錨は何にも効きません。`CAPTURE_LEDGER_CAPTURE_SIGNING=1`（WACZ に
+署名を求める）なのに 4 つが無いときも止まります。起動では錨を読み（読めない・証明書が入っていないなら止まる）、
+openssl が `ts -attime` を持つかを確かめます（macOS の `/usr/bin/openssl` は LibreSSL で持ちません）。作り直しの
+道具も同じ判定です。dev の値は `.env.example` にあります。
+
+置く前の検めは BrowserHive の検めを写した物（`src/replay-bundle/verify-signed-data.ts`）で、4 つの段（署名・鎖・
+domain・時刻印）が**全部 ok のときだけ**署名ありと記録します。元と違い、錨の無い段や時刻印の無い署名を `skipped`
+として通しません。答えの `signedData.hash` が台帳の計った hash と同じかも見ます。時刻印は設定の TSA の根で検め、
+**時刻印の中に入っている証明書を根に使いません**。鎖の有効期間は「いま」ではなく時刻印の genTime で見ます
+（署名用の証明書は短命で、検める頃には切れているのが普通です）。
+
+#### 合本を確かめる
+
+```sh
+pnpm run replay-bundle:verify --crawl <id>
+pnpm run replay-bundle:verify --crawl <id> --rev 5
+pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5
+```
+
+上から、台帳が指す版（保管庫から）・版を名指す・手元の写し。
+
+| 名前        | 照らす物                                                                                             |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| `place`     | `replay.json` の `crawlId`・`rev`・`pagesQueryUrl`・`resources[].crawlId` が、名指した置き場と同じ   |
+| `digest`    | `replay-digest.json` の `path` が `replay.json` で、sha256(replay.json) = `hash` = `signedData.hash` |
+| `signature` | 署名の 4 段（置く前の検めと同じ物。hash は自分で計った物）                                           |
+| `pages`     | sha256(pages.json) = `replayBundle.pagesHash`                                                        |
+| `wacz`      | 各 WACZ を流して計った sha256 = `resources[].hash`（1 本に 1 行）                                    |
+
+**全部 ok のときだけ終了コード 0 です。** 1 つが落ちても残りを照らし、落ちた物を全部名指します。保管庫から読む
+ときは台帳でクロールの組織と版を引き（`--rev` を省けば台帳が指す版。署名した版が別なら、それも言います）、
+設定の bucket から読みます。手元の写し（`--dir`）は、置き場の 3 つと、`resources[].name` の名前の WACZ が並ぶ
+フォルダで、どの置き場の写しかを `--crawl` と `--rev` で言います（r3 の中身を r5 と言えば `place` が落ちます）。
+錨は `CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR`・`CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR` を読み、`--trust-anchor`・
+`--timestamp-anchor` で差し替えられます。
+
+#### 第三者の手順
+
+台帳を使わずに確かめる手です。読むのは replay の `/wacz/`（bucket の匿名の read）からで、錨は検める人が選びます
+（dev なら BrowserHive の `dev-stack/signing-ca/` の `insecure-dev-ca.crt` と `insecure-dev-tsa-ca.crt`）。
+
+塊は手順ごとに分け、塊の中に `#` の注を書いていません。そのまま bash にも zsh にも貼れます —— zsh は既定で、
+貼った行の `#` を注として読みません（`setopt interactivecomments` が無いと、注は `command not found: #` になり、
+注の中の `'` から先は引用に呑まれて崩れます）。
+
+**1. 置き場の 3 つを取る**（`<org>`・`<crawl>`・`<rev>` は確かめる置き場）
+
+```sh
+B=http://127.0.0.1:8899/wacz/org/<org>/crawls/<crawl>/r<rev>
+curl -fsSO "$B/replay.json"; curl -fsSO "$B/pages.json"; curl -fsSO "$B/replay-digest.json"
+```
+
+**2. replay.json の sha256 = digest の `hash` = `signedData.hash`**（`path` は `replay.json`）
+
+```sh
+echo "sha256:$(shasum -a 256 replay.json | cut -d' ' -f1)"
+jq -r '.path, .hash, .signedData.hash' replay-digest.json
+```
+
+**3. 置き場とクロールの状態**（署名の中）
+
+```sh
+jq '.replayBundle | {crawlId, rev, crawlState, stopReason, finishedAt, pagesHash}' replay.json
+```
+
+**4. pages.json の sha256 = `pagesHash`**
+
+```sh
+echo "sha256:$(shasum -a 256 pages.json | cut -d' ' -f1)"
+```
+
+**5. 各 WACZ の sha256 = `resources[].hash`**（左右が同じ行になる）。変数は `src` です —— `path` は zsh では
+`PATH` と結び付いていて、読んだ途端に `curl` も `shasum` も見つからなくなります。
+
+```sh
+jq -r '.resources[] | "\(.hash) \(.path)"' replay.json | while read -r hash src; do
+  echo "$hash sha256:$(curl -fsS "http://127.0.0.1:8899$src" | shasum -a 256 | cut -d' ' -f1)"
+done
+```
+
+**6. 署名・鎖・domain**（署名の根は自分で選ぶ）
+
+```sh
+wacz-signer verify --file replay-digest.json --root insecure-dev-ca.crt
+```
+
+**7. 時刻印を、自分で選んだ TSA の根で**
+
+```sh
+jq -r .signedData.timeSignature replay-digest.json | base64 -d > token.tsr
+jq -j .signedData.signature replay-digest.json > signature.b64
+openssl ts -verify -data signature.b64 -in token.tsr -CAfile insecure-dev-tsa-ca.crt
+```
+
+**6 だけでは足りません。** `wacz-signer verify` は署名を `signedData.hash` の欄に対して検めるので、その欄が
+`replay.json` の hash かは見ません（2 が要ります）。時刻印は時刻印の中の最後の証明書を根として扱うので、自作の
+TSA の時刻印も通ります（7 が要ります）。根を渡さなかった段は `skipped` で、それでも `valid` と言います。
+TSA の証明書が切れた後に 7 を打つなら、時刻印の時刻（`openssl ts -reply -in token.tsr -text` の `Time stamp`）を
+epoch の秒にして `-attime` に渡します。`-attime` は LibreSSL（macOS の `/usr/bin/openssl`）に無いので、OpenSSL で
+打ちます。
 
 ## ブラウザからアーカイブを選ぶ
 

@@ -26,10 +26,26 @@ pages.jsonl の行は id を持つが、契約の外の WACZ では欠けうる 
  *
  * `indexes/index.cdxj` が空、または BrowserHive の答えの `waczStats.totalRecorded` が 0 の WACZ (`index_empty`)。
  * replay は長さ 0 の Range を求め、保管庫の 416 で JSON を読み直し続ける。`resources` にも `pages.json` にも入れず、
- * 数だけを `replayBundle.skipped` に残す。台帳の頁の表 (`crawl_pages`) には残る。
+ * 数を `replayBundle.skipped` に、名前と sha256 を `replayBundle.skippedResources` に残す。台帳の頁の表
+ * (`crawl_pages`) には残る。
+ *
+ * ## 署名が覆うのは replay.json のバイト列 (CAPTURE-61)
+ *
+ * 終わったクロールの合本は、`replay.json` の sha256 に wacz-signer の署名を貰い、同じ置き場に
+ * `replay-digest.json` を書く (`replay-bundle/write.ts`)。だから**クロールについて証したい事は、どれも
+ * replay.json の中に書く**: WACZ ごとの sha256 (`resources[].hash`)、`pages.json` の sha256 (`pagesHash`)、
+ * 外した WACZ (`skippedResources`)、版を払い出した時のクロールの状態 (`crawlState`・`stopReason`・`finishedAt`)。
+ * バイト列はここで 1 度だけ作り、hash を計るのと保管庫に置くのに同じ Buffer を使う (作り直すと、署名した物と
+ * 置いた物が別のバイト列になりうる)。
+ *
+ * 形の `version` は 1 のまま。欄を足しただけで、replay は `replayBundle` を読まない。定数は `pages.json` の
+ * `version` と共用で、上げると replay の server が `pages.json` を読めなくなる (`/q/` が 502)。
  */
+import { createHash } from "node:crypto";
 import { parseHttpUrl } from "../crawl/scope.js";
+import type { CrawlState, CrawlStopReason } from "../db/database.js";
 import type { PageLine } from "../search/document.js";
+import type { SignedData } from "./verify-signed-data.js";
 
 /** 合本の形の版。replay の docs/replay-bundle.md と対。 */
 export const REPLAY_BUNDLE_VERSION = 1;
@@ -130,16 +146,30 @@ export interface ReplayJson {
   pagesQueryUrl: string;
   initialPages: InitialPage[];
   totalPages: number;
-  /** 台帳の記録。replay は読まない (ほかの欄の名前とぶつけない)。 */
+  /** 台帳の記録。replay は読まない (ほかの欄の名前とぶつけない)。署名の中に入る。 */
   replayBundle: {
     version: number;
     crawlId: string;
     rev: number;
     depth: number | null;
+    /** 台帳の時計で組んだ時刻。**主張にすぎない** —— 時刻として確かなのは署名の時刻印 (genTime) だけ。 */
     builtAt: string;
+    /** 版を払い出した時のクロールの状態。`running` の版には署名しない。 */
+    crawlState: CrawlState;
+    stopReason: CrawlStopReason | null;
+    finishedAt: string | null;
     members: number;
     skipped: number;
+    /** 記録が 0 で外した WACZ (名前の順)。このクロールに属するが、replay では開かない物。 */
+    skippedResources: SkippedResource[];
+    /** `pages.json` のバイト列の sha256 (`sha256:<hex>`)。 */
+    pagesHash: string;
   };
+}
+
+export interface SkippedResource {
+  name: string;
+  hash: string;
 }
 
 export interface PagesJsonRow {
@@ -166,8 +196,14 @@ export interface ReplayBundle {
   dir: string;
   replayKey: string;
   pagesKey: string;
+  /** 署名を置く鍵 (`<dir>/replay-digest.json`)。署名したときだけ書く。 */
+  digestKey: string;
   replayJson: ReplayJson;
   pagesJson: PagesJson;
+  /** 保管庫に置く `replay.json` のバイト列。署名の hash もこれから計る (同じ Buffer)。 */
+  replayBytes: Buffer;
+  /** 保管庫に置く `pages.json` のバイト列。`pagesHash` はこれから計る。 */
+  pagesBytes: Buffer;
   /** `resources` に入れたアーカイブの id (並びのまま)。 */
   members: string[];
   /** 記録が 0 で外したアーカイブの数。 */
@@ -179,7 +215,20 @@ export const replayBundleDir = (orgId: string, crawlId: string, rev: number): st
   `org/${orgId}/crawls/${crawlId}/r${String(rev)}`;
 
 /** 保管庫の鍵を、origin の根からの path にする (区切りごとに百分率の符号に)。 */
-const keyPath = (key: string): string => key.split("/").map(encodeURIComponent).join("/");
+export const keyPath = (key: string): string => key.split("/").map(encodeURIComponent).join("/");
+
+/**
+ * `resources[].path` (`/wacz/<鍵を区切りごとに符号にした物>`) から、保管庫の鍵を戻す。`/wacz/` で始まらない・
+ * 符号が壊れている物は `undefined`。
+ */
+export const waczKeyOf = (path: string): string | undefined => {
+  if (!path.startsWith("/wacz/")) return undefined;
+  try {
+    return path.slice("/wacz/".length).split("/").map(decodeURIComponent).join("/");
+  } catch {
+    return undefined;
+  }
+};
 
 /** WACZ の鍵の最後の区切り (ファイル名。`<taskId>_<crawlId>.wacz` で、クロールの中で一意)。 */
 export const waczName = (objectKey: string): string =>
@@ -204,6 +253,10 @@ export interface ComposeInput {
   /** flow の段の深さ。記録だけ (作り直しの道具は null)。 */
   depth: number | null;
   builtAt: Date;
+  /** 版を払い出した時のクロールの状態と、終わった理由・時刻 (`crawls` の行。払い出しの行の鍵の下で読んだ物)。 */
+  crawlState: CrawlState;
+  stopReason: CrawlStopReason | null;
+  finishedAt: Date | null;
   archives: readonly BundleArchive[];
   pages: readonly BundlePage[];
 }
@@ -267,6 +320,19 @@ export const composeReplayBundle = (input: ComposeInput): ReplayBundle => {
       crawl_id: crawlId,
     }));
 
+  // pages.json を先に組む。その sha256 を replay.json に書き、署名で覆う
+  const pagesJson: PagesJson = { version: REPLAY_BUNDLE_VERSION, crawlId, rev, pages };
+  const pagesBytes = Buffer.from(JSON.stringify(pagesJson));
+
+  // 外した WACZ も、このクロールに属する物として名前と sha256 を残す (名前の順)
+  const skippedResources: SkippedResource[] = input.archives
+    .filter((archive) => archive.indexEmpty)
+    .map((archive) => ({
+      name: waczName(archive.objectKey),
+      hash: `sha256:${archive.waczSha256}`,
+    }))
+    .sort((a, b) => byText(a.name, b.name));
+
   const replayJson: ReplayJson = {
     title: `クロール ${crawlId.slice(0, 8)} の合本 r${String(rev)}`,
     resources: members.map((archive) => ({
@@ -284,8 +350,13 @@ export const composeReplayBundle = (input: ComposeInput): ReplayBundle => {
       rev,
       depth: input.depth,
       builtAt: input.builtAt.toISOString(),
+      crawlState: input.crawlState,
+      stopReason: input.stopReason,
+      finishedAt: input.finishedAt === null ? null : input.finishedAt.toISOString(),
       members: members.length,
-      skipped: input.archives.length - recorded.length,
+      skipped: skippedResources.length,
+      skippedResources,
+      pagesHash: sha256Of(pagesBytes),
     },
   };
 
@@ -293,9 +364,27 @@ export const composeReplayBundle = (input: ComposeInput): ReplayBundle => {
     dir,
     replayKey: `${dir}/replay.json`,
     pagesKey: `${dir}/pages.json`,
+    digestKey: `${dir}/${REPLAY_DIGEST_NAME}`,
     replayJson,
-    pagesJson: { version: REPLAY_BUNDLE_VERSION, crawlId, rev, pages },
+    pagesJson,
+    replayBytes: Buffer.from(JSON.stringify(replayJson)),
+    pagesBytes,
     members: members.map((archive) => archive.id),
-    skipped: input.archives.length - recorded.length,
+    skipped: skippedResources.length,
   };
 };
+
+/** バイト列の sha256 を、合本の書き方 (`sha256:<hex>`) で。 */
+export const sha256Of = (bytes: Buffer): string =>
+  `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+
+/** 署名を置くファイルの名前。replay.json・pages.json と同じ置き場に置く。 */
+export const REPLAY_DIGEST_NAME = "replay-digest.json";
+
+/**
+ * `replay-digest.json` のバイト列。WACZ の `datapackage-digest.json` と同じ形 (`{path, hash, signedData}`) で、
+ * `path` だけが `replay.json`。**`hash` はこちらが計った物** —— 応答がこだました物ではない (同じでなければ
+ * 置く前の検めで落ちている)。書き方は BrowserHive の createHttpSigner と同じ (2 字の字下げと末尾の改行)。
+ */
+export const replayDigestBytes = (hash: string, signedData: SignedData): Buffer =>
+  Buffer.from(`${JSON.stringify({ path: "replay.json", hash, signedData }, null, 2)}\n`, "utf-8");

@@ -12,6 +12,13 @@
  * 401・404・400 は索引の口と同じ (身元が無い・`can_submit` が無い・id や本文の形が違う)。クロールが無ければ 404
  * (置き場の鍵に組織が要る)。DB に届かないときだけ 500。
  *
+ * ## 終わったクロールの合本には署名する (CAPTURE-61)
+ *
+ * 署名の設定が在り (`config/signer.ts`)、クロールが終わっていて、未検めの WACZ が残っていなければ、`replay.json` の
+ * sha256 に wacz-signer の署名を貰って検め、同じ置き場に `replay-digest.json` を書く。答えの `signed`・`digestKey`・
+ * `signError` がその結末。**署名が付かなくても 200** —— 合本は書き、理由を `signError` と
+ * `crawls.replay_bundle_sign_error` に残す (書けない時と同じ考え)。
+ *
  * ## 本文は `{depth}` だけ
  *
  * flow の段の深さで、`replay.json` に記録するだけ。**版ではない** —— 版は作るたびに台帳が払い出す (作り直しで同じ
@@ -26,6 +33,7 @@ import type { Database } from "../db/database.js";
 import type { IdentityResolver } from "./identity.js";
 import { maySubmit, unauthorized } from "./authorization.js";
 import type { UninspectedArchive } from "../replay-bundle/inspect.js";
+import type { ReplayBundleSigner } from "../replay-bundle/sign.js";
 import { writeReplayBundle } from "../replay-bundle/write.js";
 
 export interface ReplayBundleRouteDeps {
@@ -38,6 +46,8 @@ export interface ReplayBundleRouteDeps {
   /** 差し替え口。試験は zip を作らずに、数え方と答えの形を見る (台帳に DB の試験は無い)。 */
   inspectOne?: (archive: UninspectedArchive) => Promise<void>;
   now?: () => Date;
+  /** 署名の窓口 (`replay-bundle/sign.ts`)。無ければ署名しない (設定の無い配備)。 */
+  signer?: ReplayBundleSigner;
 }
 
 export const registerReplayBundleRoutes = (
@@ -80,6 +90,7 @@ export const registerReplayBundleRoutes = (
         bucket,
         ...(deps.inspectOne && { inspectOne: deps.inspectOne }),
         ...(deps.now && { now: deps.now }),
+        ...(deps.signer && { signer: deps.signer }),
       });
       if (result === undefined) return reply.code(404).send({ error: "not found" });
       return reply.code(200).send(result);

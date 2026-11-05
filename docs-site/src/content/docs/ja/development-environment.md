@@ -408,30 +408,33 @@ warn はほかに 3 つあります。名乗りの設定がどちらも無い（
 
 ### 自分の持ち物をクロールする
 
-スタックには取り込み対象のフィクスチャ [fixtures](https://github.com/uraitakahito/fixtures) が
+スタックには取り込み対象のフィクスチャ [capture-fixtures](https://github.com/uraitakahito/capture-fixtures) が
 profile 付きで入っている。見知らぬサイトに向けずにクロールを試せる:
 
 ```sh
 pnpm run stack:up --profile capture-fixtures
 ```
 
-port は publish していない。`capture-fixtures.capture-ledger:8080` はコンテナからも host からも引ける。
+宛先は 2 つある。コンテナ（取り込む BrowserHive）からは名前の `capture-fixtures.capture-ledger:8080` で、起点の
+URL もこちらで書く。host からは `127.0.0.1:18085` に publish してある —— macOS 26 は Apple 署名でないバイナリ
+（`node` を含む）がコンテナの subnet へ繋ぐのを止めるので、host の道具（e2e・doctor）は名前では届かない
+（[スタックで作業する](#スタックで作業する)）。
 起点にするのは `/links/hub` —— `/links/*` はどれもそのページを 1 か所だけ変えたもので、
 それが「誤った規則を適用しているクローラ」と「単に壊れているクローラ」を分ける。
 
-fixtures はリクエストログも持っていて、**それを使うことがこのフィクスチャの要点**:
+capture-fixtures はリクエストログも持っていて、**それを使うことがこのフィクスチャの要点**:
 
 ```sh
-curl -s http://capture-fixtures.capture-ledger:8080/__request-counts
+curl -s http://127.0.0.1:18085/__request-counts
 ```
 
 `crawl_pages` が言うのは capture-ledger が**記録した**こと、ログが言うのはフィクスチャが
 **実際に要求された**こと。「robots を尊重した」は後者でしか決着しない —— 台帳に無い
 ページは、取りに行かなかったのか、取りに行って捨てたのか、台帳からは区別できない。
 
-fixtures は `.upstream/browserhive` 経由ではなく `.upstream/fixtures` に**直接** vendor して
-いる。あちらが抱える fixtures はずっと古く、2 つの pin は別々の都合で動くので、
-どちらももう一方を待つ理由が無い。
+capture-fixtures は `.upstream/browserhive` 経由ではなく `.upstream/capture-fixtures` に**直接** vendor して
+いる。2 つの pin は別々の都合で動く —— 台帳の試験が要る頁（`/links/*` など）が BrowserHive の pin に入るとは
+限らず、経由すると BrowserHive の版上げを待つことになる。どちらももう一方を待つ理由が無い。
 
 ### 署名を試す
 
@@ -463,6 +466,37 @@ BrowserHive は `no signing service is configured on this server` と言いま�
 
 署名は fail-closed です —— 署名を求めて得られなかった取り込みは、署名なしのアーカイブを
 出すのではなく失敗します。
+
+**同じ行は、台帳に合本の署名も求めます**（[合本の署名](/capture-ledger/ja/archive-ledger/#合本の署名)）。
+`CAPTURE_LEDGER_CAPTURE_SIGNING=1` のとき、API と `pnpm run replay-bundle:rebuild` は、署名の 4 つ組
+（`CAPTURE_LEDGER_SIGNER_URL`・`CAPTURE_LEDGER_SIGNER_TOKEN`・`CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR`・
+`CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR`）が無ければ起動しません。dev の値は `.env.example` にあります（`.env` に
+写すか、シェルから渡す）。host で動く台帳は、wacz-signer に `127.0.0.1:18091` で届きます —— BrowserHive の
+スタックの wacz-signer は 18090 に出ていて、同じ dev の CA で署名します。番号を分けないと、取り違えても署名が
+通ってしまいます。
+
+署名と時刻印のサービスだけを起こすには、サービス名を付けます（付けないと、全部のコンテナが作り直されます）。
+`.env` に `CAPTURE_LEDGER_CAPTURE_SIGNING=1` があれば、`--profile signing` は `stack:up` が足します。
+
+```sh
+pnpm run stack:up --profile signing wacz-signer tsa
+```
+
+4 つ組を `.env` に書かないなら、シェルから渡して API を起こします。
+
+```sh
+CAPTURE_LEDGER_SIGNER_URL=http://127.0.0.1:18091/sign \
+CAPTURE_LEDGER_SIGNER_TOKEN=dev-token \
+CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR=.upstream/browserhive/dev-stack/signing-ca/insecure-dev-ca.crt \
+CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR=.upstream/browserhive/dev-stack/signing-ca/insecure-dev-tsa-ca.crt \
+pnpm run api
+```
+
+起動のログに `Replay bundles of finished crawls are signed` が出れば、終わったクロールの合本に署名します。
+クロールが終われば、`GET /api/crawls/:id` の `replayBundle.signedRev` が `rev` と同じになり、合本の置き場に
+`replay-digest.json` が在ります。`pnpm run replay-bundle:verify --crawl <id>` が 0 で終われば、署名と中身が
+合っています。起動では openssl が `ts -attime` を持つかを確かめるので、PATH の先頭が macOS の
+`/usr/bin/openssl`（LibreSSL）なら、`CAPTURE_LEDGER_OPENSSL_BIN` に homebrew の openssl を書きます。
 
 ### 受け口を通す
 

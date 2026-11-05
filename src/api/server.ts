@@ -24,6 +24,9 @@ import { registerPicker, replayOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
 import { registerReplayBundleRoutes } from "./replay-bundle.js";
+import { signerFromEnv } from "../config/signer.js";
+import { createReplayBundleSigner } from "../replay-bundle/sign.js";
+import { writeReplayBundle } from "../replay-bundle/write.js";
 import { createTsCompile } from "../config/ts-compile.js";
 import { claudeBudgetUsd, createFixModel } from "../config/claude.js";
 import { derivationStoreOf } from "../derivations/store.js";
@@ -142,6 +145,20 @@ const start = async (options: ServerOptions): Promise<void> => {
   }
   registerPicker(app, { replayOrigin: replayOriginFromEnv(), identity: identityMode, listen });
 
+  // 合本の署名 (CAPTURE-61)。**起動で 1 回だけ読んで確かめる** —— 4 つ組の一部だけ・WACZ の署名を求めるのに無い・
+  // 錨が読めない・openssl が `ts -attime` を持たない、のどれでもここで止まる (`config/signer.ts`)。合本のたびに
+  // 「署名が付かない」と言われても、直す先が分からない。
+  const signerConfig = await signerFromEnv();
+  const signer = signerConfig === undefined ? undefined : createReplayBundleSigner(signerConfig);
+  if (signerConfig === undefined) {
+    logger.info("CAPTURE_LEDGER_SIGNER_URL is not set — replay bundles are not signed");
+  } else {
+    logger.info(
+      { url: signerConfig.url, opensslBin: signerConfig.opensslBin },
+      "Replay bundles of finished crawls are signed",
+    );
+  }
+
   // **形式は起動時に 1 回だけ解釈する。** 綴りの誤りをここで落とすため
   // (`config/capture-formats.ts` を見ること)。実行のたびに解釈すると、`waxz` のような
   // 打ち間違いは夜中の定期実行が失敗して初めて見つかる。
@@ -207,9 +224,24 @@ const start = async (options: ServerOptions): Promise<void> => {
         claudeBudgetUsd: claudeBudgetUsd(),
       }),
       capture,
+      // 締めた後の合本 (`/failed`・投げられなかった段)。合本の口と同じ関数・同じ署名の窓口
+      writeReplayBundle: (crawlId, depth) =>
+        writeReplayBundle(crawlId, depth, {
+          db,
+          s3,
+          bucket: storage.bucket,
+          ...(signer && { signer }),
+        }),
     });
     // 合本の口 (`api/replay-bundle.ts`)。クロールの flow が段ごとに叩く。合本は保管庫に書くので bucket が要る
-    registerReplayBundleRoutes(app, { db, fga, s3, bucket: storage.bucket, resolveIdentity });
+    registerReplayBundleRoutes(app, {
+      db,
+      fga,
+      s3,
+      bucket: storage.bucket,
+      resolveIdentity,
+      ...(signer && { signer }),
+    });
   }
 
   // 全文検索の口。**必須** (CAPTURE-53) —— 宛先は上の collectEnv が他の設定と一緒に求める。

@@ -267,6 +267,13 @@ services:
       ]
     volumes:
       - ./.upstream/browserhive/dev-stack/signing-ca:/id:ro
+    ports:
+      # host で動く台帳 (API と replay-bundle:rebuild) が、終わったクロールの合本に署名を貰う口
+      # (CAPTURE_LEDGER_SIGNER_URL=http://127.0.0.1:18091/sign)。BrowserHive のコンテナは今までどおり名前で
+      # 引く (signing.env)。**18090 ではない** —— BrowserHive のスタックの wacz-signer が 18090 に出ていて、
+      # 同じ dev の CA で署名する。番号を分けないと、取り違えても署名が通り、どちらのスタックに頼んだかが
+      # 分からない。
+      - "127.0.0.1:18091:8080"
     # 買えるのは起動順だけ —— container-compose に healthcheck が無い。TSA が待ち受ける
     # 前に署名しようとすると、timestamp の無い署名ができるのではなく **取り込みが
     # 失敗する**。ここで望ましいのはそちら。

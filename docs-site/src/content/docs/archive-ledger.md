@@ -743,7 +743,8 @@ leads from a page in one WACZ to a page in another. The format (version 1) is re
 ```sh
 # For the crawl flow: after it reports a level, before it indexes the level
 curl -X POST .../api/crawls/<id>/replay-bundle -H 'content-type: application/json' -d '{"depth":1}'
-# → 200 { "rev": 3, "pages": 18, "members": 6, "skipped": 0, "failed": 0, "error": null }
+# → 200 { "rev": 3, "pages": 18, "members": 6, "skipped": 0, "failed": 0, "error": null,
+#         "signed": false, "signError": null, "digestKey": null }
 ```
 
 Each call writes a **new version** (`rev`). The crawl row hands out the number
@@ -756,14 +757,17 @@ one for level N+1, and it must not take the crawl back. The body's `depth` is on
 (`replayBundle.depth` in `replay.json`). It is not the version, because rebuilding writes the same
 depth twice.
 
-| Field     | Meaning                                                                                                    |
-| --------- | ---------------------------------------------------------------------------------------------------------- |
-| `rev`     | The version written (or tried). `null` when no WACZ went in and nothing was written                        |
-| `pages`   | Lines in `pages.json` (`totalPages`)                                                                       |
-| `members` | WACZs in `resources`                                                                                       |
-| `skipped` | WACZs left out because they recorded nothing (below)                                                       |
-| `failed`  | WACZs that could not be read (not in the store, not a zip, store unreachable); the next bundle tries again |
-| `error`   | Why the bundle could not be written, or `null`                                                             |
+| Field       | Meaning                                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `rev`       | The version written (or tried). `null` when no WACZ went in and nothing was written                                                       |
+| `pages`     | Lines in `pages.json` (`totalPages`)                                                                                                      |
+| `members`   | WACZs in `resources`                                                                                                                      |
+| `skipped`   | WACZs left out because they recorded nothing (below)                                                                                      |
+| `failed`    | WACZs that could not be read (not in the store, not a zip, store unreachable); the next bundle tries again                                |
+| `error`     | Why the bundle could not be written, or `null`                                                                                            |
+| `signed`    | Whether it was signed and `replay-digest.json` written ([signing a replay bundle](#signing-a-replay-bundle))                              |
+| `signError` | Why a finished crawl's bundle was not signed. `null` when it was signed, when the crawl is still running, or when no signer is configured |
+| `digestKey` | The key of the `replay-digest.json` written, or `null`                                                                                    |
 
 **A failed write is still a 200.** The reason goes into `error` and into
 `crawls.replay_bundle_error`, until a later version is written. A bundle is derived from what was
@@ -782,7 +786,7 @@ read the WACZ again. A document line also gets `keys` — the requested URL and 
 `parseHttpUrl` does — which is what replay's server looks a page up by. Snapshot lines have none.
 
 A WACZ that recorded nothing — an empty index, or `waczStats.totalRecorded` of 0 — is left out
-(`skipped`): replay would ask for a zero-length range and keep re-reading the JSON on the store's
+(`skipped`; its name and sha256 stay in `replayBundle.skippedResources`): replay would ask for a zero-length range and keep re-reading the JSON on the store's
 answer, a 416. `resources` starts with the seeds' WACZs, then goes by depth and capture time — a
 fixed order, not a hint: the three WACZs replay tries for something a page does not hold are picked
 by name, not by this order. `initialPages`, the list replay shows first, holds document lines,
@@ -792,9 +796,13 @@ seeds first. A line without an `id` (a WACZ from outside the contract) gets
 ### Reading it back
 
 `GET /api/crawls` and `GET /api/crawls/:id` carry `replayBundle`:
-`{ key, rev, pages, builtAt, error }` for the version the crawl points at (`key` is the object key
-of its `replay.json`), or `null` when nothing was written and nothing failed. A failure before the
-first version is written shows as `error` alone. Each page of `GET /api/crawls/:id/pages` carries
+`{ key, rev, pages, builtAt, error, signedRev, digestKey, signError }` for the version the crawl
+points at (`key` is the object key of its `replay.json`), or `null` when nothing was written and
+nothing failed. A failure before the first version is written shows as `error` alone. `signedRev`
+and `digestKey` are the newest signed version and the key of its `replay-digest.json`; **they move
+forward on their own, apart from the pointer**. When `signedRev === rev`, the bundle the crawl
+points at is signed. `signError` says why the pointed-at version was not signed (`null` for a
+running crawl's version and on a deployment with no signer). Each page of `GET /api/crawls/:id/pages` carries
 `capturedAt` and `bundledRev`, the first version that holds its WACZ: the page is in the bundle the
 crawl points at when `bundledRev ≤ replayBundle.rev`.
 
@@ -811,13 +819,206 @@ pnpm run replay-bundle:rebuild --crawl <id>
 It writes a new version the same way, reading the ledger and the store directly (no access token).
 Run it when a bundle missed something: a capture reconcile admitted after the last level, a level
 whose bundle could not be written, or a crawl from before migration `027` — for that one it first
-links the crawl's archives to the crawl through `crawl_pages.task_id`.
+links the crawl's archives to the crawl through `crawl_pages.task_id`. It decides on signing
+exactly as the API does, so **this is also how a finished crawl whose bundle went unsigned gets
+signed** (it writes a new version and signs that). It exits 1 when the bundle could not be
+written, when a WACZ could not be read, or when the signature did not come.
 
 :::caution[One object lists every key of the crawl]
 The bucket is read anonymously through replay's `/wacz/`, so a bundle lists every WACZ key of the
 crawl in one place — the exposure each WACZ already has, gathered together. After
 `pnpm run store:wipe`, `replay_bundle_key` points at nothing.
 :::
+
+### Signing a replay bundle
+
+The bundle of a finished crawl is signed (CAPTURE-61). capture-ledger sends the sha256 of the
+`replay.json` bytes to the `/sign` of [wacz-signer](https://github.com/uraitakahito/wacz-signer),
+**checks the signature itself before storing it**, and writes `replay-digest.json` next to the
+bundle. It has the shape of a WACZ's `datapackage-digest.json` —
+`{ "path": "replay.json", "hash": "sha256:…", "signedData": { … } }` — where `hash` is the value
+capture-ledger computed and `signedData` is wacz-signer's answer as it came: its nine fields
+(`hash`, `created`, `software`, `version`, `signature`, `domain`, `domainCert`, `timeSignature`,
+`timestampCert`).
+
+A bundle is signed only when all three hold:
+
+- a signer is configured (see [signer settings](#signer-settings))
+- the crawl is over (`succeeded` or `failed`). The state is read in the `returning` of the update
+  that hands out the version number, under the crawl row's lock — the state at the moment the
+  version's contents were read
+- no WACZ of the crawl is left uninspected. A WACZ that could not be inspected is not in the
+  bundle, so signing would claim "these are all of the crawl's WACZs"
+
+The bundles written level by level while a crawl runs are not signed. When a crawl is closed by
+`POST /api/crawls/:id/failed`, or because its next level could not be dispatched, **capture-ledger
+writes one more bundle after closing it** — no level follows, so nobody else would. A level report
+does not turn a closed crawl back into `succeeded` (the condition sits inside the row update).
+
+The write order is `pages.json` → `replay-digest.json` → `replay.json`: by the time the entry
+point appears, the digest that covers it is there too. The signature is requested outside the
+transaction that hands out the version, so the crawl row is not locked while the TSA answers.
+
+**An unsigned bundle is still written** (replay still opens it). When wacz-signer does not answer,
+cannot reach its TSA (`502`), returns a signature that fails the check, or a WACZ is still
+uninspected, the reason goes into `signError` and `crawls.replay_bundle_sign_error`. To sign again,
+use [the rebuild tool](#rebuilding-a-bundle): it writes a new version and signs it. A digest is
+never added to an earlier version's place — a version's objects are written once.
+
+#### What it proves
+
+The signature covers the bytes of `replay.json`, and everything worth proving about the crawl is
+written inside it:
+
+| Field                                                 | What it is                                                  |
+| ----------------------------------------------------- | ----------------------------------------------------------- |
+| `resources[].hash`                                    | Each WACZ's sha256 (counted when capture-ledger read it)    |
+| `replayBundle.pagesHash`                              | The sha256 of the `pages.json` bytes                        |
+| `replayBundle.skippedResources`                       | Name and sha256 of each WACZ left out for recording nothing |
+| `replayBundle.crawlState`, `stopReason`, `finishedAt` | The crawl's state when the version was handed out           |
+| `replayBundle.crawlId`, `rev`, `pagesQueryUrl`        | Which crawl, which version, and where it was put            |
+
+So one signature lets a third party check **which WACZs, with which contents, belong to the
+crawl**, and **in which state the crawl ended**. The format's `version` stays 1: fields were only
+added, and replay does not read `replayBundle`.
+
+#### What it does not prove
+
+- **`builtAt` is only a claim of the ledger's clock.** The one trustworthy time is the
+  timestamp's genTime, set by the TSA. `finishedAt` is the ledger's clock too
+- "These are all of the crawl's WACZs" means as far as capture-ledger knew at that moment. A capture
+  whose report never arrived (taken before a level failed) is not in it; one that reconcile admits
+  later goes into the next version once you rebuild
+- The signatures inside the WACZs (each WACZ's `datapackage-digest.json`) are not checked. The
+  bundle's signature goes as far as "the WACZ bytes are the ones the bundle names"
+- `skippedResources` holds names and hashes only, not locations
+- The dev CA and TSA are for development and trusted by no one. Whom to trust is decided by
+  whoever checks, through the anchors (roots) they choose
+- genTime itself is not proven true. A leaked TSA key can still mint a backdated token within its
+  own validity — a limit left in RFC 3161, closed only by an independent time source
+
+#### Signer settings
+
+| Variable                                 | Meaning                                                               |
+| ---------------------------------------- | --------------------------------------------------------------------- |
+| `CAPTURE_LEDGER_SIGNER_URL`              | wacz-signer's `/sign`                                                 |
+| `CAPTURE_LEDGER_SIGNER_TOKEN`            | Its bearer token                                                      |
+| `CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR`     | The root the signing chain must reach (a PEM file)                    |
+| `CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR` | The root the TSA's chain must reach (a PEM file)                      |
+| `CAPTURE_LEDGER_SIGNER_TIMEOUT_MS`       | How long to wait for a signature (10 s; wacz-signer waits on its TSA) |
+| `CAPTURE_LEDGER_OPENSSL_BIN`             | The openssl that checks the timestamp (`openssl` on `PATH`)           |
+
+**The first four go together.** With all four, bundles are signed; with none, they are not;
+**with some, the process refuses to start** — without the anchors a signature cannot be checked
+before it is stored, and without the URL the anchors check nothing. It also refuses to start when
+`CAPTURE_LEDGER_CAPTURE_SIGNING=1` (signed WACZs) is set and the four are not. At startup it reads
+the anchors (refusing a file it cannot read or that holds no certificate) and checks that openssl
+has `ts -attime` (the LibreSSL at macOS's `/usr/bin/openssl` does not). The rebuild tool decides
+the same way. The dev values are in `.env.example`.
+
+The check before storing is a copy of BrowserHive's (`src/replay-bundle/verify-signed-data.ts`):
+the signature is recorded only when **all four stages** — signature, chain, domain, timestamp —
+are ok. Unlike the original, a stage with no anchor and a signature with no timestamp do not pass
+as `skipped`. It also requires the answer's `signedData.hash` to be the hash capture-ledger
+computed. The timestamp is checked against the configured TSA root, **never against a certificate
+carried inside the timestamp**. Certificate validity is judged at the timestamp's genTime, not now
+(signing certificates are short-lived; by the time anyone checks, they have usually expired).
+
+#### Checking a bundle
+
+```sh
+pnpm run replay-bundle:verify --crawl <id>
+pnpm run replay-bundle:verify --crawl <id> --rev 5
+pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5
+```
+
+From the top: the version the crawl points at (from the store), a named version, a local copy.
+
+| Name        | What it checks                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------- |
+| `place`     | `crawlId`, `rev`, `pagesQueryUrl` and `resources[].crawlId` in `replay.json` match the place named |
+| `digest`    | `replay-digest.json` names `replay.json`, and sha256(replay.json) = `hash` = `signedData.hash`     |
+| `signature` | The four stages (the same check as before storing, over the hash it computed itself)               |
+| `pages`     | sha256(pages.json) = `replayBundle.pagesHash`                                                      |
+| `wacz`      | Each WACZ, streamed and hashed, equals `resources[].hash` (one line per WACZ)                      |
+
+**It exits 0 only when every line is ok.** A failure does not stop the rest; every mismatch is
+named. Reading from the store, it looks up the crawl's organization and version in the ledger
+(`--rev` defaults to the version the crawl points at, and it mentions the signed version when that
+differs) and reads the configured bucket. A local copy (`--dir`) is a directory holding the three
+objects and each WACZ under its `resources[].name`; `--crawl` and `--rev` say which place it is a
+copy of (call r3's objects r5 and `place` fails). The anchors default to
+`CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR` and `CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR`; `--trust-anchor`
+and `--timestamp-anchor` override them.
+
+#### Checking it as a third party
+
+Without capture-ledger. Everything is read through replay's `/wacz/` (the bucket's anonymous read),
+and the anchors are the checker's choice (in dev, `insecure-dev-ca.crt` and
+`insecure-dev-tsa-ca.crt` from BrowserHive's `dev-stack/signing-ca/`).
+
+Each step is its own block, with no `#` comments inside, so every block pastes into bash and zsh
+alike — by default zsh does not read a pasted `#` as a comment (without
+`setopt interactivecomments`, a comment becomes `command not found: #`, and an `'` inside it
+swallows the lines that follow).
+
+**1. Fetch the three objects** (`<org>`, `<crawl>` and `<rev>` name the place to check)
+
+```sh
+B=http://127.0.0.1:8899/wacz/org/<org>/crawls/<crawl>/r<rev>
+curl -fsSO "$B/replay.json"; curl -fsSO "$B/pages.json"; curl -fsSO "$B/replay-digest.json"
+```
+
+**2. sha256 of replay.json = the digest's `hash` = `signedData.hash`** (and `path` is `replay.json`)
+
+```sh
+echo "sha256:$(shasum -a 256 replay.json | cut -d' ' -f1)"
+jq -r '.path, .hash, .signedData.hash' replay-digest.json
+```
+
+**3. The place and the crawl's state** (inside the signature)
+
+```sh
+jq '.replayBundle | {crawlId, rev, crawlState, stopReason, finishedAt, pagesHash}' replay.json
+```
+
+**4. sha256 of pages.json = `pagesHash`**
+
+```sh
+echo "sha256:$(shasum -a 256 pages.json | cut -d' ' -f1)"
+```
+
+**5. Each WACZ's sha256 = `resources[].hash`** (both columns of a line match). The variable is
+`src`, not `path`: in zsh, `path` is tied to `PATH`, and reading into it makes `curl` and `shasum`
+vanish.
+
+```sh
+jq -r '.resources[] | "\(.hash) \(.path)"' replay.json | while read -r hash src; do
+  echo "$hash sha256:$(curl -fsS "http://127.0.0.1:8899$src" | shasum -a 256 | cut -d' ' -f1)"
+done
+```
+
+**6. Signature, chain and domain** (the signing root is your choice)
+
+```sh
+wacz-signer verify --file replay-digest.json --root insecure-dev-ca.crt
+```
+
+**7. The timestamp, against a TSA root of your choice**
+
+```sh
+jq -r .signedData.timeSignature replay-digest.json | base64 -d > token.tsr
+jq -j .signedData.signature replay-digest.json > signature.b64
+openssl ts -verify -data signature.b64 -in token.tsr -CAfile insecure-dev-tsa-ca.crt
+```
+
+**Step 6 alone is not enough.** `wacz-signer verify` checks the signature against the
+`signedData.hash` field, so it never asks whether that field is the hash of `replay.json` (step 2
+does). It treats the last certificate inside the timestamp as the TSA's root, so a timestamp from
+a self-made TSA passes (step 7 does not). A stage it was given no root for is `skipped`, and it
+still says `valid`. To run step 7 after the TSA certificate has expired, pass the timestamp's own
+time (`Time stamp` in `openssl ts -reply -in token.tsr -text`, as epoch seconds) to `-attime`.
+LibreSSL (macOS's `/usr/bin/openssl`) has no `-attime`; use OpenSSL.
 
 ## Picking an archive in a browser
 
