@@ -152,7 +152,7 @@ source・sha256・options・札・宣言 —— をクロールの行に書き�
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | 省く                                                              | **有効な**各 id の最新版のうち、札の無い物と、札が起点のホスト名を含む物を、`id` 順で               |
 | `[{"catalog": "b"}, {"catalog": "a"}]`                            | そのとおり、**その並びで** —— 並びは指示の一部                                                      |
-| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた JS を `inline-x`・版 1 で。台帳には登録されない（下記）                                      |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた TS を `inline-x`・版 1 で。台帳には登録されない（下記）                                      |
 | `[]`                                                              | 何も走らない。「既定でよい」と「何も走らせない」は別の意思                                          |
 | 台帳に無い id・同じ id の重ね                                     | **400** で名指し（`ids`）。クロールは立たない                                                       |
 | 札が起点のどのホスト名も含まないサイト用のスクリプト              | **400** `site scripts need a seed on their site` で名指し（`ids`、札は `hint`）。クロールは立たない |
@@ -162,7 +162,7 @@ source・sha256・options・札・宣言 —— をクロールの行に書き�
 
 `GET /api/crawls/:id` が返すのは、台帳のスクリプトは身元 —— id・版・phase・sha256 —— と札だけで、
 source は返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
-`preload/scripts.jsonl`）と台帳（[版を読む](#版を読む)）に在ります。その場の JS には `inline`（`name`・`phase`・
+`preload/scripts.jsonl`）と台帳（[版を読む](#版を読む)）に在ります。その場の TS には `inline`（`name`・`phase`・
 source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。dashboard は走行中の
 クロールを数秒ごとに引き直し、source は 1 MiB まであり得るからです。source は
 `GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。台帳に登録されず、
@@ -179,8 +179,8 @@ ts-compile を host の `127.0.0.1:28080` に出しています）、無けれ�
 ts-compile-service しか呼ばないので GET で、許可はクロールのほかの口と同じです。サービスに届かなければ
 503 を返します。
 
-`POST /api/crawls/:id/inline/:name/fix`（本文は `{}`）は、その場の JS の型の誤りの直し方を Claude に訊き、
-**同じ検査に通った直ししか返しません**。台帳はまず組み合わせを検査し直してから、行番号つきのその場の JS・
+`POST /api/crawls/:id/inline/:name/fix`（本文は `{}`）は、その場の TS の型の誤りの直し方を Claude に訊き、
+**同じ検査に通った直ししか返しません**。台帳はまず組み合わせを検査し直してから、行番号つきのその場の TS・
 一緒に走るスクリプト（読むだけで、変えさせない）・誤り・受け皿の型（`host_types`）を Claude に渡し、
 行の範囲の置き換えと、誤りごとの 1 行の理由を返させます。置き換えを当て、`// @ts-nocheck`・`@ts-ignore`・
 `@ts-expect-error`・`as any`・`: any` を足した案、`import` か `export` を足した案（module になり、黙って
@@ -193,7 +193,7 @@ ts-compile-service しか呼ばないので GET で、許可はクロールの�
 | ------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------ |
 | 200 `{ rounds, source, edits, notes, compiled, usage }` | 検査に通った直しがある（`edits` は置き換えた範囲ごとの `before` と `after`） | 呼んだ             |
 | 409 `scripts compile`                                   | いまの組み合わせが型を通る（直す物が無い）                                   | 呼ばない           |
-| 422 `no errors in this inline script`                   | 誤りがこの JS に無い（ほかのスクリプトか lib に在る）                        | 呼ばない           |
+| 422 `no errors in this inline script`                   | 誤りがこのスクリプトに無い（ほかのスクリプトか lib に在る）                  | 呼ばない           |
 | 429 `claude budget exhausted`                           | 組織がこの月の上限に届いた                                                   | 呼ばない           |
 | 422 `no fix passed the checks`                          | 2 回で通らなかった（最後の誤りと断った理由つき）                             | 呼んだ             |
 | 422 `claude refused`                                    | 安全の判定で断られた                                                         | 呼んだ             |
@@ -233,9 +233,9 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 別の中身になります（capture-scheduler の e2e は毎回これをします）。ある版がクロールの走らせた物かを
 確かめるには、その `sha256` をクロールの物と比べます。
 
-### その場の JS
+### その場の TS
 
-`scripts` の要素には、台帳のスクリプトの名指しのほかに、その場で書いた JS を置けます。
+`scripts` の要素には、台帳のスクリプトの名指しのほかに、その場で書いた TS を置けます。
 
 ```json
 { "inline": { "name": "close-banner", "phase": "behavior", "source": "(() => {\n  …\n})();\n" } }
@@ -244,16 +244,16 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 - **台帳には登録されません。** 台帳はクロールの行の写しにだけ、`inline-<name>`・版 1・options 空で
   固定します。sha256 は台帳が `source` から打ちます（`scripts` の生成列と同じ値）。写しの形は台帳のスクリプトと
   同じなので、flow も変換も BrowserHive も区別しません。
-- **`inline-` は、その場の JS に取ってあります。** 台帳のスクリプトの id には使えません（CLI の `add` と
+- **`inline-` は、その場の TS に取ってあります。** 台帳のスクリプトの id には使えません（CLI の `add` と
   `import` が断り、DB の CHECK が最後に断ります）。アーカイブに残るのは id と JS だけなので、
   id の頭で、台帳のスクリプトかその場の物かが分かります。
 - **`name` は `^[a-z][a-z0-9-]*$` で、`inline-` と合わせて 64 字まで。** ts-compile-service の id と
   同じ綴りで、合わなければ `POST` が 400 で断ります。
-- **書けるのは、strict の TypeScript として型が通る JS です。** 段の最初に ts-compile-service が
+- **書けるのは、strict の TypeScript として型が通るスクリプトです。** 段の最初に ts-compile-service が
   台帳のスクリプトと一緒に型を検査し、1 本でも誤りがあれば段ごと落ちます（`error` に最初の診断が、台帳の上限の 2,000 字まで残ります。
   全部を読み直すのは `GET /api/crawls/:id/diagnostics`）。
-  IIFE で包んでください。同じ段の JS は 1 つの program で検査されるので、top-level の名前は
-  ほかの JS や DOM の大域（`name` など）とぶつかります。`export` を書くと型は通りますが、
+  IIFE で包んでください。同じ段のスクリプトは 1 つの program で検査されるので、top-level の名前は
+  ほかのスクリプトや DOM の大域（`name` など）とぶつかります。`export` を書くと型は通りますが、
   ページでは構文エラーになり、何も走りません。型の検査を外すなら、1 行目に `// @ts-nocheck`
   （構文は見ます）。
 - **`POST /api/crawls` の本文は、全体で 1 MiB までです。** 超えると、何かを検査する前に 413 で断ります。
@@ -263,7 +263,7 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 
 スクリプトは、クロールごとに違う値 —— 検索語や、口座の鍵 —— を読めます。読む名前は `catalog.json` の
 `params` で宣言し、`import` が宣言を版に写します（`GET /api/scripts` が `params` で返します。札と同じく
-版の一部です）。その場の JS にも同じ形の `params` を添えられます。宣言は、名前と、2 つの種類のどちらかと、
+版の一部です）。その場の TS にも同じ形の `params` を添えられます。宣言は、名前と、2 つの種類のどちらかと、
 クロールが必ず渡すべきかと、何の値かを言います。
 
 ```json
@@ -278,7 +278,7 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 **変数**（`kind: "variable"`）は `POST /api/crawls` の本文の `variables`（名前 → 文字列）で渡し、**記録に残ります**。
 クロールの行に固定され、段ごとに運ばれ、BrowserHive がアーカイブの `settings.variables` に書き、
 `GET /api/crawls/:id` が返します。受けるのは宣言された名前だけで、知らない名前も、`required` の物の欠けも
-400 です。例外は `params` を添えていないその場の JS で、何を読むか台帳に分からないので、それが混ざる間は
+400 です。例外は `params` を添えていないその場の TS で、何を読むか台帳に分からないので、それが混ざる間は
 知らない名前も通します。
 
 **シークレット**（`kind: "secret"`）には本文の欄がありません。宣言が名前を Windmill の secret 変数
@@ -299,10 +299,10 @@ Windmill に「在るか・secret か」を訊き、**値は読まずに**（`va
 | 答え                                                                     | いつ                                                                                     |
 | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
 | `400 missing variables`（`names`）                                       | `required` の変数が渡されていない                                                        |
-| `400 unknown variables`（`names`）                                       | どのスクリプトも宣言していない名前を渡した（`params` の無いその場の JS が在れば見ない）  |
+| `400 unknown variables`（`names`）                                       | どのスクリプトも宣言していない名前を渡した（`params` の無いその場の TS が在れば見ない）  |
 | `400 secrets cannot be passed as variables`（`names`）                   | シークレットとして宣言された名前を変数で渡した —— アーカイブに値が残ってしまう           |
 | `400 conflicting params`（`names`）                                      | 同じ名前を、別々のスクリプトが別の種類で宣言している                                     |
-| `400 invalid params`（`script`・`hint`）                                 | その場の JS の `params` が宣言の決まり（`import` と同じ）に合わない                      |
+| `400 invalid params`（`script`・`hint`）                                 | その場の TS の `params` が宣言の決まり（`import` と同じ）に合わない                      |
 | `400 unknown secrets`（`secrets: [{ name, path, declaredBy }]`・`hint`） | `required` のシークレットが Windmill に無い。`required` でない物が無ければ渡さないだけ   |
 | `400 not a secret variable`（`secrets`）                                 | Windmill に在るが secret の印が無い                                                      |
 | `400 secrets need the windmill webhook`（`names`）                       | シークレットを宣言したスクリプトが在るのに、この配備の webhook の URL が flow の物でない |

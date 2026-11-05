@@ -16,9 +16,9 @@
  * 既定から外したという意思とは別の話になる。消さずに無効にできる形にしてあるのは、版の履歴を
  * 残したまま既定から外せるようにするため。
  *
- * ## その場の JS は台帳に登録しない
+ * ## その場の TS は台帳に登録しない
  *
- * `scripts` の要素には、台帳のスクリプトの名指しのほかに、その場で書いた JS（`inline`）を置ける。
+ * `scripts` の要素には、台帳のスクリプトの名指しのほかに、その場で書いた TS（`inline`）を置ける。
  * 台帳はそれを登録せず、クロールの行の写しにだけ固定する（`inlineScript`）。id は
  * `inline-<name>` で、台帳のスクリプトの id には `inline-` を使わせない（`019` の CHECK と CLI）——
  * アーカイブの id だけで、台帳のスクリプトか、その場の物かが分かるようにするため。
@@ -108,8 +108,8 @@ const PARAM_KINDS: readonly ParamKind[] = ["variable", "secret"];
 /**
  * 宣言の列 (`params`) として読めれば返し、読めなければその文を返す。capture-scripts の tools/check.mjs と
  * 同じ決まり —— 配列・`name` の綴りと長さ・`kind` は variable か secret・`required` は真偽値 (省けば false)・
- * `summary` は空でない・名前の重複なし。catalog の `import` と CLI の `--params` と、その場の JS の `params` が
- * 同じ関数を通る。`summary` を求めるのは catalog だけ (その場の JS は人に見せる一覧に並ばない)。
+ * `summary` は空でない・名前の重複なし。catalog の `import` と CLI の `--params` と、その場の TS の `params` が
+ * 同じ関数を通る。`summary` を求めるのは catalog だけ (その場の TS は人に見せる一覧に並ばない)。
  *
  * **既定値は書けない。** 既定値はソースの中にだけ置く (読む側の `??` が既定値で、宣言は名前と種類だけ)。
  */
@@ -157,7 +157,7 @@ export const readParams = (
 export const onSeed = (sites: readonly string[], seedHosts: readonly string[]): boolean =>
   sites.length === 0 || sites.some((site) => seedHosts.includes(site));
 
-/** 起点のどれもそのサイトに無い、サイト用のスクリプト (名指しで入れたもの)。その場の JS は札を持たない */
+/** 起点のどれもそのサイトに無い、サイト用のスクリプト (名指しで入れたもの)。その場の TS は札を持たない */
 export const offsiteScripts = (
   scripts: readonly CrawlScript[],
   seedHosts: readonly string[],
@@ -166,16 +166,16 @@ export const offsiteScripts = (
     onSeed(script.sites ?? [], seedHosts) ? [] : [{ id: script.id, sites: script.sites ?? [] }],
   );
 
-/** その場の JS の id の頭。台帳が付け、台帳のスクリプトの id には使わせない。 */
+/** その場の TS の id の頭。台帳が付け、台帳のスクリプトの id には使わせない。 */
 export const INLINE_PREFIX = "inline-";
 
 export const isInlineId = (id: string): boolean => id.startsWith(INLINE_PREFIX);
 
 /** 台帳のスクリプトの id として断るなら、その文。DB の CHECK (`019`) より先に、読める文で言う。 */
 export const catalogIdRefusal = (id: string): string | undefined =>
-  isInlineId(id) ? `${id}: ${INLINE_PREFIX} で始まる id は、その場の JS に取ってある` : undefined;
+  isInlineId(id) ? `${id}: ${INLINE_PREFIX} で始まる id は、その場の TS に取ってある` : undefined;
 
-/** その場で書いた JS 1 本 (`POST /api/crawls` の `scripts[].inline`)。 */
+/** その場で書いた TS 1 本 (`POST /api/crawls` の `scripts[].inline`)。 */
 export interface InlineScript {
   name: string;
   phase: ScriptPhase;
@@ -184,7 +184,7 @@ export interface InlineScript {
   params?: ScriptParam[];
 }
 
-/** 要求の 1 要素。台帳のスクリプトの名指しか、その場の JS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
+/** 要求の 1 要素。台帳のスクリプトの名指しか、その場の TS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
 export type RequestedScript = { catalog: string } | { inline: InlineScript };
 
 /** 台帳に無い id と、同じ id の重ねが在れば、名指しで返す。**黙って落とさない。** */
@@ -499,7 +499,7 @@ export const pickable = async (
  * クロールが走らせるものを決める。
  *
  * - `requested` を渡したら**その並びのまま**写しを返す。台帳のスクリプトの名指しは各 id の最新版
- *   (無効な版でも名指しは通る)、その場の JS は台帳のスクリプトを引かずに写す (`inlineScript`)。
+ *   (無効な版でも名指しは通る)、その場の TS は台帳のスクリプトを引かずに写す (`inlineScript`)。
  * - 渡さなければ **有効な各 id の最新版**のうち、札の無い物と、札のどれかが起点のホストにある物を
  *   `id` 順で返す。**最新版を選んでから札で絞る** —— SQL で札を絞ってから `distinct on` すると、
  *   札の合わない最新版の代わりに、札の無い古い版が出てくる。絞るのは引いた後で、JS で。
@@ -547,7 +547,7 @@ export const resolveScripts = async (
   if (twice.length > 0) return { kind: "duplicate", ids: [...new Set(twice)] };
 
   // **台帳のスクリプトを引くのは名指しがあるときだけ。** 空の配列は Kysely が `in ()` に組み、Postgres は
-  // 構文エラーで断る —— その場の JS だけのクロールが 500 になる。
+  // 構文エラーで断る —— その場の TS だけのクロールが 500 になる。
   const named = requested.flatMap((r) => ("catalog" in r ? [r.catalog] : []));
   const rows =
     named.length === 0
@@ -578,7 +578,7 @@ const idOf = (r: RequestedScript): string =>
   "catalog" in r ? r.catalog : INLINE_PREFIX + r.inline.name;
 
 /**
- * その場の JS の写し。**形は台帳のスクリプトの写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
+ * その場の TS の写し。**形は台帳のスクリプトの写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
  * 台帳のスクリプトと区別しない。版は 1、options は空。sha256 は台帳が source から打つ (`scripts` の生成列
  * `encode(digest(source, 'sha256'), 'hex')` と同じ値)。宣言 (`params`) は添えられたときだけ写す ——
  * 添えなかった物と空の宣言は別 (`crawl/values.ts`)。

@@ -1,16 +1,16 @@
 /**
- * 型で落ちたクロールの、その場の JS の直し方を Claude に訊く係 (CAPTURE-49)。
+ * 型で落ちたクロールの、その場の TS の直し方を Claude に訊く係 (CAPTURE-49)。
  *
  * **Claude の案は、クロールと同じ検査に通った物だけを返す。** 輪は 1 回の頼みで 2 往復まで:
  *
- *   1. その場の JS (行番号つき)・一緒に走るスクリプト・型の誤り・受け皿の型を渡す
+ *   1. その場の TS (行番号つき)・一緒に走るスクリプト・型の誤り・受け皿の型を渡す
  *   2. Claude は行の範囲の置き換え (`edits`) と、誤りごとの理由 (`notes`) を返す
  *   3. 置き換えを当てる (重なり・範囲の外は断る) → 黙らせる形・module の形・書き直しすぎを断る
  *      → 一緒に走るスクリプトと同じ組み合わせで ts-compile-service に通す
  *   4. 通らなければ、検査の答えを足してもう 1 度。**会話は継ぎ足すだけ** —— Claude Opus 5.5 は
  *      thinking の塊をその会話に結び付けるので、前の turn を書き換えない
  *
- * 直してよいのはその場の JS だけで、台帳のスクリプトは読ませるが変えさせない。送るのは書いた source・
+ * 直してよいのはその場の TS だけで、台帳のスクリプトは読ませるが変えさせない。送るのは書いた source・
  * 一緒に走るスクリプト・型の誤り・受け皿の型だけ (頁の文字・変数の値・シークレットは送らない)。
  * 確かめられるのは型が通ることだけで、動きが正しいかは人が差分を読み、試し撮りで確かめる。
  *
@@ -24,7 +24,7 @@ import { usdOf, type Usage } from "../claude/prices.js";
 import { attributeDiagnostics, TsCompileUnreachable, type TsCompile } from "./ts-compile.js";
 
 /** 決まりの文の版。派生の層に残し、文を変えたら上げる。 */
-export const FIX_PROMPT_VERSION = "fix/1";
+export const FIX_PROMPT_VERSION = "fix/2";
 /** 1 回の頼みの往復の上限。 */
 export const FIX_ROUNDS = 2;
 
@@ -53,7 +53,7 @@ export const FIX_OUTPUT_SCHEMA = {
   properties: {
     edits: {
       type: "array",
-      description: "直す JS の行の範囲の置き換え。最初に渡した source の行番号で書く",
+      description: "直す TS の行の範囲の置き換え。最初に渡した source の行番号で書く",
       items: {
         type: "object",
         properties: {
@@ -253,7 +253,7 @@ export const systemPrompt = ({
     "あなたは、BrowserHive が取り込みのページで走らせるスクリプト (TypeScript) の、型の誤りを直す。",
     "",
     "## 直してよい物",
-    "- 直すのは「直す JS」だけ。「一緒に走るスクリプト」は読むだけで、変えない。名前の重なりは、直す JS の側で避ける。",
+    "- 直すのは「直す TS」だけ。「一緒に走るスクリプト」は読むだけで、変えない。名前の重なりは、直す TS の側で避ける。",
     "- 直すのは、型の誤りに要る所だけ。動きを変えない。新しい処理を足さない。",
     "",
     "## 型の検査の条件",
@@ -267,7 +267,7 @@ export const systemPrompt = ({
     "- // @ts-nocheck・@ts-ignore・@ts-expect-error・as any・: any。型の誤りは、型を正しく書くか、null を確かめて直す。",
     "",
     "## 答えの形",
-    "- edits: 直す JS の行番号 (1 から) で、from〜to (両端を含む) を text で置き換える。text に行番号を書かない。text は改行で複数行にしてよい。置き換えを重ねない。",
+    "- edits: 直す TS の行番号 (1 から) で、from〜to (両端を含む) を text で置き換える。text に行番号を書かない。text は改行で複数行にしてよい。置き換えを重ねない。",
     "- いつも、最初に渡した source に対する置き換えを全部返す (前の答えに足すのではない)。",
     "- notes: 直した誤りごとに、code・行・どう直したか (日本語で 1 文)。",
     "",
@@ -287,7 +287,7 @@ const firstRequest = ({
   diagnostics: readonly Attributed[];
 }): string =>
   [
-    `直す JS: ${inline.id} (phase: ${inline.phase})`,
+    `直す TS: ${inline.id} (phase: ${inline.phase})`,
     "行番号つきの source:",
     numbered(inline.source),
     "",
@@ -315,7 +315,7 @@ const add = (a: UsageTotal, b: Usage): UsageTotal => ({
 });
 
 /**
- * 直し方を訊く。`scripts` は webhook と同じ形の組み合わせ (並びも同じ)、`inlineId` はその中の直す JS。
+ * 直し方を訊く。`scripts` は webhook と同じ形の組み合わせ (並びも同じ)、`inlineId` はその中の直す TS。
  * Claude を呼んだ分の usage と費用は、答えがどれでも結果に載る (呼ぶ側が派生の層に残す)。
  */
 export const fixInline = async ({

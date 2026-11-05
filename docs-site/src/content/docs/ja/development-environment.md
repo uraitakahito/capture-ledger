@@ -230,7 +230,7 @@ capture-scheduler の `windmill:bootstrap` がほかの行と一緒に渡し（c
 Claude に直し方を訊く口（`POST /api/crawls/:id/inline/:name/fix`）には、Anthropic の Console の API の鍵も
 要ります（`CAPTURE_LEDGER_ANTHROPIC_API_KEY`）。`.env` にだけ書き、commit しません。SDK が自分で読む
 `ANTHROPIC_API_KEY` は読みません。鍵があって ts-compile の宛先が無いと API は起動で止まるので、`dev:up` で
-起こします（`dev:up` を使わないなら、宛先も書く）。`pnpm run fix:eval` は、決めた見本（型の誤りのある JS）を本物の
+起こします（`dev:up` を使わないなら、宛先も書く）。`pnpm run fix:eval` は、決めた見本（型の誤りのある TS）を本物の
 ts-compile-service と Claude で直させて測ります。**お金が掛かります**（見本ごとと合計の費用を出します）。
 CI では走りません。
 

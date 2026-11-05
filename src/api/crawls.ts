@@ -311,7 +311,7 @@ interface CrawlBody {
   hostParallelism?: number;
   /**
    * ページの中で走らせるもの。**並びがそのまま実行順**。要素は台帳のスクリプトの名指し (`{ catalog }`) か、
-   * その場で書いた JS (`{ inline }`)。その場の JS は台帳に登録されず、この行の写しにだけ固定される。
+   * その場で書いた TS (`{ inline }`)。その場の TS は台帳に登録されず、この行の写しにだけ固定される。
    *
    * 省くと台帳の**有効な各 id の最新版**のうち、札の無い物と、起点に合うサイト用の物が走る
    * (`017`・`021`)。空配列を渡せば何も走らない ——
@@ -810,7 +810,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // このクロールが走らせるものは変わらない (`018`)。札 (`021`) と比べるのは起点のホスト名で、
       // ポートは見ない —— 省いた頼みでは、札の無い物と、起点に合うサイト用の物が走る
       const seedHosts = [...new Set(parsedSeeds.map((parsed) => parsed.hostname))];
-      // その場の JS の宣言は、catalog と同じ決まりで読んでから写す (重複と required の既定は schema が見ない)。
+      // その場の TS の宣言は、catalog と同じ決まりで読んでから写す (重複と required の既定は schema が見ない)。
       // 添えなかった物は添えないまま —— 「宣言が無い」と「何も読まない」は別 (`crawl/values.ts`)
       const requested: RequestedScript[] = [];
       for (const element of body.scripts ?? []) {
@@ -1199,9 +1199,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         error: crawl.error,
         // **台帳のスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
         // 中身はスクリプトの 1 版の口 (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
-        // archive に在る。**その場の JS には頼まれた
+        // archive に在る。**その場の TS には頼まれた
         // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は dashboard が 2 秒ごとに引き直すので、
-        // 1 MiB の JS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
+        // 1 MiB の TS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
         // ときだけで、`GET /api/crawls/:id/inline/:name` から取る。
         // `jsSha256` と `compiledWith` は最初の段の報告で埋まる。それまでは null。
         scripts: crawl.scripts.map((script) => ({
@@ -1209,7 +1209,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           version: script.version,
           phase: script.phase,
           sha256: script.sha256,
-          // 札 (`021`)。その場の JS と、札より前に始めたクロールの行は空
+          // 札 (`021`)。その場の TS と、札より前に始めたクロールの行は空
           sites: script.sites ?? [],
           jsSha256: script.jsSha256 ?? null,
           compiledWith: script.compiledWith ?? null,
@@ -1240,7 +1240,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
-   * その場の JS 1 本の source。**「欄に戻す」のための口** —— 直して撮り直すときに、書いた物を
+   * その場の TS 1 本の source。**「欄に戻す」のための口** —— 直して撮り直すときに、書いた物を
    * 取り戻せるのはここだけ（archive に在るのは変換後の JS）。台帳のスクリプトは台帳と archive に在るので
    * 返さない（404）。名前の綴りは受け口と同じ schema で、合わなければ許可を見る前に 400。
    */
@@ -1487,7 +1487,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
-   * 型で落ちたクロールの、その場の JS の直し方。**Claude の案は、クロールと同じ検査に通った物だけを返す**
+   * 型で落ちたクロールの、その場の TS の直し方。**Claude の案は、クロールと同じ検査に通った物だけを返す**
    * (`scripts/fix.ts`)。お金の掛かる Claude の前に、ただの検査と上限を済ませる —— 組み合わせが通る (409)・
    * 誤りが台帳のスクリプトにだけ在る (422)・組織の月の上限に届いた (429) ときは、Claude を呼ばない。
    * Claude を呼んだ回は、答えがどれでも派生の層 (`026`) に残す。本文は `{}` (何も選ばせない)。

@@ -169,7 +169,7 @@ describe("起点で選べるか", () => {
     expect(onSeed(["www.google.com"], [])).toBe(false);
   });
 
-  it("名指しで入れたサイト用のスクリプトのうち、起点に合わない物を札つきで返す（その場の JS は札を持たない）", () => {
+  it("名指しで入れたサイト用のスクリプトのうち、起点に合わない物を札つきで返す（その場の TS は札を持たない）", () => {
     const script = {
       version: 1,
       phase: "behavior" as const,
@@ -309,7 +309,7 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
     ).toContain("32 個まで");
   });
 
-  it("summary は catalog では空にできず、その場の JS では省ける", () => {
+  it("summary は catalog では空にできず、その場の TS では省ける", () => {
     expect(readParams([{ name: "q", kind: "variable" }], { summaryRequired: true })).toContain(
       "summary が空",
     );
