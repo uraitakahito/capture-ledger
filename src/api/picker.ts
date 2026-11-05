@@ -53,8 +53,9 @@ export const replayOriginFromEnv = (): string => optional("REPLAY_ORIGIN", "http
  *
  * `source` の値は、`/wacz/` ＋ 鍵を区切り（`/`）ごとに符号にした path を、もう 1 度 query の値として符号にした物。
  * replay（v0.3.0 から Node の server）は `/wacz/` の後ろを区切りごとに 1 度だけ解くので、`%XX` を含む鍵
- * （BrowserHive はラベルの空白や日本語を符号で鍵に入れる）も元の鍵で保管庫に届く。鍵を 1 度だけ符号にすると、
- * replay の画面が source を解いた時点で生の鍵に戻り、server がもう 1 度解いて別の鍵を引く。
+ * （BrowserHive はラベルの空白や `_`・`.`・`:`・`/` などを符号で鍵に入れる。日本語はそのまま）も元の鍵で
+ * 保管庫に届く。鍵を 1 度だけ符号にすると、replay の画面が source を解いた時点で生の鍵に戻り、server が
+ * もう 1 度解いて別の鍵を引く。
  *
  * 画面の script に `toString()` で埋め込むので、外の名前を使わない（ブラウザの組み込みだけを使う）。
  */
