@@ -54,6 +54,7 @@ import {
   removeScripts,
   resolveScripts,
   setScriptEnabled,
+  setScriptPositions,
   sitesRefusal,
   type ScriptRow,
 } from "./store.js";
@@ -216,6 +217,9 @@ program
  * `default` が真 (省いた) なら、取り込んだ版を有効にする。CLI の `enable`・`disable` で手で替えた物も、
  * 次の import でカタログに戻る。
  *
+ * **既定の実行順もカタログが正。** 項目の並びの添字を、各 id の全部の版に書く (`setScriptPositions`)。
+ * 版が増えなくても書くので、並びだけを変えたカタログも流し直せば効く。
+ *
  * 同じ置き場所の types/host.d.ts (受け皿 `__bh` の型) も写す (`host_types`・`020`)。スクリプトの source を
  * 読む人に見せる写しで、走るものではない —— 無ければ言って、スクリプトだけを入れる。
  */
@@ -349,6 +353,11 @@ program
             `${entry.default ? "" : "  既定に入らない (全版を無効にした)"}\n`,
         );
       }
+      // 版が増えなくても書く。並びだけを変えたカタログも、流し直せば効く
+      await setScriptPositions(
+        db,
+        catalog.map((entry) => entry.id),
+      );
       process.stdout.write(
         `${dir}: ${String(catalog.length)} 本を読み、${String(added)} 本が新しい版になった\n`,
       );

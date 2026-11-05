@@ -85,7 +85,7 @@ and pins its resolution onto the crawl.
 The sources come from [capture-scripts](https://github.com/uraitakahito/capture-scripts),
 pinned here as the `.upstream/capture-scripts` submodule. Its `catalog.json` carries what a
 source cannot say about itself — the `id`, the `phase`, for a site script its `sites`, and whether it
-runs by default (`default`).
+runs by default (`default`). The order of its entries is the default run order.
 
 ```sh
 # Import the scripts (catalog.json) and the receptacle's types. Idempotent: same bytes, same version.
@@ -110,7 +110,7 @@ opinion, and that does make a new version.
 kept out of the default set: `import` disables every version of that id, so an older version cannot
 step in as the default. An entry without `default` (or with `true`) has the imported version enabled.
 `enable` and `disable` by hand last until the next `import`. Today only `autofetch` is out of the
-default set (capture-scripts v0.7.0): name it in `scripts` to run it.
+default set (capture-scripts v0.8.0): name it in `scripts` to run it.
 
 `import` also copies `types/host.d.ts` from the same directory — the types of the receptacle
 `__bh` — into `host_types`, which likewise adds a version only when the bytes change. It is a copy
@@ -159,15 +159,15 @@ through a long crawl therefore cannot change what its later pages run. The crawl
 [per-crawl values](#per-crawl-values) the same way: `variables` with their values, `secrets` with the
 Windmill variable each name was bound to.
 
-| `scripts`                                                            | What runs                                                                                                                               |
-| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| omitted                                                              | The newest version of every **enabled** id, `id`-order, keeping those without `sites` and those whose `sites` include a seed's hostname |
-| `[{"catalog": "b"}, {"catalog": "a"}]`                               | Exactly those, **in that order** — order is the instruction                                                                             |
-| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]`    | The script you wrote, as `inline-x` version 1; never registered (below)                                                                 |
-| `[]`                                                                 | Nothing. "Use the default" and "run nothing" are different intents                                                                      |
-| an unknown id, or the same id twice                                  | **400**, naming them (`ids`); no crawl is started                                                                                       |
-| a site script whose `sites` include no seed's hostname               | **400** `site scripts need a seed on their site`, naming them (`ids`, with their sites in `hint`); no crawl is started                  |
-| omitted, while every enabled script is a site script for other hosts | **400** `no default scripts for these seeds` (`hint` lists them), not `no scripts are registered`                                       |
+| `scripts`                                                            | What runs                                                                                                                                     |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| omitted                                                              | The newest version of every **enabled** id, in catalog order, keeping those without `sites` and those whose `sites` include a seed's hostname |
+| `[{"catalog": "b"}, {"catalog": "a"}]`                               | Exactly those, **in that order** — order is the instruction                                                                                   |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]`    | The script you wrote, as `inline-x` version 1; never registered (below)                                                                       |
+| `[]`                                                                 | Nothing. "Use the default" and "run nothing" are different intents                                                                            |
+| an unknown id, or the same id twice                                  | **400**, naming them (`ids`); no crawl is started                                                                                             |
+| a site script whose `sites` include no seed's hostname               | **400** `site scripts need a seed on their site`, naming them (`ids`, with their sites in `hint`); no crawl is started                        |
+| omitted, while every enabled script is a site script for other hosts | **400** `no default scripts for these seeds` (`hint` lists them), not `no scripts are registered`                                             |
 
 Each element is an object with exactly one key, `catalog` or `inline`.
 
@@ -233,12 +233,12 @@ Before the first report both are `null`.
 
 The registered scripts' sources can be read over HTTP by whoever may start a crawl:
 
-| Route                                    | Answers                                                                                                                                                                                                                                                                                                                             |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/scripts`                       | One row per id, site scripts and non-default scripts included: the version that runs by default (the newest enabled one), or else the newest version with `enabled: false`. `id`, `version`, `phase`, `sha256`, `sites`, `enabled`. A crawl with no `scripts` runs the `enabled` ones without `sites` and those on its seeds' hosts |
-| `GET /api/scripts/:id/versions`          | Every version of one id, newest first: `version`, `phase`, `sha256`, `sites`, `enabled`, `bytes`, `createdAt`. No source                                                                                                                                                                                                            |
-| `GET /api/scripts/:id/versions/:version` | One version whole: the above plus `id`, `source` and `options`. Disabled versions too, since a past crawl may have run them                                                                                                                                                                                                         |
-| `GET /api/host-types`                    | The newest receptacle types `import` copied: `version`, `sha256`, `createdAt`, `source`, `bytes`                                                                                                                                                                                                                                    |
+| Route                                    | Answers                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/scripts`                       | One row per id, site scripts and non-default scripts included: the version that runs by default (the newest enabled one), or else the newest version with `enabled: false`. `id`, `version`, `phase`, `sha256`, `sites`, `enabled`. A crawl with no `scripts` runs the `enabled` ones without `sites` and those on its seeds' hosts. Rows come in the default run order: catalog order, then anything not in the catalog by `id` |
+| `GET /api/scripts/:id/versions`          | Every version of one id, newest first: `version`, `phase`, `sha256`, `sites`, `enabled`, `bytes`, `createdAt`. No source                                                                                                                                                                                                                                                                                                         |
+| `GET /api/scripts/:id/versions/:version` | One version whole: the above plus `id`, `source` and `options`. Disabled versions too, since a past crawl may have run them                                                                                                                                                                                                                                                                                                      |
+| `GET /api/host-types`                    | The newest receptacle types `import` copied: `version`, `sha256`, `createdAt`, `source`, `bytes`                                                                                                                                                                                                                                                                                                                                 |
 
 All four ask the crawl route's question (`can_submit` on one of the caller's organizations). No
 identity is a 401; no permission is a 404, the same answer as an id or version that does not exist.

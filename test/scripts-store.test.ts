@@ -12,6 +12,7 @@ import {
   readParams,
   readScript,
   resolveScripts,
+  setScriptPositions,
   sitesRefusal,
 } from "../src/scripts/store.js";
 import { recordingDb } from "./recording-db.js";
@@ -192,7 +193,7 @@ describe("起点で選べるか", () => {
 });
 
 describe("走らせるものを決める（scripts を省いた頼み）", () => {
-  const row = (id: string, version: number, sites: string[]) => ({
+  const row = (id: string, version: number, sites: string[], position = 1000) => ({
     id,
     version,
     phase: "behavior",
@@ -200,6 +201,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
     sha256: "h",
     options: {},
     sites,
+    position,
   });
 
   it("有効な各 id の最新版を引き、札で絞るのは引いた後（SQL に札の条件を書かない）", async () => {
@@ -208,7 +210,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
     await resolveScripts(db, undefined, ["site.test"]);
 
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "source", "sha256", "options", "sites", "params" ' +
+      'select distinct on ("id") "id", "version", "phase", "source", "sha256", "options", "sites", "params", "position" ' +
         'from "scripts" where "enabled" = $1 order by "id", "version" desc',
     );
   });
@@ -245,6 +247,105 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
 
     expect(result.kind === "ok" && result.scripts[0]?.sites).toEqual(["site.test"]);
   });
+
+  it("既定の実行順で返す（DB は id の順で返すので、引いた後で position の順に並べる）", async () => {
+    const { db } = recordingDb([
+      [
+        row("autofetch", 2, [], 2),
+        row("autoscroll", 2, [], 0),
+        row("egov-law-search", 1, ["laws.e-gov.go.jp"], 1),
+      ],
+    ]);
+
+    const result = await resolveScripts(db, undefined, ["laws.e-gov.go.jp"]);
+
+    expect(result.kind === "ok" && result.scripts.map((s) => s.id)).toEqual([
+      "autoscroll",
+      "egov-law-search",
+      "autofetch",
+    ]);
+  });
+
+  it("position が同じなら id の順（カタログに無い物は、カタログの後ろに id の順で）", async () => {
+    const { db } = recordingDb([
+      [row("alpha", 1, []), row("autoscroll", 1, [], 0), row("zeta", 1, [])],
+    ]);
+
+    const result = await resolveScripts(db);
+
+    expect(result.kind === "ok" && result.scripts.map((s) => s.id)).toEqual([
+      "autoscroll",
+      "alpha",
+      "zeta",
+    ]);
+  });
+
+  it("写しに position を入れない（走らせるものの記録に順の値は要らない）", async () => {
+    const { db } = recordingDb([[row("autoscroll", 1, [], 0)]]);
+
+    const result = await resolveScripts(db);
+
+    expect(result.kind === "ok" && result.scripts[0]).not.toHaveProperty("position");
+  });
+
+  it("名指しの並びは、position に関係なくそのまま", async () => {
+    const { db } = recordingDb([[row("autofetch", 1, [], 2), row("autoscroll", 1, [], 0)]]);
+
+    const result = await resolveScripts(db, [{ catalog: "autofetch" }, { catalog: "autoscroll" }]);
+
+    expect(result.kind === "ok" && result.scripts.map((s) => s.id)).toEqual([
+      "autofetch",
+      "autoscroll",
+    ]);
+  });
+});
+
+describe("既定の実行順を書く（カタログの並び）", () => {
+  it("並びの添字を、各 id の全部の版に書く（版を絞らない・1 つのトランザクション）", async () => {
+    const { db, queries } = recordingDb([]);
+
+    await setScriptPositions(db, ["autoscroll", "autofetch"]);
+
+    expect(queries.map((q) => q.sql.split(" ")[0])).toEqual([
+      "begin",
+      "update",
+      "update",
+      "commit",
+    ]);
+    expect(queries[1]?.sql).toBe('update "scripts" set "position" = $1 where "id" = $2');
+    expect(queries[1]?.parameters).toEqual([0, "autoscroll"]);
+    expect(queries[2]?.parameters).toEqual([1, "autofetch"]);
+  });
+});
+
+describe("新しい版は順を受け継ぐ", () => {
+  const latest = {
+    version: 1,
+    source: "old;",
+    sha256: "h",
+    options: {},
+    sites: [],
+    params: [],
+    position: 2,
+  };
+
+  it("最新版の position を新しい版に書く（手で足した版が後ろへ飛ばない）", async () => {
+    const { db, queries } = recordingDb([[latest], [{ version: 2, sha256: "h" }]]);
+
+    await addScript(db, { id: "autofetch", phase: "behavior", source: "new;" });
+
+    const insert = queries.find((q) => q.sql.startsWith("insert"));
+    expect(insert?.sql).toContain('"position"');
+    expect(insert?.parameters).toContain(2);
+  });
+
+  it("最初の版には書かない（列の既定に任せる）", async () => {
+    const { db, queries } = recordingDb([[], [{ version: 1, sha256: "h" }]]);
+
+    await addScript(db, { id: "autofetch", phase: "behavior", source: "new;" });
+
+    expect(queries.find((q) => q.sql.startsWith("insert"))?.sql).not.toContain('"position"');
+  });
 });
 
 describe("選べるスクリプト（GET /api/scripts）", () => {
@@ -254,9 +355,20 @@ describe("選べるスクリプト（GET /api/scripts）", () => {
     await pickable(db);
 
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled" from "scripts" ' +
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled", "position" from "scripts" ' +
         'order by "id", "enabled" desc, "version" desc',
     );
+  });
+
+  it("既定の実行順で返す（dashboard の初めの順になる）", async () => {
+    const row = (id: string, position: number) => ({ id, enabled: true, position });
+    const { db } = recordingDb([
+      [row("autofetch", 2), row("autoscroll", 0), row("egov-law-search", 1)],
+    ]);
+
+    const rows = await pickable(db);
+
+    expect(rows.map((script) => script.id)).toEqual(["autoscroll", "egov-law-search", "autofetch"]);
   });
 });
 

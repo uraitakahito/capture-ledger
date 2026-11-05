@@ -268,8 +268,28 @@ describe("GET /api/scripts", () => {
 
     expect(res.json<{ scripts: unknown[] }>().scripts).toEqual(rows);
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled" from "scripts" ' +
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled", "position" from "scripts" ' +
         'order by "id", "enabled" desc, "version" desc',
     );
+  });
+
+  it("行は既定の実行順で、position は答えに載せない", async () => {
+    const row = (id: string, position: number) => ({
+      id,
+      version: 1,
+      phase: "behavior",
+      sha256: "h",
+      sites: [],
+      params: [],
+      enabled: true,
+      position,
+    });
+    const { res } = await get("/api/scripts", {
+      rows: [[row("autofetch", 2), row("autoscroll", 0)]],
+    });
+
+    const { scripts } = res.json<{ scripts: Record<string, unknown>[] }>();
+    expect(scripts.map((script) => script["id"])).toEqual(["autoscroll", "autofetch"]);
+    expect(scripts[0]).not.toHaveProperty("position");
   });
 });
