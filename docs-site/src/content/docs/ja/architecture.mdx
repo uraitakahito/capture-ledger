@@ -9,7 +9,7 @@ description: capture-ledger・Postgres・BrowserHive・成果物ストアの関�
 flowchart LR
   U((呼び出し元)) -->|"POST /api/crawls"| W
   PG[("Postgres<br/>capture_targets / crawls / crawl_pages")] <--> W
-  subgraph W["capture-ledger (Node 24 / TypeScript)"]
+  subgraph W["capture-ledger (Node 26 / TypeScript)"]
     direction TB
     API["api/crawls.ts<br/>範囲・重複排除・上限"]
     DIS["crawl/dispatch.ts<br/>webhook を 1 回 POST"]
