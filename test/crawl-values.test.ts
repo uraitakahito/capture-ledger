@@ -73,7 +73,7 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
     });
   });
 
-  it("宣言の無いその場の JS が 1 本でも在れば、知らない名前を通す。params: [] は宣言なので通さない", () => {
+  it("宣言の無いその場の TS が 1 本でも在れば、知らない名前を通す。params: [] は宣言なので通さない", () => {
     // 添えなかった物は「何を読むか分からない」。空の宣言は「何も読まない」
     expect(checkValues([script("a", [variable("query")]), script("inline-x")], { k: "v" })).toEqual(
       { kind: "ok", secrets: [] },
@@ -83,14 +83,14 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
     ).toEqual({ kind: "refused", body: { error: "unknown variables", names: ["k"] } });
   });
 
-  it("宣言の無い台帳のスクリプト（古い写し）は、その場の JS ではないので例外にしない", () => {
+  it("宣言の無い台帳のスクリプト（古い写し）は、その場の TS ではないので例外にしない", () => {
     expect(checkValues([script("autoscroll")], { k: "v" })).toEqual({
       kind: "refused",
       body: { error: "unknown variables", names: ["k"] },
     });
   });
 
-  it("シークレットの名前を変数で渡すと断る（記録に値が残る）。宣言の無いその場の JS が在っても", () => {
+  it("シークレットの名前を変数で渡すと断る（記録に値が残る）。宣言の無いその場の TS が在っても", () => {
     expect(
       checkValues([script("a", [secret("api_token")]), script("inline-x")], { api_token: "x" }),
     ).toEqual({

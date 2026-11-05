@@ -193,7 +193,7 @@ describe("断る形", () => {
 });
 
 describe("直し方を訊く輪", () => {
-  it("型の通る案なら 1 往復で返し、その場の JS だけを替えた組み合わせを検査に通す", async () => {
+  it("型の通る案なら 1 往復で返し、その場の TS だけを替えた組み合わせを検査に通す", async () => {
     const { model } = fakeModel([reply(GOOD)]);
     const { asked, tsCompile } = fakeCompile([PASSES]);
     const result = await run(model, tsCompile);
@@ -201,7 +201,7 @@ describe("直し方を訊く輪", () => {
     expect(result.rounds).toBe(1);
     expect(asked).toHaveLength(1);
     const sent = asked[0]!;
-    // 並びは元のまま。台帳のスクリプトは変えない。その場の JS は sha256 を打ち直す
+    // 並びは元のまま。台帳のスクリプトは変えない。その場の TS は sha256 を打ち直す
     expect(sent.map((s) => s.id)).toEqual(["inline-press", "autoscroll"]);
     expect(sent[1]).toEqual(CATALOG);
     expect(sent[0]!.source).toContain(FIXED_LINE);

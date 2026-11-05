@@ -178,7 +178,7 @@ describe("クロール route の入力検証", () => {
     expect((await post({ seeds: [SEED], scripts: [{ inline }] })).statusCode).toBe(500);
   });
 
-  it("その場の JS の名前の綴りが合わなければ 400 で、文は綴りの誤りだけを言う", async () => {
+  it("その場の TS の名前の綴りが合わなければ 400 で、文は綴りの誤りだけを言う", async () => {
     // **oneOf にしない理由。** oneOf だと、この文に「catalog が要る」が混ざる
     const res = await post({
       seeds: [SEED],
@@ -190,7 +190,7 @@ describe("クロール route の入力検証", () => {
     expect(message).not.toContain("catalog");
   });
 
-  it("その場の JS の名前は、inline- と合わせて 64 字まで・phase は 2 つだけ", async () => {
+  it("その場の TS の名前は、inline- と合わせて 64 字まで・phase は 2 つだけ", async () => {
     // ts-compile-service の ScriptId（^[a-z][a-z0-9-]*$・64 字）に収める。変換の段まで行って
     // 400 になると、失敗したクロールが残る
     const inline = (name: string, phase = "behavior") => ({
@@ -1438,7 +1438,7 @@ describe("走らせるものの解決", () => {
   } as const;
   const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
-  it("その場の JS は inline- の id・版 1・options 空で写り、sha256 は台帳が source から打つ", async () => {
+  it("その場の TS は inline- の id・版 1・options 空で写り、sha256 は台帳が source から打つ", async () => {
     const { res, crawls } = await start({ seeds: [SEED], scripts: [{ inline: INLINE }] });
     expect(res.statusCode).toBe(202);
     expect(crawls[0]?.scripts).toEqual([
@@ -1453,7 +1453,7 @@ describe("走らせるものの解決", () => {
     ]);
   });
 
-  it("その場の JS と台帳のスクリプトの名指しを、頼んだ並びのまま 1 列に写す", async () => {
+  it("その場の TS と台帳のスクリプトの名指しを、頼んだ並びのまま 1 列に写す", async () => {
     const { sent } = await start({
       seeds: [SEED],
       scripts: [{ catalog: "autoscroll" }, { inline: INLINE }, { catalog: "autofetch" }],
@@ -1465,7 +1465,7 @@ describe("走らせるものの解決", () => {
     ]);
   });
 
-  it("その場の JS だけなら、台帳のスクリプトを引かない", async () => {
+  it("その場の TS だけなら、台帳のスクリプトを引かない", async () => {
     // 偽の DB は、本物の Postgres と同じく空の in () を断る。引けば 500 になる
     const { res, sent } = await start({ seeds: [SEED], scripts: [{ inline: INLINE }] });
     expect(res.statusCode).toBe(202);
@@ -1491,7 +1491,7 @@ describe("走らせるものの解決", () => {
   });
 
   it("GET の inline は名前・口・バイト数だけ —— source は運ばない", async () => {
-    // 走行中の行は dashboard が 2 秒ごとに引き直す。source を載せると、1 MiB の JS なら 2 秒に 1 MiB
+    // 走行中の行は dashboard が 2 秒ごとに引き直す。source を載せると、1 MiB の TS なら 2 秒に 1 MiB
     const { crawls } = await start({
       seeds: [SEED],
       scripts: [{ inline: INLINE }, { catalog: "autoscroll" }],
@@ -1513,7 +1513,7 @@ describe("走らせるものの解決", () => {
     });
     expect(body.scripts[1]).not.toHaveProperty("inline");
     expect(body.scripts[1]).not.toHaveProperty("source");
-    expect(res.body, "その場の JS の source が詳しい所に在る").not.toContain("void 0");
+    expect(res.body, "その場の TS の source が詳しい所に在る").not.toContain("void 0");
     expect(res.body).not.toContain("/* v2 */");
   });
 
@@ -1534,7 +1534,7 @@ describe("走らせるものの解決", () => {
     return res;
   };
 
-  it("その場の JS は、名前の口から source ごと返る（欄に戻すため）", async () => {
+  it("その場の TS は、名前の口から source ごと返る（欄に戻すため）", async () => {
     const res = await askInline("close-banner");
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
@@ -1546,7 +1546,7 @@ describe("走らせるものの解決", () => {
   });
 
   it("台帳のスクリプト・知らない名前・無いクロールは 404", async () => {
-    // 台帳のスクリプトは台帳と archive に在る。名前の口は、その場の JS だけを返す
+    // 台帳のスクリプトは台帳と archive に在る。名前の口は、その場の TS だけを返す
     expect((await askInline("autoscroll")).statusCode).toBe(404);
     expect((await askInline("nope")).statusCode).toBe(404);
     expect((await askInline("close-banner", { id: UUID })).statusCode).toBe(404);
@@ -1591,7 +1591,7 @@ describe("型の誤りを取り直す口", () => {
     message: "Parameter 'el' implicitly has an 'any' type.",
   };
 
-  /** その場の JS と台帳のスクリプトで 1 本始め、webhook に渡った列をそのまま控える。 */
+  /** その場の TS と台帳のスクリプトで 1 本始め、webhook に渡った列をそのまま控える。 */
   const startCapturing = async () => {
     const crawls: FakeCrawl[] = [];
     const sent: CrawlScript[][] = [];
@@ -1872,7 +1872,7 @@ describe("直しの口", () => {
       crawlId: crawls[0]!.id,
       target: { crawlId: crawls[0]!.id, inline: "press" },
       model: "claude-opus-5-5",
-      promptVersion: "fix/1",
+      promptVersion: "fix/2",
       effort: "medium",
       rounds: 1,
       createdBy: "alice",
@@ -2425,7 +2425,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
     await app.close();
   });
 
-  it("その場の JS の宣言は schema で形を見る: kind・name の綴り・知らない鍵は 400、形が合えば通る", async () => {
+  it("その場の TS の宣言は schema で形を見る: kind・name の綴り・知らない鍵は 400、形が合えば通る", async () => {
     const app = await buildApp(unreachableDeps);
     const post = async (params: unknown) => {
       const res = await app.inject({
@@ -2582,7 +2582,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
     expect(crawls).toEqual([]);
   });
 
-  it("その場の JS の宣言は catalog と同じ決まりで読む: 重複は 400 invalid params、required の既定は false で写す", async () => {
+  it("その場の TS の宣言は catalog と同じ決まりで読む: 重複は 400 invalid params、required の既定は false で写す", async () => {
     const twice = await start({
       seeds: [SEED],
       scripts: [
@@ -2622,7 +2622,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
     ]);
   });
 
-  it("宣言を添えないその場の JS が混ざれば、知らない名前も通して行に固定する", async () => {
+  it("宣言を添えないその場の TS が混ざれば、知らない名前も通して行に固定する", async () => {
     const { res, crawls } = await start({
       seeds: [SEED],
       scripts: [

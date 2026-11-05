@@ -172,7 +172,7 @@ program
       // 札は DB の CHECK (`021`) より先に、読める文で断る
       const sitesRefused = opts.site === undefined ? undefined : sitesRefusal(opts.site);
       if (sitesRefused !== undefined) return fail(sitesRefused);
-      // `inline-` はその場の JS に取ってある。DB の CHECK (`019`) より先に、ファイルを読む前に断る
+      // `inline-` はその場の TS に取ってある。DB の CHECK (`019`) より先に、ファイルを読む前に断る
       const refused = catalogIdRefusal(id);
       if (refused !== undefined) return fail(refused);
       const source =

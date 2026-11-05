@@ -5,7 +5,7 @@
  *
  * ## なぜ要るのか
  *
- * `POST /api/crawls` の `scripts` には、台帳のスクリプトの名指しのほかに、その場で書いた JS（`inline`）を
+ * `POST /api/crawls` の `scripts` には、台帳のスクリプトの名指しのほかに、その場で書いた TS（`inline`）を
  * 置ける。台帳はそれを登録せず、クロールの行の写しにだけ `inline-<name>` の id で固定する
  * （`scripts/store.ts` の `inlineScript`）。アーカイブに残るのは id と JS だけなので、**id の頭で
  * 「台帳のスクリプトか、その場の物か」を分ける**。台帳のスクリプトにも同じ頭の id があると、その区別が崩れる。
