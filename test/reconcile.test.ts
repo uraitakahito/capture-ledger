@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { Kysely } from "kysely";
 import type { Database } from "../src/db/database.js";
+import { recordingDb } from "./recording-db.js";
 
 /**
  * reconcile は、報告が書き留めた鍵だけを読む。
@@ -74,11 +75,14 @@ const fakeDb = (
   };
 };
 
+const CRAWL = "d272d256-e528-4581-bb4e-8d9477d78196";
+
 const row = (manifestKey: string) => ({
   taskId: TASK,
   manifestKey,
   orgId: "acme",
   submittedBy: "alice",
+  crawlId: CRAWL,
 });
 
 beforeEach(() => {
@@ -101,7 +105,7 @@ describe("reconcile は記録された鍵だけを読む", () => {
     const result = await reconcile(db, S3, "b");
 
     expect(vi.mocked(getJsonObject).mock.calls[0]?.[2]).toBe("elsewhere/x y+z.result.json");
-    expect(vi.mocked(admitArchive).mock.calls[0]?.slice(2)).toEqual(["acme", "alice"]);
+    expect(vi.mocked(admitArchive).mock.calls[0]?.slice(2)).toEqual(["acme", "alice", CRAWL]);
     expect(result).toEqual({ pending: 1, registered: 1, skipped: 0, missing: 0, counted: 0 });
   });
 
@@ -171,6 +175,24 @@ describe("reconcile は記録された鍵だけを読む", () => {
     await reconcile(db, S3, "b", since);
 
     expect(wheres).toContainEqual(["s.submittedAt", ">=", since]);
+  });
+
+  /**
+   * どのクロールの取り込みか (`027`) は、段の報告が `crawl_pages` に書いた task_id から引く (correlationId の
+   * 申し合わせではない)。本物の Kysely に組ませて、問い合わせの形を見る。
+   */
+  it("クロールの id は crawl_pages の task_id から引く（uuid 側を text に倒す）", async () => {
+    const { db, queries } = recordingDb([[]]);
+
+    await reconcile(db, S3, "b");
+
+    expect(queries[0]?.sql).toBe(
+      'select "s"."task_id", "s"."manifest_key", "s"."org_id", "s"."submitted_by", ' +
+        '(select "p"."crawl_id" from "crawl_pages" as "p" where "p"."task_id" = "s"."task_id"::text limit $1) ' +
+        'as "crawl_id" from "capture_submissions" as "s" ' +
+        'left join "archives" as "a" on "a"."task_id" = "s"."task_id" ' +
+        'where "a"."task_id" is null and "s"."manifest_key" is not null',
+    );
   });
 
   // 既定は全部。**渡さなければ時刻の条件が付かない**ことを見ないと、いつも絞る実装が緑で通る。

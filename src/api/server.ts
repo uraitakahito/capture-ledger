@@ -23,6 +23,7 @@ import { registerScriptsRoute } from "./scripts.js";
 import { registerPicker, replayOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
+import { registerReplayBundleRoutes } from "./replay-bundle.js";
 import { createTsCompile } from "../config/ts-compile.js";
 import { claudeBudgetUsd, createFixModel } from "../config/claude.js";
 import { derivationStoreOf } from "../derivations/store.js";
@@ -207,6 +208,8 @@ const start = async (options: ServerOptions): Promise<void> => {
       }),
       capture,
     });
+    // 合本の口 (`api/replay-bundle.ts`)。クロールの flow が段ごとに叩く。合本は保管庫に書くので bucket が要る
+    registerReplayBundleRoutes(app, { db, fga, s3, bucket: storage.bucket, resolveIdentity });
   }
 
   // 全文検索の口。**必須** (CAPTURE-53) —— 宛先は上の collectEnv が他の設定と一緒に求める。

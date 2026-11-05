@@ -34,7 +34,7 @@
  * bucket の大きさではなく、未登録の取り込みの数で決まる。成果物の無い manifest
  * (時間切れ・失敗など) は台帳が受け付けないので、回すたびに読み直す —— 以前と同じ。
  */
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
 import { logCountsOf, readManifest } from "./manifest.js";
 import type { Database } from "../db/database.js";
@@ -70,6 +70,16 @@ export const reconcile = async (
     .selectFrom("captureSubmissions as s")
     .leftJoin("archives as a", "a.taskId", "s.taskId")
     .select(["s.taskId", "s.manifestKey", "s.orgId", "s.submittedBy"])
+    // どのクロールの取り込みか (`027`)。段の報告が `crawl_pages` に書いた task_id から引く —— 記録された関係で、
+    // correlationId の申し合わせではない。`crawl_pages.task_id` は text なので uuid 側を倒す
+    .select((eb) =>
+      eb
+        .selectFrom("crawlPages as p")
+        .select("p.crawlId")
+        .where("p.taskId", "=", sql<string>`${sql.ref("s.taskId")}::text`)
+        .limit(1)
+        .as("crawlId"),
+    )
     .where("a.taskId", "is", null)
     .where("s.manifestKey", "is not", null)
     // `is not null` で絞っても Kysely は列の型を狭めない。**型を言い張るだけ**なので、
@@ -129,7 +139,7 @@ export const reconcile = async (
     // 冪等: 段の登録との競合は unique index が吸収する。identity はここでは作らない ——
     // reconcile は掃除役で、いま動かしている人と取り込みを頼んだ人は別。投げた時点の
     // 記録から読む。
-    const admitted = await admitArchive(db, report, row.orgId, row.submittedBy);
+    const admitted = await admitArchive(db, report, row.orgId, row.submittedBy, row.crawlId);
     if (admitted.archiveId !== undefined) result.registered += 1;
     else result.skipped += 1;
   }

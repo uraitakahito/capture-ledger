@@ -731,6 +731,94 @@ The analyzer today is the built-in `cjk` (bigram). Kuromoji needs a plugin
 install and does not run on the stock image — swap in a custom image when you
 need it, then rebuild as above.
 
+## Replay bundles
+
+A crawl leaves one WACZ per page it captured. **A replay bundle binds them back together**: after a
+level, capture-ledger writes the crawl's bundle to the store — a `replay.json` that lists every WACZ
+of the crawl, and a `pages.json` that holds every line of their page lists — so that
+[replay](https://github.com/uraitakahito/replay) opens the whole crawl as one archive, and a link
+leads from a page in one WACZ to a page in another. The format (version 1) is replay's
+`docs/replay-bundle.md`.
+
+```sh
+# For the crawl flow: after it reports a level, before it indexes the level
+curl -X POST .../api/crawls/<id>/replay-bundle -H 'content-type: application/json' -d '{"depth":1}'
+# → 200 { "rev": 3, "pages": 18, "members": 6, "skipped": 0, "failed": 0, "error": null }
+```
+
+Each call writes a **new version** (`rev`). The crawl row hands out the number
+(`crawls.replay_bundle_next_rev`, one per call, from 1), and the two objects go under
+`org/<orgId>/crawls/<crawlId>/r<rev>/` in the configured bucket — the one the WACZs are in — as
+`application/json`. A version is written once and never rewritten. The crawl points at the newest
+version written (`crawls.replay_bundle_rev`), and **that pointer only moves forward**: the next level
+is dispatched from inside the previous level's report, so the bundle for level N can finish after the
+one for level N+1, and it must not take the crawl back. The body's `depth` is only recorded
+(`replayBundle.depth` in `replay.json`). It is not the version, because rebuilding writes the same
+depth twice.
+
+| Field     | Meaning                                                                                                    |
+| --------- | ---------------------------------------------------------------------------------------------------------- |
+| `rev`     | The version written (or tried). `null` when no WACZ went in and nothing was written                        |
+| `pages`   | Lines in `pages.json` (`totalPages`)                                                                       |
+| `members` | WACZs in `resources`                                                                                       |
+| `skipped` | WACZs left out because they recorded nothing (below)                                                       |
+| `failed`  | WACZs that could not be read (not in the store, not a zip, store unreachable); the next bundle tries again |
+| `error`   | Why the bundle could not be written, or `null`                                                             |
+
+**A failed write is still a 200.** The reason goes into `error` and into
+`crawls.replay_bundle_error`, until a later version is written. A bundle is derived from what was
+captured; failing the flow's step would mark the crawl failed while its next level is already
+running. 401, 404 (no `can_submit`, or no such crawl) and 400 (an id that is not a UUID, a body other
+than `{depth}`) are as for the index endpoint.
+
+### What goes in
+
+The crawl's archives, by `archives.crawl_id` — filled when a capture is admitted (reconcile finds the
+crawl through `crawl_pages.task_id`). An archive not inspected yet (`inspected_at` empty) is read
+once: its sha256 and size (`resources[].hash` carries the sha256), whether `indexes/index.cdxj` is
+empty, and the lines of `pages/pages.jsonl`, which go into `archive_pages` so later versions do not
+read the WACZ again. A document line also gets `keys` — the requested URL and BrowserHive's
+`document.url` (after redirects, from the capture's `.result.json`), normalized the way
+`parseHttpUrl` does — which is what replay's server looks a page up by. Snapshot lines have none.
+
+A WACZ that recorded nothing — an empty index, or `waczStats.totalRecorded` of 0 — is left out
+(`skipped`): replay would ask for a zero-length range and keep re-reading the JSON on the store's
+answer, a 416. `resources` starts with the seeds' WACZs, then goes by depth and capture time — a
+fixed order, not a hint: the three WACZs replay tries for something a page does not hold are picked
+by name, not by this order. `initialPages`, the list replay shows first, holds document lines,
+seeds first. A line without an `id` (a WACZ from outside the contract) gets
+`<filename>#<its position>`, because replay's server cannot read a line whose `id` is not a string.
+
+### Reading it back
+
+`GET /api/crawls` and `GET /api/crawls/:id` carry `replayBundle`:
+`{ key, rev, pages, builtAt, error }` for the version the crawl points at (`key` is the object key
+of its `replay.json`), or `null` when nothing was written and nothing failed. A failure before the
+first version is written shows as `error` alone. Each page of `GET /api/crawls/:id/pages` carries
+`capturedAt` and `bundledRev`, the first version that holds its WACZ: the page is in the bundle the
+crawl points at when `bundledRev ≤ replayBundle.rev`.
+
+```
+http://127.0.0.1:8899/?source=/wacz/<replayBundle.key>
+```
+
+### Rebuilding a bundle
+
+```sh
+pnpm run replay-bundle:rebuild --crawl <id>
+```
+
+It writes a new version the same way, reading the ledger and the store directly (no access token).
+Run it when a bundle missed something: a capture reconcile admitted after the last level, a level
+whose bundle could not be written, or a crawl from before migration `027` — for that one it first
+links the crawl's archives to the crawl through `crawl_pages.task_id`.
+
+:::caution[One object lists every key of the crawl]
+The bucket is read anonymously through replay's `/wacz/`, so a bundle lists every WACZ key of the
+crawl in one place — the exposure each WACZ already has, gathered together. After
+`pnpm run store:wipe`, `replay_bundle_key` points at nothing.
+:::
+
 ## Picking an archive in a browser
 
 `capture-api` also serves a picker at `/` — the list above, rendered, with each
@@ -752,16 +840,20 @@ The picker hands replay the `objectKey` and nothing else:
 http://127.0.0.1:8899/?source=/wacz/<objectKey>
 ```
 
+(Shown unencoded: the link encodes each segment of the key, and then the whole path once more as a
+query value — see [Browsing archives](/capture-ledger/picker/#after-clicking-a-row).)
+
 Not the signed URL. A signed URL points straight at S3, which is a different
 origin from the viewer, so the browser would need CORS on the bucket. The
-object key goes through replay's own upstream, so **replay needs no change at
-all**.
+object key goes through replay's own upstream (`/wacz/`), so the picker needs
+nothing else from replay.
 
 :::caution[The list is filtered; the read is not]
 `can_view` decides what appears in the picker. It does **not** guard
 `/wacz/<key>` — anyone who knows a key can read it, because that path is served
 by the bucket's anonymous read. The filtering decides what you are shown, not
-what you could fetch.
+what you could fetch. The same holds for replay's `/q/<dir>/pages`, which answers
+the page lookups of a crawl's [replay bundle](#replay-bundles) from that read.
 
 Closing that gap means handing out the signed URL instead and setting CORS on
 the bucket, which is a separate change.

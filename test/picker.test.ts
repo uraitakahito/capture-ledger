@@ -68,7 +68,7 @@ describe("行のリンク", () => {
         capturedAt: "2026-11-04T10:39:16.120Z",
       }),
     ).toBe(
-      `${ORIGIN}/?source=/wacz/${KEY}#view=replay&url=https%3A%2F%2Fwww.apple.com%2Fjp%2F&ts=20261104103916`,
+      `${ORIGIN}/?source=%2Fwacz%2F${KEY}#view=replay&url=https%3A%2F%2Fwww.apple.com%2Fjp%2F&ts=20261104103916`,
     );
   });
 
@@ -83,13 +83,13 @@ describe("行のリンク", () => {
     );
   });
 
-  it("鍵の / や ?、URL の & や # は、それぞれの所で符号にする", () => {
+  it("鍵は区切りごとに符号にし、その path を source の値としてもう 1 度符号にする。URL の & や # は url の所で", () => {
     const href = replayHref(ORIGIN, {
       objectKey: "a/b?c.wacz",
       sourceUrl: "https://site.test/search?q=a&b=1",
       capturedAt: "2026-11-04T10:39:16Z",
     });
-    expect(href.slice(0, href.indexOf("#"))).toBe(`${ORIGIN}/?source=/wacz/a%2Fb%3Fc.wacz`);
+    expect(href.slice(0, href.indexOf("#"))).toBe(`${ORIGIN}/?source=%2Fwacz%2Fa%2Fb%253Fc.wacz`);
     expect(new URLSearchParams(href.slice(href.indexOf("#") + 1)).get("url")).toBe(
       "https://site.test/search?q=a&b=1",
     );
@@ -101,7 +101,21 @@ describe("行のリンク", () => {
     ["URL が無い", { capturedAt: "2026-11-04T10:39:16Z" }],
     ["URL が空", { sourceUrl: "", capturedAt: "2026-11-04T10:39:16Z" }],
   ])("%s なら、一覧を開く形のまま", (_, rest) => {
-    expect(replayHref(ORIGIN, { objectKey: KEY, ...rest })).toBe(`${ORIGIN}/?source=/wacz/${KEY}`);
+    expect(replayHref(ORIGIN, { objectKey: KEY, ...rest })).toBe(
+      `${ORIGIN}/?source=%2Fwacz%2F${KEY}`,
+    );
+  });
+
+  it("% を含む鍵も、replay の画面が source を 1 度・server が区切りごとに 1 度解くと元の鍵に戻る", () => {
+    // BrowserHive はラベルを百分率の符号で鍵に入れる（`hello world` → `hello%20world`）
+    const objectKey = "org/acme/2026-11/hello%20world_%E3%81%82.wacz";
+    const href = replayHref(ORIGIN, { objectKey });
+    // replay の画面（wabac）は ?source= を URLSearchParams で 1 度解き、その path を取りに行く
+    const source = new URL(href).searchParams.get("source") ?? "";
+    expect(source.startsWith("/wacz/")).toBe(true);
+    // replay の server（v0.3.0）は /wacz/ の後ろを区切りごとに 1 度だけ解く
+    const served = source.slice("/wacz/".length).split("/").map(decodeURIComponent).join("/");
+    expect(served).toBe(objectKey);
   });
 });
 

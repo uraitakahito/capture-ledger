@@ -32,6 +32,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | [`capture_targets`](/capture-ledger/ja/databases/capture-targets/)         | 撮る対象の一覧                                                                                                                |
 | [`capture_submissions`](/capture-ledger/ja/databases/capture-submissions/) | 投げた記録。組織を知る唯一の出どころ                                                                                          |
 | [`archives`](/capture-ledger/ja/databases/archives/)                       | 台帳。アーカイブを生んだ取り込みだけ                                                                                          |
+| `archive_pages`                                                            | アーカイブの頁の一覧（`pages/pages.jsonl`）の 1 行が 1 行。クロールの合本のために 1 度だけ読む                                |
 | [`fga_outbox`](/capture-ledger/ja/databases/fga-outbox/)                   | OpenFGA へ送る予定のタプル                                                                                                    |
 | `crawls`                                                                   | クロール 1 本につき 1 行。方針・状態・停止理由                                                                                |
 | `crawl_pages`                                                              | クロールが触った URL 1 つにつき 1 行（取る前の pending も）。重複排除の索引でもあり、取り込みのログの数（`log_counts`）も持つ |

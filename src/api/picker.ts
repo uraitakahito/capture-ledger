@@ -51,13 +51,19 @@ export const replayOriginFromEnv = (): string => optional("REPLAY_ORIGIN", "http
  * url は台帳の sourceUrl のまま渡す。replay は、path が空の URL（末尾の `/` が無い）も断片の付いた URL も、
  * 記録した文書に当てる（2026-11-04 に replaywebpage 2.5.0 で確かめた）。URL か時刻が無ければ、一覧を開く形のまま。
  *
+ * `source` の値は、`/wacz/` ＋ 鍵を区切り（`/`）ごとに符号にした path を、もう 1 度 query の値として符号にした物。
+ * replay（v0.3.0 から Node の server）は `/wacz/` の後ろを区切りごとに 1 度だけ解くので、`%XX` を含む鍵
+ * （BrowserHive はラベルの空白や日本語を符号で鍵に入れる）も元の鍵で保管庫に届く。鍵を 1 度だけ符号にすると、
+ * replay の画面が source を解いた時点で生の鍵に戻り、server がもう 1 度解いて別の鍵を引く。
+ *
  * 画面の script に `toString()` で埋め込むので、外の名前を使わない（ブラウザの組み込みだけを使う）。
  */
 export const replayHref = (
   replayOrigin: string,
   archive: { objectKey: string; sourceUrl?: unknown; capturedAt?: unknown },
 ): string => {
-  const base = replayOrigin + "/?source=/wacz/" + encodeURIComponent(archive.objectKey);
+  const path = "/wacz/" + archive.objectKey.split("/").map(encodeURIComponent).join("/");
+  const base = replayOrigin + "/?source=" + encodeURIComponent(path);
   if (typeof archive.sourceUrl !== "string" || archive.sourceUrl === "") return base;
   if (typeof archive.capturedAt !== "string") return base;
   // new Date("") は Invalid Date で、ここで落とせる。

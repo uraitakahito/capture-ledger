@@ -674,6 +674,90 @@ OpenSearch が推測します（エラーは出ません）。
 既製イメージでは動きません ― 必要になったら自前イメージに替えて、上の手順で
 作り直してください。
 
+## 合本
+
+クロールは、撮った頁ごとに WACZ を 1 本残します。**合本は、それを 1 つに綴じ直した物です**:
+段の後に、そのクロールの WACZ を全部並べた `replay.json` と、それらの頁の一覧の行を全部持つ
+`pages.json` を、台帳が保管庫に書きます。[replay](https://github.com/uraitakahito/replay) は
+それを 1 つのアーカイブとして開き、ある WACZ の頁から別の WACZ の頁へリンクで行けます。
+形（v1）は replay の `docs/replay-bundle.md` にあります。
+
+```sh
+# クロールの flow のための口。段を報告した後・その段を索引に載せる前に叩く
+curl -X POST .../api/crawls/<id>/replay-bundle -H 'content-type: application/json' -d '{"depth":1}'
+# → 200 { "rev": 3, "pages": 18, "members": 6, "skipped": 0, "failed": 0, "error": null }
+```
+
+叩くたびに**新しい版**（`rev`）を書きます。版の番号はクロールの行が払い出し
+（`crawls.replay_bundle_next_rev`。1 回に 1 つ、1 から）、2 つの物は設定の bucket
+（WACZ と同じ bucket）の `org/<orgId>/crawls/<crawlId>/r<版>/` に `application/json` で置きます。
+一度書いた版は書き換えません。クロールが指すのは書けた版のうち最も新しい物
+（`crawls.replay_bundle_rev`）で、**前へだけ進みます**。次の段は前の段の報告の中で出されるので、
+段 N の合本が段 N+1 の合本より後に書き終わることがあり、それでクロールを戻してはいけないからです。
+本文の `depth` は記録するだけです（`replay.json` の `replayBundle.depth`）。版ではありません ――
+作り直しで同じ深さを 2 度書くためです。
+
+| 欄        | 意味                                                                                     |
+| --------- | ---------------------------------------------------------------------------------------- |
+| `rev`     | 書いた（書こうとした）版。入れる WACZ が無く、何も書かなかったときは `null`              |
+| `pages`   | `pages.json` の行の数（`totalPages`）                                                    |
+| `members` | `resources` に入れた WACZ の数                                                           |
+| `skipped` | 記録が 0 で外した WACZ の数（下）                                                        |
+| `failed`  | 読めなかった WACZ の数（保管庫に無い・zip でない・保管庫に届かない）。次の合本が読み直す |
+| `error`   | 書けなかった理由。書けたら `null`                                                        |
+
+**書けなくても 200 です。** 理由を `error` と `crawls.replay_bundle_error` に残します（後の版が
+書けたら消えます）。合本は撮った物から作る派生物で、flow の段を誤りにすると、次の段が既に走って
+いるのにクロールが failed になります。401・404（`can_submit` が無い・クロールが無い）・400（id が
+UUID でない・本文が `{depth}` でない）は索引の口と同じです。
+
+### 何が入るか
+
+クロールのアーカイブを `archives.crawl_id` で引きます。取り込みを受けるときに入ります（reconcile は
+`crawl_pages.task_id` からクロールを引きます）。まだ検めていないアーカイブ（`inspected_at` が空）は
+1 度だけ読みます: sha256 と大きさ（`resources[].hash` が sha256 を運びます）、`indexes/index.cdxj`
+が空か、`pages/pages.jsonl` の行。行は `archive_pages` に入れ、後の版は WACZ を読み直しません。
+文書の行には `keys` も付けます ―― 頼んだ URL と、BrowserHive の答え（その取り込みの `.result.json`）の
+`document.url`（リダイレクトの後）を `parseHttpUrl` と同じ形に正規化した物で、replay の server が
+頁を引く鍵です。写しの行には付けません。
+
+記録が 0 の WACZ（索引が空か、`waczStats.totalRecorded` が 0）は外します（`skipped`）。replay が
+長さ 0 の Range を求め、保管庫の 416 で JSON を読み直し続けるからです。`resources` は起点の WACZ を
+先頭に、続けて深さ・撮った時刻の順です（決まった順にするためです。replay が、頁が持たない物を探す
+3 本は、この並びではなく WACZ の名前の順で選ばれます）。
+`initialPages`（replay が最初に見せる一覧）は文書の行で、起点が先頭です。
+行に `id` が無ければ（契約の外の WACZ）、`<filename>#<何番目の行か>` を振ります。replay の server は
+`id` が文字列でない行を読めないからです。
+
+### 読み返す
+
+`GET /api/crawls` と `GET /api/crawls/:id` は `replayBundle` を持ちます: クロールが指す版の
+`{ key, rev, pages, builtAt, error }`（`key` はその `replay.json` の鍵）で、書けた版も失敗も
+無ければ `null` です。最初の版が書ける前の失敗は、`error` だけが値を持ちます。
+`GET /api/crawls/:id/pages` の頁は `capturedAt` と `bundledRev`（その WACZ が最初に入った版）を持ち、
+`bundledRev ≤ replayBundle.rev` なら、その頁はクロールが指す合本の中にあります。
+
+```
+http://127.0.0.1:8899/?source=/wacz/<replayBundle.key>
+```
+
+### 合本を作り直す
+
+```sh
+pnpm run replay-bundle:rebuild --crawl <id>
+```
+
+同じ形で新しい版を書きます。台帳と保管庫を直に読み書きし、アクセストークンは使いません。打つのは、
+合本に入らなかった物があるときです: 最後の段の後に reconcile が受けた取り込み、合本を書けなかった段、
+migration `027` より前のクロール（先に、そのクロールのアーカイブを `crawl_pages.task_id` で
+クロールに繋ぎます）。
+
+:::caution[1 つの物が、クロールの鍵を全部並べる]
+bucket は replay の `/wacz/` を通して匿名で読めるので、合本はクロールの WACZ の鍵を全部、
+1 か所に並べます。WACZ 1 本ずつが既に持っている露出が、1 か所に集まった形です。
+`pnpm run store:wipe` の後は、`replay_bundle_key` は何も無い所を指します。
+:::
+
 ## ブラウザからアーカイブを選ぶ
 
 `capture-api` は `/` に picker も出す —— 上の一覧を画面にしたもので、行をクリックすると
@@ -695,14 +779,18 @@ picker が replay に渡すのは `objectKey` だけ:
 http://127.0.0.1:8899/?source=/wacz/<objectKey>
 ```
 
+（符号にする前の形。link は鍵を区切りごとに符号にし、その path 全体を query の値としてもう 1 度符号にする ——
+[アーカイブを見る（picker）](/capture-ledger/ja/picker/#行をクリックした後)。）
+
 署名付き URL は使わない。あれは S3 を直接指すので viewer から見て別 origin になり、
-bucket に CORS が要る。object key なら読みは replay 自身の上流を通るので、
-**replay は一切変えなくてよい**。
+bucket に CORS が要る。object key なら読みは replay 自身の上流（`/wacz/`）を通るので、
+picker が replay に求める物はほかに無い。
 
 :::caution[絞っているのは一覧だけで、読みではない]
 `can_view` が決めるのは picker に出るかどうか。`/wacz/<key>` を**守ってはいない** ——
 その経路は bucket の匿名 read で配られるので、鍵を知っていれば誰でも読める。
 絞り込みが決めるのは「何を見せるか」であって「何を取れるか」ではない。
+replay の `/q/<置き場>/pages`（クロールの[合本](#合本)の頁の問い）も同じ匿名の read から答える。
 
 ここを閉じるなら署名付き URL を渡し、bucket に CORS を設定することになる。
 それは別の変更。

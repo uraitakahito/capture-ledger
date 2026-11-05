@@ -146,6 +146,19 @@ describe("台帳に載せる", () => {
     expect(vi.mocked(getJsonObject).mock.calls[0]?.[2]).toBe("elsewhere/x y+z.result.json");
   });
 
+  /**
+   * どのクロールの取り込みか (`027`) は、報告を受けたクロールの id。manifest の correlationId は申し合わせなので
+   * 読まない —— 見本の manifest はわざと別の correlationId を持つ。
+   */
+  it("台帳に入れるとき、報告を受けたクロールの id を渡す（manifest の correlationId ではない）", async () => {
+    vi.mocked(getJsonObject).mockResolvedValue({ ...manifest("t9"), correlationId: "other" });
+    vi.mocked(admitArchive).mockResolvedValue({ archiveId: 10 } as never);
+
+    await admitLevel([page("t9", "https://site.test/i")], options);
+
+    expect(vi.mocked(admitArchive).mock.calls[0]?.slice(2)).toEqual(["acme", "alice", "c1"]);
+  });
+
   // manifest を書けなかった取り込み。読みに行く先が無いので、S3 に問い合わせもしない。
   it("鍵が無ければ読みに行かない", async () => {
     const result = await admitLevel(

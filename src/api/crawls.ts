@@ -30,7 +30,7 @@
 import type { FastifyInstance } from "fastify";
 import type { OpenFgaClient } from "@openfga/sdk";
 import { sql } from "kysely";
-import type { Insertable, Kysely } from "kysely";
+import type { Insertable, Kysely, Selectable } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
 import { randomUUID } from "node:crypto";
 import type {
@@ -144,8 +144,8 @@ export const CRAWL_BODY_LIMIT = 1024 * 1024;
 /**
  * そのクロールから出た WACZ の数。
  *
- * **`archives` に `crawl_id` は無い。** 繋ぐのは `crawl_pages` の `task_id` で、
- * 列を足さずに今日のまま届く (`008` と `013`)。
+ * **繋ぐのは `crawl_pages` の `task_id`。** `archives.crawl_id` (`027`) は 027 より前の行で空なので、ここでは
+ * 使わない —— 使うと、前からあるクロールの数が 0 に化ける (`008` と `013`)。
  *
  * **cast が 2 つとも要る。**
  *
@@ -369,10 +369,12 @@ const secretsOf = (
     }));
 
 /**
- * クロール 1 本のページの行と、その取り込みの WACZ の id。ページの一覧と 1 ページのログの口が、同じ形を返すため。
+ * クロール 1 本のページの行と、その取り込みの WACZ の id・撮った時刻・WACZ が最初に入った合本の版。ページの一覧と
+ * 1 ページのログの口が、同じ形を返すため。
  *
- * **`archives` に `crawl_id` は無い。** 繋ぐのは `task_id` で、uuid 側を text に倒す (`waczCount` と同じ理由 ——
- * 素で繋ぐと `operator does not exist`、逆向きは uuid の形でない値が 1 行でもあると問い合わせごと落ちる)。
+ * **繋ぐのは `task_id`** (`archives.crawl_id` は 027 より前の行で空。`waczCount` と同じ)。uuid 側を text に倒す
+ * (`waczCount` と同じ理由 —— 素で繋ぐと `operator does not exist`、逆向きは uuid の形でない値が 1 行でもあると
+ * 問い合わせごと落ちる)。
  * 1 つの取り込みの WACZ は 1 本なので行は増えないはずだが、`distinct on` で 1 ページ 1 行に縛る —— 増えれば
  * 一覧の `limit` と `next` がずれる。並びはページの id の昇順 (`crawl_pages` に入った順)。
  */
@@ -391,6 +393,8 @@ const pageRows = (db: Kysely<Database>, crawlId: string) =>
       "p.taskId",
       "p.logCounts",
       "a.id as archiveId",
+      "a.capturedAt",
+      "a.replayBundleRev as bundledRev",
     ])
     .where("p.crawlId", "=", crawlId)
     .distinctOn("p.id")
@@ -406,12 +410,18 @@ interface PageRow {
   taskId: string | null;
   logCounts: LogCounts | null;
   archiveId: string | null;
+  capturedAt: Date | null;
+  bundledRev: number | null;
 }
 
 /**
  * ページ 1 つの答えの形。`state` は行のまま (読み手は字として出すだけ)、`reason` は `skip_reason` ——
  * 取らなかった理由も、取れなかった理由も入る。`logCounts` の null は「この行の取り込みの `.result.json` から
  * 数を読んでいない」(`025`)。
+ *
+ * `capturedAt` と `bundledRev` は WACZ の物 (無ければ null)。`bundledRev` はその WACZ が最初に入った合本の版で、
+ * `bundledRev ≤ replayBundle.rev` なら、そのページは台帳が指す合本の中で開ける (dashboard が replay の
+ * `#view=replay&url=…&ts=…` を組むのに使う)。
  */
 const pageOf = (row: PageRow) => ({
   id: row.id,
@@ -421,8 +431,36 @@ const pageOf = (row: PageRow) => ({
   reason: row.skipReason,
   taskId: row.taskId,
   archiveId: row.archiveId,
+  capturedAt: row.capturedAt,
+  bundledRev: row.bundledRev,
   logCounts: row.logCounts,
 });
+
+/**
+ * クロールの行の合本の欄 (`027`)。**書けた合本も、書けなかった記録も無ければ null。**
+ *
+ * 1 度も書けずに失敗だけがあるときは、`error` だけが値を持つ (`key`・`rev`・`pages`・`builtAt` は null)。
+ * 書けた後に失敗したときは、台帳が指す (前に書けた) 合本と、その後の失敗の理由が両方出る。
+ */
+const replayBundleOf = (
+  crawl: Pick<
+    Selectable<CrawlsTable>,
+    | "replayBundleKey"
+    | "replayBundleRev"
+    | "replayBundlePages"
+    | "replayBundleBuiltAt"
+    | "replayBundleError"
+  >,
+) =>
+  crawl.replayBundleRev === null && crawl.replayBundleError === null
+    ? null
+    : {
+        key: crawl.replayBundleKey,
+        rev: crawl.replayBundleRev,
+        pages: crawl.replayBundlePages,
+        builtAt: crawl.replayBundleBuiltAt,
+        error: crawl.replayBundleError,
+      };
 
 /**
  * 1 ページのログを読めなかった理由。どれも 200 で答える —— ページは在り、読めないことが答え。
@@ -1019,6 +1057,11 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           "error",
           "lastJobId",
           "lastJobDepth",
+          "replayBundleKey",
+          "replayBundleRev",
+          "replayBundlePages",
+          "replayBundleBuiltAt",
+          "replayBundleError",
           waczCount.as("waczCount"),
         ])
         .orderBy("startedAt", "desc")
@@ -1045,6 +1088,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           waczCount: crawl.waczCount,
           lastJob:
             crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
+          // 合本 (`027`)。dashboard は走っているクロールを 2 秒ごとに引くので、欄は行の列から (保管庫を読まない)
+          replayBundle: replayBundleOf(crawl),
         })),
       });
     },
@@ -1130,6 +1175,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         })),
         lastJob:
           crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
+        // 台帳が指す合本と、書けなかった理由 (`027`)。一覧と同じ形
+        replayBundle: replayBundleOf(crawl),
         failures: failures.map((page) => ({
           page: page.id,
           url: page.url,

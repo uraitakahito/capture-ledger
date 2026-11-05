@@ -9,10 +9,8 @@
  *
  * WACZ の大半は WARC なので、小さな JSONL 1 本のために全部を落としている。
  * 承知のうえ: 現物は数十 KB〜数 MB で、範囲読みの複雑さに見合わない。
- * 直し方は `archive/s3.ts` の `getObjectBytes` の docstring に書いてある。
- *
- * `fflate.unzipSync` (browserhive の test helper) を使わないのは、あれが
- * **全 entry を一括で伸長する**から。落とす量は同じでも、伸長する量が違う。
+ * 直し方は `archive/s3.ts` の `getObjectBytes` の docstring に書いてある。zip の中を読むのは
+ * `archive/wacz.ts` (合本と共有)。
  *
  * ## 失敗しても `indexed_at` を立てない
  *
@@ -24,8 +22,8 @@
 import type { Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { Client } from "@opensearch-project/opensearch";
-import { fromBuffer } from "yauzl-promise";
 import { getObjectBytes } from "../archive/s3.js";
+import { PAGES_ENTRY_PATH, readEntry } from "../archive/wacz.js";
 import type { Database } from "../db/database.js";
 import { createChildLogger } from "../logger.js";
 import {
@@ -37,26 +35,6 @@ import {
 } from "./document.js";
 
 const log = createChildLogger({ module: "search-index-archive" });
-
-/** WACZ の中で `pages.jsonl` が置かれる場所。BrowserHive の `PAGES_ENTRY_PATH` と対。 */
-const PAGES_ENTRY_PATH = "pages/pages.jsonl";
-
-/** zip から 1 つの entry だけを読む。無ければ `undefined`。 */
-const readEntry = async (zip: Buffer, path: string): Promise<string | undefined> => {
-  const file = await fromBuffer(zip);
-  try {
-    for await (const entry of file) {
-      if (entry.filename !== path) continue;
-      const stream = await entry.openReadStream();
-      const chunks: Buffer[] = [];
-      for await (const chunk of stream) chunks.push(chunk as Buffer);
-      return Buffer.concat(chunks).toString("utf-8");
-    }
-    return undefined;
-  } finally {
-    await file.close();
-  }
-};
 
 export interface IndexArchiveOptions {
   db: Kysely<Database>;

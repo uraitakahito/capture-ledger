@@ -15,6 +15,8 @@ import { recordingDb, type RecordedQuery } from "./recording-db.js";
 const CRAWL = "d272d256-e528-4581-bb4e-8d9477d78196";
 const TASK = "550e8400-e29b-41d4-a716-446655440000";
 const ARCHIVE = "0f1e2d3c-4b5a-4978-8796-a5b4c3d2e1f0";
+/** その WACZ を撮った時刻 (`archives.captured_at`)。 */
+const CAPTURED_AT = "2026-11-04T00:00:00.000Z";
 const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organizations": "acme" };
 /** 報告が運んだ鍵。BrowserHive の命名規則では作れない綴り (組み直す実装なら別の鍵を読みに行く)。 */
 const KEY = "elsewhere/x y+z.result.json";
@@ -87,6 +89,8 @@ const row = (over: Record<string, unknown> = {}) => ({
   taskId: TASK,
   logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
   archiveId: ARCHIVE,
+  capturedAt: new Date(CAPTURED_AT),
+  bundledRev: 2,
   ...over,
 });
 
@@ -142,6 +146,8 @@ describe("クロールのページを読む", () => {
       taskId: null,
       logCounts: null,
       archiveId: null,
+      capturedAt: null,
+      bundledRev: null,
     });
     const failed = row({
       id: "44",
@@ -150,6 +156,8 @@ describe("クロールのページを読む", () => {
       state: "failed",
       skipReason: "timeout: capture exceeded its budget",
       archiveId: null,
+      capturedAt: null,
+      bundledRev: null,
     });
     const { res, queries } = await get(url, {
       results: [[{ id: CRAWL }], [row(), pending, failed]],
@@ -165,6 +173,9 @@ describe("クロールのページを読む", () => {
           reason: null,
           taskId: TASK,
           archiveId: ARCHIVE,
+          // WACZ を撮った時刻と、その WACZ が最初に入った合本の版 (`027`)
+          capturedAt: CAPTURED_AT,
+          bundledRev: 2,
           logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
         },
         {
@@ -175,6 +186,8 @@ describe("クロールのページを読む", () => {
           reason: null,
           taskId: null,
           archiveId: null,
+          capturedAt: null,
+          bundledRev: null,
           logCounts: null,
         },
         {
@@ -185,6 +198,8 @@ describe("クロールのページを読む", () => {
           reason: "timeout: capture exceeded its budget",
           taskId: TASK,
           archiveId: null,
+          capturedAt: null,
+          bundledRev: null,
           logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
         },
       ],
@@ -194,7 +209,8 @@ describe("クロールのページを読む", () => {
     expect(queries[0]?.sql).toBe('select "id" from "crawls" where "id" = $1');
     expect(queries[1]?.sql).toBe(
       'select distinct on ("p"."id") "p"."id", "p"."url", "p"."depth", "p"."state", "p"."skip_reason", ' +
-        '"p"."task_id", "p"."log_counts", "a"."id" as "archive_id" from "crawl_pages" as "p" ' +
+        '"p"."task_id", "p"."log_counts", "a"."id" as "archive_id", "a"."captured_at", ' +
+        '"a"."replay_bundle_rev" as "bundled_rev" from "crawl_pages" as "p" ' +
         'left join "archives" as "a" on "p"."task_id" = "a"."task_id"::text ' +
         'where "p"."crawl_id" = $1 order by "p"."id", "a"."created_at" limit $2',
     );
@@ -269,6 +285,8 @@ describe("1 ページの取り込みのログを読む", () => {
       reason: null,
       taskId: TASK,
       archiveId: ARCHIVE,
+      capturedAt: CAPTURED_AT,
+      bundledRev: 2,
       logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
       ...over,
     },
@@ -281,7 +299,8 @@ describe("1 ページの取り込みのログを読む", () => {
     expect(queries).toHaveLength(1);
     expect(queries[0]?.sql).toBe(
       'select distinct on ("p"."id") "p"."id", "p"."url", "p"."depth", "p"."state", "p"."skip_reason", ' +
-        '"p"."task_id", "p"."log_counts", "a"."id" as "archive_id", "s"."manifest_key" ' +
+        '"p"."task_id", "p"."log_counts", "a"."id" as "archive_id", "a"."captured_at", ' +
+        '"a"."replay_bundle_rev" as "bundled_rev", "s"."manifest_key" ' +
         'from "crawl_pages" as "p" ' +
         'left join "archives" as "a" on "p"."task_id" = "a"."task_id"::text ' +
         'left join "capture_submissions" as "s" on "p"."task_id" = "s"."task_id"::text ' +
@@ -299,6 +318,8 @@ describe("1 ページの取り込みのログを読む", () => {
             taskId: null,
             logCounts: null,
             archiveId: null,
+            capturedAt: null,
+            bundledRev: null,
             manifestKey: null,
           }),
         ],
@@ -310,6 +331,8 @@ describe("1 ページの取り込みのログを読む", () => {
         state: "pending",
         taskId: null,
         archiveId: null,
+        capturedAt: null,
+        bundledRev: null,
         logCounts: null,
       }),
     );
