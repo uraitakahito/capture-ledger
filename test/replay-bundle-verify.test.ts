@@ -260,13 +260,28 @@ describe("合本を確かめる（手元の写し）", () => {
     );
   });
 
+  it("時刻印の根に署名の CA を渡せば（根の取り違え）、署名（時刻印）だけが落ち、局の鎖が錨で検められないと言う", async () => {
+    // 合本は正しい。誤っているのは渡した根 —— 「この署名を覆っていない」と言うと、合本を疑わせる
+    const lines = await check(r5, 5, {
+      signing: ca.anchors.signing,
+      timestamp: ca.anchors.signing,
+    });
+    expect(failedChecks(lines)).toEqual(["signature"]);
+    expect(detailOf(lines, "signature")).toContain(
+      "timestamp's TSA chain does not verify against the timestamp anchor (openssl: ",
+    );
+    expect(detailOf(lines, "signature")).not.toContain("does not cover");
+  });
+
   it("自作の時刻印の局の根で検めれば、署名（時刻印）だけが落ちる", async () => {
     const lines = await check(r5, 5, {
       signing: ca.anchors.signing,
       timestamp: other.anchors.timestamp,
     });
     expect(failedChecks(lines)).toEqual(["signature"]);
-    expect(detailOf(lines, "signature")).toContain("timestamp does not cover this signature");
+    expect(detailOf(lines, "signature")).toContain(
+      "timestamp's TSA chain does not verify against the timestamp anchor (openssl: ",
+    );
   });
 
   it("自作の局が押した時刻印に差し替えれば、設定の局の根では署名（時刻印）だけが落ちる", async () => {
@@ -281,7 +296,9 @@ describe("合本を確かめる（手元の写し）", () => {
 
     const lines = await check(dir);
     expect(failedChecks(lines)).toEqual(["signature"]);
-    expect(detailOf(lines, "signature")).toContain("timestamp does not cover this signature");
+    expect(detailOf(lines, "signature")).toContain(
+      "timestamp's TSA chain does not verify against the timestamp anchor (openssl: ",
+    );
   });
 
   it("r3 の中身を r5 の置き場と言えば、置き場だけが落ちる（暗号の検めは全部通る）", async () => {

@@ -181,7 +181,7 @@ describe("検め —— 時刻印", () => {
     expect(result.checks.timestamp).toBe("failed");
   });
 
-  it("別の署名に押した本物の時刻印を落とす", async () => {
+  it("別の署名に押した本物の時刻印を落とし、この署名を覆っていないと言う", async () => {
     // 時刻印は本物で同じ局の物。別の署名に属している —— 合本どうしで時刻印を入れ替えた形
     const signedData = { ...fixture(), timeSignature: read("other-time-signature.txt").trim() };
     const result = await verify(signedData);
@@ -191,6 +191,24 @@ describe("検め —— 時刻印", () => {
     expect(result.checks.signature).toBe("ok");
     expect(result.checks.chain).toBe("ok");
     expect(result.checks.domain).toBe("ok");
+  });
+
+  it("時刻印の根に署名の CA を渡せば（根の取り違え）、局の鎖が錨で検められないと言う（覆っていないとは言わない）", async () => {
+    // 時刻印そのものは正しい。誤っているのは設定 —— 「この署名を覆っていない」と言うと、読み手は合本を疑う
+    const result = await verify(fixture(), {
+      anchors: { signing: anchors.signing, timestamp: anchors.signing },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.checks).toEqual({
+      signature: "ok",
+      chain: "ok",
+      domain: "ok",
+      timestamp: "failed",
+    });
+    expect(result.reason).toMatch(
+      /^timestamp's TSA chain does not verify against the timestamp anchor \(openssl: .+\)$/,
+    );
+    expect(result.reason).not.toContain("does not cover");
   });
 
   /**
@@ -241,7 +259,10 @@ describe("検め —— 時刻印", () => {
         domain: "ok",
         timestamp: "failed",
       });
-      expect(result.reason).toBe("timestamp does not cover this signature");
+      // 時刻印は自作の局の鎖を持つ。設定の局の根には届かない
+      expect(result.reason).toMatch(
+        /^timestamp's TSA chain does not verify against the timestamp anchor \(openssl: .+\)$/,
+      );
     });
 
     it("自作の局が押した時刻印は、自作の局の根を錨にすれば通る（上の対）", async () => {
@@ -263,6 +284,9 @@ describe("検め —— 時刻印", () => {
       });
       expect(result.ok).toBe(false);
       expect(result.checks.timestamp).toBe("failed");
+      expect(result.reason).toMatch(
+        /^timestamp's TSA chain does not verify against the timestamp anchor \(openssl: .+\)$/,
+      );
     });
   });
 
@@ -343,6 +367,38 @@ describe("検め —— openssl に訊けなかったとき", () => {
     expect(result.ok).toBe(false);
     expect(result.checks.timestamp).toBe("failed");
     expect(result.reason).toContain("openssl timed out");
+  });
+
+  /**
+   * openssl は動いて拒んだが、理由が「覆っていない」とも「局の鎖が検められない」とも読めないとき。どちらかを
+   * 言い張らず、両方を言う。openssl の理由の名前が読めれば添える。
+   */
+  it("拒んだ理由が読めなければ、両方を言う", async () => {
+    const vague = await fakeOpenssl(
+      dir,
+      "openssl-vague",
+      "#!/bin/sh\necho 'Verification: FAILED' >&2\nexit 1\n",
+    );
+    const result = await verify(fixture(), { opensslBin: vague });
+    expect(result.checks.timestamp).toBe("failed");
+    expect(result.reason).toBe(
+      "timestamp does not verify against the timestamp anchor (the TSA chain does not reach it, " +
+        "or the token does not cover this signature)",
+    );
+  });
+
+  it("拒んだ理由がほかの名前なら、両方を言い、openssl の名前を添える", async () => {
+    const other = await fakeOpenssl(
+      dir,
+      "openssl-signature-failure",
+      "#!/bin/sh\necho '00:error:17800068:time stamp routines:ts_check_signer_certs:" +
+        "signature failure:crypto/ts/ts_rsp_verify.c:300:' >&2\nexit 1\n",
+    );
+    const result = await verify(fixture(), { opensslBin: other });
+    expect(result.reason).toBe(
+      "timestamp does not verify against the timestamp anchor (the TSA chain does not reach it, " +
+        "or the token does not cover this signature) — openssl: signature failure",
+    );
   });
 });
 

@@ -472,12 +472,16 @@ BrowserHive は `no signing service is configured on this server` と言いま�
 スタックの wacz-signer は 18090 に出ていて、同じ dev の CA で署名します。番号を分けないと、取り違えても署名が
 通ってしまいます。
 
-```sh
-# 署名と時刻印のサービスだけを起こす（.env に CAPTURE_LEDGER_CAPTURE_SIGNING=1 があれば、
-# --profile signing は stack:up が足す）。サービス名を付けないと、全部のコンテナが作り直される
-pnpm run stack:up --profile signing wacz-signer tsa
+署名と時刻印のサービスだけを起こすには、サービス名を付けます（付けないと、全部のコンテナが作り直されます）。
+`.env` に `CAPTURE_LEDGER_CAPTURE_SIGNING=1` があれば、`--profile signing` は `stack:up` が足します。
 
-# 4 つ組をシェルから渡して API を起こす（.env に書かないとき）
+```sh
+pnpm run stack:up --profile signing wacz-signer tsa
+```
+
+4 つ組を `.env` に書かないなら、シェルから渡して API を起こします。
+
+```sh
 CAPTURE_LEDGER_SIGNER_URL=http://127.0.0.1:18091/sign \
 CAPTURE_LEDGER_SIGNER_TOKEN=dev-token \
 CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR=.upstream/browserhive/dev-stack/signing-ca/insecure-dev-ca.crt \

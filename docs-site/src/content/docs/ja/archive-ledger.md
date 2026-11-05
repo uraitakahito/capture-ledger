@@ -852,10 +852,12 @@ domain・時刻印）が**全部 ok のときだけ**署名ありと記録しま
 #### 合本を確かめる
 
 ```sh
-pnpm run replay-bundle:verify --crawl <id>                       # 台帳が指す版（保管庫から）
-pnpm run replay-bundle:verify --crawl <id> --rev 5               # 版を名指す
-pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5    # 手元の写し
+pnpm run replay-bundle:verify --crawl <id>
+pnpm run replay-bundle:verify --crawl <id> --rev 5
+pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5
 ```
+
+上から、台帳が指す版（保管庫から）・版を名指す・手元の写し。
 
 | 名前        | 照らす物                                                                                             |
 | ----------- | ---------------------------------------------------------------------------------------------------- |
@@ -877,38 +879,63 @@ pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5    # 手元の写�
 台帳を使わずに確かめる手です。読むのは replay の `/wacz/`（bucket の匿名の read）からで、錨は検める人が選びます
 （dev なら BrowserHive の `dev-stack/signing-ca/` の `insecure-dev-ca.crt` と `insecure-dev-tsa-ca.crt`）。
 
+塊は手順ごとに分け、塊の中に `#` の注を書いていません。そのまま bash にも zsh にも貼れます —— zsh は既定で、
+貼った行の `#` を注として読みません（`setopt interactivecomments` が無いと、注は `command not found: #` になり、
+注の中の `'` から先は引用に呑まれて崩れます）。
+
+**1. 置き場の 3 つを取る**（`<org>`・`<crawl>`・`<rev>` は確かめる置き場）
+
 ```sh
 B=http://127.0.0.1:8899/wacz/org/<org>/crawls/<crawl>/r<rev>
 curl -fsSO "$B/replay.json"; curl -fsSO "$B/pages.json"; curl -fsSO "$B/replay-digest.json"
+```
 
-# 1. replay.json の sha256 = digest の hash = signedData.hash（path は replay.json）
+**2. replay.json の sha256 = digest の `hash` = `signedData.hash`**（`path` は `replay.json`）
+
+```sh
 echo "sha256:$(shasum -a 256 replay.json | cut -d' ' -f1)"
 jq -r '.path, .hash, .signedData.hash' replay-digest.json
+```
 
-# 2. 置き場とクロールの状態（署名の中）
+**3. 置き場とクロールの状態**（署名の中）
+
+```sh
 jq '.replayBundle | {crawlId, rev, crawlState, stopReason, finishedAt, pagesHash}' replay.json
+```
 
-# 3. pages.json の sha256 = pagesHash
+**4. pages.json の sha256 = `pagesHash`**
+
+```sh
 echo "sha256:$(shasum -a 256 pages.json | cut -d' ' -f1)"
+```
 
-# 4. 各 WACZ の sha256 = resources[].hash（左右が同じ行になる）
-jq -r '.resources[] | "\(.hash) \(.path)"' replay.json | while read -r hash path; do
-  echo "$hash sha256:$(curl -fsS "http://127.0.0.1:8899$path" | shasum -a 256 | cut -d' ' -f1)"
+**5. 各 WACZ の sha256 = `resources[].hash`**（左右が同じ行になる）。変数は `src` です —— `path` は zsh では
+`PATH` と結び付いていて、読んだ途端に `curl` も `shasum` も見つからなくなります。
+
+```sh
+jq -r '.resources[] | "\(.hash) \(.path)"' replay.json | while read -r hash src; do
+  echo "$hash sha256:$(curl -fsS "http://127.0.0.1:8899$src" | shasum -a 256 | cut -d' ' -f1)"
 done
+```
 
-# 5. 署名・鎖・domain（署名の根は自分で選ぶ）
+**6. 署名・鎖・domain**（署名の根は自分で選ぶ）
+
+```sh
 wacz-signer verify --file replay-digest.json --root insecure-dev-ca.crt
+```
 
-# 6. 時刻印を、自分で選んだ TSA の根で
+**7. 時刻印を、自分で選んだ TSA の根で**
+
+```sh
 jq -r .signedData.timeSignature replay-digest.json | base64 -d > token.tsr
 jq -j .signedData.signature replay-digest.json > signature.b64
 openssl ts -verify -data signature.b64 -in token.tsr -CAfile insecure-dev-tsa-ca.crt
 ```
 
-**5 だけでは足りません。** `wacz-signer verify` は署名を `signedData.hash` の欄に対して検めるので、その欄が
-`replay.json` の hash かは見ません（1 が要ります）。時刻印は時刻印の中の最後の証明書を根として扱うので、自作の
-TSA の時刻印も通ります（6 が要ります）。根を渡さなかった段は `skipped` で、それでも `valid` と言います。
-TSA の証明書が切れた後に 6 を打つなら、時刻印の時刻（`openssl ts -reply -in token.tsr -text` の `Time stamp`）を
+**6 だけでは足りません。** `wacz-signer verify` は署名を `signedData.hash` の欄に対して検めるので、その欄が
+`replay.json` の hash かは見ません（2 が要ります）。時刻印は時刻印の中の最後の証明書を根として扱うので、自作の
+TSA の時刻印も通ります（7 が要ります）。根を渡さなかった段は `skipped` で、それでも `valid` と言います。
+TSA の証明書が切れた後に 7 を打つなら、時刻印の時刻（`openssl ts -reply -in token.tsr -text` の `Time stamp`）を
 epoch の秒にして `-attime` に渡します。`-attime` は LibreSSL（macOS の `/usr/bin/openssl`）に無いので、OpenSSL で
 打ちます。
 

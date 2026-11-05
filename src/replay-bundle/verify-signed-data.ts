@@ -18,6 +18,10 @@
  * `ok` は 4 つの段が全部 `ok` のときだけ。元の `readTrustAnchors` (読めない錨を無い物として扱う) は写していない ——
  * 台帳は起動で読み、読めなければ止まる。
  *
+ * もう 1 つ、**時刻印を openssl が拒んだ理由を分けて言う** (`timestampReason`)。元はどの拒みも「時刻印がこの署名を
+ * 覆っていない」と言うので、時刻印の根を取り違えた設定 (署名の CA を渡した) が、合本の罪に見える。結末 (`failed`)
+ * は変えない —— 変えるのは説明だけ。
+ *
  * ## 元の注 (要点)
  *
  * 署名サービスが 200 を返したことは、それが何に署名したかについて何も言わない。署名を「在る」と記録するには、
@@ -266,6 +270,8 @@ const anchorTime = async (
  *
  * これがしないのは、`genTime` が真であることの立証。漏れた鍵は、自分の有効期間の内に遡った時刻印をなお作れる。
  * RFC 3161 に残る制約で、塞ぐには独立した時刻源が要る。
+ *
+ * 拒まれたときは openssl の言ったこと (`output`) も返す。理由を分けて言うのに使う (`timestampReason`)。
  */
 const verifyTimestamp = async (
   bin: string,
@@ -273,7 +279,7 @@ const verifyTimestamp = async (
   timestampAnchor: string,
   timeoutMs: number,
   at: number | undefined,
-): Promise<Result<void, OpensslFailure>> => {
+): Promise<Result<void, OpensslRejection>> => {
   const dir = await mkdtemp(join(tmpdir(), "cl-ts-"));
   try {
     const token = join(dir, "token.tsr");
@@ -287,20 +293,52 @@ const verifyTimestamp = async (
     const argv = ["ts", "-verify", "-data", data, "-in", token, "-CAfile", root];
     if (at !== undefined) argv.push("-attime", String(at));
     const verified = await runOpenssl(bin, argv, timeoutMs);
-    return verified.ok ? ok() : err(verified.error.kind);
+    return verified.ok ? ok() : err(verified.error);
   } catch {
     // 一時ファイルを置けなかった。openssl には辿り着いていないので、拒まれたのではない
-    return err("unavailable");
+    return err({ kind: "unavailable", output: "" });
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 };
 
-/** 時刻印の段が落ちたときに、その種類を言葉にする。 */
-const timestampReason = (failure: OpensslFailure): string => {
-  switch (failure) {
-    case "rejected":
-      return "timestamp does not cover this signature";
+/** openssl の時刻印の誤りの、理由の所 (`…:time stamp routines:<関数>:<理由>:<源>…`)。 */
+const TS_ERROR_REASON = /time stamp routines:[^:\n]*:([^:\n]+)/;
+
+/** 証明書の検めの誤りの、詳しい所 (`…:Verify error:<理由>`)。 */
+const VERIFY_ERROR_DETAIL = /Verify error:([^\n]+)/;
+
+/**
+ * 時刻印の段が落ちたときに、その種類を言葉にする。
+ *
+ * openssl が動いて拒んだ (`rejected`) ときは、**拒んだ理由で 2 つに分ける**。分け方は openssl の誤りの文字列で、
+ * OpenSSL 1.1・3・4 で同じ (ts_err.c の理由の名前):
+ *
+ * - `message imprint mismatch` —— 時刻印は、この署名の文字列に押された物ではない (別の署名の時刻印)
+ * - `certificate verify error` —— 時刻印の局の鎖が、時刻印の錨で検められない (錨の取り違え・自作の局・その時点で
+ *   局の証明書が切れていた)。どれかは openssl の `Verify error:` の言葉で添える
+ *
+ * どちらでもなければ両方を言い、openssl の理由が読めれば添える。分けるのは説明だけで、どの文でも段は `failed`。
+ * 根の取り違えを「署名を覆っていない」と言うと、読み手は設定ではなく合本を疑う。
+ */
+const timestampReason = (failure: OpensslRejection): string => {
+  switch (failure.kind) {
+    case "rejected": {
+      const reason = TS_ERROR_REASON.exec(failure.output)?.[1]?.trim();
+      if (reason === "message imprint mismatch") return "timestamp does not cover this signature";
+      if (reason === "certificate verify error") {
+        const detail = VERIFY_ERROR_DETAIL.exec(failure.output)?.[1]?.trim();
+        return (
+          "timestamp's TSA chain does not verify against the timestamp anchor" +
+          (detail === undefined || detail === "" ? "" : ` (openssl: ${detail})`)
+        );
+      }
+      return (
+        "timestamp does not verify against the timestamp anchor (the TSA chain does not reach " +
+        "it, or the token does not cover this signature)" +
+        (reason === undefined || reason === "" ? "" : ` — openssl: ${reason}`)
+      );
+    }
     case "timeout":
       return "timestamp could not be checked: openssl timed out";
     case "unavailable":

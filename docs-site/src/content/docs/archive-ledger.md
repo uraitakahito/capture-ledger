@@ -927,10 +927,12 @@ carried inside the timestamp**. Certificate validity is judged at the timestamp'
 #### Checking a bundle
 
 ```sh
-pnpm run replay-bundle:verify --crawl <id>                       # the version the crawl points at (from the store)
-pnpm run replay-bundle:verify --crawl <id> --rev 5               # a named version
-pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5    # a local copy
+pnpm run replay-bundle:verify --crawl <id>
+pnpm run replay-bundle:verify --crawl <id> --rev 5
+pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5
 ```
+
+From the top: the version the crawl points at (from the store), a named version, a local copy.
 
 | Name        | What it checks                                                                                     |
 | ----------- | -------------------------------------------------------------------------------------------------- |
@@ -955,39 +957,66 @@ Without capture-ledger. Everything is read through replay's `/wacz/` (the bucket
 and the anchors are the checker's choice (in dev, `insecure-dev-ca.crt` and
 `insecure-dev-tsa-ca.crt` from BrowserHive's `dev-stack/signing-ca/`).
 
+Each step is its own block, with no `#` comments inside, so every block pastes into bash and zsh
+alike — by default zsh does not read a pasted `#` as a comment (without
+`setopt interactivecomments`, a comment becomes `command not found: #`, and an `'` inside it
+swallows the lines that follow).
+
+**1. Fetch the three objects** (`<org>`, `<crawl>` and `<rev>` name the place to check)
+
 ```sh
 B=http://127.0.0.1:8899/wacz/org/<org>/crawls/<crawl>/r<rev>
 curl -fsSO "$B/replay.json"; curl -fsSO "$B/pages.json"; curl -fsSO "$B/replay-digest.json"
+```
 
-# 1. sha256 of replay.json = the digest's hash = signedData.hash (and path is replay.json)
+**2. sha256 of replay.json = the digest's `hash` = `signedData.hash`** (and `path` is `replay.json`)
+
+```sh
 echo "sha256:$(shasum -a 256 replay.json | cut -d' ' -f1)"
 jq -r '.path, .hash, .signedData.hash' replay-digest.json
+```
 
-# 2. the place and the crawl's state (inside the signature)
+**3. The place and the crawl's state** (inside the signature)
+
+```sh
 jq '.replayBundle | {crawlId, rev, crawlState, stopReason, finishedAt, pagesHash}' replay.json
+```
 
-# 3. sha256 of pages.json = pagesHash
+**4. sha256 of pages.json = `pagesHash`**
+
+```sh
 echo "sha256:$(shasum -a 256 pages.json | cut -d' ' -f1)"
+```
 
-# 4. each WACZ's sha256 = resources[].hash (both columns of a line match)
-jq -r '.resources[] | "\(.hash) \(.path)"' replay.json | while read -r hash path; do
-  echo "$hash sha256:$(curl -fsS "http://127.0.0.1:8899$path" | shasum -a 256 | cut -d' ' -f1)"
+**5. Each WACZ's sha256 = `resources[].hash`** (both columns of a line match). The variable is
+`src`, not `path`: in zsh, `path` is tied to `PATH`, and reading into it makes `curl` and `shasum`
+vanish.
+
+```sh
+jq -r '.resources[] | "\(.hash) \(.path)"' replay.json | while read -r hash src; do
+  echo "$hash sha256:$(curl -fsS "http://127.0.0.1:8899$src" | shasum -a 256 | cut -d' ' -f1)"
 done
+```
 
-# 5. signature, chain and domain (the signing root is your choice)
+**6. Signature, chain and domain** (the signing root is your choice)
+
+```sh
 wacz-signer verify --file replay-digest.json --root insecure-dev-ca.crt
+```
 
-# 6. the timestamp, against a TSA root of your choice
+**7. The timestamp, against a TSA root of your choice**
+
+```sh
 jq -r .signedData.timeSignature replay-digest.json | base64 -d > token.tsr
 jq -j .signedData.signature replay-digest.json > signature.b64
 openssl ts -verify -data signature.b64 -in token.tsr -CAfile insecure-dev-tsa-ca.crt
 ```
 
-**Step 5 alone is not enough.** `wacz-signer verify` checks the signature against the
-`signedData.hash` field, so it never asks whether that field is the hash of `replay.json` (step 1
+**Step 6 alone is not enough.** `wacz-signer verify` checks the signature against the
+`signedData.hash` field, so it never asks whether that field is the hash of `replay.json` (step 2
 does). It treats the last certificate inside the timestamp as the TSA's root, so a timestamp from
-a self-made TSA passes (step 6 does not). A stage it was given no root for is `skipped`, and it
-still says `valid`. To run step 6 after the TSA certificate has expired, pass the timestamp's own
+a self-made TSA passes (step 7 does not). A stage it was given no root for is `skipped`, and it
+still says `valid`. To run step 7 after the TSA certificate has expired, pass the timestamp's own
 time (`Time stamp` in `openssl ts -reply -in token.tsr -text`, as epoch seconds) to `-attime`.
 LibreSSL (macOS's `/usr/bin/openssl`) has no `-attime`; use OpenSSL.
 

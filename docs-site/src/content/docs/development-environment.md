@@ -492,12 +492,17 @@ in `.env.example` (copy them into `.env`, or pass them from the shell). The ledg
 and reaches wacz-signer at `127.0.0.1:18091` — BrowserHive's own stack publishes its wacz-signer
 on 18090 and signs with the same dev CA, so without separate numbers a mix-up would still sign.
 
-```sh
-# Start only the signer and the TSA (with CAPTURE_LEDGER_CAPTURE_SIGNING=1 in .env,
-# stack:up adds --profile signing itself). Name the services, or every container is recreated
-pnpm run stack:up --profile signing wacz-signer tsa
+To start only the signer and the TSA, name the services (without names, every container is
+recreated). With `CAPTURE_LEDGER_CAPTURE_SIGNING=1` in `.env`, `stack:up` adds `--profile signing`
+itself.
 
-# Pass the four from the shell and start the API (when they are not in .env)
+```sh
+pnpm run stack:up --profile signing wacz-signer tsa
+```
+
+When the four are not in `.env`, pass them from the shell and start the API.
+
+```sh
 CAPTURE_LEDGER_SIGNER_URL=http://127.0.0.1:18091/sign \
 CAPTURE_LEDGER_SIGNER_TOKEN=dev-token \
 CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR=.upstream/browserhive/dev-stack/signing-ca/insecure-dev-ca.crt \
