@@ -301,6 +301,11 @@ export interface ScriptsTable {
    */
   params: ColumnType<ScriptParam[], string | undefined, string>;
   enabled: ColumnType<boolean, boolean | undefined, boolean>;
+  /**
+   * 既定の実行順 (`029`)。小さいほど先。版ではなく id の性質で、全部の版に同じ値を持つ (`enabled` と同じく
+   * カタログが正)。カタログに無い物は既定の 1000。
+   */
+  position: ColumnType<number, number | undefined, number>;
   createdAt: ColumnType<Date, string | undefined, never>;
 }
 

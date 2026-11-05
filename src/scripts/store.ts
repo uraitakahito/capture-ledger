@@ -245,7 +245,7 @@ export const addScript = async (
   return db.transaction().execute(async (trx) => {
     const latest = await trx
       .selectFrom("scripts")
-      .select(["version", "source", "sha256", "options", "sites", "params"])
+      .select(["version", "source", "sha256", "options", "sites", "params", "position"])
       .where("id", "=", input.id)
       .orderBy("version", "desc")
       .limit(1)
@@ -277,6 +277,8 @@ export const addScript = async (
         options: JSON.stringify(options),
         sites: [...(input.sites ?? [])],
         params: JSON.stringify(input.params ?? []),
+        // 順は id の性質。手で足した新しい版が後ろへ飛ばないように、最新版の値を受け継ぐ
+        position: latest?.position,
       })
       .returning(["version", "sha256"])
       .executeTakeFirstOrThrow();
@@ -426,6 +428,29 @@ export const setScriptEnabled = async (
 };
 
 /**
+ * 既定の実行順を書く。`ids` の並び (catalog.json の並び) の添字を、各 id の**全部の版**に。順は版ではなく
+ * id の性質なので、`distinct on` がどの版の行を選んでも同じ値になるようにする。
+ */
+export const setScriptPositions = async (
+  db: Kysely<Database>,
+  ids: readonly string[],
+): Promise<void> => {
+  await db.transaction().execute(async (trx) => {
+    for (const [position, id] of ids.entries()) {
+      await trx.updateTable("scripts").set({ position }).where("id", "=", id).execute();
+    }
+  });
+};
+
+/**
+ * 既定の実行順に並べる。`position` が小さい順で、同じなら id の順 (id は一意)。
+ *
+ * **SQL では並べない。** `distinct on ("id")` は `order by` の先頭が id でないと Postgres が断る。
+ */
+const inRunOrder = <Row extends { id: string; position: number }>(rows: readonly Row[]): Row[] =>
+  [...rows].sort((a, b) => a.position - b.position || (a.id < b.id ? -1 : 1));
+
+/**
  * 行を消す。版を指定しなければ**その id の全版**が消える。
  *
  * `crawls.scripts` は解決済みの写しを持つので、消しても過去のクロールの記録は
@@ -472,6 +497,7 @@ export const enabledLatest = async (
  * 無ければ最新版を `enabled: false` で返す。既定に入らないスクリプト (カタログの `default: false`) も、
  * 名指しすれば走るので見せる —— dashboard はこれで新しいクロールの画面のチェックを並べ、`enabled` で
  * 初めのチェックを決める。並べ替えの `enabled desc` が「有効な版を先に」で、`distinct on` がその先頭を取る。
+ * 答えは既定の実行順 (`inRunOrder`) —— dashboard の初めの順がこれになる。
  */
 export const pickable = async (
   db: Kysely<Database>,
@@ -484,16 +510,19 @@ export const pickable = async (
     sites: string[];
     params: ScriptParam[];
     enabled: boolean;
+    position: number;
   }[]
 > =>
-  db
-    .selectFrom("scripts")
-    .select(["id", "version", "phase", "sha256", "sites", "params", "enabled"])
-    .distinctOn("id")
-    .orderBy("id")
-    .orderBy("enabled", "desc")
-    .orderBy("version", "desc")
-    .execute();
+  inRunOrder(
+    await db
+      .selectFrom("scripts")
+      .select(["id", "version", "phase", "sha256", "sites", "params", "enabled", "position"])
+      .distinctOn("id")
+      .orderBy("id")
+      .orderBy("enabled", "desc")
+      .orderBy("version", "desc")
+      .execute(),
+  );
 
 /**
  * クロールが走らせるものを決める。
@@ -501,7 +530,7 @@ export const pickable = async (
  * - `requested` を渡したら**その並びのまま**写しを返す。台帳のスクリプトの名指しは各 id の最新版
  *   (無効な版でも名指しは通る)、その場の TS は台帳のスクリプトを引かずに写す (`inlineScript`)。
  * - 渡さなければ **有効な各 id の最新版**のうち、札の無い物と、札のどれかが起点のホストにある物を
- *   `id` 順で返す。**最新版を選んでから札で絞る** —— SQL で札を絞ってから `distinct on` すると、
+ *   既定の実行順 (`inRunOrder`) で返す。**最新版を選んでから札で絞る** —— SQL で札を絞ってから `distinct on` すると、
  *   札の合わない最新版の代わりに、札の無い古い版が出てくる。絞るのは引いた後で、JS で。
  *
  * 名指しの札が起点に合うかは、ここでは見ない (`offsiteScripts`)。
@@ -530,7 +559,7 @@ export const resolveScripts = async (
   if (requested === undefined) {
     const rows = await db
       .selectFrom("scripts")
-      .select(columns)
+      .select([...columns, "position"])
       .distinctOn("id")
       .where("enabled", "=", true)
       .orderBy("id")
@@ -538,7 +567,9 @@ export const resolveScripts = async (
       .execute();
     return {
       kind: "ok",
-      scripts: rows.filter((row) => onSeed(row.sites, seedHosts)).map(toScript),
+      scripts: inRunOrder(rows)
+        .filter((row) => onSeed(row.sites, seedHosts))
+        .map(toScript),
     };
   }
 

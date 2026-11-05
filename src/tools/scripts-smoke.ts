@@ -46,6 +46,9 @@ const onExample = `${id}-ex`;
 const onOther = `${id}-other`;
 // 宣言 (`024`) つきで取り込む 1 本。名前に `_` を含む宣言が読み返しても化けないことを見る
 const withDecl = `${id}-params`;
+// catalog の並びが既定の実行順になることを見る 2 本。id と逆の順に書く (`029`)
+const orderZ = `${id}-order-z`;
+const orderA = `${id}-order-a`;
 // 中身の違う 2 本。古い版を読めたかを、中身で区別する
 const A = `// ${id} の v1\nglobalThis.__bh.report({ v: 1 });\n`;
 const B = `// ${id} の v2\nglobalThis.__bh.report({ v: 2 });\n`;
@@ -225,6 +228,63 @@ try {
     "import は catalog の札を版に入れる",
     JSON.stringify(importedSites.rows.map((row) => row.sites)) === JSON.stringify([["site.test"]]),
     JSON.stringify(importedSites.rows),
+  );
+
+  // catalog の並びが既定の実行順 (029)。id と逆の順に書いて、list --seed の順を見る。ほかの行も
+  // 返るので、順を見るのは自分の id だけ
+  const orderDir = join(work, "order-scripts");
+  mkdirSync(join(orderDir, "scripts"), { recursive: true });
+  writeFileSync(join(orderDir, "scripts", "z.ts"), A);
+  writeFileSync(join(orderDir, "scripts", "a.ts"), B);
+  const writeOrder = (ids: string[]) => {
+    writeFileSync(
+      join(orderDir, "catalog.json"),
+      JSON.stringify({
+        profile: "capture-scripts/4",
+        scripts: ids.map((script) => ({
+          id: script,
+          phase: "behavior",
+          file: script === orderZ ? "scripts/z.ts" : "scripts/a.ts",
+          summary: "smoke",
+        })),
+      }),
+    );
+  };
+  const orderNow = () => {
+    const listed = cli(["list", "--seed", "https://order.test/", "--json"]);
+    try {
+      return (JSON.parse(listed.stdout) as { id: string }[])
+        .map((script) => script.id)
+        .filter((script) => script === orderZ || script === orderA);
+    } catch {
+      return [why(listed)];
+    }
+  };
+
+  writeOrder([orderA, orderZ]);
+  run = cli(["import", orderDir]);
+  check(
+    "catalog の並びが既定の実行順になる",
+    run.status === 0 && orderNow().join(" ") === `${orderA} ${orderZ}`,
+    `${why(run)} ${orderNow().join(" ")}`,
+  );
+
+  // id と逆の順にする。id の順に落ちていれば、ここで分かる
+  writeOrder([orderZ, orderA]);
+  run = cli(["import", orderDir]);
+  check(
+    "並びだけを変えて流し直すと、版を増やさずに順が変わる (id と逆の順でも、その順)",
+    run.status === 0 &&
+      run.stdout.includes(`= ${orderZ} v1`) &&
+      orderNow().join(" ") === `${orderZ} ${orderA}`,
+    `${why(run)} ${orderNow().join(" ")}`,
+  );
+
+  run = cli(["add", orderZ, "--file", write("order-z2.ts", `${A}// v2\n`)]);
+  check(
+    "手で足した新しい版は順を受け継ぐ (後ろへ飛ばない)",
+    run.status === 0 && orderNow().join(" ") === `${orderZ} ${orderA}`,
+    `${why(run)} ${orderNow().join(" ")}`,
   );
 
   // default: false の id は、取り込むと全版が無効になる (古い版を既定に昇格させない)
@@ -519,17 +579,22 @@ try {
   run = cli(["rm", id, imported]);
   check("rm で消せる", run.status === 0, why(run));
 } finally {
-  await pool.query("DELETE FROM scripts WHERE id IN ($1, $2, $3, $4, $5, $6, $7, $8, $9)", [
-    id,
-    imported,
-    sited,
-    onExample,
-    onOther,
-    withDecl,
-    `${id}-badp`,
-    `${id}-old`,
-    `${id}-pcheck`,
-  ]);
+  await pool.query(
+    "DELETE FROM scripts WHERE id IN ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+    [
+      id,
+      imported,
+      sited,
+      onExample,
+      onOther,
+      withDecl,
+      `${id}-badp`,
+      `${id}-old`,
+      `${id}-pcheck`,
+      orderZ,
+      orderA,
+    ],
+  );
   // 024 の CHECK を当てたクロールの行 (通った 1 行だけ残る。org_id に自分の id を書いてある)
   await pool.query("DELETE FROM crawls WHERE org_id = $1", [id]);
   await pool.query("DELETE FROM host_types WHERE source = $1", [TYPES]);
