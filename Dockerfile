@@ -17,7 +17,7 @@
 # The migration and seed jobs share this image but not its ENTRYPOINT — see
 # `run_job` in scripts/prod-smoke.sh, which drives the whole stack end to end.
 
-ARG NODE_VERSION=24.15.0
+ARG NODE_VERSION=26.13.0
 
 # ---------- Deps stage (production dependencies only) ----------
 #
@@ -44,7 +44,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS deps
 WORKDIR /deps
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-RUN corepack enable && corepack prepare --activate
+RUN npm i -g corepack@0.35.0 && corepack enable && corepack prepare --activate
 RUN pnpm install --prod --frozen-lockfile --node-linker=hoisted
 
 # ---------- Builder stage ----------
@@ -53,7 +53,7 @@ FROM node:${NODE_VERSION}-bookworm-slim AS builder
 WORKDIR /app
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
-RUN corepack enable && corepack prepare --activate
+RUN npm i -g corepack@0.35.0 && corepack enable && corepack prepare --activate
 RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json tsconfig.build.json ./

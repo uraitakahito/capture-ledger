@@ -5,8 +5,8 @@ description: 前提・日々のコマンド・Compose を使わない実行・�
 
 ## 前提
 
-- **Node.js 24** (`.nvmrc` のバージョン)。nvm があれば `nvm use`。
-- **pnpm 11** — `packageManager` が固定している版。`corepack enable` で入る。
+- **Node.js 26** (`.nvmrc` のバージョン)。nvm があれば `nvm use`。
+- **pnpm 11** — `packageManager` が固定している版。Node 25 から corepack が同梱されないので、`npm i -g corepack` の後に `corepack enable` で入る。
 - **[Apple Container](https://github.com/apple/container)** と **container-compose**
   （どちらも Homebrew）— スタックに必要。ホストだけの開発には不要。macOS 専用です。
 - **`curl`** と **`git`** が PATH にあること。
