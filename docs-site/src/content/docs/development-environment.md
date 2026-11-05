@@ -421,7 +421,7 @@ in effect — with a JWT setup it says, at info level, that the variable is igno
 
 ### Crawling something you control
 
-The stack ships a fixture origin — [fixtures](https://github.com/uraitakahito/fixtures) —
+The stack ships a fixture origin — [capture-fixtures](https://github.com/uraitakahito/capture-fixtures) —
 behind a profile, so a crawl can be exercised without pointing it at a stranger's
 site:
 
@@ -429,15 +429,18 @@ site:
 pnpm run stack:up --profile capture-fixtures
 ```
 
-It publishes no port; `capture-fixtures.capture-ledger:8080` resolves from containers and from the
-host alike. `/links/hub` is the seed to use — every `/links/*` page is that page
-with exactly one thing changed, which is what lets a crawler applying the wrong
-rule be told apart from one that is simply broken.
+It has two addresses. Containers — BrowserHive, which does the capturing — use the name
+`capture-fixtures.capture-ledger:8080`, and seed URLs are written with it. The host gets
+`127.0.0.1:18085`, published for it: macOS 26 stops binaries Apple did not sign (`node` among them)
+from connecting into the container subnet, so the host's tools (e2e, doctor) cannot reach it by
+name (see [working against the stack](#working-against-the-stack)). `/links/hub` is the seed to
+use — every `/links/*` page is that page with exactly one thing changed, which is what lets a
+crawler applying the wrong rule be told apart from one that is simply broken.
 
-fixtures also keeps a request log, and that is the point of using it:
+capture-fixtures also keeps a request log, and that is the point of using it:
 
 ```sh
-curl -s http://capture-fixtures.capture-ledger:8080/__request-counts
+curl -s http://127.0.0.1:18085/__request-counts
 ```
 
 `crawl_pages` says what capture-ledger _recorded_; the log says what the fixture was
@@ -445,9 +448,10 @@ _actually asked for_. "The crawler honoured robots" is a claim only the second o
 can settle — a page missing from the ledger might never have been fetched, or might
 have been fetched and dropped.
 
-fixtures is vendored directly at `.upstream/fixtures` rather than through
-`.upstream/browserhive`, which carries its own much older copy. The two pins move
-for different reasons and neither should wait on the other.
+capture-fixtures is vendored directly at `.upstream/capture-fixtures` rather than through
+`.upstream/browserhive`, which carries its own copy. The two pins move for different reasons — a
+page the ledger's tests need (`/links/*` and the like) is not always in BrowserHive's pin, and going
+through it would mean waiting for a BrowserHive release — so neither waits on the other.
 
 ### Signing an archive
 
