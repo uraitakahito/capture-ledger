@@ -483,6 +483,35 @@ service is configured on this server`.
 Signing is fail-closed: a capture that asked for a signature and could not get
 one fails rather than producing an unsigned archive.
 
+**The same line also asks the ledger to sign its replay bundles**
+([signing a replay bundle](/capture-ledger/archive-ledger/#signing-a-replay-bundle)). With
+`CAPTURE_LEDGER_CAPTURE_SIGNING=1`, the API and `pnpm run replay-bundle:rebuild` refuse to start
+without the four signer settings (`CAPTURE_LEDGER_SIGNER_URL`, `CAPTURE_LEDGER_SIGNER_TOKEN`,
+`CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR`, `CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR`). The dev values are
+in `.env.example` (copy them into `.env`, or pass them from the shell). The ledger runs on the host
+and reaches wacz-signer at `127.0.0.1:18091` — BrowserHive's own stack publishes its wacz-signer
+on 18090 and signs with the same dev CA, so without separate numbers a mix-up would still sign.
+
+```sh
+# Start only the signer and the TSA (with CAPTURE_LEDGER_CAPTURE_SIGNING=1 in .env,
+# stack:up adds --profile signing itself). Name the services, or every container is recreated
+pnpm run stack:up --profile signing wacz-signer tsa
+
+# Pass the four from the shell and start the API (when they are not in .env)
+CAPTURE_LEDGER_SIGNER_URL=http://127.0.0.1:18091/sign \
+CAPTURE_LEDGER_SIGNER_TOKEN=dev-token \
+CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR=.upstream/browserhive/dev-stack/signing-ca/insecure-dev-ca.crt \
+CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR=.upstream/browserhive/dev-stack/signing-ca/insecure-dev-tsa-ca.crt \
+pnpm run api
+```
+
+When the startup log says `Replay bundles of finished crawls are signed`, finished crawls get
+signed bundles. Once a crawl is over, `replayBundle.signedRev` in `GET /api/crawls/:id` equals
+`rev`, and its place holds a `replay-digest.json`; `pnpm run replay-bundle:verify --crawl <id>`
+exiting 0 means the signature and the contents agree. Startup checks that openssl has
+`ts -attime`, so when the first openssl on `PATH` is macOS's `/usr/bin/openssl` (LibreSSL), point
+`CAPTURE_LEDGER_OPENSSL_BIN` at Homebrew's.
+
 ### Sending artifacts through the sink
 
 By default BrowserHive writes each artifact into its own bucket. The sink is the

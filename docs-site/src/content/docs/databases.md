@@ -27,19 +27,19 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 
 ### capture-ledger's database
 
-| Table                                                                   | Role                                                                                                                  |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| [`capture_targets`](/capture-ledger/databases/capture-targets/)         | What to capture                                                                                                       |
-| [`capture_submissions`](/capture-ledger/databases/capture-submissions/) | What was submitted; the only source of organizations                                                                  |
-| [`archives`](/capture-ledger/databases/archives/)                       | The ledger — captures that produced an archive                                                                        |
-| `archive_pages`                                                         | One row per line of an archive's page list (`pages/pages.jsonl`), read once for the crawl's replay bundle             |
-| [`fga_outbox`](/capture-ledger/databases/fga-outbox/)                   | Tuples waiting to reach OpenFGA                                                                                       |
-| `crawls`                                                                | One row per crawl — its policy, state and stop reason                                                                 |
-| `crawl_pages`                                                           | One row per URL a crawl touched (pending ones too); also the dedup index, and the capture log's counts (`log_counts`) |
-| `crawl_decisions`                                                       | What a crawl's rules decided, per depth, rule and host name                                                           |
-| `scripts`                                                               | The scripts a crawl can name                                                                                          |
-| `host_types`                                                            | The receptacle (`__bh`) types, shown to script readers                                                                |
-| `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`               | Kysely's own bookkeeping (below)                                                                                      |
+| Table                                                                   | Role                                                                                                                                       |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`capture_targets`](/capture-ledger/databases/capture-targets/)         | What to capture                                                                                                                            |
+| [`capture_submissions`](/capture-ledger/databases/capture-submissions/) | What was submitted; the only source of organizations                                                                                       |
+| [`archives`](/capture-ledger/databases/archives/)                       | The ledger — captures that produced an archive                                                                                             |
+| `archive_pages`                                                         | One row per line of an archive's page list (`pages/pages.jsonl`), read once for the crawl's replay bundle                                  |
+| [`fga_outbox`](/capture-ledger/databases/fga-outbox/)                   | Tuples waiting to reach OpenFGA                                                                                                            |
+| `crawls`                                                                | One row per crawl — its policy, state and stop reason, and its replay bundle and signature ([below](#the-replay-bundle-columns-of-crawls)) |
+| `crawl_pages`                                                           | One row per URL a crawl touched (pending ones too); also the dedup index, and the capture log's counts (`log_counts`)                      |
+| `crawl_decisions`                                                       | What a crawl's rules decided, per depth, rule and host name                                                                                |
+| `scripts`                                                               | The scripts a crawl can name                                                                                                               |
+| `host_types`                                                            | The receptacle (`__bh`) types, shown to script readers                                                                                     |
+| `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`               | Kysely's own bookkeeping (below)                                                                                                           |
 
 ### OpenFGA's database
 
@@ -51,6 +51,36 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 | `store`                                     | Namespaces; deletion is soft (below)               |
 | `assertion`                                 | Unused (below)                                     |
 | `goose_db_version`                          | OpenFGA's own schema migrations (below)            |
+
+## The replay bundle columns of crawls
+
+A crawl's [replay bundle](/capture-ledger/archive-ledger/#replay-bundles) is written to the store,
+version by version; the `crawls` row keeps what the ledger needs to point at it (`027`) and to say
+whether it is signed (`028`).
+
+```ts file="src/db/migrations/027-replay-bundles.ts#crawls-replay-bundle-columns"
+
+```
+
+```ts file="src/db/migrations/028-replay-bundle-signatures.ts#crawls-replay-bundle-signature-columns"
+
+```
+
+| Column                     | What it holds                                                                                                               |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `replay_bundle_next_rev`   | The next version number to hand out (from 1). Taken by a row update, which also locks the row                               |
+| `replay_bundle_rev`        | The version the ledger points at — the newest one written. **Only moves forward**                                           |
+| `replay_bundle_key`        | That version's `replay.json` key (`org/<orgId>/crawls/<crawlId>/r<rev>/replay.json`)                                        |
+| `replay_bundle_pages`      | Lines in its `pages.json`                                                                                                   |
+| `replay_bundle_built_at`   | When it was built (the ledger's clock)                                                                                      |
+| `replay_bundle_error`      | Why the latest version could not be written; cleared by the next one written                                                |
+| `replay_bundle_signed_rev` | The newest **signed** version. Moves forward on its own, apart from `replay_bundle_rev`                                     |
+| `replay_bundle_digest_key` | That version's `replay-digest.json` key. Set together with `replay_bundle_signed_rev` (a CHECK keeps both null or both set) |
+| `replay_bundle_sign_error` | Why the version the ledger points at was not signed. Null for a running crawl and with no signer configured                 |
+
+`replay_bundle_sign_error` is written by the same update that moves `replay_bundle_rev`, so it
+always speaks of the version pointed at. When `replay_bundle_signed_rev = replay_bundle_rev`, that
+version is signed.
 
 ## Tables without a page of their own
 

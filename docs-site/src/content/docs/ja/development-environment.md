@@ -464,6 +464,33 @@ BrowserHive は `no signing service is configured on this server` と言いま�
 署名は fail-closed です —— 署名を求めて得られなかった取り込みは、署名なしのアーカイブを
 出すのではなく失敗します。
 
+**同じ行は、台帳に合本の署名も求めます**（[合本の署名](/capture-ledger/ja/archive-ledger/#合本の署名)）。
+`CAPTURE_LEDGER_CAPTURE_SIGNING=1` のとき、API と `pnpm run replay-bundle:rebuild` は、署名の 4 つ組
+（`CAPTURE_LEDGER_SIGNER_URL`・`CAPTURE_LEDGER_SIGNER_TOKEN`・`CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR`・
+`CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR`）が無ければ起動しません。dev の値は `.env.example` にあります（`.env` に
+写すか、シェルから渡す）。host で動く台帳は、wacz-signer に `127.0.0.1:18091` で届きます —— BrowserHive の
+スタックの wacz-signer は 18090 に出ていて、同じ dev の CA で署名します。番号を分けないと、取り違えても署名が
+通ってしまいます。
+
+```sh
+# 署名と時刻印のサービスだけを起こす（.env に CAPTURE_LEDGER_CAPTURE_SIGNING=1 があれば、
+# --profile signing は stack:up が足す）。サービス名を付けないと、全部のコンテナが作り直される
+pnpm run stack:up --profile signing wacz-signer tsa
+
+# 4 つ組をシェルから渡して API を起こす（.env に書かないとき）
+CAPTURE_LEDGER_SIGNER_URL=http://127.0.0.1:18091/sign \
+CAPTURE_LEDGER_SIGNER_TOKEN=dev-token \
+CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR=.upstream/browserhive/dev-stack/signing-ca/insecure-dev-ca.crt \
+CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR=.upstream/browserhive/dev-stack/signing-ca/insecure-dev-tsa-ca.crt \
+pnpm run api
+```
+
+起動のログに `Replay bundles of finished crawls are signed` が出れば、終わったクロールの合本に署名します。
+クロールが終われば、`GET /api/crawls/:id` の `replayBundle.signedRev` が `rev` と同じになり、合本の置き場に
+`replay-digest.json` が在ります。`pnpm run replay-bundle:verify --crawl <id>` が 0 で終われば、署名と中身が
+合っています。起動では openssl が `ts -attime` を持つかを確かめるので、PATH の先頭が macOS の
+`/usr/bin/openssl`（LibreSSL）なら、`CAPTURE_LEDGER_OPENSSL_BIN` に homebrew の openssl を書きます。
+
 ### 受け口を通す
 
 既定では、BrowserHive は成果物を自前の bucket へ書きます。受け口はもう 1 つの経路で、

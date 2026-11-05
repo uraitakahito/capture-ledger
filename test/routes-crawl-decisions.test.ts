@@ -666,3 +666,59 @@ describe("始める前に規則を確かめる", () => {
     expect((await check(q([["rule", "follow:any"]]), false)).res.statusCode).toBe(404);
   });
 });
+
+/**
+ * 段の報告で締めるのは、走っているクロールだけ (CAPTURE-61)。`/failed` や投げられなかった段で failed に締めた後に
+ * 段の報告が届いても、succeeded に戻さない —— 戻すと、failed で締めて署名した合本と、行の状態が食い違う。
+ *
+ * 条件は行の更新の中に在る (読んだ時の状態で決めると、読んだ後・書く前に締められた行を戻す)。ここで見るのは
+ * 組まれた SQL の形で、Postgres が本当に戻さないかは開発の DB で確かめる (この repo に DB の試験は無い)。
+ */
+describe("段の報告で締めるのは、走っているクロールだけ", () => {
+  const seed = `${FIXTURES}/links/rules`;
+
+  /** 次の段が無い報告 (リンクを読まない) を投げ、最後の crawls の UPDATE を返す。 */
+  const closeByReport = async (state: string): Promise<RecordedQuery | undefined> => {
+    const { app, queries } = await build({
+      results: [
+        [{ ...crawlRow([{ follow: "same-host" }], [seed]), state }], // クロールの行
+        [{ id: "11" }], // 報告した行を閉じる
+        [{ count: "1" }], // crawl_pages の数
+        [], // crawls の集計
+      ],
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/crawls/${CRAWL}/pages`,
+      headers: SUBJECT,
+      payload: { depth: 0, compiled: COMPILED, results: [{ url: seed, status: "captured" }] },
+    });
+    await app.close();
+    expect(res.json()).toEqual({ next: [], stopReason: "completed" });
+    return queries.find((query) => query.sql.startsWith('update "crawls" set "pages_captured"'));
+  };
+
+  it("succeeded と終わった時刻は、行が running のときだけ書く（数と理由はこれまでどおり足す）", async () => {
+    const update = await closeByReport("running");
+    expect(update?.sql).toBe(
+      'update "crawls" set "pages_captured" = "pages_captured" + $1, ' +
+        '"pages_discovered" = "pages_discovered" + $2, "stop_reason" = coalesce("stop_reason", $3), ' +
+        '"state" = case when "state" = $4 then $5 else "state" end, ' +
+        '"finished_at" = case when "state" = $6 then $7 else "finished_at" end where "id" = $8',
+    );
+    expect(update?.parameters.slice(0, 6)).toEqual([
+      1,
+      0,
+      "completed",
+      "running",
+      "succeeded",
+      "running",
+    ]);
+    expect(update?.parameters[7]).toBe(CRAWL);
+  });
+
+  it("読んだ時に failed だった行にも、同じ条件つきの UPDATE を送る（読んだ状態で決めない）", async () => {
+    const update = await closeByReport("failed");
+    expect(update?.sql).toContain('"state" = case when "state" = $4 then $5 else "state" end');
+  });
+});

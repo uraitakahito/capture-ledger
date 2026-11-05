@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import {
   registerCrawlRoutes,
@@ -203,13 +203,16 @@ describe("クロール route の入力検証", () => {
   });
 });
 
-/** 合本がまだ無い行の欄 (`027`)。本物の行は null を持つ。 */
+/** 合本がまだ無い行の欄 (`027`・`028`)。本物の行は null を持つ。 */
 const NO_REPLAY_BUNDLE = {
   replayBundleRev: null,
   replayBundleKey: null,
   replayBundlePages: null,
   replayBundleBuiltAt: null,
   replayBundleError: null,
+  replayBundleSignedRev: null,
+  replayBundleDigestKey: null,
+  replayBundleSignError: null,
 };
 
 /** 認可と単一実行を見るための、最小の偽物。 */
@@ -248,6 +251,10 @@ interface FakeCrawl {
   replayBundlePages?: number | null;
   replayBundleBuiltAt?: Date | null;
   replayBundleError?: string | null;
+  /** 署名の欄 (`028`)。同じく本物の行は必ず持つ。 */
+  replayBundleSignedRev?: number | null;
+  replayBundleDigestKey?: string | null;
+  replayBundleSignError?: string | null;
   /** 解決済みの顔ぶれ。**行に固定されたもの**で、段ごとに引き直さない (`018`)。 */
   scripts: FakeScript[];
   /** クロールごとの値 (`024`)。本物の行は必ず持つ (NOT NULL DEFAULT) */
@@ -585,6 +592,10 @@ const depsWith = (opts: {
   fixModel?: FixModel;
   derivations?: DerivationStore;
   claudeBudgetUsd?: number;
+  /** 締めた後に書いた合本 (クロールの id と深さ) を積む。 */
+  bundles?: [string, number | null][];
+  /** 締めた後の合本の窓口を、この誤りで落とす。 */
+  bundleError?: Error;
 }): CrawlRouteDeps =>
   ({
     db: fakeDb(
@@ -605,6 +616,11 @@ const depsWith = (opts: {
     ...(opts.fixModel && { fixModel: opts.fixModel }),
     ...(opts.derivations && { derivations: opts.derivations }),
     ...(opts.claudeBudgetUsd !== undefined && { claudeBudgetUsd: opts.claudeBudgetUsd }),
+    writeReplayBundle: (crawlId: string, depth: number | null) => {
+      if (opts.bundleError !== undefined) return Promise.reject(opts.bundleError);
+      opts.bundles?.push([crawlId, depth]);
+      return Promise.resolve(undefined);
+    },
   }) as unknown as CrawlRouteDeps;
 
 describe("クロール route の認可と単一実行", () => {
@@ -816,6 +832,58 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
+  it("段を投げられなければ走っているクロールを締め、終わった状態の合本を書く", async () => {
+    // 次の段が無いので、ここで書かなければ誰も書かない (`/failed` と同じ)
+    const crawls: FakeCrawl[] = [];
+    const bundles: [string, number | null][] = [];
+    const app = await buildApp(
+      depsWith({
+        crawls,
+        allowed: true,
+        bundles,
+        dispatch: () => Promise.reject(new Error("crawl webhook → 502")),
+      }),
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      payload: { seeds: [SEED] },
+    });
+    const { crawlId } = res.json<{ crawlId: string }>();
+    await vi.waitFor(() => {
+      expect(bundles).toEqual([[crawlId, null]]);
+    });
+    expect(crawls[0]?.state).toBe("failed");
+    await app.close();
+  });
+
+  it("段を投げられなくても、先に締められていれば上書きせず、合本も書かない", async () => {
+    const crawls: FakeCrawl[] = [];
+    const bundles: [string, number | null][] = [];
+    let fail: (err: Error) => void = () => undefined;
+    const app = await buildApp(
+      depsWith({
+        crawls,
+        allowed: true,
+        bundles,
+        dispatch: () =>
+          new Promise((_resolve, reject) => {
+            fail = reject;
+          }),
+      }),
+    );
+    await app.inject({ method: "POST", url: "/api/crawls", payload: { seeds: [SEED] } });
+    // webhook の答えを待つ間に、flow が `/failed` で締めた (とする)
+    const first = crawls[0];
+    if (first !== undefined) first.state = "succeeded";
+    fail(new Error("crawl webhook → 502"));
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(crawls[0]?.state).toBe("succeeded");
+    expect(bundles).toEqual([]);
+    await app.close();
+  });
+
   it("GET は最後の段の job と、取れなかったページとその理由とページの id を返す", async () => {
     const crawl: FakeCrawl = {
       id: UUID,
@@ -941,12 +1009,15 @@ describe("クロール route の認可と単一実行", () => {
       error: null,
       lastJobId: null,
       lastJobDepth: null,
-      // r2 を書けた後、r3 が書けなかった
+      // r2 を書けた (署名した) 後、r3 が書けなかった
       replayBundleRev: 2,
       replayBundleKey: `org/acme/crawls/${UUID}/r2/replay.json`,
       replayBundlePages: 6,
       replayBundleBuiltAt: new Date("2026-11-05T03:30:00.000Z"),
       replayBundleError: "could not write r3 to the store: Access Denied",
+      replayBundleSignedRev: 2,
+      replayBundleDigestKey: `org/acme/crawls/${UUID}/r2/replay-digest.json`,
+      replayBundleSignError: null,
       scripts: [],
       variables: {},
       secrets: {},
@@ -959,6 +1030,9 @@ describe("クロール route の認可と単一実行", () => {
       pages: 6,
       builtAt: "2026-11-05T03:30:00.000Z",
       error: "could not write r3 to the store: Access Denied",
+      signedRev: 2,
+      digestKey: `org/acme/crawls/${UUID}/r2/replay-digest.json`,
+      signError: null,
     });
     await app.close();
   });
@@ -1050,8 +1124,15 @@ describe("対象一覧から始める", () => {
 describe("落ちた段を受けて締める", () => {
   const running = (): FakeCrawl[] => [{ id: UUID, state: "running" }] as unknown as FakeCrawl[];
 
-  const post = async (crawls: FakeCrawl[], body: Record<string, unknown> = {}) => {
-    const app = await buildApp(depsWith({ crawls, allowed: true }));
+  const post = async (
+    crawls: FakeCrawl[],
+    body: Record<string, unknown> = {},
+    bundles: [string, number | null][] = [],
+    bundleError?: Error,
+  ) => {
+    const app = await buildApp(
+      depsWith({ crawls, allowed: true, bundles, ...(bundleError && { bundleError }) }),
+    );
     const res = await app.inject({
       method: "POST",
       url: `/api/crawls/${UUID}/failed`,
@@ -1060,6 +1141,35 @@ describe("落ちた段を受けて締める", () => {
     await app.close();
     return res;
   };
+
+  it("締めたら、終わった状態の合本を 1 本書いてから答える（深さは記録しない）", async () => {
+    // flow は落ちた段の後に合本の口を叩かない。ここで書かないと、最後の合本は走っている時の物のまま残る
+    const bundles: [string, number | null][] = [];
+    const crawls = running();
+    const res = await post(crawls, { reason: "BrowserHive に届きません" }, bundles);
+    expect(res.json()).toEqual({ closed: true });
+    expect(bundles).toEqual([[UUID, null]]);
+    expect(crawls[0]?.state).toBe("failed");
+  });
+
+  it("締めるものが無ければ、合本を書かない", async () => {
+    const bundles: [string, number | null][] = [];
+    const res = await post(
+      [{ id: UUID, state: "succeeded" }] as unknown as FakeCrawl[],
+      {},
+      bundles,
+    );
+    expect(res.json()).toEqual({ closed: false });
+    expect(bundles).toEqual([]);
+  });
+
+  it("合本が書けなくても（窓口が投げても）、締めたことを答える", async () => {
+    const crawls = running();
+    const res = await post(crawls, {}, [], new Error("connect ECONNREFUSED 127.0.0.1:5432"));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ closed: true });
+    expect(crawls[0]?.state).toBe("failed");
+  });
 
   it("走行中のものを締める", async () => {
     // **これが無いと、flow が段の途中で落ちたクロールが永久に走行中になる。**
@@ -1992,6 +2102,11 @@ describe("クロールの一覧", () => {
       replayBundlePages: 12,
       replayBundleBuiltAt: new Date("2026-11-05T03:30:00.000Z"),
       replayBundleError: null,
+      // r2 は署名した。指す r3 には署名が付かなかった (署名した版は指す版とは別に動く)
+      replayBundleSignedRev: 2,
+      replayBundleDigestKey:
+        "org/acme/crawls/55555555-5555-4555-8555-555555555555/r2/replay-digest.json",
+      replayBundleSignError: "http://wacz-signer.test:8080/sign — returned 502",
     });
     const res = await list(depsWith({ crawls: [bundled, NEW], allowed: true }));
     const crawls = res.json<{ crawls: (ListedCrawl & { replayBundle: unknown })[] }>().crawls;
@@ -2001,6 +2116,9 @@ describe("クロールの一覧", () => {
       pages: 12,
       builtAt: "2026-11-05T03:30:00.000Z",
       error: null,
+      signedRev: 2,
+      digestKey: "org/acme/crawls/55555555-5555-4555-8555-555555555555/r2/replay-digest.json",
+      signError: "http://wacz-signer.test:8080/sign — returned 502",
     });
     expect(crawls[1]?.replayBundle).toBeNull();
   });
@@ -2018,6 +2136,9 @@ describe("クロールの一覧", () => {
       pages: null,
       builtAt: null,
       error: "could not write r1 to the store: Access Denied",
+      signedRev: null,
+      digestKey: null,
+      signError: null,
     });
   });
 });

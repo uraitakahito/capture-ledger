@@ -9,6 +9,8 @@
  * 署名付き URL は `api/presign.ts` に在る —— この client は共有するが、関心は別
  * (あちらはオブジェクトを一度も読まず、署名するだけ)。
  */
+import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import type { StorageConfig } from "../config/env.js";
 
@@ -75,6 +77,32 @@ export const getObjectBytes = async (
   }
 };
 
+/**
+ * オブジェクトを**流して** sha256 を計る (16 進の小文字)。無ければ `undefined`。
+ *
+ * 合本を確かめる道具 (`replay-bundle/verify.ts`) が、合本の WACZ を 1 本ずつ計るのに使う。`getObjectBytes` と
+ * 違い丸ごと持たない —— クロールの WACZ を全部読むので、1 本ずつでも数百 MB になりうる。
+ */
+export const sha256OfObject = async (
+  s3: S3Client,
+  bucket: string,
+  key: string,
+): Promise<string | undefined> => {
+  try {
+    const result = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    const body = result.Body;
+    if (body === undefined) return undefined;
+    // Node の SDK は本文を Readable で返す (ブラウザの形は、この process には来ない)
+    if (!(body instanceof Readable)) throw new Error(`the store answered ${key} without a stream`);
+    const hash = createHash("sha256");
+    for await (const chunk of body) hash.update(chunk as Buffer);
+    return hash.digest("hex");
+  } catch (cause) {
+    if (isNotFound(cause)) return undefined;
+    throw cause;
+  }
+};
+
 const isNotFound = (cause: unknown): boolean => {
   if (typeof cause !== "object" || cause === null) return false;
   const err = cause as { name?: string; $metadata?: { httpStatusCode?: number } };
@@ -88,7 +116,8 @@ const isNotFound = (cause: unknown): boolean => {
  * 連番を振ると再送のたびに object が増える。鍵は呼ぶ側が決める。
  *
  * ledger が S3 に**書く**のはこの関数だけで、呼ぶのは 2 か所: 受け口 (`api/sink.ts`。BrowserHive の成果物を
- * 受け取る構成のとき) と合本 (`replay-bundle/write.ts`。版ごとの置き場に 1 度だけ書き、書き換えない)。
+ * 受け取る構成のとき) と合本 (`replay-bundle/write.ts`。版ごとの置き場に 1 度だけ書き、書き換えない。署名した版は
+ * `replay-digest.json` も)。
  * 他はすべて読み取り。
  */
 export const putObject = async (

@@ -97,6 +97,7 @@ import { isUniqueViolation, maySubmit, unauthorized } from "./authorization.js";
 import { withLinks, type CaptureFormats, type CaptureSettings } from "../config/capture-formats.js";
 import { loadTargets } from "../data/url-source.js";
 import { createChildLogger } from "../logger.js";
+import type { ReplayBundleResult } from "../replay-bundle/write.js";
 import { crawlKeyPrefix, sinkForCrawl, type SinkConfig } from "./sink.js";
 
 const log = createChildLogger({ module: "api" });
@@ -230,6 +231,15 @@ export interface DispatchedCrawl {
   secrets: Record<string, string>;
 }
 
+/**
+ * 合本を 1 本書く (`replay-bundle/write.ts` の `writeReplayBundle` を、配備の db・保管庫・署名の窓口で包んだ物)。
+ * クロールを締めた後に、ここから呼ぶ。
+ */
+export type ReplayBundleWriter = (
+  crawlId: string,
+  depth: number | null,
+) => Promise<ReplayBundleResult | undefined>;
+
 export interface CrawlRouteDeps {
   /** 取り込む形式と署名。起動時に env から解釈したもの (`config/capture-formats.ts`)。 */
   capture: CaptureSettings;
@@ -267,6 +277,12 @@ export interface CrawlRouteDeps {
   derivations?: DerivationStore;
   /** 組織ごとの月の上限 (USD)。 */
   claudeBudgetUsd?: number;
+  /**
+   * 締めた後に合本を書く窓口。**締めた後は誰も合本を書かない** —— 段の合本は flow が段の報告の後に叩くが、締めるのは
+   * flow が落ちた後 (`/failed`) か次の段を投げられなかった後で、どちらの後にも段は来ない。ここで書かないと、
+   * クロールの最後の合本は走っている時の (署名の無い) 物のまま残る (CAPTURE-61)。
+   */
+  writeReplayBundle: ReplayBundleWriter;
 }
 
 interface CrawlBody {
@@ -437,10 +453,14 @@ const pageOf = (row: PageRow) => ({
 });
 
 /**
- * クロールの行の合本の欄 (`027`)。**書けた合本も、書けなかった記録も無ければ null。**
+ * クロールの行の合本の欄 (`027`・`028`)。**書けた合本も、書けなかった記録も無ければ null。**
  *
  * 1 度も書けずに失敗だけがあるときは、`error` だけが値を持つ (`key`・`rev`・`pages`・`builtAt` は null)。
  * 書けた後に失敗したときは、台帳が指す (前に書けた) 合本と、その後の失敗の理由が両方出る。
+ *
+ * 署名 (`028`): `signedRev`・`digestKey` は署名した版のうち最も大きい物と、その `replay-digest.json` の鍵で、
+ * **指す版 (`rev`) とは別に動く** —— `signedRev === rev` なら、台帳が指す合本は署名されている。`signError` は
+ * 指す版に署名しなかった (できなかった) 理由 (走っているクロールの版と、署名の設定が無い配備では null)。
  */
 const replayBundleOf = (
   crawl: Pick<
@@ -450,6 +470,9 @@ const replayBundleOf = (
     | "replayBundlePages"
     | "replayBundleBuiltAt"
     | "replayBundleError"
+    | "replayBundleSignedRev"
+    | "replayBundleDigestKey"
+    | "replayBundleSignError"
   >,
 ) =>
   crawl.replayBundleRev === null && crawl.replayBundleError === null
@@ -460,6 +483,9 @@ const replayBundleOf = (
         pages: crawl.replayBundlePages,
         builtAt: crawl.replayBundleBuiltAt,
         error: crawl.replayBundleError,
+        signedRev: crawl.replayBundleSignedRev,
+        digestKey: crawl.replayBundleDigestKey,
+        signError: crawl.replayBundleSignError,
       };
 
 /**
@@ -479,6 +505,19 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
     deps;
 
   /**
+   * 締めた後に、合本を 1 本書く (`writeReplayBundle` の注)。**投げない** —— 締めたことが答えで、合本は撮った物から
+   * 作る派生物 (書けなければ `crawls.replay_bundle_error` と log に残る)。
+   */
+  const bundleAfterClose = async (crawlId: string): Promise<void> => {
+    try {
+      const result = await deps.writeReplayBundle(crawlId, null);
+      log.info({ crawlId, ...result }, "Wrote the replay bundle of a closed crawl");
+    } catch (err) {
+      log.error({ err, crawlId }, "Could not write the replay bundle of a closed crawl");
+    }
+  };
+
+  /**
    * 段を 1 つ Windmill へ投げる。**待たない** —— この Promise の行き先は `crawls` の行で、
    * 応答ではない。
    *
@@ -488,6 +527,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    *
    * 投げられなければクロールを締める。黙って `running` のまま置くと、部分 unique index が
    * 以後のクロールを全部塞ぐ。以前はこの 2 つを、最初の段と次の段の 2 か所に写していた。
+   * 締めるのは走行中の行だけで (`/failed` と同じ)、締めたら終わった状態の合本を書く (CAPTURE-61)。
    */
   const dispatchLevel = (level: DispatchedCrawl): void => {
     const { crawlId, depth } = level;
@@ -504,7 +544,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         },
         async (err: unknown) => {
           log.error({ err, crawlId, depth }, "Could not dispatch a level");
-          await db
+          const closed = await db
             .updateTable("crawls")
             .set({
               state: "failed",
@@ -513,7 +553,12 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               error: err instanceof Error ? err.message : String(err),
             })
             .where("id", "=", crawlId)
+            // **走行中のものだけ** (`/failed` と同じ)。先に締めた者の理由を上書きしない
+            .where("state", "=", "running")
+            .returning("id")
             .execute();
+          // 締めたなら、終わった状態の合本を書く (次の段が無いので、ほかに書く者が居ない)
+          if (closed.length > 0) await bundleAfterClose(crawlId);
         },
       )
       .catch((updateErr: unknown) => {
@@ -1062,6 +1107,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           "replayBundlePages",
           "replayBundleBuiltAt",
           "replayBundleError",
+          "replayBundleSignedRev",
+          "replayBundleDigestKey",
+          "replayBundleSignError",
           waczCount.as("waczCount"),
         ])
         .orderBy("startedAt", "desc")
@@ -2200,6 +2248,11 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       //
       // `coalesce` で最初の非 NULL を守る。`budget.ts` が深さを件数より優先するのと
       // 同じ考え方で、**先に効いた制約**が理由になる。
+      //
+      // **締めるのは走行中の行だけ** (CAPTURE-61)。`/failed` や投げられなかった段で締めた後に段の報告が届いても、
+      // succeeded に戻さない —— 戻すと、failed で締めて署名した合本と、行の状態が食い違う。条件は行の更新の中で
+      // 見る (読んだ時の `crawl.state` で決めると、読んだ後・書く前に締められた行を戻す)。数と理由はこれまでどおり
+      // 足す (報告された取り込みは、締めた後でも台帳に入っている)。
       const reason = stopReason ?? (done ? ("completed" as const) : null);
       await db
         .updateTable("crawls")
@@ -2207,7 +2260,24 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           pagesCaptured: eb("pagesCaptured", "+", capturedCount),
           pagesDiscovered: eb("pagesDiscovered", "+", discovered.length),
           ...(reason === null ? {} : { stopReason: eb.fn.coalesce("stopReason", eb.val(reason)) }),
-          ...(done ? { state: "succeeded" as const, finishedAt: new Date().toISOString() } : {}),
+          ...(done
+            ? {
+                state: eb
+                  .case()
+                  .when("state", "=", "running")
+                  .then(eb.val<CrawlState>("succeeded"))
+                  .else(eb.ref("state"))
+                  .end(),
+                // 読みの型は Date、書くのは ISO の文字列 (ほかの書き込みと同じ)。式の型を書きの型に寄せる
+                finishedAt: eb
+                  .case()
+                  .when("state", "=", "running")
+                  .then(eb.val(new Date().toISOString()))
+                  .else(eb.ref("finishedAt"))
+                  .end()
+                  .$castTo<string | null>(),
+              }
+            : {}),
         }))
         .where("id", "=", crawlId)
         .execute();
@@ -2285,6 +2355,12 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 終わった行に後から `failed` を被せない。段の失敗が遅れて届くことはありうるし、
    * そのとき既に別の段が締めていれば、**そちらの理由のほうが正しい**。
    *
+   * ## 締めた後に合本を書く
+   *
+   * 締めたら、終わった状態 (failed) の合本を 1 本書く (署名の設定が在れば署名する。CAPTURE-61)。flow は落ちた段の
+   * 後に合本の口を叩かないので、ここで書かないと、クロールの最後の合本は走っている時の物のまま残る。書き終えてから
+   * 答える。書けなくても `{closed: true}` は変わらない。
+   *
    * ## 落ちた段の取り込みは台帳に入らない
    *
    * 落ちた段でも、そこまでに成功した取り込みの成果物は S3 に在る。けれど報告が来ないので
@@ -2337,6 +2413,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         return reply.code(200).send({ closed: false });
       }
       log.warn({ crawlId, reason: request.body?.reason }, "Crawl closed by the flow");
+      // 締めた状態 (failed) の合本を書き、署名の設定が在れば署名する。**待ってから答える** —— 落ちた段の後に
+      // 段は来ないので、ここで書かなければ誰も書かない。合本が書けなくても締めたことは変わらない (投げない)
+      await bundleAfterClose(crawlId);
       return reply.code(200).send({ closed: true });
     },
   );

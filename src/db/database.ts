@@ -195,6 +195,17 @@ export interface CrawlsTable {
   replayBundleBuiltAt: ColumnType<Date | null, never, string>;
   /** 合本を書けなかった理由。次に書けたら消す。クロールは止めない (`027`)。 */
   replayBundleError: ColumnType<string | null, never, string | null>;
+  /**
+   * 署名した合本の版のうち最も大きい物と、その `replay-digest.json` の鍵 (`028`)。**台帳が指す版とは別に持ち、
+   * 前へだけ進める**。2 つは一緒に書く (両方 NULL か両方に値。CHECK)。
+   */
+  replayBundleSignedRev: ColumnType<number | null, never, number>;
+  replayBundleDigestKey: ColumnType<string | null, never, string>;
+  /**
+   * 台帳が指す版に署名しなかった (できなかった) 理由 (`028`)。指す版と同じ UPDATE で書く。走っているクロールの版と、
+   * 署名の設定が無い配備では NULL。
+   */
+  replayBundleSignError: ColumnType<string | null, never, string | null>;
 }
 
 /**

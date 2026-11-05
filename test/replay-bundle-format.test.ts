@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import {
@@ -6,10 +7,13 @@ import {
   composeReplayBundle,
   INITIAL_PAGES,
   pageKeys,
+  replayDigestBytes,
+  sha256Of,
   type BundleArchive,
   type BundlePage,
   type ComposeInput,
 } from "../src/replay-bundle/format.js";
+import type { SignedData } from "../src/replay-bundle/verify-signed-data.js";
 
 /**
  * 合本の形 v1 を組む純粋な部分。replay が読む形 (並び・欄・置き場) を固定する。
@@ -164,6 +168,9 @@ const input = (over: Partial<ComposeInput> = {}): ComposeInput => {
     rev: 3,
     depth: 1,
     builtAt: new Date("2026-11-05T03:30:00.000Z"),
+    crawlState: "succeeded",
+    stopReason: "completed",
+    finishedAt: new Date("2026-11-05T03:29:58.000Z"),
     archives,
     pages: [
       ...pagesOf("b", "http://site.test/b", "2026-11-05T01:00:01.000Z"),
@@ -194,8 +201,13 @@ describe("合本を組む", () => {
       rev: 7,
       depth: 2,
       builtAt: "2026-11-05T03:30:00.000Z",
+      crawlState: "succeeded",
+      stopReason: "completed",
+      finishedAt: "2026-11-05T03:29:58.000Z",
       members: 3,
       skipped: 0,
+      skippedResources: [],
+      pagesHash: sha256Of(bundle.pagesBytes),
     });
   });
 
@@ -343,12 +355,15 @@ describe("合本を組む", () => {
     expect(bundle.pagesJson.pages.map((page) => page.id)).toContain("b");
   });
 
-  it("記録が 0 の WACZ は resources にも pages.json にも入れず、数だけ skipped に残す", () => {
+  it("記録が 0 の WACZ は resources にも pages.json にも入れず、数と名前・sha256 を残す", () => {
     const base = input();
     const bundle = composeReplayBundle({
       ...base,
       archives: base.archives.map((one) => (one.id === "c" ? { ...one, indexEmpty: true } : one)),
     });
+    expect(bundle.replayJson.replayBundle.skippedResources).toEqual([
+      { name: `c_${CRAWL}.wacz`, hash: `sha256:${"c".repeat(64)}` },
+    ]);
     expect(bundle.members).toEqual(["a", "b"]);
     expect(bundle.replayJson.resources.map((resource) => resource.name)).not.toContain(
       `c_${CRAWL}.wacz`,
@@ -358,5 +373,84 @@ describe("合本を組む", () => {
     expect(bundle.skipped).toBe(1);
     expect(bundle.replayJson.replayBundle).toMatchObject({ members: 2, skipped: 1 });
     expect(bundle.replayJson.totalPages).toBe(4);
+  });
+});
+
+/**
+ * 署名が覆うのは replay.json のバイト列 (CAPTURE-61)。クロールについて証したい事 (WACZ の sha256・pages.json の
+ * sha256・外した WACZ・クロールの状態) は、どれも replay.json の中に在る。
+ */
+describe("署名が覆う物", () => {
+  const sha256 = (bytes: Buffer): string =>
+    `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+
+  it("置くバイト列は、組んだ物を JSON にした物そのもの（hash を計るのと置くのに同じ Buffer を使う）", () => {
+    const bundle = composeReplayBundle(input());
+    expect(bundle.replayBytes.equals(Buffer.from(JSON.stringify(bundle.replayJson)))).toBe(true);
+    expect(bundle.pagesBytes.equals(Buffer.from(JSON.stringify(bundle.pagesJson)))).toBe(true);
+    expect(bundle.digestKey).toBe(`org/acme/crawls/${CRAWL}/r3/replay-digest.json`);
+  });
+
+  it("pagesHash は pages.json のバイト列の sha256 で、頁の行が 1 つ変われば変わる", () => {
+    const bundle = composeReplayBundle(input());
+    expect(bundle.replayJson.replayBundle.pagesHash).toBe(sha256(bundle.pagesBytes));
+    const base = input();
+    const retitled = composeReplayBundle({
+      ...base,
+      pages: base.pages.map((page) => (page.pageId === "b" ? { ...page, title: "別の題" } : page)),
+    });
+    expect(retitled.replayJson.replayBundle.pagesHash).not.toBe(
+      bundle.replayJson.replayBundle.pagesHash,
+    );
+  });
+
+  it("版を払い出した時のクロールの状態を書く（走っている版は stopReason も finishedAt も null）", () => {
+    const running = composeReplayBundle(
+      input({ crawlState: "running", stopReason: null, finishedAt: null }),
+    );
+    expect(running.replayJson.replayBundle).toMatchObject({
+      crawlState: "running",
+      stopReason: null,
+      finishedAt: null,
+    });
+    const failed = composeReplayBundle(
+      input({
+        crawlState: "failed",
+        stopReason: "failed",
+        finishedAt: new Date("2026-11-05T04:00:00.000Z"),
+      }),
+    );
+    expect(failed.replayJson.replayBundle).toMatchObject({
+      crawlState: "failed",
+      stopReason: "failed",
+      finishedAt: "2026-11-05T04:00:00.000Z",
+    });
+  });
+
+  it("外した WACZ は名前の順に並べる（入力の順によらない）", () => {
+    const bundle = composeReplayBundle(
+      input({
+        archives: [
+          archive("z", 1, "2026-11-05T01:00:00.000Z", { indexEmpty: true }),
+          archive("a", 0, "2026-11-05T01:00:01.000Z"),
+          archive("m", 1, "2026-11-05T01:00:02.000Z", { indexEmpty: true }),
+        ],
+        pages: [],
+      }),
+    );
+    expect(bundle.replayJson.replayBundle.skippedResources.map((one) => one.name)).toEqual([
+      `m_${CRAWL}.wacz`,
+      `z_${CRAWL}.wacz`,
+    ]);
+    expect(bundle.skipped).toBe(2);
+  });
+
+  it("replay-digest.json は {path: replay.json, hash, signedData} を 2 字の字下げと末尾の改行で書く", () => {
+    const signedData = { hash: "sha256:00", signature: "c2ln" } as unknown as SignedData;
+    const bytes = replayDigestBytes("sha256:00", signedData);
+    expect(bytes.toString("utf8")).toBe(
+      '{\n  "path": "replay.json",\n  "hash": "sha256:00",\n  "signedData": {\n' +
+        '    "hash": "sha256:00",\n    "signature": "c2ln"\n  }\n}\n',
+    );
   });
 });
