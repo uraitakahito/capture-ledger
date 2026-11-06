@@ -39,7 +39,7 @@ capture-scheduler（Windmill とクロールの flow）、
 [wacz-validator](https://github.com/uraitakahito/wacz-validator)（検証の daemon）、
 [dashboard](https://github.com/uraitakahito/dashboard) で、
 `--dry-run` の一覧では `cd ../…` から始まる行です。
-`~/projects/crawler/` の下に無いなら、`--scheduler`・`--validator`・`--dashboard` に場所を渡します。
+capture-ledger と同じ親ディレクトリに無いなら、`--scheduler`・`--validator`・`--dashboard` に場所を渡します。
 無いまま走らせると、その段で名指しして止まります。
 capture-scheduler には DNS ドメインの登録も 1 度だけ要ります
 （[capture-scheduler のクイックスタート](https://uraitakahito.github.io/capture-scheduler/ja/quickstart/)）。
