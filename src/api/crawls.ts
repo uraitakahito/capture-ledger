@@ -64,7 +64,7 @@ import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
 import { nothingCapturedError } from "../crawl/close.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
-import { checkValues, type DeclaredSecret } from "../crawl/values.js";
+import { checkValues, pinDeclarations, type DeclaredSecret } from "../crawl/values.js";
 import { WindmillUnreachable, type WindmillVariables } from "../crawl/windmill-variables.js";
 import {
   attributeDiagnostics,
@@ -281,9 +281,9 @@ export interface CrawlRouteDeps {
   windmill?: WindmillVariables;
   /**
    * 型の検査の窓口 (`scripts/ts-compile.ts`)。flow の compile の段と同じ ts-compile-service を、host の
-   * loopback で呼ぶ。無ければ `GET /api/crawls/:id/diagnostics` を出さない (その配備に取り直しは無い)。
+   * loopback で呼ぶ。**必須** —— 始める口が、必須の変数が渡されているかをここに訊く。
    */
-  tsCompile?: TsCompile;
+  tsCompile: TsCompile;
   /**
    * 直す係の Claude (`scripts/fix.ts`)。鍵が無ければ無い。`tsCompile` と `derivations` も揃ったときだけ
    * `POST /api/crawls/:id/inline/:name/fix` を出す (案は型の検査に通してから返し、費用は派生の層に残すため)。
@@ -732,8 +732,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                       name: { type: "string", pattern: "^[a-z][a-z0-9-]*$", maxLength: 57 },
                       phase: { type: "string", enum: ["behavior", "preload"] },
                       source: { type: "string", minLength: 1 },
-                      // 読む値の宣言 (catalog.json の params と同じ形)。添えなければ「宣言が無い」で、
-                      // 空の配列は「何も読まない」の宣言 (`crawl/values.ts`)。重複と required の既定は handler
+                      // シークレットの宣言 (catalog.json の params と同じ形)。変数は source の `defineParams` で
+                      // 宣言するので、kind: variable は handler が断る。重複と required の既定も handler
                       params: {
                         type: "array",
                         maxItems: VALUES_MAX,
@@ -858,6 +858,14 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           requested.push(element);
           continue;
         }
+        // 変数の宣言の正は source の `defineParams`。ここにも書けると、宣言が 2 か所になって片方が腐る
+        if (element.inline.params.some((param) => param.kind === "variable")) {
+          return reply.code(400).send({
+            error: "invalid params",
+            script: INLINE_PREFIX + element.inline.name,
+            hint: "params に書けるのはシークレットだけ。変数は source の defineParams で宣言する",
+          });
+        }
         const params = readParams(element.inline.params, { summaryRequired: false });
         if (typeof params === "string") {
           return reply.code(400).send({
@@ -919,7 +927,36 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // **クロールごとの値を、宣言に照らす。** 変数は頼みの物 (無ければ空)、シークレットは宣言から集める
       // (`crawl/values.ts`)。断るのは行を立てる前 —— 行は残らない。
       const variables = body.variables ?? {};
-      const values = checkValues(resolved.scripts, variables);
+
+      // **始める前に compile に訊く。** 必須の変数が足りなければ 400 で断り、行も run も残さない —— 判定は
+      // ts-compile-service の 1 か所 (BH0001) で、送るのは名前だけ。答えの宣言は行に固定する。ふつうの型の誤りは
+      // ここでは断らない: 行を立て、flow の compile の段で落ちた行から「直し方を訊く」へ進む。
+      let pinned = resolved.scripts;
+      let unreadable = false;
+      if (resolved.scripts.length > 0) {
+        let answer;
+        try {
+          answer = await tsCompile.compile(
+            resolved.scripts.map(toDispatched),
+            Object.keys(variables),
+          );
+        } catch (err) {
+          if (!(err instanceof TsCompileUnreachable)) throw err;
+          log.warn({ err, subject: identity.subject }, "ts-compile-service did not answer");
+          return reply.code(503).send({ error: "ts-compile unreachable" });
+        }
+        if (!answer.ok && answer.missingVariables.length > 0) {
+          return reply.code(400).send({
+            error: "missing variables",
+            names: answer.missingVariables,
+            diagnostics: answer.diagnostics.filter((d) => d.code === "BH0001"),
+          });
+        }
+        pinned = pinDeclarations(resolved.scripts, answer.declarations);
+        unreadable = answer.declarations.some((declared) => declared.unreadable);
+      }
+
+      const values = checkValues(pinned, variables, { unreadable });
       if (values.kind === "refused") return reply.code(400).send(values.body);
 
       // **宣言したシークレットが Windmill に在るか。** 値は読まない (`crawl/windmill-variables.ts`)。required の
@@ -993,7 +1030,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         orgId,
         requestedBy: identity.subject,
         // 解決済みの写し。並びが実行順。
-        scripts: JSON.stringify(resolved.scripts),
+        scripts: JSON.stringify(pinned),
         // クロールごとの値。変数は値ごと、シークレットは path と更新時刻だけ (値は台帳を通らない)
         variables: JSON.stringify(variables),
         secrets: JSON.stringify(secrets),
@@ -1061,7 +1098,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         signing: capture.signing,
         // 次の段と同じく `toDispatched` を通す。行の写しには札 (`021`) が在るが、flow には送らない ——
         // compile の段は scripts をそのまま ts-compile-service に渡すので、知らない欄が届く
-        scripts: resolved.scripts.map(toDispatched),
+        scripts: pinned.map(toDispatched),
         // クロールごとの値。段ごとに同じ物を配る (行に固定した物)。シークレットは名前 → path だけ
         variables,
         secrets: pathsOf(secrets),
@@ -1347,58 +1384,56 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 組み合わせなら `diagnostics` は空。`script` は誤りの在るスクリプトの id (受け皿の型や lib の
    * 誤りは `file` のまま)。Claude は呼ばない —— 読むだけの口なので GET。
    */
-  if (tsCompile !== undefined) {
-    app.get<{ Params: { id: string } }>(
-      "/api/crawls/:id/diagnostics",
-      {
-        schema: {
-          params: {
-            type: "object",
-            properties: { id: { type: "string", format: "uuid" } },
-            required: ["id"],
-          },
+  app.get<{ Params: { id: string } }>(
+    "/api/crawls/:id/diagnostics",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: { id: { type: "string", format: "uuid" } },
+          required: ["id"],
         },
       },
-      async (request, reply) => {
-        const identity = await resolveIdentity(request);
-        if (!identity) return unauthorized(reply);
-        if (!(await maySubmit(fga, identity))) {
-          return reply.code(404).send({ error: "not found" });
-        }
+    },
+    async (request, reply) => {
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) {
+        return reply.code(404).send({ error: "not found" });
+      }
 
-        const crawl = await db
-          .selectFrom("crawls")
-          .select(["scripts"])
-          .where("id", "=", request.params.id)
-          .executeTakeFirst();
-        if (crawl === undefined) return reply.code(404).send({ error: "not found" });
+      const crawl = await db
+        .selectFrom("crawls")
+        .select(["scripts", "variables"])
+        .where("id", "=", request.params.id)
+        .executeTakeFirst();
+      if (crawl === undefined) return reply.code(404).send({ error: "not found" });
 
-        const scripts = crawl.scripts.map(toDispatched);
-        let answer;
-        try {
-          answer = await tsCompile.compile(scripts);
-        } catch (err) {
-          if (!(err instanceof TsCompileUnreachable)) throw err;
-          request.log.warn({ err }, "ts-compile-service did not answer");
-          return reply.code(503).send({ error: "ts-compile unreachable" });
-        }
-        if (answer.ok) {
-          return reply.code(200).send({
-            typescript: answer.typescript,
-            hostTypes: answer.hostTypes,
-            diagnostics: [],
-          });
-        }
+      const scripts = crawl.scripts.map(toDispatched);
+      let answer;
+      try {
+        answer = await tsCompile.compile(scripts, Object.keys(crawl.variables));
+      } catch (err) {
+        if (!(err instanceof TsCompileUnreachable)) throw err;
+        request.log.warn({ err }, "ts-compile-service did not answer");
+        return reply.code(503).send({ error: "ts-compile unreachable" });
+      }
+      if (answer.ok) {
         return reply.code(200).send({
           typescript: answer.typescript,
-          diagnostics: attributeDiagnostics(
-            answer.diagnostics,
-            scripts.map((s) => s.id),
-          ),
+          hostTypes: answer.hostTypes,
+          diagnostics: [],
         });
-      },
-    );
-  }
+      }
+      return reply.code(200).send({
+        typescript: answer.typescript,
+        diagnostics: attributeDiagnostics(
+          answer.diagnostics,
+          scripts.map((s) => s.id),
+        ),
+      });
+    },
+  );
 
   /**
    * クロール 1 本のページ。**`crawl_pages` の行を、入った順に `limit` 本ずつ。** 続きは答えの `next` を
@@ -1546,7 +1581,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 誤りが台帳のスクリプトにだけ在る (422)・組織の月の上限に届いた (429) ときは、Claude を呼ばない。
    * Claude を呼んだ回は、答えがどれでも派生の層 (`026`) に残す。本文は `{}` (何も選ばせない)。
    */
-  if (tsCompile !== undefined && fixModel !== undefined && derivations !== undefined) {
+  if (fixModel !== undefined && derivations !== undefined) {
     const budgetUsd = deps.claudeBudgetUsd ?? 0;
     const money = (usd: number) => Number(usd.toFixed(4));
     const usageOf = (r: FixResult) => ({
@@ -1594,7 +1629,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
         const crawl = await db
           .selectFrom("crawls")
-          .select(["scripts", "orgId"])
+          .select(["scripts", "orgId", "variables"])
           .where("id", "=", request.params.id)
           .executeTakeFirst();
         const inlineId = INLINE_PREFIX + request.params.name;
@@ -1603,9 +1638,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         }
 
         const scripts = crawl.scripts.map(toDispatched);
+        const variableNames = Object.keys(crawl.variables);
         let checked;
         try {
-          checked = await tsCompile.compile(scripts);
+          checked = await tsCompile.compile(scripts, variableNames);
         } catch (err) {
           if (!(err instanceof TsCompileUnreachable)) throw err;
           request.log.warn({ err }, "ts-compile-service did not answer");
@@ -1622,6 +1658,14 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           checked.diagnostics,
           scripts.map((s) => s.id),
         );
+        // 値が足りないのは TS の誤りではない。Claude に頼むと、通る案は必須を任意にする形だけになる
+        if (checked.missingVariables.length > 0) {
+          return reply.code(422).send({
+            error: "missing variables",
+            names: checked.missingVariables,
+            diagnostics,
+          });
+        }
         if (!diagnostics.some((d) => d.script === inlineId)) {
           return reply.code(422).send({ error: "no errors in this inline script", diagnostics });
         }
@@ -1642,6 +1686,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           typescript: checked.typescript,
           hostTypes: host?.source ?? "(台帳に受け皿の型が無い。scripts import を流すと入る)",
           tsCompile,
+          variableNames,
           model: fixModel,
         });
         if (result.rounds > 0) {

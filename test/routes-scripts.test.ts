@@ -1,6 +1,14 @@
+import { createHash } from "node:crypto";
+
 import { describe, it, expect } from "vitest";
 import Fastify from "fastify";
 import { registerScriptsRoute, type ScriptsRouteDeps } from "../src/api/scripts.js";
+import type { CrawlScript } from "../src/db/database.js";
+import {
+  TsCompileUnreachable,
+  type CompileAnswer,
+  type TsCompile,
+} from "../src/scripts/ts-compile.js";
 import { recordingDb } from "./recording-db.js";
 
 /**
@@ -291,5 +299,135 @@ describe("GET /api/scripts", () => {
     const { scripts } = res.json<{ scripts: Record<string, unknown>[] }>();
     expect(scripts.map((script) => script["id"])).toEqual(["autoscroll", "autofetch"]);
     expect(scripts[0]).not.toHaveProperty("position");
+  });
+});
+
+describe("POST /api/scripts/check", () => {
+  const SOURCE =
+    'import { z } from "zod";\nconst { q } = defineParams(z.object({ q: z.string() }));\n';
+  const PARAM = {
+    name: "q",
+    kind: "variable",
+    required: true,
+    schema: { type: "string" },
+  } as const;
+
+  const check = async (
+    body: unknown,
+    tsCompile: TsCompile | undefined,
+    options: { fga?: unknown; resolveIdentity?: ScriptsRouteDeps["resolveIdentity"] } = {},
+  ) => {
+    const { db } = recordingDb([]);
+    const app = Fastify({ logger: false });
+    registerScriptsRoute(app, {
+      db,
+      fga: (options.fga ?? fgaAnswering(true)) as ScriptsRouteDeps["fga"],
+      resolveIdentity: options.resolveIdentity ?? caller,
+      ...(tsCompile && { tsCompile }),
+    });
+    await app.ready();
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/scripts/check",
+      payload: body as object,
+    });
+    await app.close();
+    return res;
+  };
+  const answering = (answer: CompileAnswer) => {
+    const asked: { scripts: readonly CrawlScript[]; names: readonly string[] }[] = [];
+    const tsCompile: TsCompile = {
+      compile: (scripts, names) => {
+        asked.push({ scripts, names });
+        return Promise.resolve(answer);
+      },
+    };
+    return { asked, tsCompile };
+  };
+
+  it("宣言を返す。名前を渡さずに訊くので、BH0001 は誤りに数えない", async () => {
+    const { asked, tsCompile } = answering({
+      ok: false,
+      typescript: "6.0.3",
+      diagnostics: [
+        { file: "inline-check.ts", line: 2, col: 7, code: "BH0001", message: "渡されていない" },
+      ],
+      declarations: [{ id: "inline-check", params: [PARAM], unreadable: false }],
+      missingVariables: ["q"],
+    });
+    const res = await check({ source: SOURCE, phase: "behavior" }, tsCompile);
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ params: [PARAM], diagnostics: [] });
+    expect(asked[0]?.names).toEqual([]);
+    // sha256 は source の本物の値 (違えば変換サービスが 409 で断る)
+    expect(asked[0]?.scripts[0]?.sha256).toBe(createHash("sha256").update(SOURCE).digest("hex"));
+    expect(asked[0]?.scripts[0]?.phase).toBe("behavior");
+  });
+
+  it("ほかの誤りは返す", async () => {
+    const diagnostic = { file: "inline-check.ts", line: 1, col: 1, code: "TS2322", message: "型" };
+    const { tsCompile } = answering({
+      ok: false,
+      typescript: "6.0.3",
+      diagnostics: [diagnostic],
+      declarations: [{ id: "inline-check", params: [], unreadable: false }],
+      missingVariables: [],
+    });
+    const res = await check({ source: "x;", phase: "preload" }, tsCompile);
+    expect(res.json()).toEqual({ params: [], diagnostics: [diagnostic] });
+  });
+
+  it("通れば誤りは空", async () => {
+    const { tsCompile } = answering({
+      ok: true,
+      typescript: "6.0.3",
+      hostTypes: "v0.11.0",
+      declarations: [{ id: "inline-check", params: [PARAM], unreadable: false }],
+    });
+    const res = await check({ source: SOURCE, phase: "behavior" }, tsCompile);
+    expect(res.json()).toEqual({ params: [PARAM], diagnostics: [] });
+  });
+
+  it("届かなければ 503", async () => {
+    const res = await check(
+      { source: "x;", phase: "behavior" },
+      { compile: () => Promise.reject(new TsCompileUnreachable("connect ECONNREFUSED")) },
+    );
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: "ts-compile unreachable" });
+  });
+
+  it("名乗りが無ければ 401、始められなければ 404 で、検査しない", async () => {
+    const { asked, tsCompile } = answering({
+      ok: true,
+      typescript: "6.0.3",
+      hostTypes: "v0",
+      declarations: [],
+    });
+    const body = { source: "x;", phase: "behavior" };
+    const none = await check(body, tsCompile, {
+      resolveIdentity: () => Promise.resolve(undefined),
+    });
+    expect(none.statusCode).toBe(401);
+    const denied = await check(body, tsCompile, { fga: fgaAnswering(false) });
+    expect(denied.statusCode).toBe(404);
+    expect(asked).toEqual([]);
+  });
+
+  it("形の違う本文は 400 で、検査しない", async () => {
+    const { asked, tsCompile } = answering({
+      ok: true,
+      typescript: "6.0.3",
+      hostTypes: "v0",
+      declarations: [],
+    });
+    expect((await check({ source: "x;", phase: "other" }, tsCompile)).statusCode).toBe(400);
+    expect((await check({ phase: "behavior" }, tsCompile)).statusCode).toBe(400);
+    expect(asked).toEqual([]);
+  });
+
+  it("窓口の無い配備では口を作らない", async () => {
+    const res = await check({ source: "x;", phase: "behavior" }, undefined);
+    expect(res.statusCode).toBe(404);
   });
 });

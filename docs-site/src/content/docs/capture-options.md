@@ -137,13 +137,15 @@ or `*`. A script with `sites` is a **site script**, and a crawl runs it only whe
 crawl's seeds is on one of those hosts. The seed's hostname is compared exactly and its port is
 ignored, so `example.com` and `www.example.com` are different hosts. A script without `sites`
 runs anywhere, as before. `sites` is part of a version, like `options`: changing it adds a
-version. The `catalog.json` format `import` reads is `capture-scripts/4` (capture-scripts v0.6.0, which
-added `params`, the declaration of [per-crawl values](#per-crawl-values)); `import` refuses older formats,
-and refuses a malformed hostname or declaration before touching the database.
+version. The `catalog.json` format `import` reads is `capture-scripts/5` (capture-scripts v0.11.0, which
+added `schema`, the shape of a variable's value, to the declaration of
+[per-crawl values](#per-crawl-values)); `import` refuses older formats, and refuses a malformed hostname or
+declaration before touching the database.
 
 The example site script in capture-scripts is `egov-law-search`, for `laws.e-gov.go.jp` (from v0.4.0). On
-[e-Gov Law Search](https://laws.e-gov.go.jp/) it searches law titles for 「セキュリティ」 (security) within the page
-and reports how many laws it found and their titles. Only a crawl seeded on e-Gov Law Search runs it by default.
+[e-Gov Law Search](https://laws.e-gov.go.jp/) it searches law titles for the word in the required variable
+`query` within the page and reports how many laws it found and their titles. Only a crawl seeded on e-Gov Law
+Search runs it by default (without `query`, the request is a 400).
 
 The rule is decided per crawl, from its seeds. A site script still runs on every page of a crawl
 it was chosen for, including pages on other hosts the crawl reaches by following links. So a site
@@ -239,8 +241,9 @@ The registered scripts' sources can be read over HTTP by whoever may start a cra
 | `GET /api/scripts/:id/versions`          | Every version of one id, newest first: `version`, `phase`, `sha256`, `sites`, `enabled`, `bytes`, `createdAt`. No source                                                                                                                                                                                                                                                                                                         |
 | `GET /api/scripts/:id/versions/:version` | One version whole: the above plus `id`, `source` and `options`. Disabled versions too, since a past crawl may have run them                                                                                                                                                                                                                                                                                                      |
 | `GET /api/host-types`                    | The newest receptacle types `import` copied: `version`, `sha256`, `createdAt`, `source`, `bytes`                                                                                                                                                                                                                                                                                                                                 |
+| `POST /api/scripts/check`                | The variable declarations and errors of a script still being written: `params`, `diagnostics` ([per-crawl values](#per-crawl-values)). Absent where no ts-compile-service address is set                                                                                                                                                                                                                                         |
 
-All four ask the crawl route's question (`can_submit` on one of the caller's organizations). No
+All of them ask the crawl route's question (`can_submit` on one of the caller's organizations). No
 identity is a 401; no permission is a 404, the same answer as an id or version that does not exist.
 A version that is not an integer of 1 or more is a 400 before anything else. `bytes` is the size in
 UTF-8. `pnpm run scripts show --version` reads through the same function as the one-version route.
@@ -285,28 +288,49 @@ Besides naming registered scripts, a `scripts` element can carry a script writte
 
 ### Per-crawl values
 
-A script can read values that differ from crawl to crawl — a search term, an account's token. It
-declares them in `catalog.json` as `params`, and `import` copies the declaration into the version
-(`GET /api/scripts` returns it as `params`; it is part of a version, like `sites`). An inline script
-can carry the same `params`. A declaration names the value, says which of the two kinds it is, whether a
-crawl must provide it, and what it is for:
+A script can read values that differ from crawl to crawl — a search term, an account's token. A variable
+is declared inside the script; a secret is declared in `params`.
+
+**Variables** are declared with `defineParams` in the source. A name without `.optional()` is required.
+
+```ts
+import { z } from "zod";
+
+const { query } = defineParams(z.object({ query: z.string().min(1).describe("法令名の検索語") }));
+```
+
+They are passed in the `POST /api/crawls` body as `variables` (name → string) and **are recorded**: pinned
+on the crawl row, sent with every level, written by BrowserHive into the archive's `settings.variables`, and
+returned by `GET /api/crawls/:id`.
+
+**The ledger asks ts-compile-service before it creates the row.** It sends the scripts and the names of the
+variables given (not the values) to `/compile`, and pins the declarations in the answer on the row. A missing
+required name is a `400 missing variables`, with no row and no run; that decision is made in one place,
+ts-compile-service (`BH0001`). A name nothing declares, and a value that does not fit the declaration (`.min`,
+`.max`, `.length`, `z.enum`), are a 400 too. An ordinary type error is not refused here: the row is created
+and the flow's compile step fails it, because a failed row is where the fix is asked for. A script whose
+declaration cannot be read (`BH0002`) also gets a row, so the same step can say why. The forms a declaration
+may take are under "Per-crawl values" in capture-scripts' README.
+
+A registered script's variables are copied into `params` in `catalog.json` as well (`GET /api/scripts` returns
+them as `params`), and the dashboard builds its fields from them:
 
 ```json
 {
   "name": "query",
   "kind": "variable",
-  "required": false,
-  "summary": "法令名の検索語。省けばソースの既定"
+  "required": true,
+  "summary": "法令名の検索語",
+  "schema": { "type": "string", "minLength": 1 }
 }
 ```
 
-**Variables** (`kind: "variable"`) are passed in the `POST /api/crawls` body as `variables` (name → string)
-and **are recorded**: pinned on the crawl row, sent with every level, written by BrowserHive into the
-archive's `settings.variables`, and returned by `GET /api/crawls/:id`. Only declared names are accepted —
-an unknown name is a 400, as is a missing `required` one. The one exception is an inline script without
-`params`: the ledger cannot know what it reads, so while one is in the list, unknown names pass.
+`POST /api/scripts/check` (`{ source, phase }` → `{ params, diagnostics }`) reads the declaration of a script
+still being written. It creates no row and takes no values. `BH0001` is left out of the errors: not having
+passed a value yet is not a mistake while you are still writing.
 
-**Secrets** (`kind: "secret"`) have no field in the body. The declaration binds the name to the Windmill
+**Secrets** (`kind: "secret"`) are declared in `params`, in `catalog.json` or alongside an inline script
+(variables cannot be written there). They have no field in the body. The declaration binds the name to the Windmill
 secret variable `f/waggle_secrets/<name>`, which someone puts there beforehand
 (`wmill variable add <value> f/waggle_secrets/<name> --secret`; capture-scheduler's docs cover where and
 how). When the crawl starts, the ledger asks Windmill — over the same URL and token as the webhook —
@@ -322,21 +346,22 @@ and a script that sends it over the network leaves it in the WARC. Before each l
 the new time).
 
 Names match `^[a-z][a-z0-9_]*$` and are at most 64 characters; a crawl takes at most 32 variables; a value
-is a string of at most 4,096 characters. A declaration never carries a default: a script reads
-`__bh.vars.<name>` (or `__bh.secrets.<name>`), gets `undefined` when nothing was passed, and falls back in
-its own source.
+is a string of at most 4,096 characters. A declaration never carries a default: an optional variable or a
+secret is `undefined` when nothing was passed, and the script falls back in its own source.
 
-| Answer                                                                  | When                                                                                            |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `400 missing variables` (`names`)                                       | A declared `required` variable was not passed                                                   |
-| `400 unknown variables` (`names`)                                       | A passed name that no script declares (unless an inline script without `params` is in the list) |
-| `400 secrets cannot be passed as variables` (`names`)                   | A passed name is declared as a secret — it would end up in the archive                          |
-| `400 conflicting params` (`names`)                                      | Two scripts declare the same name as different kinds                                            |
-| `400 invalid params` (`script`, `hint`)                                 | An inline script's `params` break the declaration rules (the same rules `import` applies)       |
-| `400 unknown secrets` (`secrets: [{ name, path, declaredBy }]`, `hint`) | A `required` secret is not in Windmill. A non-required one that is missing is simply not passed |
-| `400 not a secret variable` (`secrets`)                                 | The Windmill variable exists but is not marked secret                                           |
-| `400 secrets need the windmill webhook` (`names`)                       | A script declares a secret but this deployment's webhook URL is not a flow webhook              |
-| `503 windmill unreachable`                                              | Windmill could not be asked; nothing is started                                                 |
+| Answer                                                                  | When                                                                                                                                        |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400 missing variables` (`names`, `diagnostics`)                        | A required variable was not passed (`diagnostics` holds the `BH0001` lines and columns)                                                     |
+| `400 invalid variables` (`names`, `hint`)                               | A value does not fit the declaration (too short for `.min`, not in `z.enum`, and so on)                                                     |
+| `400 unknown variables` (`names`)                                       | A passed name that no script declares (not checked while a script whose declaration cannot be read is in the list)                          |
+| `400 secrets cannot be passed as variables` (`names`)                   | A passed name is declared as a secret — it would end up in the archive                                                                      |
+| `400 conflicting params` (`names`)                                      | Two scripts declare the same name as different kinds or different shapes                                                                    |
+| `400 invalid params` (`script`, `hint`)                                 | An inline script's `params` break the declaration rules (the same rules `import` applies); variables cannot be written there                |
+| `503 ts-compile unreachable`                                            | ts-compile-service could not be asked (its 400 and 409 count too; the log has the body, which shows a version mismatch). Nothing is started |
+| `400 unknown secrets` (`secrets: [{ name, path, declaredBy }]`, `hint`) | A `required` secret is not in Windmill. A non-required one that is missing is simply not passed                                             |
+| `400 not a secret variable` (`secrets`)                                 | The Windmill variable exists but is not marked secret                                                                                       |
+| `400 secrets need the windmill webhook` (`names`)                       | A script declares a secret but this deployment's webhook URL is not a flow webhook                                                          |
+| `503 windmill unreachable`                                              | Windmill could not be asked; nothing is started                                                                                             |
 
 None of these starts a crawl. `GET /api/crawls/:id` returns `variables` (with values) and `secrets`
 (`[{ name, path, editedAt, rotated }]`, in name order).

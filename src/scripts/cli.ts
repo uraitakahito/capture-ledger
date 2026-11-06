@@ -240,7 +240,7 @@ interface CatalogEntry {
  * 宣言 (`params`) を書ける形 (capture-scripts v0.6.0)。`/3` 以前は断る —— `params` を知らない catalog を
  * 読むと、宣言の無いスクリプトとして取り込み、変数を渡すクロールが「知らない名前」で止まる。
  */
-const CATALOG_PROFILE = "capture-scripts/4";
+const CATALOG_PROFILE = "capture-scripts/5";
 
 /** 読めた catalog か、読めなかった理由。**黙って一部だけ足さない。** */
 const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {

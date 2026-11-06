@@ -267,8 +267,10 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 `seeds` names the starting pages. Seeds follow links two levels deep by default; `maxDepth: 0` takes
 the page alone.
 
-To try a site script, seed `https://laws.e-gov.go.jp/`. Without `scripts`, the registered script `egov-law-search`
-(for `laws.e-gov.go.jp`, from capture-scripts) joins the default set and searches law titles for 「セキュリティ」 within the page
+To try a site script, seed `https://laws.e-gov.go.jp/` and add `"variables":{"query":"個人情報"}` to the body.
+Without `scripts`, the registered script `egov-law-search` (for `laws.e-gov.go.jp`, from capture-scripts) joins the
+default set and searches law titles for the word in `query` within the page. `query` is required; without it the
+answer is `400 missing variables`
 (see "Site scripts" in [Capture options](/capture-ledger/capture-options/)).
 
 To seed from the rows §4 loaded, send `-d '{"fromTargets":{}}'`. It defaults to depth 0 — take them,

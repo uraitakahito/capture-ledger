@@ -242,9 +242,9 @@ export interface CrawlScript {
   /** 何で (typescript の版)・何に向けて (受け皿の型の tag) 変換したか。`jsSha256` と一緒に写す。 */
   compiledWith?: { typescript: string; hostTypes: string };
   /**
-   * クロールごとの値の宣言 (`024`)。台帳のスクリプトは `scripts.params` の写しを必ず持ち (宣言が無ければ空)、
-   * その場の TS は頼みに `params` を添えたときだけ持つ。**宣言の無いその場の TS が 1 本でも在れば**、知らない
-   * 変数の名前を 400 にしない (`crawl/values.ts`)。flow へは渡さない (`toDispatched`)。
+   * クロールごとの値の宣言 (`024`)。変数は始めるときに ts-compile-service が source の `defineParams` から読んだ物、
+   * シークレットは `scripts.params` か頼みの `inline.params` の写し (`crawl/values.ts` の `pinDeclarations`)。
+   * 古い行には無いことがある。flow へは渡さない (`toDispatched`)。
    */
   params?: ScriptParam[];
 }
@@ -252,10 +252,18 @@ export interface CrawlScript {
 /** クロールごとの値の種類。`variable` は記録に値が残り、`secret` は名前しか残らない。 */
 export type ParamKind = "variable" | "secret";
 
+/** 変数の値の JSON Schema。鍵はこの 4 つだけ (capture-scripts の宣言の読み手が書ける物)。 */
+export interface ParamSchema {
+  type: "string";
+  minLength?: number;
+  maxLength?: number;
+  enum?: string[];
+}
+
 /**
- * スクリプトが読む、クロールごとの値の宣言 1 つ (`024`)。capture-scripts の catalog.json の `params` と、
- * その場の TS の `params` が同じ形。`name` は `^[a-z][a-z0-9_]*$` で 64 字まで (`scripts/store.ts` の
- * `VALUE_NAME`)。**既定値は持たない** —— 既定値はソースの中にだけ在り、省かれた値をスクリプトは `undefined` と読む。
+ * スクリプトが読む、クロールごとの値の宣言 1 つ (`024`)。capture-scripts の catalog.json の `params` と同じ形。
+ * `name` は `^[a-z][a-z0-9_]*$` で 64 字まで (`scripts/store.ts` の `VALUE_NAME`)。**既定値は持たない** ——
+ * 既定値はソースの中にだけ在り、省かれた値をスクリプトは `undefined` と読む。
  */
 export interface ScriptParam {
   name: string;
@@ -264,6 +272,8 @@ export interface ScriptParam {
   required: boolean;
   /** 人に見せる 1 行。catalog では空にできない。その場の TS では省ける。 */
   summary?: string;
+  /** 値の形。`variable` だけが持つ (シークレットの値を台帳は見ない)。 */
+  schema?: ParamSchema;
 }
 
 /**

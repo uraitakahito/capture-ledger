@@ -24,7 +24,7 @@ import { usdOf, type Usage } from "../claude/prices.js";
 import { attributeDiagnostics, TsCompileUnreachable, type TsCompile } from "./ts-compile.js";
 
 /** 決まりの文の版。派生の層に残し、文を変えたら上げる。 */
-export const FIX_PROMPT_VERSION = "fix/3";
+export const FIX_PROMPT_VERSION = "fix/4";
 /** 1 回の頼みの往復の上限。 */
 export const FIX_ROUNDS = 2;
 
@@ -262,6 +262,7 @@ export const systemPrompt = ({
     '- classic script として評価される。import は zod の 2 形 (import { z } from "zod" と import * as z from "zod/mini") だけで、在る物は消さず、足さない。export は書かない (module になり、ページでは黙って走らない)。',
     "- top-level の await (TS1375) には、TypeScript の文が「空の export {} を足せ」と勧めるが、従わない。全体を async の IIFE で包む。",
     "- phase が preload のスクリプトには、受け皿 __bh は無い。",
+    "- クロールごとの変数は defineParams で読む。__bh.vars は無い。defineParams を足さない。必須の変数を任意にしない (.optional() を足さない)。",
     "",
     "## 使ってはいけない形",
     "- // @ts-nocheck・@ts-ignore・@ts-expect-error・as any・: any。型の誤りは、型を正しく書くか、null を確かめて直す。",
@@ -325,6 +326,7 @@ export const fixInline = async ({
   typescript,
   hostTypes,
   tsCompile,
+  variableNames,
   model,
   rounds = FIX_ROUNDS,
 }: {
@@ -334,6 +336,8 @@ export const fixInline = async ({
   typescript: string;
   hostTypes: string;
   tsCompile: TsCompile;
+  /** クロールに渡された変数の名前。案も同じ名前で検査する。 */
+  variableNames: readonly string[];
   model: FixModel;
   rounds?: number;
 }): Promise<FixResult> => {
@@ -390,7 +394,10 @@ export const fixInline = async ({
         const candidate = { ...inline, source: applied.source, sha256: sha256(applied.source) };
         let answer;
         try {
-          answer = await tsCompile.compile(scripts.map((s) => (s.id === inlineId ? candidate : s)));
+          answer = await tsCompile.compile(
+            scripts.map((s) => (s.id === inlineId ? candidate : s)),
+            variableNames,
+          );
         } catch (err) {
           if (!(err instanceof TsCompileUnreachable)) throw err;
           return { ...common(round), kind: "unreachable", message: err.message };

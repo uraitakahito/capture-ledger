@@ -582,6 +582,22 @@ const DEFAULT_CATALOG: FakeScript[] = [
   },
 ];
 
+/** 型の検査の偽物。全部通り、宣言は `declares` の物 (スクリプトの id → 変数の宣言)。 */
+const compilesWith = (declares: Record<string, ScriptParam[]>): TsCompile => ({
+  compile: (scripts) =>
+    Promise.resolve({
+      ok: true,
+      typescript: "6.0.3",
+      hostTypes: "v0.6.0",
+      declarations: scripts.map((script) => ({
+        id: script.id,
+        params: declares[script.id] ?? [],
+        unreadable: false,
+      })),
+    }),
+});
+const compilesAll = compilesWith({});
+
 const depsWith = (opts: {
   crawls: FakeCrawl[];
   allowed: boolean;
@@ -592,7 +608,7 @@ const depsWith = (opts: {
   scripts?: FakeScript[];
   /** Windmill の変数の窓口。省けば無い配備 (シークレットを宣言したクロールは 400) */
   windmill?: WindmillVariables;
-  /** 型の検査の窓口。省けば無い配備 (取り直しの口が無い) */
+  /** 型の検査の窓口。省けば、宣言の無いスクリプトを全部通す偽物 */
   tsCompile?: TsCompile;
   /** 直す係の Claude・派生の層・月の上限。3 つ揃えば直しの口が在る */
   fixModel?: FixModel;
@@ -618,7 +634,7 @@ const depsWith = (opts: {
     // 6 つ全部を返す約束を破っても、この試験は気づかない。
     capture: parseCaptureFormats("wacz", false),
     ...(opts.windmill && { windmill: opts.windmill }),
-    ...(opts.tsCompile && { tsCompile: opts.tsCompile }),
+    tsCompile: opts.tsCompile ?? compilesAll,
     ...(opts.fixModel && { fixModel: opts.fixModel }),
     ...(opts.derivations && { derivations: opts.derivations }),
     ...(opts.claudeBudgetUsd !== undefined && { claudeBudgetUsd: opts.claudeBudgetUsd }),
@@ -1684,6 +1700,8 @@ describe("型の誤りを取り直す口", () => {
     const { asked, tsCompile } = fakeCompile({
       ok: false,
       typescript: "6.0.3",
+      declarations: [],
+      missingVariables: [],
       diagnostics: [DIAGNOSTIC],
     });
     await ask(crawls, tsCompile);
@@ -1698,6 +1716,8 @@ describe("型の誤りを取り直す口", () => {
     const { tsCompile } = fakeCompile({
       ok: false,
       typescript: "6.0.3",
+      declarations: [],
+      missingVariables: [],
       diagnostics: [DIAGNOSTIC, { file: "lib.dom.d.ts", code: "TS2300", message: "dup" }],
     });
     const res = await ask(crawls, tsCompile);
@@ -1719,7 +1739,12 @@ describe("型の誤りを取り直す口", () => {
 
   it("通る組み合わせなら、誤りは空で、受け皿の型の版も返す", async () => {
     const { crawls } = await startCapturing();
-    const { tsCompile } = fakeCompile({ ok: true, typescript: "6.0.3", hostTypes: "v0.6.0" });
+    const { tsCompile } = fakeCompile({
+      ok: true,
+      typescript: "6.0.3",
+      hostTypes: "v0.6.0",
+      declarations: [],
+    });
     const res = await ask(crawls, tsCompile);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ typescript: "6.0.3", hostTypes: "v0.6.0", diagnostics: [] });
@@ -1733,11 +1758,23 @@ describe("型の誤りを取り直す口", () => {
     expect(res.json()).toEqual({ error: "ts-compile unreachable" });
   });
 
-  it("窓口が無い配備では口を作らない", async () => {
+  it("行の変数の名前を渡して検査する", async () => {
     const { crawls } = await startCapturing();
-    const res = await ask(crawls, undefined);
-    expect(res.statusCode).toBe(404);
-    expect(res.json()).not.toHaveProperty("diagnostics");
+    crawls[0]!.variables = { query: "個人情報" };
+    const names: (readonly string[])[] = [];
+    const tsCompile: TsCompile = {
+      compile: (_scripts, variableNames) => {
+        names.push(variableNames);
+        return Promise.resolve({
+          ok: true,
+          typescript: "6.0.3",
+          hostTypes: "v0.6.0",
+          declarations: [],
+        });
+      },
+    };
+    await ask(crawls, tsCompile);
+    expect(names).toEqual([["query"]]);
   });
 
   it("許可の無い名乗りにも、無いクロールにも 404（ts-compile は呼ばない）", async () => {
@@ -1746,6 +1783,7 @@ describe("型の誤りを取り直す口", () => {
       ok: true,
       typescript: "6.0.3",
       hostTypes: "v0.6.0",
+      declarations: [],
     });
     expect((await ask(crawls, tsCompile, { allowed: false })).statusCode).toBe(404);
     expect((await ask(crawls, tsCompile, { id: UUID })).statusCode).toBe(404);
@@ -1753,7 +1791,12 @@ describe("型の誤りを取り直す口", () => {
   });
 
   it("id の綴りが違えば、許可を見る前に 400", async () => {
-    const { tsCompile } = fakeCompile({ ok: true, typescript: "6.0.3", hostTypes: "v0.6.0" });
+    const { tsCompile } = fakeCompile({
+      ok: true,
+      typescript: "6.0.3",
+      hostTypes: "v0.6.0",
+      declarations: [],
+    });
     const app = await buildApp({ ...unreachableDeps, tsCompile });
     const res = await app.inject({ method: "GET", url: "/api/crawls/not-a-uuid/diagnostics" });
     await app.close();
@@ -1775,6 +1818,8 @@ describe("直しの口", () => {
   const BROKEN: CompileAnswer = {
     ok: false,
     typescript: "6.0.3",
+    declarations: [],
+    missingVariables: [],
     diagnostics: [
       {
         file: "inline-press.ts",
@@ -1785,7 +1830,12 @@ describe("直しの口", () => {
       },
     ],
   };
-  const PASSES: CompileAnswer = { ok: true, typescript: "6.0.3", hostTypes: "v0.6.0" };
+  const PASSES: CompileAnswer = {
+    ok: true,
+    typescript: "6.0.3",
+    hostTypes: "v0.6.0",
+    declarations: [],
+  };
 
   const reply = (output: FixOutput | null): FixReply => ({
     output,
@@ -1907,7 +1957,7 @@ describe("直しの口", () => {
       crawlId: crawls[0]!.id,
       target: { crawlId: crawls[0]!.id, inline: "press" },
       model: "claude-opus-5-5",
-      promptVersion: "fix/3",
+      promptVersion: "fix/4",
       effort: "medium",
       rounds: 1,
       createdBy: "alice",
@@ -1925,6 +1975,27 @@ describe("直しの口", () => {
     expect(f.rows).toHaveLength(0);
   });
 
+  it("必須の変数が足りないだけなら 422 で、Claude を呼ばない", async () => {
+    const crawls = await startWithInline();
+    const f = fakes({
+      compile: [
+        {
+          ok: false,
+          typescript: "6.0.3",
+          diagnostics: [
+            { file: "inline-press.ts", line: 2, col: 7, code: "BH0001", message: "渡されていない" },
+          ],
+          declarations: [],
+          missingVariables: ["query"],
+        },
+      ],
+    });
+    const res = await askFix(crawls, f);
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toMatchObject({ error: "missing variables", names: ["query"] });
+    expect(f.rows).toHaveLength(0);
+  });
+
   it("誤りが台帳のスクリプトにだけなら 422 で、Claude を呼ばない", async () => {
     const crawls = await startWithInline();
     const f = fakes({
@@ -1932,6 +2003,8 @@ describe("直しの口", () => {
         {
           ok: false,
           typescript: "6.0.3",
+          declarations: [],
+          missingVariables: [],
           diagnostics: [{ file: "autoscroll.ts", line: 1, col: 1, code: "TS2304", message: "x" }],
         },
       ],
@@ -2382,6 +2455,27 @@ describe("クロールごとの値（変数とシークレット）", () => {
   };
   const PATH = "f/waggle_secrets/api_token";
   const EDITED = "2026-11-01T07:00:00.000000Z";
+  /** ts-compile-service が source から読む、変数の宣言の偽物。 */
+  const DECLARED = compilesWith({
+    "egov-law-search": [
+      {
+        name: "query",
+        kind: "variable",
+        required: false,
+        summary: "検索語",
+        schema: { type: "string", minLength: 1 },
+      },
+    ],
+    "members-only": [
+      {
+        name: "lang",
+        kind: "variable",
+        required: true,
+        summary: "言語",
+        schema: { type: "string", enum: ["ja", "en"] },
+      },
+    ],
+  });
 
   /** Windmill の偽物。在る path とその答え。訊いた順を記録する */
   const windmillWith = (
@@ -2404,7 +2498,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
 
   const start = async (
     payload: Record<string, unknown>,
-    opts: { windmill?: WindmillVariables; scripts?: FakeScript[] } = {},
+    opts: { windmill?: WindmillVariables; scripts?: FakeScript[]; tsCompile?: TsCompile } = {},
   ) => {
     const crawls: FakeCrawl[] = [];
     const sent: DispatchedCrawl[] = [];
@@ -2413,6 +2507,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
         crawls,
         allowed: true,
         scripts: opts.scripts ?? [...DEFAULT_CATALOG, EGOV, MEMBERS],
+        tsCompile: opts.tsCompile ?? DECLARED,
         dispatch: (crawl) => {
           sent.push(crawl);
           return Promise.resolve(undefined);
@@ -2581,13 +2676,144 @@ describe("クロールごとの値（変数とシークレット）", () => {
     expect(sent).toEqual([]);
   });
 
-  it("required の変数が無ければ 400 missing variables", async () => {
-    const { res } = await start(
+  it("必須の変数が足りなければ compile の答えで 400 missing variables と BH0001 を返し、行は立たず webhook も飛ばない", async () => {
+    const names: (readonly string[])[] = [];
+    const bh0001 = {
+      file: "members-only.ts",
+      line: 3,
+      col: 7,
+      code: "BH0001",
+      message: "必須の変数 lang が渡されていない",
+    };
+    const { res, crawls, sent } = await start(
       { seeds: [SEED], scripts: [{ catalog: "members-only" }] },
-      { windmill: windmillWith({ [PATH]: { isSecret: true, editedAt: EDITED } }) },
+      {
+        tsCompile: {
+          compile: (_scripts, variableNames) => {
+            names.push(variableNames);
+            return Promise.resolve({
+              ok: false,
+              typescript: "6.0.3",
+              diagnostics: [bh0001, { ...bh0001, code: "TS2322", message: "ほかの型の誤り" }],
+              declarations: [],
+              missingVariables: ["lang"],
+            });
+          },
+        },
+      },
     );
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: "missing variables", names: ["lang"] });
+    expect(res.json()).toEqual({
+      error: "missing variables",
+      names: ["lang"],
+      diagnostics: [bh0001],
+    });
+    expect(names).toEqual([[]]);
+    expect(crawls).toHaveLength(0);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("compile に送るのは名前だけで、値は送らない。スクリプトが空なら訊かない", async () => {
+    const asked: (readonly string[])[] = [];
+    const bodies: string[] = [];
+    const tsCompile: TsCompile = {
+      compile: (scripts, variableNames) => {
+        asked.push(variableNames);
+        bodies.push(JSON.stringify(scripts));
+        return DECLARED.compile(scripts, variableNames);
+      },
+    };
+    const secret = "the-value-of-query";
+    await start(
+      {
+        seeds: [SEED],
+        scripts: [{ catalog: "egov-law-search" }],
+        variables: { query: secret },
+      },
+      { tsCompile },
+    );
+    expect(asked).toEqual([["query"]]);
+    expect(bodies.join("")).not.toContain(secret);
+
+    asked.length = 0;
+    const none = await start({ seeds: [SEED], scripts: [] }, { tsCompile });
+    expect(none.res.statusCode).toBe(202);
+    expect(asked).toEqual([]);
+  });
+
+  it("compile に届かなければ 503 ts-compile unreachable で、行は立たない", async () => {
+    const { res, crawls, sent } = await start(
+      { seeds: [SEED], scripts: [{ catalog: "egov-law-search" }] },
+      {
+        tsCompile: {
+          compile: () => Promise.reject(new TsCompileUnreachable("connect ECONNREFUSED")),
+        },
+      },
+    );
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: "ts-compile unreachable" });
+    expect(crawls).toHaveLength(0);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("ふつうの型の誤りは断らない —— 行を立て、flow の compile の段で落ちた行から直し方を訊く", async () => {
+    const { res, crawls, sent } = await start(
+      {
+        seeds: [SEED],
+        scripts: [
+          { inline: { name: "broken", phase: "behavior", source: "const n: number = 'x';" } },
+        ],
+      },
+      {
+        tsCompile: {
+          compile: () =>
+            Promise.resolve({
+              ok: false,
+              typescript: "6.0.3",
+              diagnostics: [
+                { file: "inline-broken.ts", line: 1, col: 7, code: "TS2322", message: "型が違う" },
+              ],
+              declarations: [{ id: "inline-broken", params: [], unreadable: false }],
+              missingVariables: [],
+            }),
+        },
+      },
+    );
+    expect(res.statusCode).toBe(202);
+    expect(crawls).toHaveLength(1);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("答えの宣言を行に固定し、値を形に照らす", async () => {
+    const started = await start({
+      seeds: [SEED],
+      scripts: [{ catalog: "egov-law-search" }],
+      variables: { query: "x" },
+    });
+    expect(started.res.statusCode).toBe(202);
+    // 行に残る宣言は catalog の写しでなく、source から読んだ物 (minLength は DECLARED にだけ在る)
+    expect(started.crawls[0]?.scripts[0]?.params).toEqual([
+      {
+        name: "query",
+        kind: "variable",
+        required: false,
+        summary: "検索語",
+        schema: { type: "string", minLength: 1 },
+      },
+    ]);
+
+    const empty = await start({
+      seeds: [SEED],
+      scripts: [{ catalog: "egov-law-search" }],
+      variables: { query: "" },
+    });
+    expect(empty.res.statusCode).toBe(400);
+    expect(empty.res.json()).toEqual({
+      error: "invalid variables",
+      names: ["query"],
+      hint: "query は 1 字以上",
+    });
+    expect(empty.crawls).toHaveLength(0);
   });
 
   it("宣言した secret は exists → get の順に Windmill に訊き、在れば path と更新時刻を行に固定し、段の本文には名前 → path を載せる", async () => {
@@ -2683,56 +2909,72 @@ describe("クロールごとの値（変数とシークレット）", () => {
   });
 
   it("その場の TS の宣言は catalog と同じ決まりで読む: 重複は 400 invalid params、required の既定は false で写す", async () => {
-    const twice = await start({
+    const inline = (params: unknown) => ({
       seeds: [SEED],
-      scripts: [
-        {
-          inline: {
-            name: "probe",
-            phase: "behavior",
-            source: "x;",
-            params: [
-              { name: "q", kind: "variable" },
-              { name: "q", kind: "secret" },
-            ],
-          },
-        },
-      ],
+      scripts: [{ inline: { name: "probe", phase: "behavior", source: "x;", params } }],
     });
+    const twice = await start(
+      inline([
+        { name: "t", kind: "secret" },
+        { name: "t", kind: "secret" },
+      ]),
+      { windmill: windmillWith({}) },
+    );
     expect(twice.res.statusCode).toBe(400);
     expect(twice.res.json()).toMatchObject({ error: "invalid params", script: "inline-probe" });
-    expect(twice.res.json<{ hint: string }>().hint).toContain("q が 2 度ある");
 
-    const { crawls } = await start({
-      seeds: [SEED],
-      scripts: [
-        {
-          inline: {
-            name: "probe",
-            phase: "behavior",
-            source: "x;",
-            params: [{ name: "probe", kind: "variable" }],
-          },
-        },
-      ],
-      variables: { probe: "x" },
+    const { crawls } = await start(inline([{ name: "t", kind: "secret" }]), {
+      windmill: windmillWith({}),
     });
-    expect(crawls[0]?.scripts[0]?.params).toEqual([
-      { name: "probe", kind: "variable", required: false },
-    ]);
+    expect(crawls[0]?.scripts[0]?.params).toEqual([{ name: "t", kind: "secret", required: false }]);
   });
 
-  it("宣言を添えないその場の TS が混ざれば、知らない名前も通して行に固定する", async () => {
+  it("その場の TS の params に変数は書けない —— 変数の宣言の正は source の defineParams", async () => {
     const { res, crawls } = await start({
       seeds: [SEED],
       scripts: [
-        { catalog: "egov-law-search" },
-        { inline: { name: "probe", phase: "behavior", source: "x;" } },
+        {
+          inline: {
+            name: "probe",
+            phase: "behavior",
+            source: "x;",
+            params: [{ name: "q", kind: "variable" }],
+          },
+        },
       ],
-      variables: { anything: "goes" },
     });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toMatchObject({
+      error: "invalid params",
+      script: "inline-probe",
+      hint: expect.stringContaining("defineParams") as string,
+    });
+    expect(crawls).toHaveLength(0);
+  });
+
+  it("宣言を読めないスクリプトが在れば、知らない名前も通して行を立てる —— 理由は flow の compile の段が BH0002 で言う", async () => {
+    const { res, crawls } = await start(
+      {
+        seeds: [SEED],
+        scripts: [{ inline: { name: "probe", phase: "behavior", source: "x;" } }],
+        variables: { anything: "goes" },
+      },
+      {
+        tsCompile: {
+          compile: () =>
+            Promise.resolve({
+              ok: false,
+              typescript: "6.0.3",
+              diagnostics: [
+                { file: "inline-probe.ts", line: 1, col: 1, code: "BH0002", message: "読めない" },
+              ],
+              declarations: [{ id: "inline-probe", params: [], unreadable: true }],
+              missingVariables: [],
+            }),
+        },
+      },
+    );
     expect(res.statusCode).toBe(202);
     expect(crawls[0]?.variables).toEqual({ anything: "goes" });
-    expect(crawls[0]?.scripts[1]).not.toHaveProperty("params");
   });
 });

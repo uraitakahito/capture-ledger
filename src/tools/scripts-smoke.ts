@@ -180,7 +180,7 @@ try {
   writeFileSync(
     join(dir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/4",
+      profile: "capture-scripts/5",
       scripts: [
         {
           id: imported,
@@ -240,7 +240,7 @@ try {
     writeFileSync(
       join(orderDir, "catalog.json"),
       JSON.stringify({
-        profile: "capture-scripts/4",
+        profile: "capture-scripts/5",
         scripts: ids.map((script) => ({
           id: script,
           phase: "behavior",
@@ -293,7 +293,7 @@ try {
   writeFileSync(
     join(offDir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/4",
+      profile: "capture-scripts/5",
       scripts: [
         {
           id: imported,
@@ -343,7 +343,7 @@ try {
   writeFileSync(
     join(badDir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/4",
+      profile: "capture-scripts/5",
       scripts: [
         {
           id: `${id}-bad`,
@@ -367,13 +367,19 @@ try {
   const withParams = join(work, "params-scripts");
   mkdirSync(join(withParams, "scripts"), { recursive: true });
   const declared = [
-    { name: "query", kind: "variable", required: false, summary: "検索語" },
+    {
+      name: "query",
+      kind: "variable",
+      required: false,
+      summary: "検索語",
+      schema: { type: "string", minLength: 1 },
+    },
     { name: "api_token", kind: "secret", required: true, summary: "鍵" },
   ];
   writeFileSync(
     join(withParams, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/4",
+      profile: "capture-scripts/5",
       scripts: [
         {
           id: withDecl,
@@ -423,7 +429,7 @@ try {
   writeFileSync(
     join(withParams, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/4",
+      profile: "capture-scripts/5",
       scripts: [
         {
           id: withDecl,
@@ -448,7 +454,7 @@ try {
   writeFileSync(
     join(badParams, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/4",
+      profile: "capture-scripts/5",
       scripts: [
         {
           id: `${id}-badp`,
@@ -480,7 +486,7 @@ try {
   run = cli(["import", oldProfile]);
   check(
     "024: import は /3 の catalog を断る (宣言を知らない形)",
-    run.status === 1 && run.stderr.includes("capture-scripts/4 ではない"),
+    run.status === 1 && run.stderr.includes("capture-scripts/5 ではない"),
     why(run),
   );
 

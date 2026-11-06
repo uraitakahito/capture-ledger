@@ -119,9 +119,11 @@ const start = async (options: ServerOptions): Promise<void> => {
 
   registerRoutes(app, { db, fga, s3, resolveIdentity });
   registerMeRoute(app, { fga, resolveIdentity });
+  // 型の検査の窓口 (ts-compile-service を host の loopback で)。クロールの口とスクリプトの口の両方が使う
+  const tsCompile = createTsCompile();
   // 何が走るかを、**頼む前に**訊ける口。webhook の設定が無い配備でも出す ——
   // 台帳にスクリプトが無いことは、クロールを始められるかどうかとは別の問いなので。
-  registerScriptsRoute(app, { db, fga, resolveIdentity });
+  registerScriptsRoute(app, { db, fga, resolveIdentity, ...(tsCompile && { tsCompile }) });
 
   // 成果物の受け口。**BrowserHive が保管庫を持たずに済むための口。**
   //
@@ -186,23 +188,15 @@ const start = async (options: ServerOptions): Promise<void> => {
           "crawls whose scripts declare secrets are refused",
       );
     }
-    // 型の検査の窓口 (ts-compile-service を host の loopback で)。無ければ取り直しの口を出さない ——
-    // その配備に取り直しは無い、が正しい答えなので 404。
-    const tsCompile = createTsCompile();
+    // **クロールを始めるには型の検査の窓口が要る。** 始める口が、必須の変数が渡されているかをここに訊く。
+    // 無ければ起動で止める (黙って飛ばすと、必須を渡さないクロールが flow まで進んでから落ちる)。
     if (tsCompile === undefined) {
-      logger.info(
-        "CAPTURE_LEDGER_TS_COMPILE_URL is not set — /api/crawls/:id/diagnostics is not served",
-      );
-    }
-    // 直す係の Claude。案は型の検査に通してから返すので、ts-compile の宛先も要る —— 鍵だけでは起動で止める
-    // (黙って口を出さないと、鍵を置いた人は「直し方を訊く」が無い理由を探すことになる)。
-    const fixModel = createFixModel();
-    if (fixModel !== undefined && tsCompile === undefined) {
       throw new Error(
-        "CAPTURE_LEDGER_ANTHROPIC_API_KEY needs CAPTURE_LEDGER_TS_COMPILE_URL " +
-          "(a proposed fix is checked by ts-compile-service before it is shown)",
+        "CAPTURE_LEDGER_CRAWL_WEBHOOK_URL needs CAPTURE_LEDGER_TS_COMPILE_URL " +
+          "(POST /api/crawls asks ts-compile-service whether the required variables are given)",
       );
     }
+    const fixModel = createFixModel();
     if (fixModel === undefined) {
       logger.info(
         "CAPTURE_LEDGER_ANTHROPIC_API_KEY is not set — /api/crawls/:id/inline/:name/fix is not served",
@@ -217,7 +211,7 @@ const start = async (options: ServerOptions): Promise<void> => {
       dispatch,
       ...(sink && { sink }),
       ...(windmill && { windmill }),
-      ...(tsCompile && { tsCompile }),
+      tsCompile,
       ...(fixModel && {
         fixModel,
         derivations: derivationStoreOf(db),
