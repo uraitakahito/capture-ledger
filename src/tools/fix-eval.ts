@@ -52,6 +52,11 @@ const SAMPLES: readonly Sample[] = [
     others: [["step-catalog", "const step = 2;\nvoid step;\n"]],
   },
   {
+    name: "zod の import を持つ TS の型の誤り (TS2322。import を消させない)",
+    inline:
+      'import { z } from "zod";\n\n(async () => {\n  const n: number = z.string().parse(document.title);\n  globalThis.__bh.report({ n });\n})();\n',
+  },
+  {
     name: "DOM の型の食い違い (TS2339。as any で黙らせさせない)",
     inline:
       '(() => {\n  const field = document.querySelector(".search");\n  if (field) field.value = "x";\n})();\n',

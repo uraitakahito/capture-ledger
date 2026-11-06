@@ -270,9 +270,15 @@ Besides naming registered scripts, a `scripts` element can carry a script writte
 - **It must type-check as strict TypeScript.** Each level starts with ts-compile-service checking it
   together with the registered scripts, and a single error fails the level (the first diagnostics end up in
   `error`, cut to the ledger's 2,000 characters; `GET /api/crawls/:id/diagnostics` re-reads them all). Wrap it in an IIFE: scripts of one level are checked as one program, so top-level names
-  clash with each other and with DOM globals such as `name`. An `export` type-checks but is a syntax
-  error in the page, where nothing then runs. To skip the type check, start with `// @ts-nocheck`
-  (syntax is still checked).
+  clash with each other and with DOM globals such as `name`. An `export` fails the level with `BH0006`,
+  because it would be a syntax error in the page, where nothing then runs. To skip the type check,
+  start with `// @ts-nocheck` (syntax is still checked).
+- **It can read [Zod](https://zod.dev/).** Start with `import { z } from "zod"` or
+  `import * as z from "zod/mini"`. ts-compile-service bundles only the names in use into the
+  JavaScript, which adds about 85 KB per script (15 KB for `zod/mini`), and `behaviors/custom.jsonl`
+  in the WACZ keeps it at that size. A crawl still succeeds when a value has the wrong shape, so use
+  `safeParse` and `__bh.log.error` rather than `parse`. `preload` cannot use it (`BH0004`).
+  capture-scripts' README has the details under "Zod".
 - **The whole `POST /api/crawls` body is at most 1 MiB.** A larger one is a 413 before
   anything is checked.
 - **`preload` has no host object (`__bh`).** The types show it; the page does not have it.

@@ -253,9 +253,14 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
   台帳のスクリプトと一緒に型を検査し、1 本でも誤りがあれば段ごと落ちます（`error` に最初の診断が、台帳の上限の 2,000 字まで残ります。
   全部を読み直すのは `GET /api/crawls/:id/diagnostics`）。
   IIFE で包んでください。同じ段のスクリプトは 1 つの program で検査されるので、top-level の名前は
-  ほかのスクリプトや DOM の大域（`name` など）とぶつかります。`export` を書くと型は通りますが、
-  ページでは構文エラーになり、何も走りません。型の検査を外すなら、1 行目に `// @ts-nocheck`
+  ほかのスクリプトや DOM の大域（`name` など）とぶつかります。`export` は `BH0006` で段ごと落ちます
+  （ページでは構文エラーになり、何も走らないためです）。型の検査を外すなら、1 行目に `// @ts-nocheck`
   （構文は見ます）。
+- **[Zod](https://zod.dev/) を読めます。** 先頭の文に `import { z } from "zod"` か `import * as z from "zod/mini"`
+  を書きます。ts-compile-service が使う名前だけを JS に束ねるので、スクリプトごとに 85 KB ほど増え（`zod/mini` は
+  15 KB）、WACZ の `behaviors/custom.jsonl` にもその大きさで残ります。形が合わなくてもクロールは成功のままなので、
+  `parse` より `safeParse` と `__bh.log.error` を使います。`preload` では使えません（`BH0004`）。
+  書き方は capture-scripts の README の「Zod」。
 - **`POST /api/crawls` の本文は、全体で 1 MiB までです。** 超えると、何かを検査する前に 413 で断ります。
 - **`preload` には受け皿（`__bh`）がありません。** 型の上では見えますが、ページには在りません。
 

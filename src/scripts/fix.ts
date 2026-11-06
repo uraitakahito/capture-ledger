@@ -24,7 +24,7 @@ import { usdOf, type Usage } from "../claude/prices.js";
 import { attributeDiagnostics, TsCompileUnreachable, type TsCompile } from "./ts-compile.js";
 
 /** 決まりの文の版。派生の層に残し、文を変えたら上げる。 */
-export const FIX_PROMPT_VERSION = "fix/2";
+export const FIX_PROMPT_VERSION = "fix/3";
 /** 1 回の頼みの往復の上限。 */
 export const FIX_ROUNDS = 2;
 
@@ -259,7 +259,7 @@ export const systemPrompt = ({
     "## 型の検査の条件",
     `- TypeScript ${typescript}、strict。lib は ES の最新と DOM で、dom.iterable は無い (NodeList は Array.from で配列にする)。`,
     "- 一緒に走るスクリプトと 1 つの program として検査される。top-level の名前は互いにぶつかり、DOM の大域 (name・close・status・origin・length など) ともぶつかる。全体を IIFE で包むのがいちばん安全。",
-    "- classic script として評価される。import と export を書かない (module になり、ページでは黙って走らない)。",
+    '- classic script として評価される。import は zod の 2 形 (import { z } from "zod" と import * as z from "zod/mini") だけで、在る物は消さず、足さない。export は書かない (module になり、ページでは黙って走らない)。',
     "- top-level の await (TS1375) には、TypeScript の文が「空の export {} を足せ」と勧めるが、従わない。全体を async の IIFE で包む。",
     "- phase が preload のスクリプトには、受け皿 __bh は無い。",
     "",
