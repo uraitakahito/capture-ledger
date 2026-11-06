@@ -1902,7 +1902,7 @@ describe("直しの口", () => {
       crawlId: crawls[0]!.id,
       target: { crawlId: crawls[0]!.id, inline: "press" },
       model: "claude-opus-5-5",
-      promptVersion: "fix/2",
+      promptVersion: "fix/3",
       effort: "medium",
       rounds: 1,
       createdBy: "alice",
