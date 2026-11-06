@@ -262,6 +262,8 @@ interface FakeCrawl {
   /** クロールごとの値 (`024`)。本物の行は必ず持つ (NOT NULL DEFAULT) */
   variables: Record<string, string>;
   secrets: Record<string, CrawlSecret>;
+  /** 頼まれた User-Agent (`031`)。本物の行は必ず持つ (nullable なだけ)。 */
+  userAgent: string | null;
 }
 
 /** `scripts` の 1 行。解決の並びと、見つからない id の扱いを見るのに要る欄だけ。 */
@@ -922,6 +924,7 @@ describe("クロール route の認可と単一実行", () => {
       },
     ],
     variables: {},
+    userAgent: null,
     secrets: {},
   };
 
@@ -1011,6 +1014,7 @@ describe("クロール route の認可と単一実行", () => {
       ...NO_REPLAY_BUNDLE,
       scripts: [],
       variables: {},
+      userAgent: null,
       secrets: {},
     } satisfies FakeCrawl;
     const app = await buildApp(depsWith({ crawls: [crawl], allowed: true }));
@@ -1050,6 +1054,7 @@ describe("クロール route の認可と単一実行", () => {
       replayBundleSignError: null,
       scripts: [],
       variables: {},
+      userAgent: null,
       secrets: {},
     } satisfies FakeCrawl;
     const app = await buildApp(depsWith({ crawls: [crawl], allowed: true }));
@@ -2019,6 +2024,7 @@ describe("クロールの一覧", () => {
     ...NO_REPLAY_BUNDLE,
     scripts: [],
     variables: {},
+    userAgent: null,
     secrets: {},
     ...over,
   });
@@ -2500,6 +2506,67 @@ describe("クロールごとの値（変数とシークレット）", () => {
     expect(crawls[0]?.variables).toEqual({ query: "個人情報" });
     expect(sent[0]).toMatchObject({ variables: { query: "個人情報" }, secrets: {} });
     expect(await read(crawls)).toMatchObject({ variables: { query: "個人情報" }, secrets: [] });
+  });
+
+  it("頼まれた User-Agent は、解かずに行と段の本文に載り、GET が返す", async () => {
+    const { res, crawls, sent } = await start({ seeds: [SEED], userAgent: "{chrome} BrowserHive" });
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.userAgent).toBe("{chrome} BrowserHive");
+    expect(sent[0]).toMatchObject({ userAgent: "{chrome} BrowserHive" });
+    expect(await read(crawls)).toMatchObject({ userAgent: "{chrome} BrowserHive" });
+  });
+
+  it("User-Agent を省けば、行は null で、段の本文には空の字を載せる", async () => {
+    const { res, crawls, sent } = await start({ seeds: [SEED] });
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.userAgent).toBeNull();
+    expect(sent[0]).toMatchObject({ userAgent: "" });
+    expect(await read(crawls)).toMatchObject({ userAgent: null });
+  });
+
+  it("空白だけの User-Agent は省くのと同じ。前後の空白は落とす", async () => {
+    const blank = await start({ seeds: [SEED], userAgent: "   " });
+    expect(blank.res.statusCode).toBe(202);
+    expect(blank.crawls[0]?.userAgent).toBeNull();
+    const padded = await start({ seeds: [SEED], userAgent: " Probe/1 BrowserHive " });
+    expect(padded.crawls[0]?.userAgent).toBe("Probe/1 BrowserHive");
+  });
+
+  it.each([
+    [
+      "日本語",
+      "クローラー BrowserHive",
+      "userAgent must be printable ASCII, at most 512 characters",
+    ],
+    [
+      "改行",
+      "a\r\nX-Injected: BrowserHive",
+      "userAgent must be printable ASCII, at most 512 characters",
+    ],
+    [
+      "513 字",
+      `${"x".repeat(501)} BrowserHive`,
+      "userAgent must be printable ASCII, at most 512 characters",
+    ],
+    ["BrowserHive が無い", "curl/8.0", "userAgent must contain BrowserHive"],
+    ["BrowserHive が語でない", "NotBrowserHiveAtAll", "userAgent must contain BrowserHive"],
+  ])(
+    "User-Agent が%sなら読める文で 400。行を作らず flow を呼ばない",
+    async (_name, userAgent, error) => {
+      const { res, crawls, sent } = await start({ seeds: [SEED], userAgent });
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toEqual({ error });
+      expect(crawls).toEqual([]);
+      expect(sent).toEqual([]);
+    },
+  );
+
+  it("User-Agent は 512 字まで受ける", async () => {
+    const userAgent = `${"x".repeat(500)} BrowserHive`;
+    expect(userAgent).toHaveLength(512);
+    const { res, crawls } = await start({ seeds: [SEED], userAgent });
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.userAgent).toBe(userAgent);
   });
 
   it("宣言の無い名前は 400 unknown variables で名指し、行は立たない", async () => {

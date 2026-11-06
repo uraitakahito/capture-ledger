@@ -144,6 +144,11 @@ export interface CrawlsTable {
    */
   variables: ColumnType<Record<string, string>, string, never>;
   /**
+   * 頼まれた User-Agent (`031`)。打った字のままで、`{chrome}` は解かない。`null` は「指定なし」。
+   * 段ごとに flow へ運ばれる。後から書き換えない。
+   */
+  userAgent: ColumnType<string | null, string | null, never>;
+  /**
    * 宣言で結んだシークレット (名前 → path と `edited_at`。`024`)。**値は持たない** —— 解くのは flow の
    * `crawl_host` で、台帳が持つのは Windmill の変数の path と、始めたときの更新時刻だけ。段を送るたびに読み直し、
    * 変わっていれば `rotated` を書き足す (`CrawlSecret`)。

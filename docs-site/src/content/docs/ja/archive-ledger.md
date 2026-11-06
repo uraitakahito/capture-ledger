@@ -277,7 +277,7 @@ dispatch が途中で死んだクロールの行も `running` のまま残り、
 どちらも無くても 400** で、この 2 つは別の間違いなので言い分を分けてある。ほかに
 `rules` / `maxDepth` / `maxPages` / `perHostDelayMs` / `hostParallelism` / `scripts`（ページで
 走らせるもの）/ `variables`（スクリプトが宣言した、クロールごとの値。
-[キャプチャオプション](/capture-ledger/ja/capture-options/#クロールごとの値)を参照）。
+[キャプチャオプション](/capture-ledger/ja/capture-options/#クロールごとの値)を参照）/ `userAgent`（同じ頁を参照）。
 知らない鍵は**黙って落とさず** **400**。
 
 取り込む形式は意図して受けない —— それは「この配備が何をするか」の一部であって、

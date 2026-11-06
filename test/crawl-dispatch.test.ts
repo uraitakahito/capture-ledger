@@ -37,6 +37,7 @@ const CRAWL: DispatchedCrawl = {
   ],
   variables: { query: "個人情報" },
   secrets: { api_token: "f/waggle_secrets/api_token" },
+  userAgent: "{chrome} BrowserHive",
 };
 
 const SINK = {
@@ -75,6 +76,7 @@ describe("webhook の本文", () => {
       artifact_sink: SINK,
       variables: CRAWL.variables,
       secrets: CRAWL.secrets,
+      user_agent: CRAWL.userAgent,
     });
   });
 
@@ -91,6 +93,10 @@ describe("webhook の本文", () => {
    * クロールごとの値も **空でも送る**。flow の省いた入力は null で届くので、鍵ごと落とすと crawl_host が
    * 「無い」を 2 通り（null と {}）読み分けることになる。形を 1 つに保つ。
    */
+  it("頼まれた User-Agent が無ければ、空の字を鍵ごと送る（省くと crawl_host が null を受けて投げる）", () => {
+    expect(flowArgs({ ...CRAWL, userAgent: "" })).toMatchObject({ user_agent: "" });
+  });
+
   it("変数もシークレットも空なら、空の object を鍵ごと送る", () => {
     expect(flowArgs({ ...CRAWL, variables: {}, secrets: {} })).toMatchObject({
       variables: {},
