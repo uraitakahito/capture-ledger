@@ -64,7 +64,7 @@ describe("撮る対象を足す", () => {
     expect(queries[2]?.parameters).toEqual(["https://site.test/", "acme", []]);
   });
 
-  it("札を渡せば、足す行に付ける", async () => {
+  it("ラベルを渡せば、足す行に付ける", async () => {
     const { db, queries } = recordingDb([[], [{ id: "8", url: "https://other-site.test/" }]]);
 
     await addTargets(db, { orgId: "acme", urls: ["https://other-site.test/"], labels: ["demo"] });
