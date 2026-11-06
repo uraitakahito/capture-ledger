@@ -1,5 +1,5 @@
 /**
- * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 5 つ。
+ * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 6 つ。
  *
  * ## なぜ要るのか
  *
@@ -23,6 +23,10 @@
  *   そろえた。`scripts[].inline.source` は compile の段で strict の TypeScript として検査されるのに、JS と名乗って
  *   いた。JS になるのは変換の後なので、走った JS・変換後の JS・`jsSha256` はそのまま（dashboard と
  *   capture-scheduler も見張っている）
+ * - **スクリプトの `sites` は「対象サイト」と書く。** 2026-11 に「札」からそろえた（docs・コメント・試験の
+ *   名前・CLI の答えで 100 行あまり）。「札」は tag を 1 字で写した書き手の癖で、読み手に通じない。同じ字で
+ *   書いていた `labels` は「ラベル」、BrowserHive の `correlationId` は「相関キー」（browserhive・dashboard・
+ *   capture-scheduler も見張っている）
  *
  * 書き手（人と Claude）は長くこの形で書いてきたので、見張らなければ戻ってくる。
  *
@@ -36,6 +40,7 @@
  * - 「網」: 熟語（安全網・網羅）の外に立つ「網」。browserhive の契約の写し（src/rpc/generated/）も
  *   見る —— 写しに残っていれば、pin の先の browserhive がまだ直っていないということ
  * - 「その場の JS」: 形の並び（OLD_INLINE。dashboard・capture-scheduler と同じ並び）
+ * - 「札」: 全部。browserhive の契約の写しに残る 1 つの文だけ許す（FUDA_ALLOWED）
  *
  * ## 見ないもの
  *
@@ -69,6 +74,12 @@ const AMI_ALLOWED = /安全網|網羅/gu;
 const OLD_INLINE =
   /その場の JS|その場で書いた JS|JS の名前|JS の箱|書きかけの JS|この JS の id|その JS の id|\binline JS\b/u;
 
+/**
+ * 「札」のうち許す文。browserhive の契約の写し（src/rpc/generated/）の `labels` の説明で、pin の先の
+ * browserhive v27.0.0 がまだこう書いている。browserhive の次の版を取り込むと消えるので、そのときこの形も消す。
+ */
+const FUDA_ALLOWED = /成果物のファイル名に入る札/gu;
+
 interface Rule {
   find: (line: string) => boolean;
   say: string;
@@ -87,7 +98,7 @@ const RULES: Rule[] = [
     find: (line) => line.includes("目録") || line.includes("台本"),
     say:
       "「目録」か「台本」が残っています。ページで走らせる物は「スクリプト」、置き場は「台帳」（台帳に無い）、" +
-      "札のある物は「サイト用のスクリプト」と書きます。",
+      "対象サイトのある物は「サイト用のスクリプト」と書きます。",
   },
   {
     find: (line) => line.replace(AMI_ALLOWED, "").includes("網"),
@@ -100,6 +111,12 @@ const RULES: Rule[] = [
     say:
       "その場で書く物の古い呼び名が残っています。書く物は TypeScript なので、「その場の TS」と書きます" +
       "（走った JS・変換後の JS・jsSha256 はそのまま）。",
+  },
+  {
+    find: (line) => line.replace(FUDA_ALLOWED, "").includes("札"),
+    say:
+      "「札」が残っています。スクリプトの `sites` は「対象サイト」、`labels` は「ラベル」、" +
+      "`correlationId` は「相関キー」と書きます。",
   },
 ];
 
