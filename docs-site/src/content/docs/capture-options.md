@@ -364,5 +364,21 @@ Pacing and reach, in the `POST /api/crawls` body — see
 | `hostParallelism` | 4                                                                             | Distinct hosts touched at once                                            |
 | `scripts`         | every enabled id, newest version, unless it is a site script for another host | What runs in the page (above)                                             |
 | `variables`       | none                                                                          | Per-crawl values the chosen scripts declared ([above](#per-crawl-values)) |
+| `userAgent`       | none (the browser's own value)                                                | The `User-Agent` to send ([below](#per-crawl-user-agent))                 |
 
 An unknown key is **400**, not silently dropped.
+
+### Per-crawl User-Agent
+
+`userAgent` is the `User-Agent` the crawl sends. Left out, or only spaces, the browser's own value goes out
+(with `HeadlessChrome`, which some sites refuse). `{chrome}` stands for the browser's own value without Headless, so
+`{chrome} BrowserHive` keeps working when the browser is upgraded; BrowserHive resolves it, and the ledger keeps the
+text as typed. `GET /api/crawls/:id` returns that text (`null` when none was asked for), and the value actually sent
+is in the archive's `settings.userAgent`.
+
+| Refusal                                                         | Why                                                                                                |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `400 userAgent must be printable ASCII, at most 512 characters` | The same form as BrowserHive's contract                                                            |
+| `400 userAgent must contain BrowserHive`                        | So that a site can tell who took the page. It must be a word: `NotBrowserHiveAtAll` does not count |
+
+The same word decides how robots.txt is read: under `BrowserHive` (its group first, then `*`) when present, and under `*` otherwise.

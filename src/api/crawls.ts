@@ -240,6 +240,11 @@ export interface DispatchedCrawl {
    * 解くのは flow の `crawl_host` で、BrowserHive に送る直前に読む。台帳・webhook・WACZ が持つのは名前と path だけ。
    */
   secrets: Record<string, string>;
+  /**
+   * 頼まれた User-Agent。打った字のままで、`{chrome}` は BrowserHive が解く。**必ず載せる** (指定なしは `""`)。
+   * flow が省いた入力は `null` で届くので、`""` と分ければ `crawl_host` が取り違えに気づける。
+   */
+  userAgent: string;
 }
 
 /**
@@ -296,6 +301,11 @@ export interface CrawlRouteDeps {
   writeReplayBundle: ReplayBundleWriter;
 }
 
+/** BrowserHive の契約 (`CaptureRequest.userAgent`) と同じ形。 */
+const USER_AGENT_FORM = /^[\x20-\x7e]{1,512}$/;
+/** 字に `BrowserHive` を語として含むか。`plan_level` が robots を照らす名前を選ぶ線と同じ。 */
+const USER_AGENT_NAME = /\bBrowserHive\b/;
+
 interface CrawlBody {
   seeds?: string[];
   /**
@@ -304,6 +314,11 @@ interface CrawlBody {
    * 宣言した名前を Windmill の変数に結ぶ (`crawl/values.ts`)。
    */
   variables?: Record<string, string>;
+  /**
+   * このクロールで送る User-Agent。空白だけは省くのと同じ。形と `BrowserHive` の有無はここで断り、
+   * `{chrome}` は解かずに BrowserHive まで運ぶ。
+   */
+  userAgent?: string;
   /**
    * 起点を明示せず、`capture_targets` の有効な行から取る。
    *
@@ -678,6 +693,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             // 0 を許すのは、試験で意図的に間隔を外せるようにするため。
             perHostDelayMs: { type: "integer", minimum: 0, maximum: 600000 },
             hostParallelism: { type: "integer", minimum: 1, maximum: 32 },
+            // 字の形は handler で見て、読める文で断る (`pattern` の 400 は読めない)。
+            userAgent: { type: "string" },
             // クロールごとの変数。名前の綴りと長さ・数・値の長さは BrowserHive の契約 (ValueName・ValueText・
             // Values) と同じ。宣言に在るか・required が揃っているかは handler で見て 400 で名指す (`crawl/values.ts`)。
             variables: {
@@ -761,6 +778,18 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       const fromTargets = body.fromTargets;
       if ((body.seeds === undefined) === (fromTargets === undefined)) {
         return reply.code(400).send({ error: "provide exactly one of seeds or fromTargets" });
+      }
+
+      // BrowserHive の契約と同じ形 (印字可能な ASCII・512 字以下) と、撮る側が誰かを相手に分かるようにする名前。
+      // 名前の線は `plan_level` の robots の照らし方 (capture-scheduler) と同じ。
+      const userAgent = body.userAgent?.trim() ?? "";
+      if (userAgent !== "" && !USER_AGENT_FORM.test(userAgent)) {
+        return reply
+          .code(400)
+          .send({ error: "userAgent must be printable ASCII, at most 512 characters" });
+      }
+      if (userAgent !== "" && !USER_AGENT_NAME.test(userAgent)) {
+        return reply.code(400).send({ error: "userAgent must contain BrowserHive" });
       }
 
       // 組織は呼び出し元の 1 つ目。`maySubmit` はどれか 1 つで許されていれば通すので、
@@ -968,6 +997,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // クロールごとの値。変数は値ごと、シークレットは path と更新時刻だけ (値は台帳を通らない)
         variables: JSON.stringify(variables),
         secrets: JSON.stringify(secrets),
+        // 打った字のまま。解いた字は WACZ の settings.userAgent に残る
+        userAgent: userAgent === "" ? null : userAgent,
         state: "running" as const,
         // **置く場所を、いま 1 度だけ決めて書き残す。** 以後は置く側 (受け口) がこの列を読む ——
         // 段ごとに計算し直すと、受け口の設定を切り替えた配備や月をまたぐクロールでずれる。探す側
@@ -1034,6 +1065,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // クロールごとの値。段ごとに同じ物を配る (行に固定した物)。シークレットは名前 → path だけ
         variables,
         secrets: pathsOf(secrets),
+        userAgent,
         ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
       });
 
@@ -1255,6 +1287,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // 始めたときの更新時刻と、途中で替わったなら気づいた段と新しい時刻。値は無い
         variables: crawl.variables,
         secrets: secretsOf(crawl.secrets),
+        // 打った字のまま。指定なしは null。解いた字は WACZ の settings.userAgent に在る
+        userAgent: crawl.userAgent,
       });
     },
   );
@@ -2363,6 +2397,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           // 値も行に固定した物をそのまま。変数は値ごと、シークレットは名前 → path
           variables: crawl.variables,
           secrets: pathsOf(secrets),
+          userAgent: crawl.userAgent ?? "",
           ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
         });
       }

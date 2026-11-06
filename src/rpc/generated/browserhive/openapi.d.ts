@@ -367,6 +367,13 @@ export interface components {
              *     頁の JS からは読めるし、スクリプトが通信に載せれば WARC には残る。
              */
             secrets?: components["schemas"]["Values"];
+            /**
+             * @description この取り込みでオリジンに送る User-Agent。印字可能な ASCII のみ、512 文字以下。
+             *     `{chrome}` は、繋いだ browser の字から Headless を外した物に置き換わる (例: `{chrome} BrowserHive`)。
+             *     省略と空白だけは「指定なし」で、browser の字のまま送る。送った字は archive の `settings.userAgent` に残る。
+             *     `session: "shared"` と一緒なら 400 —— 同じタブでは、次の取り込みに字が残るため。
+             */
+            userAgent?: string;
         };
         /** @description Capture の応答。結果そのものと、それを記録できたか。 */
         CaptureResponseContent: {

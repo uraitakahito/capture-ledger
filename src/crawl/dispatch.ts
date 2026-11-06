@@ -77,6 +77,8 @@ const FLOW_ARGS: { readonly [K in keyof DispatchedCrawl]-?: string } = {
   // flow は運ぶだけで中身を見ない。値を解くのは `crawl_host` (capture-scheduler)。
   variables: "variables",
   secrets: "secrets",
+  // **これも必ず送る** (指定なしは `""`)。`crawl_host` は `null` を「取り違え」として投げる。
+  userAgent: "user_agent",
 };
 
 /**

@@ -26,7 +26,11 @@ const COMPILED = { typescript: "6.0.3", hostTypes: "v0.2.0", scripts: [] };
 const crawlRow = (
   rules: CrawlRule[],
   seeds: string[],
-  values: { variables?: Record<string, string>; secrets?: Record<string, CrawlSecret> } = {},
+  values: {
+    variables?: Record<string, string>;
+    secrets?: Record<string, CrawlSecret>;
+    userAgent?: string;
+  } = {},
 ) => ({
   id: CRAWL,
   seeds,
@@ -45,6 +49,7 @@ const crawlRow = (
   // 本物の行は必ず持つ (024 の NOT NULL DEFAULT)。偽物も同じ形で
   variables: values.variables ?? {},
   secrets: values.secrets ?? {},
+  userAgent: values.userAgent ?? null,
 });
 
 interface Built {
@@ -365,6 +370,26 @@ describe("次の段を送る前に、シークレットの更新時刻を読み�
       variables: { query: "x" },
       secrets: { api_token: PATH },
     });
+  });
+
+  it("次の段にも、行に固定した User-Agent を打った字のまま配る。無ければ空の字", async () => {
+    const asked = await build({
+      results: results(crawlRow(rules, [seed], { userAgent: "{chrome} BrowserHive" })),
+      links,
+      windmill: windmillAnswering(LATER),
+    });
+    expect((await report(asked)).statusCode).toBe(200);
+    await asked.app.close();
+    expect(asked.dispatched[0]).toMatchObject({ depth: 1, userAgent: "{chrome} BrowserHive" });
+
+    const none = await build({
+      results: results(crawlRow(rules, [seed])),
+      links,
+      windmill: windmillAnswering(LATER),
+    });
+    expect((await report(none)).statusCode).toBe(200);
+    await none.app.close();
+    expect(none.dispatched[0]).toMatchObject({ depth: 1, userAgent: "" });
   });
 
   it("同じ時刻なら何も書かない。前に気づいた時刻と同じでも書き直さない", async () => {

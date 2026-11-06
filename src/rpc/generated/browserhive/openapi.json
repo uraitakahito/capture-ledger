@@ -825,6 +825,12 @@
                     "secrets": {
                         "$ref": "#/components/schemas/Values",
                         "description": "この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。\n**値はどこにも書かない** —— archive の `settings.secrets` には名前だけ (名前順)、受け皿のコード\n(`behaviors/runtime.js`) は値を含まず、ログの報告と例外の文からは伏せる。隠せるのは記録からだけで、\n頁の JS からは読めるし、スクリプトが通信に載せれば WARC には残る。"
+                    },
+                    "userAgent": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^[\\x20-\\x7e]*$",
+                        "description": "この取り込みでオリジンに送る User-Agent。印字可能な ASCII のみ、512 文字以下。\n`{chrome}` は、繋いだ browser の字から Headless を外した物に置き換わる (例: `{chrome} BrowserHive`)。\n省略と空白だけは「指定なし」で、browser の字のまま送る。送った字は archive の `settings.userAgent` に残る。\n`session: \"shared\"` と一緒なら 400 —— 同じタブでは、次の取り込みに字が残るため。"
                     }
                 },
                 "required": [

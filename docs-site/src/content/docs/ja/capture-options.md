@@ -339,5 +339,19 @@ BrowserHive 自身のドキュメントが定義します）。
 | `hostParallelism` | 4                                                                  | 同時に触るホストの数                                                      |
 | `scripts`         | 有効な各 id の最新版（ほかのホスト用のサイト用のスクリプトを除く） | ページの中で走らせるもの（上記）                                          |
 | `variables`       | 無し                                                               | 選んだスクリプトが宣言した、クロールごとの値（[上記](#クロールごとの値)） |
+| `userAgent`       | 無し（ブラウザの字のまま）                                         | 送る `User-Agent`（[下記](#クロールごとの-user-agent)）                   |
 
 知らないキーは黙って落とさず **400** で返します。
+
+### クロールごとの User-Agent
+
+`userAgent` は、そのクロールで送る `User-Agent` です。省くか空白だけなら、ブラウザの字（`HeadlessChrome` を含み、断るサイトがあります）のまま送ります。
+`{chrome}` はブラウザの字から Headless を外した物を指すので、`{chrome} BrowserHive` はブラウザを上げても古くなりません。解くのは BrowserHive で、台帳は打った字のまま持ちます。
+`GET /api/crawls/:id` はその字を返し（頼まなければ `null`）、実際に送った字はアーカイブの `settings.userAgent` に残ります。
+
+| 断り方                                                          | 理由                                                                                             |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `400 userAgent must be printable ASCII, at most 512 characters` | BrowserHive の契約と同じ形                                                                       |
+| `400 userAgent must contain BrowserHive`                        | 誰が撮ったかを相手に分かるようにするため。語として含むこと（`NotBrowserHiveAtAll` は当たらない） |
+
+同じ語で robots.txt の読み方も決まります。含めば `BrowserHive` の名前で（その組が先で、無ければ `*`）、含まなければ `*` で照らします。
