@@ -242,6 +242,8 @@ interface FakeCrawl {
    * (`capture-ledger には DB 試験が無い`)。
    */
   waczCount?: number;
+  /** 取れなかったページの数。`waczCount` と同じく、相関副問い合わせの答えの置き物。 */
+  pagesFailed?: number;
   /**
    * 合本の欄 (`027`)。**本物の行は必ず持つ** (列が nullable なだけで、行から欄が消えることは無い) —— 偽物の
    * 行を作る所 (下の insert と一覧の `row`) は null で埋める。
@@ -530,7 +532,9 @@ const fakeDb = (
                 ([column, value]) => (p as unknown as Record<string, unknown>)[column] === value,
               ),
             );
-            return Promise.resolve(limit === undefined ? matched : matched.slice(0, limit));
+            // `count(*) over ()` の答え。窓関数は limit の前に数える
+            const rows = matched.map((p) => ({ ...p, total: matched.length }));
+            return Promise.resolve(limit === undefined ? rows : rows.slice(0, limit));
           },
         });
         return pageQuery([], undefined);
@@ -884,43 +888,44 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
+  const finishedCrawl: FakeCrawl = {
+    id: UUID,
+    seeds: [SEED],
+    rules: [{ follow: "same-origin" }],
+    state: "succeeded",
+    maxDepth: 0,
+    maxPages: 30,
+    perHostDelayMs: 2000,
+    hostParallelism: 4,
+    orgId: "acme",
+    requestedBy: "alice",
+    stopReason: "completed",
+    startedAt: new Date("2026-09-19T00:00:00Z"),
+    finishedAt: new Date("2026-09-19T00:00:10Z"),
+    pagesDiscovered: 2,
+    pagesCaptured: 1,
+    error: null,
+    lastJobId: "0193b6a1-3c1d-7a2e-9f00-1234567890ab",
+    lastJobDepth: 0,
+    ...NO_REPLAY_BUNDLE,
+    scripts: [
+      {
+        id: "autoscroll",
+        version: 2,
+        phase: "behavior",
+        source: "(async () => {})();",
+        sha256: "c".repeat(64),
+        options: {},
+        enabled: true,
+        sites: [],
+        params: [],
+      },
+    ],
+    variables: {},
+    secrets: {},
+  };
+
   it("GET は最後の段の job と、取れなかったページとその理由とページの id を返す", async () => {
-    const crawl: FakeCrawl = {
-      id: UUID,
-      seeds: [SEED],
-      rules: [{ follow: "same-origin" }],
-      state: "succeeded",
-      maxDepth: 0,
-      maxPages: 30,
-      perHostDelayMs: 2000,
-      hostParallelism: 4,
-      orgId: "acme",
-      requestedBy: "alice",
-      stopReason: "completed",
-      startedAt: new Date("2026-09-19T00:00:00Z"),
-      finishedAt: new Date("2026-09-19T00:00:10Z"),
-      pagesDiscovered: 2,
-      pagesCaptured: 1,
-      error: null,
-      lastJobId: "0193b6a1-3c1d-7a2e-9f00-1234567890ab",
-      lastJobDepth: 0,
-      ...NO_REPLAY_BUNDLE,
-      scripts: [
-        {
-          id: "autoscroll",
-          version: 2,
-          phase: "behavior",
-          source: "(async () => {})();",
-          sha256: "c".repeat(64),
-          options: {},
-          enabled: true,
-          sites: [],
-          params: [],
-        },
-      ],
-      variables: {},
-      secrets: {},
-    };
     const pages: FakePage[] = [
       {
         id: "1",
@@ -939,7 +944,7 @@ describe("クロール route の認可と単一実行", () => {
         skipReason: "net::ERR_NAME_NOT_RESOLVED",
       },
     ];
-    const app = await buildApp(depsWith({ crawls: [crawl], allowed: true, pages }));
+    const app = await buildApp(depsWith({ crawls: [finishedCrawl], allowed: true, pages }));
     const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({
@@ -955,6 +960,31 @@ describe("クロール route の認可と単一実行", () => {
         reason: "net::ERR_NAME_NOT_RESOLVED",
       },
     ]);
+    expect(res.json<{ pagesFailed: number }>().pagesFailed).toBe(1);
+    await app.close();
+  });
+
+  it("取れなかった数は、5 件に切る前の全体を言う", async () => {
+    const pages = Array.from({ length: 7 }, (_, index) => ({
+      id: String(index + 1),
+      crawlId: UUID,
+      url: `https://site.test/${String(index)}`,
+      depth: 1,
+      state: "failed",
+      skipReason: "http_error: HTTP 404: Not Found",
+    }));
+    const app = await buildApp(depsWith({ crawls: [finishedCrawl], allowed: true, pages }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    const body = res.json<{ pagesFailed: number; failures: unknown[] }>();
+    expect(body.failures).toHaveLength(5);
+    expect(body.pagesFailed).toBe(7);
+    await app.close();
+  });
+
+  it("取れなかったページが無ければ、取れなかった数は 0", async () => {
+    const app = await buildApp(depsWith({ crawls: [finishedCrawl], allowed: true, pages: [] }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    expect(res.json<{ pagesFailed: number }>().pagesFailed).toBe(0);
     await app.close();
   });
 
@@ -2003,6 +2033,7 @@ describe("クロールの一覧", () => {
     stopReason: string | null;
     orgId: string;
     waczCount: number;
+    pagesFailed: number;
     lastJob: { id: string; depth: number } | null;
   }
   const ids = (res: { json: <T>() => T }): string[] =>
@@ -2076,6 +2107,7 @@ describe("クロールの一覧", () => {
       lastJobId: "01a0bfad",
       lastJobDepth: 2,
       waczCount: 3,
+      pagesFailed: 2,
     });
     const res = await list(depsWith({ crawls: [truncated], allowed: true }));
     expect(res.json<{ crawls: ListedCrawl[] }>().crawls[0]).toMatchObject({
@@ -2083,6 +2115,7 @@ describe("クロールの一覧", () => {
       stopReason: "max_depth",
       orgId: "other",
       waczCount: 3,
+      pagesFailed: 2,
       lastJob: { id: "01a0bfad", depth: 2 },
     });
   });

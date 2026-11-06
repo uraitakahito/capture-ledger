@@ -160,8 +160,9 @@ export interface CrawlsTable {
   >;
   startedAt: ColumnType<Date, string | undefined, never>;
   finishedAt: ColumnType<Date | null, string | null | undefined, string | null>;
-  // 見つけた件数と取った件数は別。差が「範囲や上限で落としたぶん」。
+  // 撮ったページのリンクのうち規則が通した数。起点は数えないので、`pagesCaptured` との差は落とした数にならない。
   pagesDiscovered: ColumnType<number, number | undefined, number>;
+  // 撮れたページの数 (起点も数える)。0 のまま締めたクロールは failed (`succeeded` は 1 枚以上撮れた行だけ)。
   pagesCaptured: ColumnType<number, number | undefined, number>;
   error: ColumnType<string | null, string | null | undefined, string | null>;
   /**

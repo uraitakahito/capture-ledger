@@ -168,6 +168,12 @@ are: the authorization model has no `crawl` type, and `can_submit` is defined as
 seeing. Rows carry both `state` and `stopReason`, because most `succeeded` crawls
 were truncated (`max_depth`) and the state alone cannot tell that from a full walk.
 
+**A `succeeded` crawl captured at least one page.** A crawl that ends with none (every page
+failed or was skipped by robots) closes as `failed`, with `stopReason` `failed` and an `error`
+saying how many pages failed and were skipped, and the first reason. A crawl that lost only
+some pages stays `succeeded`, and `pagesFailed` says how many; `failures` on
+`GET /api/crawls/:id` gives the reasons (the latest 5).
+
 `waczCount` is how many WACZ that crawl produced. `archives` has no `crawl_id`, so
 the count goes through `crawl_pages.task_id` — no column had to be added.
 
@@ -212,7 +218,7 @@ curl -X POST http://localhost:7070/api/crawls \
 
 curl http://localhost:7070/api/crawls/9072b625-…
 # → { "state": "succeeded", "stopReason": "max_depth",
-#     "seeds": ["https://…"], "pagesCaptured": 5, "pagesDiscovered": 5, … }
+#     "seeds": ["https://…"], "pagesCaptured": 5, "pagesDiscovered": 5, "pagesFailed": 0, … }
 ```
 
 A crawl runs level by level and can take tens of minutes, so there is no
@@ -448,8 +454,11 @@ a finished crawl cannot say whether it followed everything or was cut off. With 
 default of 30 pages, `max_pages` is the ordinary outcome — that is deliberate, so the
 limit is visible in normal use rather than a surprise.
 
-`pagesDiscovered` and `pagesCaptured` are separate counts. The difference is what
-the rules, robots, and the caps threw away.
+`pagesCaptured` is the number of pages captured, seeds included. `pagesDiscovered` is the
+number of links on those pages that the rules let through, seeds not included. `pagesFailed`
+is the number of pages that could not be captured. They count different things, so their
+difference is not what was dropped (a crawl of one seed has 1 captured and 0 discovered). What
+the rules and robots dropped is on `GET /api/crawls/:id/decisions`.
 
 ### What gets followed
 
