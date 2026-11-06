@@ -369,9 +369,6 @@ BrowserHive 自身のドキュメントが定義します）。
 `{chrome}` はブラウザの字から Headless を外した物を指すので、`{chrome} BrowserHive` はブラウザを上げても古くなりません。解くのは BrowserHive で、台帳は打った字のまま持ちます。
 `GET /api/crawls/:id` はその字を返し（頼まなければ `null`）、実際に送った字はアーカイブの `settings.userAgent` に残ります。
 
-| 断り方                                                          | 理由                                                                                             |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `400 userAgent must be printable ASCII, at most 512 characters` | BrowserHive の契約と同じ形                                                                       |
-| `400 userAgent must contain BrowserHive`                        | 誰が撮ったかを相手に分かるようにするため。語として含むこと（`NotBrowserHiveAtAll` は当たらない） |
+形は BrowserHive の契約と同じです。合わなければ `400 userAgent must be printable ASCII, at most 512 characters` で断ります。字の中身は頼む人が決めます。
 
-同じ語で robots.txt の読み方も決まります。含めば `BrowserHive` の名前で（その組が先で、無ければ `*`）、含まなければ `*` で照らします。
+`BrowserHive` の語は 2 つのことを変えます。相手のサイトが BrowserHive が撮ったと分かるのは、字にこの語があるときだけです（`{chrome}` だけなら普通の Chrome と同じ字です）。robots.txt の読み方も決まります。語として含めば `BrowserHive` の名前で（その組が先で、無ければ `*`）、含まなければ `*` で照らします（`NotBrowserHiveAtAll` は語として含みません）。

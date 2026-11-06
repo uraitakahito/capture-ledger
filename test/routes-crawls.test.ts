@@ -2627,38 +2627,33 @@ describe("クロールごとの値（変数とシークレット）", () => {
     expect(padded.crawls[0]?.userAgent).toBe("Probe/1 BrowserHive");
   });
 
-  it.each([
-    [
-      "日本語",
-      "クローラー BrowserHive",
-      "userAgent must be printable ASCII, at most 512 characters",
-    ],
-    [
-      "改行",
-      "a\r\nX-Injected: BrowserHive",
-      "userAgent must be printable ASCII, at most 512 characters",
-    ],
-    [
-      "513 字",
-      `${"x".repeat(501)} BrowserHive`,
-      "userAgent must be printable ASCII, at most 512 characters",
-    ],
-    ["BrowserHive が無い", "curl/8.0", "userAgent must contain BrowserHive"],
-    ["BrowserHive が語でない", "NotBrowserHiveAtAll", "userAgent must contain BrowserHive"],
-  ])(
-    "User-Agent が%sなら読める文で 400。行を作らず flow を呼ばない",
-    async (_name, userAgent, error) => {
+  it.each(["{chrome}", "curl/8.0", "NotBrowserHiveAtAll"])(
+    "BrowserHive の語を含まない User-Agent %s も、打ったまま行と段の本文に載り、GET が返す",
+    async (userAgent) => {
       const { res, crawls, sent } = await start({ seeds: [SEED], userAgent });
-      expect(res.statusCode).toBe(400);
-      expect(res.json()).toEqual({ error });
-      expect(crawls).toEqual([]);
-      expect(sent).toEqual([]);
+      expect(res.statusCode).toBe(202);
+      expect(crawls[0]?.userAgent).toBe(userAgent);
+      expect(sent[0]).toMatchObject({ userAgent });
+      expect(await read(crawls)).toMatchObject({ userAgent });
     },
   );
 
+  it.each([
+    ["日本語", "クローラー"],
+    ["改行", "a\r\nX-Injected: 1"],
+    ["513 字", "x".repeat(513)],
+  ])("User-Agent が%sなら読める文で 400。行を作らず flow を呼ばない", async (_name, userAgent) => {
+    const { res, crawls, sent } = await start({ seeds: [SEED], userAgent });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "userAgent must be printable ASCII, at most 512 characters",
+    });
+    expect(crawls).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
   it("User-Agent は 512 字まで受ける", async () => {
-    const userAgent = `${"x".repeat(500)} BrowserHive`;
-    expect(userAgent).toHaveLength(512);
+    const userAgent = "x".repeat(512);
     const { res, crawls } = await start({ seeds: [SEED], userAgent });
     expect(res.statusCode).toBe(202);
     expect(crawls[0]?.userAgent).toBe(userAgent);

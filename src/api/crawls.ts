@@ -303,8 +303,6 @@ export interface CrawlRouteDeps {
 
 /** BrowserHive の契約 (`CaptureRequest.userAgent`) と同じ形。 */
 const USER_AGENT_FORM = /^[\x20-\x7e]{1,512}$/;
-/** 字に `BrowserHive` を語として含むか。`plan_level` が robots を照らす名前を選ぶ線と同じ。 */
-const USER_AGENT_NAME = /\bBrowserHive\b/;
 
 interface CrawlBody {
   seeds?: string[];
@@ -315,7 +313,7 @@ interface CrawlBody {
    */
   variables?: Record<string, string>;
   /**
-   * このクロールで送る User-Agent。空白だけは省くのと同じ。形と `BrowserHive` の有無はここで断り、
+   * このクロールで送る User-Agent。空白だけは省くのと同じ。形だけをここで断り、
    * `{chrome}` は解かずに BrowserHive まで運ぶ。
    */
   userAgent?: string;
@@ -780,16 +778,12 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         return reply.code(400).send({ error: "provide exactly one of seeds or fromTargets" });
       }
 
-      // BrowserHive の契約と同じ形 (印字可能な ASCII・512 字以下) と、撮る側が誰かを相手に分かるようにする名前。
-      // 名前の線は `plan_level` の robots の照らし方 (capture-scheduler) と同じ。
+      // BrowserHive の契約と同じ形 (印字可能な ASCII・512 字以下)。字の中身は頼む人が決める。
       const userAgent = body.userAgent?.trim() ?? "";
       if (userAgent !== "" && !USER_AGENT_FORM.test(userAgent)) {
         return reply
           .code(400)
           .send({ error: "userAgent must be printable ASCII, at most 512 characters" });
-      }
-      if (userAgent !== "" && !USER_AGENT_NAME.test(userAgent)) {
-        return reply.code(400).send({ error: "userAgent must contain BrowserHive" });
       }
 
       // 組織は呼び出し元の 1 つ目。`maySubmit` はどれか 1 つで許されていれば通すので、
