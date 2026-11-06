@@ -229,7 +229,7 @@ export interface CrawlScript {
   sha256: string;
   options: Record<string, unknown>;
   /**
-   * 札（どのサイト用か。`021`）。台帳のスクリプトだけが持つ写しで、その場の TS には無い。古いクロールの行にも
+   * 対象サイト（どのサイト用か。`021`）。台帳のスクリプトだけが持つ写しで、その場の TS には無い。古いクロールの行にも
    * 無い（無ければ空と読む）。flow へは渡さない（`toDispatched`）—— 選ぶための物で、走らせる側には要らない。
    */
   sites?: string[];
@@ -309,7 +309,7 @@ export interface ScriptsTable {
   // GENERATED ALWAYS AS (encode(digest(source, 'sha256'), 'hex')) STORED —— 書くことはない。
   sha256: GeneratedAlways<string>;
   options: ColumnType<Record<string, unknown>, string | undefined, string>;
-  /** 札（どのサイト用か。`021`）。空ならどこでも走る。小文字のホスト名で、CHECK が形を見る */
+  /** 対象サイト（どのサイト用か。`021`）。空ならどこでも走る。小文字のホスト名で、CHECK が形を見る */
   sites: ColumnType<string[], string[] | undefined, string[]>;
   /**
    * クロールごとの値の宣言 (`024`)。版の一部で、変えたら版を足す (`options`・`sites` と同じ)。

@@ -8,7 +8,7 @@
  *   pnpm run scripts add autoscroll --file - < ./autoscroll.js      # 標準入力から
  *   pnpm run scripts add hide-webdriver --file ./x.js --phase preload
  *   pnpm run scripts add autoscroll --file ./x.js --options '{"maxSteps":60}'
- *   pnpm run scripts add my-search --file ./x.ts --site www.example.com   # サイト用 (札)。--site は何度でも
+ *   pnpm run scripts add my-search --file ./x.ts --site www.example.com   # サイト用 (対象サイト)。--site は何度でも
  *   pnpm run scripts add my-search --file ./x.ts --params '[{"name":"query","kind":"variable","summary":"検索語"}]'   # 読む値の宣言
  *   pnpm run scripts list                                           # 各 id の最新版
  *   pnpm run scripts list --all --json                              # 版を全部、機械向け
@@ -100,9 +100,9 @@ const parseParams = (raw: string): ScriptParam[] => {
 /** 何度でも書ける旗 (`--site`・`--seed`) を、書いた順の列に集める */
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value];
 
-/** 札を 1 行の終わりに添える。札の無いスクリプト (どこでも走る) には何も添えない */
+/** 対象サイトを 1 行の終わりに添える。対象サイトの無いスクリプト (どこでも走る) には何も添えない */
 const sitesNote = (sites: readonly string[]): string =>
-  sites.length === 0 ? "" : `  札:${sites.join(",")}`;
+  sites.length === 0 ? "" : `  対象サイト:${sites.join(",")}`;
 
 /** 読む値の宣言を 1 行の終わりに添える (`query`・`token!` のように、required には `!`)。宣言が無ければ何も添えない */
 const paramsNote = (params: readonly ScriptParam[]): string =>
@@ -147,7 +147,7 @@ program
   .addOption(new Option("--options <json>", "そのスクリプトに渡す値").argParser(parseOptions))
   .option(
     "--site <host>",
-    "札: 起点のどれかがこのホスト名のクロールでだけ走る (何度でも。小文字のホスト名)",
+    "対象サイト: 起点のどれかがこのホスト名のクロールでだけ走る (何度でも。小文字のホスト名)",
     collect,
   )
   .addOption(
@@ -170,7 +170,7 @@ program
       },
     ) => {
       const id = nonEmpty(rawId);
-      // 札は DB の CHECK (`021`) より先に、読める文で断る
+      // 対象サイトは DB の CHECK (`021`) より先に、読める文で断る
       const sitesRefused = opts.site === undefined ? undefined : sitesRefusal(opts.site);
       if (sitesRefused !== undefined) return fail(sitesRefused);
       // `inline-` はその場の TS に取ってある。DB の CHECK (`019`) より先に、ファイルを読む前に断る
@@ -228,7 +228,7 @@ interface CatalogEntry {
   phase: ScriptPhase;
   file: string;
   summary: string;
-  /** 札 (`021`)。書いていなければ空 (どこでも走る) */
+  /** 対象サイト (`021`)。書いていなければ空 (どこでも走る) */
   sites: string[];
   /** 既定に入るか。書いていなければ真。台帳の `enabled` に写す */
   default: boolean;
@@ -329,7 +329,7 @@ program
     await withDb(opts.databaseUrl, async (db) => {
       let added = 0;
       for (const { entry, source } of sources) {
-        // 札と宣言は catalog が正なので、必ず意見として渡す (書いていなければ空)
+        // 対象サイトと宣言は catalog が正なので、必ず意見として渡す (書いていなければ空)
         const result = await addScript(db, {
           id: entry.id,
           phase: entry.phase,
@@ -405,7 +405,7 @@ program
           if (parsed.some((seed) => seed === undefined))
             return fail("--seed は http(s) の URL だけ");
           const hosts = [...new Set(parsed.map((seed) => seed!.hostname))];
-          // POST /api/crawls と同じ関数で選ぶ (札の無い物と、起点に合うサイト用の物)
+          // POST /api/crawls と同じ関数で選ぶ (対象サイトの無い物と、起点に合うサイト用の物)
           const resolved = await resolveScripts(db, undefined, hosts);
           const scripts = resolved.kind === "ok" ? resolved.scripts : [];
           if (opts.json) {
@@ -444,7 +444,7 @@ program
         const enabled = rows.filter((row) => row.enabled).length;
         process.stdout.write(
           `${String(rows.length)} 行 (有効 ${String(enabled)}・無効 ${String(rows.length - enabled)})。` +
-            "何も指定しないクロールは、有効な各 id の最新版のうち、札の無い物と、起点に合う物を走らせる " +
+            "何も指定しないクロールは、有効な各 id の最新版のうち、対象サイトの無い物と、起点に合う物を走らせる " +
             "(--seed で見る)\n",
         );
       });

@@ -39,9 +39,9 @@ if (!existsSync(CLI)) {
 
 const id = `smoke-${String(process.pid)}`;
 const imported = `${id}-import`;
-// 札 (`021`) の CHECK を DB に直に当てる行。取り込みと CLI は同じ式で先に断るので、DB の守りはここでしか見えない
+// 対象サイト (`021`) の CHECK を DB に直に当てる行。取り込みと CLI は同じ式で先に断るので、DB の守りはここでしか見えない
 const sited = `${id}-site`;
-// CLI で札を付けて足す 2 本 (起点で選ばれる物と、選ばれない物)
+// CLI で対象サイトを付けて足す 2 本 (起点で選ばれる物と、選ばれない物)
 const onExample = `${id}-ex`;
 const onOther = `${id}-other`;
 // 宣言 (`024`) つきで取り込む 1 本。名前に `_` を含む宣言が読み返しても化けないことを見る
@@ -96,18 +96,18 @@ try {
     `${why(first)} / ${why(run)}`,
   );
 
-  // 021: 札を書かずに足した版の札は空。CHECK は形を見る
+  // 021: 対象サイトを書かずに足した版の対象サイトは空。CHECK は形を見る
   const sitesOf = await pool.query<{ sites: string[] }>(
     "SELECT sites FROM scripts WHERE id = $1 AND version = 1",
     [id],
   );
   check(
-    "021: 札を書かずに足した版の札は空",
+    "021: 対象サイトを書かずに足した版の対象サイトは空",
     Array.isArray(sitesOf.rows[0]?.sites) && sitesOf.rows[0].sites.length === 0,
     JSON.stringify(sitesOf.rows),
   );
   let siteVersion = 0;
-  /** 札だけを変えて 1 行足す。断られたら Postgres の誤りの code (23514 は CHECK) */
+  /** 対象サイトだけを変えて 1 行足す。断られたら Postgres の誤りの code (23514 は CHECK) */
   const insertSites = (sites: string[]) =>
     pool
       .query(
@@ -120,11 +120,11 @@ try {
         (err: { code?: unknown }) => String(err.code),
       );
   let said = await insertSites(["Google.com"]);
-  check("021: 札の CHECK は大文字のホスト名を断る", said === "23514", said);
+  check("021: 対象サイトの CHECK は大文字のホスト名を断る", said === "23514", said);
   said = await insertSites(["google.com:443"]);
-  check("021: 札の CHECK はポートを断る", said === "23514", said);
+  check("021: 対象サイトの CHECK はポートを断る", said === "23514", said);
   said = await insertSites(["xn--wgv71a.jp", "capture-fixtures.capture-ledger"]);
-  check("021: 札の CHECK は punycode と開発のホスト名を通す", said === "ok", said);
+  check("021: 対象サイトの CHECK は punycode と開発のホスト名を通す", said === "ok", said);
 
   run = cli(["show", id, "--version", "1"]);
   check("show --version 1 は古い版の中身を出す", run.status === 0 && run.stdout === A, why(run));
@@ -225,7 +225,7 @@ try {
     [imported],
   );
   check(
-    "import は catalog の札を版に入れる",
+    "import は catalog の対象サイトを版に入れる",
     JSON.stringify(importedSites.rows.map((row) => row.sites)) === JSON.stringify([["site.test"]]),
     JSON.stringify(importedSites.rows),
   );
@@ -337,7 +337,7 @@ try {
     JSON.stringify(on.rows),
   );
 
-  // 札の形が悪い catalog は、1 本も足さずに断る
+  // 対象サイトの形が悪い catalog は、1 本も足さずに断る
   const badDir = join(work, "bad-scripts");
   mkdirSync(join(badDir, "scripts"), { recursive: true });
   writeFileSync(
@@ -358,7 +358,7 @@ try {
   writeFileSync(join(badDir, "scripts", "x.ts"), A);
   run = cli(["import", badDir]);
   check(
-    "import は札の形が悪い catalog を断る (大文字のホスト名)",
+    "import は対象サイトの形が悪い catalog を断る (大文字のホスト名)",
     run.status === 1 && run.stderr.includes("Site.test"),
     why(run),
   );
@@ -546,13 +546,13 @@ try {
     "www.site.test",
   ]);
   check(
-    "add --site は札つきの版を足す (何度でも書ける)",
-    run.status === 0 && run.stdout.includes("札:site.test,www.site.test"),
+    "add --site は対象サイトつきの版を足す (何度でも書ける)",
+    run.status === 0 && run.stdout.includes("対象サイト:site.test,www.site.test"),
     why(run),
   );
   run = cli(["add", onOther, "--file", write("other.ts", B), "--site", "other.test"]);
   run = cli(["add", `${id}-bad`, "--file", write("bad.ts", A), "--site", "site.test:8080"]);
-  check("add --site はポートつきの札を断る", run.status === 1, why(run));
+  check("add --site はポートつきの対象サイトを断る", run.status === 1, why(run));
 
   run = cli(["list", "--seed", "http://site.test:8080/a", "--json"]);
   let chosen: string[] = [];
@@ -562,7 +562,7 @@ try {
     // 読めなければ空のまま
   }
   check(
-    "list --seed は札の無い物と、起点に合う物を選ぶ (ポートは見ない)",
+    "list --seed は対象サイトの無い物と、起点に合う物を選ぶ (ポートは見ない)",
     run.status === 0 &&
       chosen.includes(id) &&
       chosen.includes(onExample) &&
