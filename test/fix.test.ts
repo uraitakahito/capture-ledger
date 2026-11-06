@@ -13,6 +13,7 @@ import {
   type FixModel,
   type FixOutput,
   type FixReply,
+  systemPrompt,
 } from "../src/scripts/fix.js";
 import type { CompileAnswer, TsCompile } from "../src/scripts/ts-compile.js";
 
@@ -85,20 +86,29 @@ const fakeModel = (replies: (FixReply | Error)[]) => {
 /** 決めた答えを順に返す偽の ts-compile。頼まれた列を控える。 */
 const fakeCompile = (answers: CompileAnswer[]) => {
   const asked: (readonly CrawlScript[])[] = [];
+  const names: (readonly string[])[] = [];
   const tsCompile: TsCompile = {
-    compile(scripts) {
+    compile(scripts, variableNames) {
       asked.push(scripts);
+      names.push(variableNames);
       const next = answers.shift();
       if (next === undefined) throw new Error("検査が多すぎる");
       return Promise.resolve(next);
     },
   };
-  return { asked, tsCompile };
+  return { asked, names, tsCompile };
 };
-const PASSES: CompileAnswer = { ok: true, typescript: "6.0.3", hostTypes: "v0.6.0" };
+const PASSES: CompileAnswer = {
+  ok: true,
+  typescript: "6.0.3",
+  hostTypes: "v0.6.0",
+  declarations: [],
+};
 const STILL_BROKEN: CompileAnswer = {
   ok: false,
   typescript: "6.0.3",
+  declarations: [],
+  missingVariables: [],
   diagnostics: [
     {
       file: "inline-press.ts",
@@ -118,6 +128,7 @@ const run = (model: FixModel, tsCompile: TsCompile) =>
     typescript: "6.0.3",
     hostTypes: "declare var __bh: unknown;",
     tsCompile,
+    variableNames: ["query"],
     model,
   });
 
@@ -192,6 +203,15 @@ describe("断る形", () => {
   });
 });
 
+describe("決まりの文", () => {
+  it("__bh.vars は無いこと、defineParams を足さないこと、必須を任意にしないことを言う", () => {
+    const text = systemPrompt({ typescript: "6.0.3", hostTypes: "declare var __bh: unknown;" });
+    expect(text).toContain("__bh.vars は無い");
+    expect(text).toContain("defineParams を足さない");
+    expect(text).toContain("必須の変数を任意にしない");
+  });
+});
+
 describe("直し方を訊く輪", () => {
   it("型の通る案なら 1 往復で返し、その場の TS だけを替えた組み合わせを検査に通す", async () => {
     const { model } = fakeModel([reply(GOOD)]);
@@ -206,6 +226,13 @@ describe("直し方を訊く輪", () => {
     expect(sent[1]).toEqual(CATALOG);
     expect(sent[0]!.source).toContain(FIXED_LINE);
     expect(sent[0]!.sha256).toBe(sha256(sent[0]!.source));
+  });
+
+  it("案もクロールの変数の名前で検査する —— 名前を落とすと、必須の宣言で全部の案が落ちる", async () => {
+    const { model } = fakeModel([reply(GOOD)]);
+    const { names, tsCompile } = fakeCompile([PASSES]);
+    await run(model, tsCompile);
+    expect(names).toEqual([["query"]]);
   });
 
   it("1 回目が型で落ちたら、検査の答えを足して 2 回目で通す", async () => {

@@ -390,13 +390,19 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
     expect(
       readParams(
         [
-          { name: "query", kind: "variable", summary: "検索語" },
+          { name: "query", kind: "variable", summary: "検索語", schema: { type: "string" } },
           { name: "api_token", kind: "secret", required: true, summary: "鍵" },
         ],
         { summaryRequired: true },
       ),
     ).toEqual([
-      { name: "query", kind: "variable", required: false, summary: "検索語" },
+      {
+        name: "query",
+        kind: "variable",
+        required: false,
+        summary: "検索語",
+        schema: { type: "string" },
+      },
       { name: "api_token", kind: "secret", required: true, summary: "鍵" },
     ]);
   });
@@ -412,7 +418,7 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
     expect(bad([{ name: "q", kind: "variable", default: "x" }])).toContain("知らない鍵: default");
     expect(
       bad([
-        { name: "q", kind: "variable" },
+        { name: "q", kind: "variable", schema: { type: "string" } },
         { name: "q", kind: "secret" },
       ]),
     ).toContain("q が 2 度ある");
@@ -425,9 +431,40 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
     expect(readParams([{ name: "q", kind: "variable" }], { summaryRequired: true })).toContain(
       "summary が空",
     );
-    expect(readParams([{ name: "q", kind: "variable" }], { summaryRequired: false })).toEqual([
-      { name: "q", kind: "variable", required: false },
+    expect(
+      readParams([{ name: "q", kind: "variable", schema: { type: "string" } }], {
+        summaryRequired: false,
+      }),
+    ).toEqual([{ name: "q", kind: "variable", required: false, schema: { type: "string" } }]);
+  });
+
+  it("変数の値の形 (schema) は鍵 4 つだけを読み、シークレットには書けない", () => {
+    const one = (schema: unknown, kind = "variable") =>
+      readParams([{ name: "q", kind, schema }], { summaryRequired: false });
+    expect(one({ type: "string", minLength: 1, maxLength: 9 })).toEqual([
+      {
+        name: "q",
+        kind: "variable",
+        required: false,
+        schema: { type: "string", minLength: 1, maxLength: 9 },
+      },
     ]);
+    expect(one({ type: "string", enum: ["a", "b"] })).toEqual([
+      {
+        name: "q",
+        kind: "variable",
+        required: false,
+        schema: { type: "string", enum: ["a", "b"] },
+      },
+    ]);
+    expect(one(undefined)).toContain("schema が無い");
+    expect(one({ type: "number" })).toContain("type は string だけ");
+    expect(one({ type: "string", pattern: "x" })).toContain("知らない鍵: pattern");
+    expect(one({ type: "string", minLength: -1 })).toContain("0 以上の整数");
+    expect(one({ type: "string", maxLength: 1.5 })).toContain("0 以上の整数");
+    expect(one({ type: "string", enum: [] })).toContain("enum は文字列の列");
+    expect(one({ type: "string", enum: [1] })).toContain("enum は文字列の列");
+    expect(one({ type: "string" }, "secret")).toContain("kind: variable だけ");
   });
 });
 

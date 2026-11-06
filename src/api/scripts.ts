@@ -7,6 +7,7 @@
  * | `GET /api/scripts/:id/versions` | 1 つの id の版の並び (新しい順)。**source は返さない** |
  * | `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと (source・渡す値・札・宣言・有効か・取り込んだ時刻) |
  * | `GET /api/host-types` | 受け皿 `__bh` の型のいちばん新しい版 (読む人に見せる写し。`020`) |
+ * | `POST /api/scripts/check` | 書きかけの TS の変数の宣言と誤り。行を立てない。dashboard が欄を作るのに使う |
  *
  * 一覧が身元と札と宣言 (`id` / `version` / `phase` / `sha256` / `sites` / `params`) だけなのは、何が走るかを知るのに
  * 要るのが「どれの何版か」「どの起点で走るか」「どの値を読むか」だから。dashboard は `params` で、新しいクロールの
@@ -31,9 +32,11 @@
  *
  * ## 認可
  *
- * 4 本とも `POST /api/crawls` と同じ `maySubmit` —— **始められる者だけが、何が走るかを見られる。**
+ * 全部 `POST /api/crawls` と同じ `maySubmit` —— **始められる者だけが、何が走るかを見られる。**
  * 許可が無ければ 404 で、クロールの口と同じ答え方をする (在ることを漏らさない)。
  */
+import { createHash } from "node:crypto";
+
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { OpenFgaClient } from "@openfga/sdk";
 import type { Kysely } from "kysely";
@@ -41,18 +44,24 @@ import type { Database } from "../db/database.js";
 import type { IdentityResolver } from "./identity.js";
 import { maySubmit, unauthorized } from "./authorization.js";
 import { listScripts, pickable, readHostTypes, readScript } from "../scripts/store.js";
+import { TsCompileUnreachable, type TsCompile } from "../scripts/ts-compile.js";
 
 export interface ScriptsRouteDeps {
   db: Kysely<Database>;
   fga: OpenFgaClient;
   resolveIdentity: IdentityResolver;
+  /** 型の検査の窓口。無ければ `POST /api/scripts/check` を出さない。 */
+  tsCompile?: TsCompile;
 }
+
+/** 検査の口が受ける本文の上限。`POST /api/crawls` の上限と同じ 1 MiB。 */
+const CHECK_BODY_LIMIT = 1024 * 1024;
 
 /** 台帳のスクリプトの id。綴りは `scripts` の表の CHECK (`017`) が決めるので、ここは空でないことだけを見る */
 const ID = { type: "string", minLength: 1 } as const;
 
 export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDeps): void => {
-  const { db, fga, resolveIdentity } = deps;
+  const { db, fga, resolveIdentity, tsCompile } = deps;
 
   /** 名乗りが無ければ 401、始められなければ 404 を返して false。 */
   const allowed = async (request: FastifyRequest, reply: FastifyReply): Promise<boolean> => {
@@ -149,4 +158,49 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
     if (types === undefined) return reply.code(404).send({ error: "not found" });
     return reply.code(200).send(types);
   });
+
+  /**
+   * 書きかけの TS を読む。**行を立てず、値も受けない。** 名前を渡さずに検査するので、必須の変数の誤り (`BH0001`) は
+   * 答えから除く —— 書いている最中の「まだ渡していない」は誤りではない。dashboard はこの宣言から欄を作る。
+   */
+  if (tsCompile !== undefined) {
+    app.post<{ Body: { source: string; phase: "preload" | "behavior" } }>(
+      "/api/scripts/check",
+      {
+        bodyLimit: CHECK_BODY_LIMIT,
+        schema: {
+          body: {
+            type: "object",
+            properties: {
+              source: { type: "string" },
+              phase: { type: "string", enum: ["preload", "behavior"] },
+            },
+            required: ["source", "phase"],
+            additionalProperties: false,
+          },
+        },
+      },
+      async (request, reply) => {
+        if (!(await allowed(request, reply))) return reply;
+        const { source, phase } = request.body;
+        const id = "inline-check";
+        const sha256 = createHash("sha256").update(source, "utf8").digest("hex");
+        let answer;
+        try {
+          answer = await tsCompile.compile(
+            [{ id, version: 1, phase, source, sha256, options: {} }],
+            [],
+          );
+        } catch (err) {
+          if (!(err instanceof TsCompileUnreachable)) throw err;
+          request.log.warn({ err }, "ts-compile-service did not answer");
+          return reply.code(503).send({ error: "ts-compile unreachable" });
+        }
+        return reply.code(200).send({
+          params: answer.declarations[0]?.params ?? [],
+          diagnostics: answer.ok ? [] : answer.diagnostics.filter((d) => d.code !== "BH0001"),
+        });
+      },
+    );
+  }
 };

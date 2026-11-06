@@ -263,8 +263,9 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 
 `seeds` は起点の URL を名指しします。既定はリンクを 2 段まで辿ることで、`maxDepth: 0` でそのページだけを取ります。
 
-サイト用のスクリプトを試すなら、起点を `https://laws.e-gov.go.jp/` にします。`scripts` を書かなければ、
-capture-scripts から入れた `egov-law-search`（札 `laws.e-gov.go.jp`）が既定に入り、頁の中で法令名を「セキュリティ」で検索します
+サイト用のスクリプトを試すなら、起点を `https://laws.e-gov.go.jp/` にし、本文に `"variables":{"query":"個人情報"}` を足します。
+`scripts` を書かなければ、capture-scripts から入れた `egov-law-search`（札 `laws.e-gov.go.jp`）が既定に入り、頁の中で法令名を
+`query` の語で検索します。`query` は必須で、渡さなければ `400 missing variables` です
 （[キャプチャオプション](/capture-ledger/ja/capture-options/)の「サイト用のスクリプト」）。
 
 §4 で入れた行を起点にするなら `-d '{"fromTargets":{}}'` です。既定は深さ 0 —— 取るだけで辿りません。

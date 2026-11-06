@@ -28,6 +28,8 @@ interface Sample {
   inline: string;
   /** 一緒に走る (読むだけの) スクリプト。 */
   others?: readonly [id: string, source: string][];
+  /** クロールに渡された変数の名前。 */
+  variableNames?: readonly string[];
 }
 
 /** 見本。どれも、本物の ts-compile-service で型の誤りになる形 (CAPTURE-49 の計画の 8 節)。 */
@@ -55,6 +57,12 @@ const SAMPLES: readonly Sample[] = [
     name: "zod の import を持つ TS の型の誤り (TS2322。import を消させない)",
     inline:
       'import { z } from "zod";\n\n(async () => {\n  const n: number = z.string().parse(document.title);\n  globalThis.__bh.report({ n });\n})();\n',
+  },
+  {
+    name: "defineParams を持つ TS の型の誤り (TS2322。必須を任意にさせない)",
+    inline:
+      'import { z } from "zod";\n\n(() => {\n  const { query } = defineParams(z.object({ query: z.string().min(1) }));\n  const hits: number = query;\n  globalThis.__bh.report({ hits });\n})();\n',
+    variableNames: ["query"],
   },
   {
     name: "DOM の型の食い違い (TS2339。as any で黙らせさせない)",
@@ -91,7 +99,8 @@ const main = async (): Promise<void> => {
   for (const sample of SAMPLES) {
     const inline = script("inline-sample", sample.inline);
     const scripts = [inline, ...(sample.others ?? []).map(([id, source]) => script(id, source))];
-    const before = await tsCompile.compile(scripts);
+    const variableNames = sample.variableNames ?? [];
+    const before = await tsCompile.compile(scripts, variableNames);
     if (before.ok) {
       console.log(`✗ ${sample.name}: 見本が型を通ってしまう (見本を直す)`);
       continue;
@@ -107,6 +116,7 @@ const main = async (): Promise<void> => {
       typescript: before.typescript,
       hostTypes,
       tsCompile,
+      variableNames,
       model,
     });
     total += result.usd;

@@ -12,7 +12,8 @@
  * host の node がコンテナの subnet に TCP を張れないので、名前 (`ts-compile.capture-scheduler`) では
  * 届かない。
  */
-import type { CrawlScript } from "../db/database.js";
+import type { CrawlScript, ScriptParam } from "../db/database.js";
+import { readParams } from "./store.js";
 
 /** ts-compile-service に届かなかった・答えの形が違った。口はこれを 503 に訳す。 */
 export class TsCompileUnreachable extends Error {
@@ -28,12 +29,30 @@ export interface Diagnostic {
   message: string;
 }
 
+/** スクリプト 1 本の変数の宣言 (source の `defineParams`)。`unreadable` は宣言を読めなかった本 (BH0002)。 */
+export interface DeclaredScript {
+  id: string;
+  params: ScriptParam[];
+  unreadable: boolean;
+}
+
 export type CompileAnswer =
-  | { ok: true; typescript: string; hostTypes: string }
-  | { ok: false; typescript: string; diagnostics: Diagnostic[] };
+  | { ok: true; typescript: string; hostTypes: string; declarations: DeclaredScript[] }
+  | {
+      ok: false;
+      typescript: string;
+      diagnostics: Diagnostic[];
+      declarations: DeclaredScript[];
+      /** 必須の宣言のうち、渡されなかった名前。在れば「型の誤り」ではなく、値が足りない。 */
+      missingVariables: string[];
+    };
 
 export interface TsCompile {
-  compile(scripts: readonly CrawlScript[]): Promise<CompileAnswer>;
+  /** `variableNames` は渡された変数の名前。値は送らない。 */
+  compile(
+    scripts: readonly CrawlScript[],
+    variableNames: readonly string[],
+  ): Promise<CompileAnswer>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -48,24 +67,48 @@ const isDiagnostic = (v: unknown): v is Diagnostic =>
   (v["col"] === undefined || typeof v["col"] === "number");
 
 /**
+ * 宣言を読む。**台帳の決まりに通す** (`readParams`)。読めた名前は Windmill の変数の path (`secretPath`) や
+ * 行に写るので、サービスの答えでも形の悪い名前を通さない。変数のほかは宣言できない。読めなければ undefined。
+ */
+const readDeclarations = (raw: unknown): DeclaredScript[] | undefined => {
+  if (!Array.isArray(raw)) return undefined;
+  const out: DeclaredScript[] = [];
+  for (const entry of raw as unknown[]) {
+    if (!isRecord(entry)) return undefined;
+    const { id, params, unreadable } = entry;
+    if (typeof id !== "string" || typeof unreadable !== "boolean") return undefined;
+    const read = readParams(params, { summaryRequired: false });
+    if (typeof read === "string" || read.some((param) => param.kind !== "variable"))
+      return undefined;
+    out.push({ id, params: read, unreadable });
+  }
+  return out;
+};
+
+const isNames = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((name) => typeof name === "string");
+
+/**
  * 答えを読む。**形が違えば「通った」とも「誤りが無い」とも読まずに投げる** —— 誤った宛先
  * (同じ番号の別のサービス) が 200 を返しても、取り直しの結果として渡さない。
  */
 const readAnswer = (status: number, body: unknown): CompileAnswer => {
-  if (status === 200 && isRecord(body)) {
+  const declarations = isRecord(body) ? readDeclarations(body["declarations"]) : undefined;
+  if (status === 200 && isRecord(body) && declarations !== undefined) {
     const { typescript, hostTypes } = body;
     if (typeof typescript === "string" && typeof hostTypes === "string") {
-      return { ok: true, typescript, hostTypes };
+      return { ok: true, typescript, hostTypes, declarations };
     }
   }
-  if (status === 422 && isRecord(body)) {
-    const { typescript, diagnostics } = body;
+  if (status === 422 && isRecord(body) && declarations !== undefined) {
+    const { typescript, diagnostics, missingVariables } = body;
     if (
       typeof typescript === "string" &&
       Array.isArray(diagnostics) &&
-      diagnostics.every(isDiagnostic)
+      diagnostics.every(isDiagnostic) &&
+      isNames(missingVariables)
     ) {
-      return { ok: false, typescript, diagnostics };
+      return { ok: false, typescript, diagnostics, declarations, missingVariables };
     }
   }
   throw new TsCompileUnreachable(`POST /compile → ${String(status)} の答えの形が違う`);
@@ -79,14 +122,14 @@ export const tsCompileAt = ({
   base: string;
   timeoutMs: number;
 }): TsCompile => ({
-  async compile(scripts) {
+  async compile(scripts, variableNames) {
     const url = `${base}/compile`;
     let res: Response;
     try {
       res = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scripts }),
+        body: JSON.stringify({ scripts, variableNames }),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (err) {

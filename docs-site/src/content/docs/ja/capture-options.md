@@ -127,13 +127,13 @@ capture-scripts v0.7.0 から引数は 1 つ）。`preload` は**遷移の前**�
 scheme・`*` は書けません。札のあるスクリプトは**サイト用のスクリプト**で、クロールの起点のどれかがそのホストに
 あるときだけ走ります。照らすのは起点のホスト名との完全一致で、ポートは見ません。`example.com` と
 `www.example.com` は別のホストです。札の無いスクリプトは、今までどおりどこでも走ります。札は版の一部で、
-`options` と同じく、変えたら版が足されます。`import` が読む `catalog.json` の形は `capture-scripts/4`
-（capture-scripts v0.6.0 で、[クロールごとの値](#クロールごとの値)の宣言 `params` が入った）で、`import` はそれより前の
-形を断ります。形の悪いホスト名や宣言も、DB に触る前に断ります。
+`options` と同じく、変えたら版が足されます。`import` が読む `catalog.json` の形は `capture-scripts/5`
+（capture-scripts v0.11.0 で、[クロールごとの値](#クロールごとの値)の変数の宣言に値の形 `schema` が入った）で、`import` は
+それより前の形を断ります。形の悪いホスト名や宣言も、DB に触る前に断ります。
 
 capture-scripts のサイト用のスクリプトの見本は `egov-law-search`（札 `laws.e-gov.go.jp`・v0.4.0 から）です。
-[e-Gov 法令検索](https://laws.e-gov.go.jp/)の頁の中で法令名を「セキュリティ」で引き、件数と法令名を報告します。
-起点が e-Gov 法令検索のクロールだけが既定で走らせ、ほかの起点では選ばれません。
+[e-Gov 法令検索](https://laws.e-gov.go.jp/)の頁の中で、必須の変数 `query` の語で法令名を引き、件数と法令名を報告します。
+起点が e-Gov 法令検索のクロールだけが既定で走らせ、ほかの起点では選ばれません（`query` を渡さなければ 400 です）。
 
 決まりはクロールの単位で、起点で決まります。選ばれたサイト用のスクリプトは、そのクロールの全部の頁で
 走ります。リンクを辿って別のホストへ出た頁でもです。だからサイト用のスクリプトは、冒頭で
@@ -223,8 +223,9 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 | `GET /api/scripts/:id/versions`          | 1 つの id の版の並び（新しい順）: `version`・`phase`・`sha256`・`sites`・`enabled`・`bytes`・`createdAt`。source は返さない                                                                                                                                                                                                                                                   |
 | `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと: 上に `id`・`source`・`options` を足した物。無効な版も返す（過去のクロールが走らせた物）                                                                                                                                                                                                                                                                         |
 | `GET /api/host-types`                    | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                                                                                                                                                                                                                                                                              |
+| `POST /api/scripts/check`                | 書きかけの TS の変数の宣言と誤り: `params`・`diagnostics`（[クロールごとの値](#クロールごとの値)）。ts-compile-service の宛先が無い配備には無い                                                                                                                                                                                                                               |
 
-4 本ともクロールの口と同じ問い（呼び出し元の組織のどれかに `can_submit`）を訊きます。名乗りが
+どれもクロールの口と同じ問い（呼び出し元の組織のどれかに `can_submit`）を訊きます。名乗りが
 無ければ 401、許可が無ければ 404 で、在らない id や版と同じ答えです。版が 1 以上の整数でなければ、
 何より先に 400 です。`bytes` は UTF-8 の大きさです。`pnpm run scripts show --version` は 1 版の口と
 同じ関数で読みます。
@@ -266,27 +267,45 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 
 ### クロールごとの値
 
-スクリプトは、クロールごとに違う値 —— 検索語や、口座の鍵 —— を読めます。読む名前は `catalog.json` の
-`params` で宣言し、`import` が宣言を版に写します（`GET /api/scripts` が `params` で返します。札と同じく
-版の一部です）。その場の TS にも同じ形の `params` を添えられます。宣言は、名前と、2 つの種類のどちらかと、
-クロールが必ず渡すべきかと、何の値かを言います。
+スクリプトは、クロールごとに違う値 —— 検索語や、口座の鍵 —— を読めます。変数はスクリプトの中で宣言し、
+シークレットは `params` で宣言します。
+
+**変数**は source の `defineParams` で宣言します。`.optional()` の無い名前は必須です。
+
+```ts
+import { z } from "zod";
+
+const { query } = defineParams(z.object({ query: z.string().min(1).describe("法令名の検索語") }));
+```
+
+`POST /api/crawls` の本文の `variables`（名前 → 文字列）で渡し、**記録に残ります**。クロールの行に固定され、段ごとに
+運ばれ、BrowserHive がアーカイブの `settings.variables` に書き、`GET /api/crawls/:id` が返します。
+
+**台帳は行を立てる前に ts-compile-service に訊きます。** スクリプトと、渡した変数の名前（値は送りません）を `/compile` に
+送り、答えの宣言を行に固定します。必須の名前が足りなければ `400 missing variables` で、行も run も残りません。
+判定は ts-compile-service の 1 か所です（`BH0001`）。宣言に無い名前も、宣言の形（`.min`・`.max`・`.length`・`z.enum`）に
+合わない値も 400 です。ふつうの型の誤りはここでは断らず、行を立てて flow の compile の段で落とします（落ちた行から
+「直し方を訊く」へ進むため）。宣言を読めないスクリプト（`BH0002`）が混ざるときも行を立て、同じ段で理由を残します。
+書ける形は capture-scripts の README の「クロールごとの値」にあります。
+
+台帳のスクリプトの変数は `catalog.json` の `params` にも写され（`GET /api/scripts` が `params` で返します）、
+dashboard はそれで欄を作ります。
 
 ```json
 {
   "name": "query",
   "kind": "variable",
-  "required": false,
-  "summary": "法令名の検索語。省けばソースの既定"
+  "required": true,
+  "summary": "法令名の検索語",
+  "schema": { "type": "string", "minLength": 1 }
 }
 ```
 
-**変数**（`kind: "variable"`）は `POST /api/crawls` の本文の `variables`（名前 → 文字列）で渡し、**記録に残ります**。
-クロールの行に固定され、段ごとに運ばれ、BrowserHive がアーカイブの `settings.variables` に書き、
-`GET /api/crawls/:id` が返します。受けるのは宣言された名前だけで、知らない名前も、`required` の物の欠けも
-400 です。例外は `params` を添えていないその場の TS で、何を読むか台帳に分からないので、それが混ざる間は
-知らない名前も通します。
+書きかけの TS の宣言は `POST /api/scripts/check`（`{ source, phase }` → `{ params, diagnostics }`）で読めます。行を立てず、
+値も受けません。`BH0001` は誤りに数えません（書いている最中の「まだ渡していない」は誤りではないので）。
 
-**シークレット**（`kind: "secret"`）には本文の欄がありません。宣言が名前を Windmill の secret 変数
+**シークレット**（`kind: "secret"`）は、`catalog.json` の `params` か、その場の TS に添える `params` で宣言します（変数は
+ここには書けません）。本文に欄はありません。宣言が名前を Windmill の secret 変数
 `f/waggle_secrets/<名前>` に結び、そこへは人が前もって置きます（`wmill variable add <値> f/waggle_secrets/<名前> --secret`。
 置き場と手順は capture-scheduler の docs にあります）。クロールを始めるとき、台帳は webhook と同じ URL と token で
 Windmill に「在るか・secret か」を訊き、**値は読まずに**（`variables/get` に `decrypt_secret=false`）、
@@ -298,20 +317,21 @@ Windmill に「在るか・secret か」を訊き、**値は読まずに**（`va
 `rotated`（気づいた段と新しい時刻）に残します。
 
 名前は `^[a-z][a-z0-9_]*$` で 64 字まで、1 クロールの変数は 32 個まで、値は 4,096 字までの文字列です。
-宣言に既定値は書けません。スクリプトは `__bh.vars.<名前>`（`__bh.secrets.<名前>`）を読み、渡されなければ
-`undefined` を受け取って、自分のソースの既定に倒します。
+宣言に既定値は書けません。任意の変数とシークレットは、渡されなければ `undefined` で、スクリプトが自分のソースの既定に倒します。
 
-| 答え                                                                     | いつ                                                                                     |
-| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| `400 missing variables`（`names`）                                       | `required` の変数が渡されていない                                                        |
-| `400 unknown variables`（`names`）                                       | どのスクリプトも宣言していない名前を渡した（`params` の無いその場の TS が在れば見ない）  |
-| `400 secrets cannot be passed as variables`（`names`）                   | シークレットとして宣言された名前を変数で渡した —— アーカイブに値が残ってしまう           |
-| `400 conflicting params`（`names`）                                      | 同じ名前を、別々のスクリプトが別の種類で宣言している                                     |
-| `400 invalid params`（`script`・`hint`）                                 | その場の TS の `params` が宣言の決まり（`import` と同じ）に合わない                      |
-| `400 unknown secrets`（`secrets: [{ name, path, declaredBy }]`・`hint`） | `required` のシークレットが Windmill に無い。`required` でない物が無ければ渡さないだけ   |
-| `400 not a secret variable`（`secrets`）                                 | Windmill に在るが secret の印が無い                                                      |
-| `400 secrets need the windmill webhook`（`names`）                       | シークレットを宣言したスクリプトが在るのに、この配備の webhook の URL が flow の物でない |
-| `503 windmill unreachable`                                               | Windmill に訊けなかった。何も始めない                                                    |
+| 答え                                                                     | いつ                                                                                               |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `400 missing variables`（`names`・`diagnostics`）                        | 必須の変数が渡されていない（`diagnostics` は `BH0001` の行と列）                                   |
+| `400 invalid variables`（`names`・`hint`）                               | 値が宣言の形に合わない（`.min` に足りない字数、`z.enum` に無い字など）                             |
+| `400 unknown variables`（`names`）                                       | どのスクリプトも宣言していない名前を渡した（宣言を読めないスクリプトが在れば見ない）               |
+| `400 secrets cannot be passed as variables`（`names`）                   | シークレットとして宣言された名前を変数で渡した —— アーカイブに値が残ってしまう                     |
+| `400 conflicting params`（`names`）                                      | 同じ名前を、別々のスクリプトが別の種類か別の形で宣言している                                       |
+| `400 invalid params`（`script`・`hint`）                                 | その場の TS の `params` が宣言の決まり（`import` と同じ）に合わない。変数は書けない                |
+| `503 ts-compile unreachable`                                             | ts-compile-service に訊けない（400・409 の答えも含む。版のずれはログの本文で分かる）。何も始めない |
+| `400 unknown secrets`（`secrets: [{ name, path, declaredBy }]`・`hint`） | `required` のシークレットが Windmill に無い。`required` でない物が無ければ渡さないだけ             |
+| `400 not a secret variable`（`secrets`）                                 | Windmill に在るが secret の印が無い                                                                |
+| `400 secrets need the windmill webhook`（`names`）                       | シークレットを宣言したスクリプトが在るのに、この配備の webhook の URL が flow の物でない           |
+| `503 windmill unreachable`                                               | Windmill に訊けなかった。何も始めない                                                              |
 
 どれもクロールは立ちません。`GET /api/crawls/:id` は `variables`（値ごと）と `secrets`
 （`[{ name, path, editedAt, rotated }]`。名前順）を返します。

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkValues, SECRETS_FOLDER, secretPath } from "../src/crawl/values.js";
+import { checkValues, pinDeclarations, SECRETS_FOLDER, secretPath } from "../src/crawl/values.js";
 import type { CrawlScript, ScriptParam } from "../src/db/database.js";
 
 /**
@@ -57,13 +57,11 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
     });
   });
 
-  it("required の変数が無ければ missing variables で名指す。required でない物は無くてよい", () => {
-    const scripts = [script("a", [variable("query", true), variable("lang")])];
-    expect(checkValues(scripts, {})).toEqual({
-      kind: "refused",
-      body: { error: "missing variables", names: ["query"] },
+  it("必須の変数が渡されているかは見ない —— 判定は ts-compile-service の 1 か所 (BH0001)", () => {
+    expect(checkValues([script("a", [variable("query", true)])], {})).toEqual({
+      kind: "ok",
+      secrets: [],
     });
-    expect(checkValues(scripts, { query: "x" })).toEqual({ kind: "ok", secrets: [] });
   });
 
   it("どのスクリプトも宣言していない名前は unknown variables で名指す（綴りの誤りを黙って通さない）", () => {
@@ -73,14 +71,52 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
     });
   });
 
-  it("宣言の無いその場の TS が 1 本でも在れば、知らない名前を通す。params: [] は宣言なので通さない", () => {
-    // 添えなかった物は「何を読むか分からない」。空の宣言は「何も読まない」
-    expect(checkValues([script("a", [variable("query")]), script("inline-x")], { k: "v" })).toEqual(
-      { kind: "ok", secrets: [] },
-    );
+  it("宣言を読めないスクリプトが在れば、知らない名前を通す —— 理由は flow の compile の段が BH0002 で言う", () => {
     expect(
-      checkValues([script("a", [variable("query")]), script("inline-x", [])], { k: "v" }),
-    ).toEqual({ kind: "refused", body: { error: "unknown variables", names: ["k"] } });
+      checkValues([script("a", [variable("query")])], { k: "v" }, { unreadable: true }),
+    ).toEqual({ kind: "ok", secrets: [] });
+    expect(checkValues([script("a", [variable("query")])], { k: "v" })).toEqual({
+      kind: "refused",
+      body: { error: "unknown variables", names: ["k"] },
+    });
+  });
+
+  it("値は宣言の形に照らす。合わなければ invalid variables で名指す", () => {
+    const shaped = (schema: ScriptParam["schema"]) => [
+      script("a", [{ ...variable("q"), ...(schema === undefined ? {} : { schema }) }]),
+    ];
+    const min = shaped({ type: "string", minLength: 2 });
+    expect(checkValues(min, { q: "ab" }).kind).toBe("ok");
+    expect(checkValues(min, { q: "a" })).toEqual({
+      kind: "refused",
+      body: { error: "invalid variables", names: ["q"], hint: "q は 2 字以上" },
+    });
+    const max = shaped({ type: "string", maxLength: 1 });
+    expect(checkValues(max, { q: "a" }).kind).toBe("ok");
+    expect(checkValues(max, { q: "ab" })).toEqual({
+      kind: "refused",
+      body: { error: "invalid variables", names: ["q"], hint: "q は 1 字まで" },
+    });
+    const oneOf = shaped({ type: "string", enum: ["a", "b"] });
+    expect(checkValues(oneOf, { q: "b" }).kind).toBe("ok");
+    expect(checkValues(oneOf, { q: "c" })).toEqual({
+      kind: "refused",
+      body: { error: "invalid variables", names: ["q"], hint: "q は a・b のどれか" },
+    });
+    // 長さは code point で数える (JSON Schema の決まり)。絵文字は 1 字
+    expect(checkValues(max, { q: "😀" }).kind).toBe("ok");
+    // 渡さなければ形は見ない (必須かどうかは compile の話)
+    expect(checkValues(min, {}).kind).toBe("ok");
+  });
+
+  it("同じ名前を別の形で宣言していれば conflicting params", () => {
+    const a = { ...variable("q"), schema: { type: "string", minLength: 1 } } as ScriptParam;
+    const b = { ...variable("q"), schema: { type: "string", minLength: 2 } } as ScriptParam;
+    expect(checkValues([script("a", [a]), script("b", [b])], { q: "xx" })).toEqual({
+      kind: "refused",
+      body: { error: "conflicting params", names: ["q"] },
+    });
+    expect(checkValues([script("a", [a]), script("b", [a])], { q: "xx" }).kind).toBe("ok");
   });
 
   it("宣言の無い台帳のスクリプト（古い写し）は、その場の TS ではないので例外にしない", () => {
@@ -90,9 +126,9 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
     });
   });
 
-  it("シークレットの名前を変数で渡すと断る（記録に値が残る）。宣言の無いその場の TS が在っても", () => {
+  it("シークレットの名前を変数で渡すと断る（記録に値が残る）。宣言を読めないスクリプトが在っても", () => {
     expect(
-      checkValues([script("a", [secret("api_token")]), script("inline-x")], { api_token: "x" }),
+      checkValues([script("a", [secret("api_token")])], { api_token: "x" }, { unreadable: true }),
     ).toEqual({
       kind: "refused",
       body: { error: "secrets cannot be passed as variables", names: ["api_token"] },
@@ -119,5 +155,27 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
   it("path は f/waggle_secrets/ の下に名前で組む（人は名前だけ書く）", () => {
     expect(SECRETS_FOLDER).toBe("f/waggle_secrets/");
     expect(secretPath("api_token")).toBe("f/waggle_secrets/api_token");
+  });
+});
+
+describe("compile の答えの宣言を、行に固定する写しへ", () => {
+  it("変数は答えの宣言で置き換え、シークレットは元の写しのまま残す", () => {
+    const pinned = pinDeclarations(
+      [script("a", [variable("old"), secret("token")])],
+      [{ id: "a", params: [variable("query", true)], unreadable: false }],
+    );
+    expect(pinned[0]?.params).toEqual([variable("query", true), secret("token")]);
+  });
+
+  it("宣言が無く元の写しにも無ければ、鍵ごと足さない", () => {
+    const [plain] = pinDeclarations(
+      [script("inline-x")],
+      [{ id: "inline-x", params: [], unreadable: false }],
+    );
+    expect(plain).not.toHaveProperty("params");
+  });
+
+  it("答えに無いスクリプトの変数は残さない —— 正は source の宣言", () => {
+    expect(pinDeclarations([script("a", [variable("old")])], [])[0]?.params).toEqual([]);
   });
 });

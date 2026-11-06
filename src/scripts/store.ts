@@ -38,7 +38,14 @@
 import { createHash } from "node:crypto";
 import type { Kysely } from "kysely";
 import { sql } from "kysely";
-import type { CrawlScript, Database, ParamKind, ScriptParam, ScriptPhase } from "../db/database.js";
+import type {
+  CrawlScript,
+  Database,
+  ParamKind,
+  ParamSchema,
+  ScriptParam,
+  ScriptPhase,
+} from "../db/database.js";
 import { HOSTNAME } from "../crawl/scope.js";
 
 /** `scripts` の 1 行 (source は含めない —— 一覧で読むものではない)。 */
@@ -105,6 +112,40 @@ export const VALUES_MAX = 32;
 export const VALUE_TEXT_MAX = 4096;
 const PARAM_KINDS: readonly ParamKind[] = ["variable", "secret"];
 
+const isLength = (value: unknown): boolean =>
+  value === undefined || (typeof value === "number" && Number.isInteger(value) && value >= 0);
+
+/**
+ * 変数の値の形 (`schema`) を読む。読めれば返し、読めなければその文を返す。鍵は 4 つだけで、値は文字列だけ ——
+ * 正規表現は読まない (利用者の式を台帳で走らせることになる)。
+ */
+const readSchema = (name: string, raw: unknown): ParamSchema | string => {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return `params の ${name} の schema が無い (kind: variable は値の形を持つ)`;
+  }
+  const { type, minLength, maxLength, enum: values, ...rest } = raw as Record<string, unknown>;
+  const unknown = Object.keys(rest);
+  if (unknown.length > 0) return `params の ${name} の schema に知らない鍵: ${unknown.join(", ")}`;
+  if (type !== "string") return `params の ${name} の schema の type は string だけ`;
+  if (!isLength(minLength) || !isLength(maxLength)) {
+    return `params の ${name} の minLength と maxLength は 0 以上の整数`;
+  }
+  if (
+    values !== undefined &&
+    (!Array.isArray(values) ||
+      values.length === 0 ||
+      !values.every((value) => typeof value === "string"))
+  ) {
+    return `params の ${name} の enum は文字列の列`;
+  }
+  return {
+    type,
+    ...(minLength === undefined ? {} : { minLength: minLength as number }),
+    ...(maxLength === undefined ? {} : { maxLength: maxLength as number }),
+    ...(values === undefined ? {} : { enum: values }),
+  };
+};
+
 /**
  * 宣言の列 (`params`) として読めれば返し、読めなければその文を返す。capture-scripts の tools/check.mjs と
  * 同じ決まり —— 配列・`name` の綴りと長さ・`kind` は variable か secret・`required` は真偽値 (省けば false)・
@@ -124,7 +165,7 @@ export const readParams = (
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
       return "params の要素は { name, kind, required?, summary } の object";
     }
-    const { name, kind, required, summary, ...rest } = entry as Record<string, unknown>;
+    const { name, kind, required, summary, schema, ...rest } = entry as Record<string, unknown>;
     if (typeof name !== "string" || !VALUE_NAME.test(name) || name.length > VALUE_NAME_MAX) {
       return `params の name ${JSON.stringify(name)} は ^[a-z][a-z0-9_]*$ で ${String(VALUE_NAME_MAX)} 字まで`;
     }
@@ -143,11 +184,17 @@ export const readParams = (
     const unknown = Object.keys(rest);
     if (unknown.length > 0) return `params の ${name} に知らない鍵: ${unknown.join(", ")}`;
     if (out.some((p) => p.name === name)) return `params に ${name} が 2 度ある`;
+    const shape = kind === "variable" ? readSchema(name, schema) : undefined;
+    if (typeof shape === "string") return shape;
+    if (kind !== "variable" && schema !== undefined) {
+      return `params の ${name} に schema を書けるのは kind: variable だけ`;
+    }
     out.push({
       name,
       kind: kind as ParamKind,
       required: required === true,
       ...(summary === undefined ? {} : { summary }),
+      ...(shape === undefined ? {} : { schema: shape }),
     });
   }
   return out;
@@ -180,7 +227,7 @@ export interface InlineScript {
   name: string;
   phase: ScriptPhase;
   source: string;
-  /** 読む値の宣言。添えなければ「宣言が無い」(空の宣言とは別。`crawl/values.ts`) */
+  /** シークレットの宣言。変数は source の `defineParams` で宣言する (`crawl/values.ts`)。 */
   params?: ScriptParam[];
 }
 
