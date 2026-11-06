@@ -42,6 +42,7 @@ import type {
   CrawlSecret,
   CrawlsTable,
   CrawlState,
+  CrawlStopReason,
   Database,
   LogCounts,
 } from "../db/database.js";
@@ -61,6 +62,7 @@ import {
 } from "../scripts/store.js";
 import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
+import { nothingCapturedError } from "../crawl/close.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
 import { checkValues, type DeclaredSecret } from "../crawl/values.js";
 import { WindmillUnreachable, type WindmillVariables } from "../crawl/windmill-variables.js";
@@ -162,6 +164,15 @@ const waczCount = sql<number>`(
   select count(*)::int from archives a
   join crawl_pages p on a.task_id::text = p.task_id
   where p.crawl_id = crawls.id
+)`;
+
+/**
+ * 一覧が返す、取れなかったページの数 (`waczCount` と同じ相関副問い合わせで、列は増やさない)。詳しい所の
+ * `failures` は新しい 5 件だけなので、全体の数はこれで言う。
+ */
+const pagesFailed = sql<number>`(
+  select count(*)::int from crawl_pages p
+  where p.crawl_id = crawls.id and p.state = 'failed'
 )`;
 
 /**
@@ -1111,6 +1122,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           "replayBundleDigestKey",
           "replayBundleSignError",
           waczCount.as("waczCount"),
+          pagesFailed.as("pagesFailed"),
         ])
         .orderBy("startedAt", "desc")
         .limit(CRAWLS_PAGE);
@@ -1132,6 +1144,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           finishedAt: crawl.finishedAt,
           pagesDiscovered: crawl.pagesDiscovered,
           pagesCaptured: crawl.pagesCaptured,
+          pagesFailed: crawl.pagesFailed,
           error: crawl.error,
           waczCount: crawl.waczCount,
           lastJob:
@@ -1169,12 +1182,18 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         .executeTakeFirst();
       if (!crawl) return reply.code(404).send({ error: "not found" });
 
-      // 取れなかったページと、その理由。0 ページで「成功」したクロールは、これが無いと
-      // 理由が台帳の中に眠ったままになる (`skip_reason` には失敗の理由も入る)。
+      // 取れなかったページと、その理由 (`skip_reason` には失敗の理由も入る)。
       // ページの id も返す —— 理由の先 (そのページの取り込みのログ) へ、`/pages/:page/log` で辿れるように。
+      // 窓関数は limit の前に数えるので、`total` は 5 件に切る前の全体の数
       const failures = await db
         .selectFrom("crawlPages")
-        .select(["id", "url", "depth", "skipReason"])
+        .select([
+          "id",
+          "url",
+          "depth",
+          "skipReason",
+          sql<number>`(count(*) over ())::int`.as("total"),
+        ])
         .where("crawlId", "=", crawl.id)
         .where("state", "=", "failed")
         .orderBy("id", "desc")
@@ -1196,6 +1215,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         finishedAt: crawl.finishedAt,
         pagesDiscovered: crawl.pagesDiscovered,
         pagesCaptured: crawl.pagesCaptured,
+        pagesFailed: failures[0]?.total ?? 0,
         error: crawl.error,
         // **台帳のスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
         // 中身はスクリプトの 1 版の口 (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
@@ -2254,6 +2274,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // 見る (読んだ時の `crawl.state` で決めると、読んだ後・書く前に締められた行を戻す)。数と理由はこれまでどおり
       // 足す (報告された取り込みは、締めた後でも台帳に入っている)。
       const reason = stopReason ?? (done ? ("completed" as const) : null);
+      // **`succeeded` は 1 枚以上撮れたクロールだけ** (`crawl/close.ts`)
+      const nothingCaptured = done && crawl.pagesCaptured + capturedCount === 0;
       await db
         .updateTable("crawls")
         .set((eb) => ({
@@ -2265,7 +2287,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                 state: eb
                   .case()
                   .when("state", "=", "running")
-                  .then(eb.val<CrawlState>("succeeded"))
+                  .then(eb.val<CrawlState>(nothingCaptured ? "failed" : "succeeded"))
                   .else(eb.ref("state"))
                   .end(),
                 // 読みの型は Date、書くのは ISO の文字列 (ほかの書き込みと同じ)。式の型を書きの型に寄せる
@@ -2276,6 +2298,22 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                   .else(eb.ref("finishedAt"))
                   .end()
                   .$castTo<string | null>(),
+                ...(nothingCaptured
+                  ? {
+                      stopReason: eb
+                        .case()
+                        .when("state", "=", "running")
+                        .then(eb.val<CrawlStopReason>("failed"))
+                        .else(eb.ref("stopReason"))
+                        .end(),
+                      error: eb
+                        .case()
+                        .when("state", "=", "running")
+                        .then(eb.val(nothingCapturedError(results)))
+                        .else(eb.ref("error"))
+                        .end(),
+                    }
+                  : {}),
               }
             : {}),
         }))
@@ -2331,7 +2369,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       return reply.code(200).send({
         next: inserted.map((row) => ({ url: row.url, host: row.host, depth: nextDepth })),
-        stopReason: done ? (stopReason ?? "completed") : null,
+        stopReason: done ? (nothingCaptured ? "failed" : (stopReason ?? "completed")) : null,
       });
     },
   );

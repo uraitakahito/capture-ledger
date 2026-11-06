@@ -159,6 +159,11 @@ curl http://localhost:7070/api/archives
 行が持つのは状態と `stopReason` の両方で、`succeeded` の大半は打ち切り（`max_depth`）
 なので、状態だけでは「全部辿った」と区別が付きません。
 
+**`succeeded` は 1 枚以上撮れたクロールです。** 1 枚も撮れずに終わると（全部のページが取れないか、robots で
+見送り）、`failed` で締め、`stopReason` は `failed`、`error` に「1 枚も撮れませんでした（取れず 1・見送り 0）。
+最初の理由: …」と書きます。一部だけ取れなかったクロールは `succeeded` のままで、取れなかった数は `pagesFailed`
+で言います。理由は `GET /api/crawls/:id` の `failures` です（新しい 5 件）。
+
 `waczCount` は、そのクロールから出た WACZ の数です。`archives` に `crawl_id` は無く、
 `crawl_pages` の `task_id` を挟んで数えています（列を足さずに今日のまま届きます）。
 
@@ -202,7 +207,7 @@ curl -X POST http://localhost:7070/api/crawls \
 
 curl http://localhost:7070/api/crawls/9072b625-…
 # → { "state": "succeeded", "stopReason": "max_depth",
-#     "seeds": ["https://…"], "pagesCaptured": 5, "pagesDiscovered": 5, … }
+#     "seeds": ["https://…"], "pagesCaptured": 5, "pagesDiscovered": 5, "pagesFailed": 0, … }
 ```
 
 クロールは段を重ねるので数十分に達しうる。だからこの呼び出しに同期の形は無い。
@@ -413,7 +418,9 @@ WINDOW w AS (PARTITION BY host ORDER BY submitted_at);
 終わったクロールが「全部辿った」のか「切られた」のかを言えない。既定の 30 ページでは
 **`max_pages` で止まるのが普通** —— 上限が日常的に見えているほうがよいので、そう選んである。
 
-`pagesDiscovered` と `pagesCaptured` は別々に持つ。差が「規則・robots・上限で落としたぶん」。
+`pagesCaptured` は撮れたページの数で、起点も数える。`pagesDiscovered` は撮ったページのリンクのうち規則が通した数で、
+起点は数えない。`pagesFailed` は取れなかったページの数。数え方が違うので、差は落とした数にならない（起点だけの
+クロールは撮れた 1・見つけた 0）。規則と robots が落とした物は `GET /api/crawls/:id/decisions` で見る。
 
 ### 何を辿るか
 
