@@ -44,9 +44,9 @@ const nonEmpty = (raw: string): string => {
 };
 
 /**
- * 札。`--label a --label b` のように 1 つずつ、何度でも受ける。
+ * ラベル。`--label a --label b` のように 1 つずつ、何度でも受ける。
  *
- * まとめて受ける形 (`--label a b`) にはしない —— そうすると、後ろに続く URL まで札として
+ * まとめて受ける形 (`--label a b`) にはしない —— そうすると、後ろに続く URL までラベルとして
  * 飲み込む。この形なら `--label a b` の `b` は URL として読まれ、読めないので何も足さずに止まる。
  */
 const collectLabel = (raw: string, previous: string[] | undefined): string[] => [
@@ -95,7 +95,9 @@ program
       .makeOptionMandatory(true)
       .argParser(nonEmpty),
   )
-  .addOption(new Option("--label <label>", "足す行に付ける札 (何度でも)").argParser(collectLabel))
+  .addOption(
+    new Option("--label <label>", "足す行に付けるラベル (何度でも)").argParser(collectLabel),
+  )
   .addOption(databaseUrlOption)
   .action(async (args: string[], opts: { org: string; label?: string[]; databaseUrl: string }) => {
     const collected = await collectUrls(args, () => {

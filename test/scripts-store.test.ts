@@ -144,33 +144,35 @@ describe("受け皿の型を読む", () => {
   });
 });
 
-describe("札の形（021 の CHECK と capture-scripts の check と同じ式）", () => {
+describe("対象サイトの形（021 の CHECK と capture-scripts の check と同じ式）", () => {
   it("小文字のホスト名・punycode・開発のホスト名は通す", () => {
     expect(
       sitesRefusal(["www.google.com", "xn--wgv71a.jp", "capture-fixtures.capture-ledger"]),
     ).toBeUndefined();
   });
 
-  it("大文字・ポート・scheme・空・先頭の - は断り、断った札を名指す", () => {
+  it("大文字・ポート・scheme・空・先頭の - は断り、断った対象サイトを名指す", () => {
     for (const bad of ["Google.com", "google.com:443", "https://google.com", "", "-bad.com"]) {
       expect(sitesRefusal(["www.google.com", bad])).toContain(`: ${bad}`);
     }
   });
 
   it("同じホスト名を 2 度は断る", () => {
-    expect(sitesRefusal(["www.google.com", "www.google.com"])).toBe("札に同じホスト名が 2 度ある");
+    expect(sitesRefusal(["www.google.com", "www.google.com"])).toBe(
+      "対象サイトに同じホスト名が 2 度ある",
+    );
   });
 });
 
 describe("起点で選べるか", () => {
-  it("札が無ければどの起点でも、札があれば起点のホスト名が 1 つ合えば", () => {
+  it("対象サイトが無ければどの起点でも、対象サイトがあれば起点のホスト名が 1 つ合えば", () => {
     expect(onSeed([], [])).toBe(true);
     expect(onSeed(["www.google.com"], ["site.test", "www.google.com"])).toBe(true);
     expect(onSeed(["www.google.com"], ["google.com"])).toBe(false); // www の有無は別のホスト
     expect(onSeed(["www.google.com"], [])).toBe(false);
   });
 
-  it("名指しで入れたサイト用のスクリプトのうち、起点に合わない物を札つきで返す（その場の TS は札を持たない）", () => {
+  it("名指しで入れたサイト用のスクリプトのうち、起点に合わない物を対象サイトつきで返す（その場の TS は対象サイトを持たない）", () => {
     const script = {
       version: 1,
       phase: "behavior" as const,
@@ -204,7 +206,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
     position,
   });
 
-  it("有効な各 id の最新版を引き、札で絞るのは引いた後（SQL に札の条件を書かない）", async () => {
+  it("有効な各 id の最新版を引き、対象サイトで絞るのは引いた後（SQL に対象サイトの条件を書かない）", async () => {
     const { db, queries } = recordingDb([[]]);
 
     await resolveScripts(db, undefined, ["site.test"]);
@@ -215,8 +217,8 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
     );
   });
 
-  it("札の無い物と、起点に合う物だけを残す（合わない最新版の代わりに古い版を出さない）", async () => {
-    // DB が返すのは各 id の最新版だけ。google-results は v2 だけが来る（v1 に札が無くても出てこない）
+  it("対象サイトの無い物と、起点に合う物だけを残す（合わない最新版の代わりに古い版を出さない）", async () => {
+    // DB が返すのは各 id の最新版だけ。google-results は v2 だけが来る（v1 に対象サイトが無くても出てこない）
     const { db } = recordingDb([
       [
         row("autofetch", 1, []),
@@ -232,7 +234,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
     ).toEqual(["autofetch@1", "example-title@3"]);
   });
 
-  it("起点が無ければ、札の無い物だけ", async () => {
+  it("起点が無ければ、対象サイトの無い物だけ", async () => {
     const { db } = recordingDb([[row("autofetch", 1, []), row("example-title", 1, ["site.test"])]]);
 
     const result = await resolveScripts(db);
@@ -240,7 +242,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
     expect(result.kind === "ok" && result.scripts.map((s) => s.id)).toEqual(["autofetch"]);
   });
 
-  it("写しに札を入れる（クロールの詳しい所が返す）", async () => {
+  it("写しに対象サイトを入れる（クロールの詳しい所が返す）", async () => {
     const { db } = recordingDb([[row("example-title", 1, ["site.test"])]]);
 
     const result = await resolveScripts(db, undefined, ["site.test"]);
@@ -373,7 +375,7 @@ describe("選べるスクリプト（GET /api/scripts）", () => {
 });
 
 describe("有効な各 id の最新版（既定が空のときの 400 が使う）", () => {
-  it("札つきで、サイト用のスクリプトも入れる（source は引かない）", async () => {
+  it("対象サイトつきで、サイト用のスクリプトも入れる（source は引かない）", async () => {
     const { db, queries } = recordingDb([[]]);
 
     await enabledLatest(db);
@@ -468,7 +470,7 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
   });
 });
 
-describe("宣言を足す（札と同じ扱い）", () => {
+describe("宣言を足す（対象サイトと同じ扱い）", () => {
   const declared: ScriptParam[] = [
     { name: "query", kind: "variable", required: false, summary: "検索語" },
   ];
@@ -561,7 +563,7 @@ describe("宣言を足す（札と同じ扱い）", () => {
   });
 });
 
-describe("札を足す（options と同じ扱い）", () => {
+describe("対象サイトを足す（options と同じ扱い）", () => {
   const latest = {
     version: 1,
     source: "x;",
@@ -571,7 +573,7 @@ describe("札を足す（options と同じ扱い）", () => {
     params: [],
   };
 
-  it("札を渡さなければ、中身が同じなら版を増やさない（意見が無い）", async () => {
+  it("対象サイトを渡さなければ、中身が同じなら版を増やさない（意見が無い）", async () => {
     const { db, queries } = recordingDb([[latest]]);
 
     const result = await addScript(db, { id: "example-title", phase: "behavior", source: "x;" });
@@ -580,7 +582,7 @@ describe("札を足す（options と同じ扱い）", () => {
     expect(result.reused).toBe(true);
   });
 
-  it("違う札を渡せば、中身が同じでも版を足す", async () => {
+  it("違う対象サイトを渡せば、中身が同じでも版を足す", async () => {
     const { db, queries } = recordingDb([[latest], [{ version: 2, sha256: "h" }]]);
 
     const result = await addScript(db, {
@@ -595,7 +597,7 @@ describe("札を足す（options と同じ扱い）", () => {
     expect(result.version).toBe(2);
   });
 
-  it("同じ札を渡せば、版を増やさない", async () => {
+  it("同じ対象サイトを渡せば、版を増やさない", async () => {
     const { db, queries } = recordingDb([[latest]]);
 
     await addScript(db, {

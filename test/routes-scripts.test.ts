@@ -84,7 +84,7 @@ describe("スクリプトを読む口の認可", () => {
 });
 
 describe("GET /api/scripts/:id/versions/:version", () => {
-  it("その版を丸ごと（source・バイト数・渡す値・札・有効か・取り込んだ時刻）返す", async () => {
+  it("その版を丸ごと（source・バイト数・渡す値・対象サイト・有効か・取り込んだ時刻）返す", async () => {
     const row = {
       id: "autoscroll",
       version: 1,
@@ -164,7 +164,7 @@ describe("GET /api/scripts/:id/versions", () => {
         "sites",
         "version",
       ]);
-    expect(body.versions.map((v) => v["sites"])).toEqual([["site.test"], []]); // 札は版ごと
+    expect(body.versions.map((v) => v["sites"])).toEqual([["site.test"], []]); // 対象サイトは版ごと
     // 宣言も版ごと
     expect(body.versions.map((v) => v["params"])).toEqual([
       [{ name: "query", kind: "variable", required: false }],
@@ -205,7 +205,7 @@ describe("GET /api/host-types", () => {
 });
 
 describe("GET /api/scripts", () => {
-  it("各 id の 1 行を、身元と札と宣言と既定に入るか（id・版・phase・sha256・sites・params・enabled）だけで返す", async () => {
+  it("各 id の 1 行を、身元と対象サイトと宣言と既定に入るか（id・版・phase・sha256・sites・params・enabled）だけで返す", async () => {
     const params = [{ name: "query", kind: "variable", required: false, summary: "検索語" }];
     const row = {
       id: "autoscroll",
@@ -251,7 +251,7 @@ describe("GET /api/scripts", () => {
     expect(res.json<{ scripts: unknown[] }>().scripts).toEqual([row]);
   });
 
-  it("サイト用のスクリプトも返す（既定で走る物だけではない）。札で絞らない", async () => {
+  it("サイト用のスクリプトも返す（既定で走る物だけではない）。対象サイトで絞らない", async () => {
     const rows = [
       {
         id: "autoscroll",

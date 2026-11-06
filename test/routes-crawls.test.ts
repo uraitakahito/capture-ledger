@@ -274,7 +274,7 @@ interface FakeScript {
   source: string;
   sha256: string;
   options: Record<string, unknown>;
-  /** 札（`021`）。解決は引いた後に JS で絞るので、偽物も持っていればよい */
+  /** 対象サイト（`021`）。解決は引いた後に JS で絞るので、偽物も持っていればよい */
   sites: string[];
   /** 宣言（`024`）。本物の行は必ず持つ (NOT NULL DEFAULT '[]') */
   params: ScriptParam[];
@@ -2255,7 +2255,7 @@ describe("クロールの一覧", () => {
   });
 });
 
-describe("札（サイト用のスクリプト）と起点", () => {
+describe("対象サイト（サイト用のスクリプト）と起点", () => {
   const base = {
     phase: "behavior" as const,
     source: "(() => {})();",
@@ -2294,13 +2294,13 @@ describe("札（サイト用のスクリプト）と起点", () => {
     return { res, crawls, dispatched, ids: dispatched[0]?.map((script) => script["id"]) };
   };
 
-  it("省いた頼みには、札の無い物と、起点のホスト名に合う物が走る（id 順）", async () => {
+  it("省いた頼みには、対象サイトの無い物と、起点のホスト名に合う物が走る（id 順）", async () => {
     const { res, ids } = await startWith(SITED, { seeds: [SEED] });
     expect(res.statusCode).toBe(202);
     expect(ids).toEqual(["autoscroll", "example-title"]);
   });
 
-  it("起点のポートは見ない（:8080 の起点も札のホスト名に合う）", async () => {
+  it("起点のポートは見ない（:8080 の起点も対象サイトのホスト名に合う）", async () => {
     const { ids } = await startWith(SITED, { seeds: ["http://site.test:8080/x"] });
     expect(ids).toEqual(["autoscroll", "example-title"]);
   });
@@ -2346,7 +2346,7 @@ describe("札（サイト用のスクリプト）と起点", () => {
     });
   });
 
-  it("クロールの行の写しには札が入り、flow へ送る scripts には入らない（最初の段も）", async () => {
+  it("クロールの行の写しには対象サイトが入り、flow へ送る scripts には入らない（最初の段も）", async () => {
     const { crawls, dispatched } = await startWith(SITED, { seeds: [SEED] });
     expect(crawls[0]?.scripts.map((script) => script.sites)).toEqual([[], ["site.test"]]);
     expect(dispatched[0]?.every((script) => !("sites" in script))).toBe(true);

@@ -57,7 +57,7 @@ const missingIds = (wanted: readonly string[], found: readonly TargetRef[]): str
  * URL を、ある組織の撮る対象として足す。
  *
  * 1 つのトランザクションの中で、① 同じ組織の既存の行を引き、② 無いものだけを足し、
- * ③ 無効だった行を有効に戻す。既存の行の札 (labels) には触らない。
+ * ③ 無効だった行を有効に戻す。既存の行のラベル (labels) には触らない。
  */
 export const addTargets = async (
   db: Kysely<Database>,

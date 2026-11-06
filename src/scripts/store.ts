@@ -23,12 +23,12 @@
  * `inline-<name>` で、台帳のスクリプトの id には `inline-` を使わせない（`019` の CHECK と CLI）——
  * アーカイブの id だけで、台帳のスクリプトか、その場の物かが分かるようにするため。
  *
- * ## 札（`sites`）は起点で効く
+ * ## 対象サイト（`sites`）は起点で効く
  *
- * 札のあるスクリプトは、クロールの起点のどれかがそのサイトにあるときだけ走る（`021`）。`scripts` を省いた
- * 頼みでは、有効な各 id の最新版を選んでから、札の無い物と起点に合う物を残す（`resolveScripts`）。
+ * 対象サイトのあるスクリプトは、クロールの起点のどれかがそのサイトにあるときだけ走る（`021`）。`scripts` を省いた
+ * 頼みでは、有効な各 id の最新版を選んでから、対象サイトの無い物と起点に合う物を残す（`resolveScripts`）。
  * 名指しで起点に合わない物を入れるのは、頼む側が断る（`offsiteScripts`）。**最新版を選ぶのが先** ——
- * 札で絞ってから版を選ぶと、札の無い古い版が既定に出てくる（開発の Postgres で確かめた）。
+ * 対象サイトで絞ってから版を選ぶと、対象サイトの無い古い版が既定に出てくる（開発の Postgres で確かめた）。
  *
  * ## 受け皿の型も置く
  *
@@ -54,7 +54,7 @@ export interface ScriptRow {
   version: number;
   phase: ScriptPhase;
   sha256: string;
-  /** 札（`021`）。空ならどこでも走る */
+  /** 対象サイト（`021`）。空ならどこでも走る */
   sites: string[];
   /** クロールごとの値の宣言 (`024`)。無ければ空 */
   params: ScriptParam[];
@@ -90,13 +90,13 @@ export interface AddResult {
 export type ChangeResult =
   { kind: "missing"; ids: string[] } | { kind: "ok"; changed: { id: string; version: number }[] };
 
-/** 札として断るなら、その文。DB の CHECK (`021`) より先に、読める文で言う。 */
+/** 対象サイトとして断るなら、その文。DB の CHECK (`021`) より先に、読める文で言う。 */
 export const sitesRefusal = (sites: readonly string[]): string | undefined => {
   const bad = sites.filter((site) => !HOSTNAME.test(site));
   if (bad.length > 0) {
-    return `札は小文字のホスト名だけ (ポート・scheme・* は書けない): ${bad.join(", ")}`;
+    return `対象サイトは小文字のホスト名だけ (ポート・scheme・* は書けない): ${bad.join(", ")}`;
   }
-  if (new Set(sites).size !== sites.length) return "札に同じホスト名が 2 度ある";
+  if (new Set(sites).size !== sites.length) return "対象サイトに同じホスト名が 2 度ある";
   return undefined;
 };
 
@@ -200,11 +200,11 @@ export const readParams = (
   return out;
 };
 
-/** その札のスクリプトを、この起点で走らせてよいか。札が無ければどこでも。起点はホスト名 (ポートは見ない) */
+/** その対象サイトのスクリプトを、この起点で走らせてよいか。対象サイトが無ければどこでも。起点はホスト名 (ポートは見ない) */
 export const onSeed = (sites: readonly string[], seedHosts: readonly string[]): boolean =>
   sites.length === 0 || sites.some((site) => seedHosts.includes(site));
 
-/** 起点のどれもそのサイトに無い、サイト用のスクリプト (名指しで入れたもの)。その場の TS は札を持たない */
+/** 起点のどれもそのサイトに無い、サイト用のスクリプト (名指しで入れたもの)。その場の TS は対象サイトを持たない */
 export const offsiteScripts = (
   scripts: readonly CrawlScript[],
   seedHosts: readonly string[],
@@ -270,8 +270,8 @@ const stableStringify = (value: unknown): string =>
  * ない —— 区別しないと、`import` が運用側で付けた設定を**黙って捨てた新しい版**を作り、
  * それが既定になる (台帳は id ごとに最新版を選ぶため)。
  *
- * **札 (`sites`) も同じ扱い。** 渡したときだけ最新版と比べ、違えば版を足す。`import` は catalog の札を
- * 必ず渡す (書いていなければ空) —— catalog が札の正なので、意見として渡す。
+ * **対象サイト (`sites`) も同じ扱い。** 渡したときだけ最新版と比べ、違えば版を足す。`import` は catalog の対象サイトを
+ * 必ず渡す (書いていなければ空) —— catalog が対象サイトの正なので、意見として渡す。
  *
  * **宣言 (`params`) も同じ扱い。** 渡したときだけ比べ、違えば版を足す。`import` は catalog の宣言を必ず渡す。
  */
@@ -522,7 +522,7 @@ export const removeScripts = async (
 };
 
 /**
- * 有効な各 id の最新版を、札つきで。**サイト用のスクリプトも入れる**。既定で走るのは、この中の札の無い物と
+ * 有効な各 id の最新版を、対象サイトつきで。**サイト用のスクリプトも入れる**。既定で走るのは、この中の対象サイトの無い物と
  * 起点に合う物。`POST /api/crawls` が、既定が空のときに「スクリプトはあるが起点に合わない」を言うのに使う。
  */
 export const enabledLatest = async (
@@ -576,11 +576,11 @@ export const pickable = async (
  *
  * - `requested` を渡したら**その並びのまま**写しを返す。台帳のスクリプトの名指しは各 id の最新版
  *   (無効な版でも名指しは通る)、その場の TS は台帳のスクリプトを引かずに写す (`inlineScript`)。
- * - 渡さなければ **有効な各 id の最新版**のうち、札の無い物と、札のどれかが起点のホストにある物を
- *   既定の実行順 (`inRunOrder`) で返す。**最新版を選んでから札で絞る** —— SQL で札を絞ってから `distinct on` すると、
- *   札の合わない最新版の代わりに、札の無い古い版が出てくる。絞るのは引いた後で、JS で。
+ * - 渡さなければ **有効な各 id の最新版**のうち、対象サイトの無い物と、対象サイトのどれかが起点のホストにある物を
+ *   既定の実行順 (`inRunOrder`) で返す。**最新版を選んでから対象サイトで絞る** —— SQL で対象サイトを絞ってから `distinct on` すると、
+ *   対象サイトの合わない最新版の代わりに、対象サイトの無い古い版が出てくる。絞るのは引いた後で、JS で。
  *
- * 名指しの札が起点に合うかは、ここでは見ない (`offsiteScripts`)。
+ * 名指しの対象サイトが起点に合うかは、ここでは見ない (`offsiteScripts`)。
  *
  * 台帳に無い id が 1 つでも在れば、名指しで返して何も返さない —— 黙って落とすと、頼んだ側は
  * 全部走ったつもりで結果を読むことになる (`targets/store.ts` の「読めない URL」と同じ判断)。

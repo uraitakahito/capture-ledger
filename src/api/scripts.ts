@@ -3,13 +3,13 @@
  *
  * | 口 | 返すもの |
  * | --- | --- |
- * | `GET /api/scripts` | 有効な各 id の最新版の身元と札と宣言 (サイト用のスクリプトも。何も指定しないクロールが走らせるのは、札の無い物と起点に合う物) |
+ * | `GET /api/scripts` | 有効な各 id の最新版の身元と対象サイトと宣言 (サイト用のスクリプトも。何も指定しないクロールが走らせるのは、対象サイトの無い物と起点に合う物) |
  * | `GET /api/scripts/:id/versions` | 1 つの id の版の並び (新しい順)。**source は返さない** |
- * | `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと (source・渡す値・札・宣言・有効か・取り込んだ時刻) |
+ * | `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと (source・渡す値・対象サイト・宣言・有効か・取り込んだ時刻) |
  * | `GET /api/host-types` | 受け皿 `__bh` の型のいちばん新しい版 (読む人に見せる写し。`020`) |
  * | `POST /api/scripts/check` | 書きかけの TS の変数の宣言と誤り。行を立てない。dashboard が欄を作るのに使う |
  *
- * 一覧が身元と札と宣言 (`id` / `version` / `phase` / `sha256` / `sites` / `params`) だけなのは、何が走るかを知るのに
+ * 一覧が身元と対象サイトと宣言 (`id` / `version` / `phase` / `sha256` / `sites` / `params`) だけなのは、何が走るかを知るのに
  * 要るのが「どれの何版か」「どの起点で走るか」「どの値を読むか」だから。dashboard は `params` で、新しいクロールの
  * 画面に変数の欄を並べる (`024`)。中身は 1 版の口・`pnpm run scripts show`・アーカイブ (`behaviors/custom.jsonl`。
  * こちらは変換後の JS) に在る。1 版の口は**有効かどうかを見ない** —— 無効な版も、過去のクロールが
@@ -24,10 +24,10 @@
  * 頼む前に空かどうかを言えなければ、その約束が嘘になる。
  *
  * 一覧は `pickable(db)` —— 各 id に 1 行、既定で走る版（有効な版の中の最新）か、無ければ最新版を、
- * サイト用のスクリプト（札のある物。`021`）も含めて返す。`enabled` が既定に入るかで、既定に入らない物
- * （カタログの `default: false`）も名指しすれば走るので載せる。既定で走るのは `enabled` の物のうち札の無い物と、
- * 起点に合う物で、選ぶのはクロールを始めるときの `resolveScripts`（起点を見る）。dashboard はこの一覧で札と
- * `enabled` を見せ、新しいクロールの画面で同じ決まりのとおりに選ぶ。`enabled` の物が 1 つも無い台帳や、札のある
+ * サイト用のスクリプト（対象サイトのある物。`021`）も含めて返す。`enabled` が既定に入るかで、既定に入らない物
+ * （カタログの `default: false`）も名指しすれば走るので載せる。既定で走るのは `enabled` の物のうち対象サイトの無い物と、
+ * 起点に合う物で、選ぶのはクロールを始めるときの `resolveScripts`（起点を見る）。dashboard はこの一覧で対象サイトと
+ * `enabled` を見せ、新しいクロールの画面で同じ決まりのとおりに選ぶ。`enabled` の物が 1 つも無い台帳や、対象サイトのある
  * 物しか無い台帳では、一覧が空でなくても既定が空になる（クロールは 400）—— 頼む前に言えるのは「`enabled` の物が在る」まで。
  *
  * ## 認可
@@ -80,7 +80,7 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
   app.get("/api/scripts", async (request, reply) => {
     if (!(await allowed(request, reply))) return reply;
 
-    // 各 id に 1 行 (サイト用のスクリプトも、既定に入らない物も)。既定で走るのは enabled の物のうち、札の無い物と起点に合う物
+    // 各 id に 1 行 (サイト用のスクリプトも、既定に入らない物も)。既定で走るのは enabled の物のうち、対象サイトの無い物と起点に合う物
     const scripts = await pickable(db);
     return reply.code(200).send({
       scripts: scripts.map(({ id, version, phase, sha256, sites, params, enabled }) => ({

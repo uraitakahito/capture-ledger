@@ -337,7 +337,7 @@ interface CrawlBody {
    * ページの中で走らせるもの。**並びがそのまま実行順**。要素は台帳のスクリプトの名指し (`{ catalog }`) か、
    * その場で書いた TS (`{ inline }`)。その場の TS は台帳に登録されず、この行の写しにだけ固定される。
    *
-   * 省くと台帳の**有効な各 id の最新版**のうち、札の無い物と、起点に合うサイト用の物が走る
+   * 省くと台帳の**有効な各 id の最新版**のうち、対象サイトの無い物と、起点に合うサイト用の物が走る
    * (`017`・`021`)。空配列を渡せば何も走らない ——
    * 「既定でよい」と「何も走らせない」は別の意思なので、書き分けられるようにしてある。
    */
@@ -841,8 +841,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       const rules = checked.read.filter((rule) => rule !== undefined).map(ruleOf);
 
       // 走らせるものを **いま 1 度だけ** 決める。台帳のスクリプトは後から変わりうるが、
-      // このクロールが走らせるものは変わらない (`018`)。札 (`021`) と比べるのは起点のホスト名で、
-      // ポートは見ない —— 省いた頼みでは、札の無い物と、起点に合うサイト用の物が走る
+      // このクロールが走らせるものは変わらない (`018`)。対象サイト (`021`) と比べるのは起点のホスト名で、
+      // ポートは見ない —— 省いた頼みでは、対象サイトの無い物と、起点に合うサイト用の物が走る
       const seedHosts = [...new Set(parsedSeeds.map((parsed) => parsed.hostname))];
       // その場の TS の宣言は、catalog と同じ決まりで読んでから写す (重複と required の既定は schema が見ない)。
       // 添えなかった物は添えないまま —— 「宣言が無い」と「何も読まない」は別 (`crawl/values.ts`)
@@ -1090,7 +1090,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // 辿るつもりが無いなら `links` は要らない。取り出させても相手と S3 に無駄が出る。
         captureFormats: withLinks(capture.formats, crawl.maxDepth > 0),
         signing: capture.signing,
-        // 次の段と同じく `toDispatched` を通す。行の写しには札 (`021`) が在るが、flow には送らない ——
+        // 次の段と同じく `toDispatched` を通す。行の写しには対象サイト (`021`) が在るが、flow には送らない ——
         // compile の段は scripts をそのまま ts-compile-service に渡すので、知らない欄が届く
         scripts: pinned.map(toDispatched),
         // クロールごとの値。段ごとに同じ物を配る (行に固定した物)。シークレットは名前 → path だけ
@@ -1292,7 +1292,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           version: script.version,
           phase: script.phase,
           sha256: script.sha256,
-          // 札 (`021`)。その場の TS と、札より前に始めたクロールの行は空
+          // 対象サイト (`021`)。その場の TS と、対象サイトより前に始めたクロールの行は空
           sites: script.sites ?? [],
           jsSha256: script.jsSha256 ?? null,
           compiledWith: script.compiledWith ?? null,

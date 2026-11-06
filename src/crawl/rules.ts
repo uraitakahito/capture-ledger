@@ -60,7 +60,7 @@ const SCOPES: ReadonlySet<string> = new Set<Scope>([
 /**
  * 当てる物を読む。読めなければ `undefined` (受け口は `invalid rule patterns` で名指す)。
  *
- * 範囲の名前が先で、次にホスト名 (スクリプトの札と同じ式)、最後に http(s) の URL。大文字の混じった
+ * 範囲の名前が先で、次にホスト名 (スクリプトの対象サイトと同じ式)、最後に http(s) の URL。大文字の混じった
  * ホスト名・`*.example.com`・ポート付きのホスト名・`ftp://` は、どれにも読めない。
  */
 export const parsePattern = (raw: string): Pattern | undefined => {
