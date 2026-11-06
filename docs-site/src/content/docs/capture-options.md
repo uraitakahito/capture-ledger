@@ -401,9 +401,6 @@ An unknown key is **400**, not silently dropped.
 text as typed. `GET /api/crawls/:id` returns that text (`null` when none was asked for), and the value actually sent
 is in the archive's `settings.userAgent`.
 
-| Refusal                                                         | Why                                                                                                |
-| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `400 userAgent must be printable ASCII, at most 512 characters` | The same form as BrowserHive's contract                                                            |
-| `400 userAgent must contain BrowserHive`                        | So that a site can tell who took the page. It must be a word: `NotBrowserHiveAtAll` does not count |
+The form is the same as BrowserHive's contract: anything else is refused with `400 userAgent must be printable ASCII, at most 512 characters`. What the text says is up to whoever asks for it.
 
-The same word decides how robots.txt is read: under `BrowserHive` (its group first, then `*`) when present, and under `*` otherwise.
+The word `BrowserHive` changes two things. A site can only tell that BrowserHive took the page when the text has it: `{chrome}` alone reads like an ordinary Chrome. It also decides how robots.txt is read: under `BrowserHive` (its group first, then `*`) when present as a word (`NotBrowserHiveAtAll` does not count), and under `*` otherwise.
