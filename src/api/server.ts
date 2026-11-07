@@ -20,7 +20,7 @@ import { startupNotes, type StartupFacts } from "./startup-notes.js";
 import { registerRoutes } from "./routes.js";
 import { registerMeRoute } from "./me.js";
 import { registerScriptsRoute } from "./scripts.js";
-import { registerPicker, replayOriginFromEnv } from "./picker.js";
+import { registerPicker, replaywebServerOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
 import { registerReplayBundleRoutes } from "./replay-bundle.js";
@@ -145,7 +145,11 @@ const start = async (options: ServerOptions): Promise<void> => {
         "(one without the other cannot hand out a sink)",
     );
   }
-  registerPicker(app, { replayOrigin: replayOriginFromEnv(), identity: identityMode, listen });
+  registerPicker(app, {
+    replaywebServerOrigin: replaywebServerOriginFromEnv(),
+    identity: identityMode,
+    listen,
+  });
 
   // 合本の署名 (CAPTURE-61)。**起動で 1 回だけ読んで確かめる** —— 4 つ組の一部だけ・WACZ の署名を求めるのに無い・
   // 錨が読めない・openssl が `ts -attime` を持たない、のどれでもここで止まる (`config/signer.ts`)。合本のたびに

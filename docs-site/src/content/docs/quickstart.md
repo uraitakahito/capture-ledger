@@ -305,7 +305,7 @@ open http://127.0.0.1:7080/
 ```
 
 [capture-workbench](https://github.com/uraitakahito/capture-workbench) is **one row per crawl**: state, pages
-captured, how many WACZ, and links out to the run (Windmill) and to replay. On the archives
+captured, how many WACZ, and links out to the run (Windmill) and to replayweb-server. On the archives
 face, each row's 検証 (Validate) button reports **whether what was captured matches the WACZ
 spec** — answered by [wacz-validator](https://github.com/uraitakahito/wacz-validator), which is
 handed a URL the ledger signed, so **no store credentials are added anywhere**. The row's
@@ -339,7 +339,7 @@ The token lasts one hour. When the picker says 401 — このトークンは通�
 through"), get a new one with the same command and paste it — see
 [Browsing archives](/capture-ledger/picker/#three-steps-jwt).
 
-Clicking a row opens [replay](https://github.com/uraitakahito/replay) in a new tab. replay first
+Clicking a row opens [replay](https://github.com/uraitakahito/replayweb-server) in a new tab. replay first
 lists the pages inside that WACZ (Web Archive Collection Zipped — the file one captured page is
 packed into). **Click the title and playback starts.**
 

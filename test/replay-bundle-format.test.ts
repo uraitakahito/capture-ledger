@@ -16,7 +16,7 @@ import {
 import type { SignedData } from "../src/replay-bundle/verify-signed-data.js";
 
 /**
- * 合本の形 v1 を組む純粋な部分。replay が読む形 (並び・欄・置き場) を固定する。
+ * 合本の形 v1 を組む純粋な部分。ReplayWeb.page と replayweb-server が読む形 (並び・欄・置き場) を固定する。
  *
  * 並びは**わざと崩して渡す** —— 入力を正しい順で渡すと、並べ替えを消しても緑のまま通る。
  */
@@ -27,8 +27,8 @@ interface Vectors {
 }
 
 const VECTORS = "test/vectors/canonical-url.json";
-/** replay が持つ原本。pin を上げた後に在る (無ければ照らす試験は飛ぶ)。 */
-const UPSTREAM_VECTORS = ".upstream/replay/test/vectors/canonical-url.json";
+/** replayweb-server が持つ原本 (submodule が無ければ照らす試験は飛ぶ)。 */
+const UPSTREAM_VECTORS = ".upstream/replayweb-server/test/vectors/canonical-url.json";
 const vectors = JSON.parse(readFileSync(VECTORS, "utf8")) as Vectors;
 
 describe("正規化（合本の形 v1 の例）", () => {
@@ -43,12 +43,9 @@ describe("正規化（合本の形 v1 の例）", () => {
     expect(vectors.cases.length).toBeGreaterThan(0);
   });
 
-  it.skipIf(!existsSync(UPSTREAM_VECTORS))(
-    "写しは replay の原本と同じ中身（pin を上げた後に効く）",
-    () => {
-      expect(vectors).toEqual(JSON.parse(readFileSync(UPSTREAM_VECTORS, "utf8")));
-    },
-  );
+  it.skipIf(!existsSync(UPSTREAM_VECTORS))("写しは replayweb-server の原本と同じ中身", () => {
+    expect(vectors).toEqual(JSON.parse(readFileSync(UPSTREAM_VECTORS, "utf8")));
+  });
 });
 
 describe("頁の行の keys", () => {
@@ -338,7 +335,7 @@ describe("合本を組む", () => {
     expect(bundle.replayJson.totalPages).toBe(6);
   });
 
-  it("id の無い行には <filename>#<ordinal> を振る（replay は id を文字列に限って読む）", () => {
+  it("id の無い行には <filename>#<ordinal> を振る（replayweb-server は id を文字列に限って読む）", () => {
     const base = input();
     const pages = base.pages.map((page) =>
       page.archiveId === "a" ? { ...page, pageId: null } : page,

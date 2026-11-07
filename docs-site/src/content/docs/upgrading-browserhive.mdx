@@ -14,7 +14,7 @@ the `chromium-server-docker` BrowserHive was tested against, the signing service
 (`wacz-signer`, `timestamp-authority`), and the OpenAPI document
 (`generated/openapi.json`) the manifest is checked against. It is not the only upstream
 pin: the object store's startup config comes from `.upstream/seaweedfs`, the WACZ viewer
-from `.upstream/replay`, the capture fixtures from `.upstream/capture-fixtures` and the
+from `.upstream/replayweb-server`, the capture fixtures from `.upstream/capture-fixtures` and the
 scripts from `.upstream/capture-scripts`. Each is pinned to its own tag and none moves
 with this one (the head of `docker-compose.yml` says why the ones the stack builds from are separate).
 

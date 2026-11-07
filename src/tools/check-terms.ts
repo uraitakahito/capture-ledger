@@ -1,5 +1,5 @@
 /**
- * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 8 つ。
+ * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 9 つ。
  *
  * ## なぜ要るのか
  *
@@ -31,6 +31,7 @@
  *   動いている識別子（`crawler-storage`・Windmill の workspace の id）とも同じ字になる（capture-scheduler も見張っている）
  * - **7080 番の Web アプリは「capture-workbench」、文で短く書くときは「workbench」と書く。** 2026-11 に「dashboard」から
  *   そろえた（repo の改名に合わせて）。この repo に Grafana の dashboard は無いので、語を全部見る（capture-scheduler も同じ）
+ * - **WACZ を開くビューアは「replayweb-server」と書く。** 2026-11 に「replay」から替えた（repo の改名に合わせて）
  *
  * 書き手（人と Claude）は長くこの形で書いてきたので、見張らなければ戻ってくる。
  *
@@ -48,6 +49,8 @@
  * - 「crawler」: 一式の意味の形の並び（OLD_SUITE。capture-scheduler と同じ並び）。`crawler-storage`・`/w/crawler/`・
  *   `workspace crawler`・試験の入力値・ふつうの名詞は見ない
  * - 「dashboard」: 全部（大文字小文字を問わない）。browserhive の契約の写し（src/rpc/generated/）も見る
+ * - 「replay」: 旧い名前の形の並びだけ（OLD_REPLAY_NAMES）。語の replay は合本の形式（replay.json）と、画面の字と、ReplayWeb.page の
+ *   振る舞いの文に残るので見ない
  *
  * ## 見ないもの
  *
@@ -94,6 +97,10 @@ interface Rule {
   say: string;
 }
 
+/** replayweb-server の旧い名前の形。語の replay は禁じない（上の注記）。 */
+const OLD_REPLAY_NAMES =
+  /uraitakahito[/:]replay(?![\w-])|\.upstream\/(?:browserhive\/)?replay(?![\w-])|\bREPLAY_(?:ORIGIN|TAG|REV)\b|\breplayOrigin(?:FromEnv)?\b|\breplayHref\b|\breplay\.(?:capture-ledger|browserhive|test)\b/u;
+
 const RULES: Rule[] = [
   {
     find: (line) => line.replace(ALLOWED, "").includes("種"),
@@ -138,6 +145,12 @@ const RULES: Rule[] = [
     say:
       "「dashboard」が残っています。7080 番の Web アプリは「capture-workbench」、" +
       "文で短く書くときは「workbench」と書きます。",
+  },
+  {
+    find: (line) => OLD_REPLAY_NAMES.test(line),
+    say:
+      "replay の旧い名前が残っています。WACZ を開くビューアは「replayweb-server」、環境変数は REPLAYWEB_SERVER_*、" +
+      "submodule は `.upstream/replayweb-server` と書きます。",
   },
 ];
 

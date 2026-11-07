@@ -12,7 +12,7 @@
  * ## スタックは要らない
  *
  * 立てるのは **本物の画面** (`src/api/picker.ts` の registerPicker) と、**見本データを返す代役の
- * `/api/archives` と `/api/me`** だけ。DB も OpenFGA も replay も issuer も要らない。見本データ
+ * `/api/archives` と `/api/me`** だけ。DB も OpenFGA も replayweb-server も issuer も要らない。見本データ
  * なので、実データにはなかなか現れない状態 (「欠けあり」) も写せる。
  *
  * 画面は API の名乗り方で変わるので、名乗り方ごとに 1 組ずつ立てる (開発用ヘッダ・127.0.0.1／
@@ -96,7 +96,7 @@ const FIXTURES = [
   ...row,
 }));
 
-const REPLAY_ORIGIN = "http://127.0.0.1:8899";
+const REPLAYWEB_SERVER_ORIGIN = "http://127.0.0.1:8899";
 /** 見本のトークン。代役だけが知っていて、alice・acme として通す。 */
 const SAMPLE_TOKEN = "sample-token-alice-acme";
 /** 画面に出すだけ。取りには行かない。 */
@@ -128,7 +128,7 @@ const IDENTIFY: Record<
 /** 本物の画面と代役の API を 1 組立てる。 */
 const stand = async (identity: PickerOptions["identity"], listen: PickerOptions["listen"]) => {
   const app = Fastify();
-  registerPicker(app, { replayOrigin: REPLAY_ORIGIN, identity, listen });
+  registerPicker(app, { replaywebServerOrigin: REPLAYWEB_SERVER_ORIGIN, identity, listen });
   const identify = IDENTIFY[identity.mode];
   app.get<{ Querystring: { before?: string } }>("/api/archives", (request, reply) => {
     const me = identify(request);

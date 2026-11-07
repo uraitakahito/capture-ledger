@@ -115,7 +115,7 @@ export const registerRoutes = (app: FastifyInstance, deps: RouteDeps): void => {
       const { before } = request.query;
       let query = db
         .selectFrom("archives")
-        // objectKey は picker が replay へ渡す鍵。bucket は返さない —— replay は
+        // objectKey は picker が replayweb-server へ渡す鍵。bucket は返さない —— replayweb-server は
         // 自分の S3_BUCKET_URL で既に持っていて、両方返すと「どちらが正か」が
         // 2 つになる。
         .select(["id", "taskId", "sourceUrl", "labels", "waczComplete", "capturedAt", "objectKey"])
