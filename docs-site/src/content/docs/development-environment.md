@@ -426,8 +426,10 @@ behind a profile, so a crawl can be exercised without pointing it at a stranger'
 site:
 
 ```sh
-pnpm run stack:up --profile capture-fixtures
+pnpm run stack:up --profile capture-fixtures capture-fixtures
 ```
+
+Name the service: without it, `stack:up` recreates every container in the stack.
 
 It has two addresses. Containers — BrowserHive, which does the capturing — use the name
 `capture-fixtures.capture-ledger:8080`, and seed URLs are written with it. The host gets

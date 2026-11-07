@@ -41,8 +41,8 @@
 # 分けてあるのは、S3 が欲しいだけのときに browserhive 全体を要求しないため。
 # 以前は browserhive/etc/seaweedfs を mount していて、そうなっていた。
 #
-# **browserhive のスタックと同時には立てられない** —— 8333 / 8899 / 50051 を
-# どちらも publish するので port がぶつかる。
+# **chromium-server-docker のスタックとは同時に立てられない** —— 9222 をどちらも publish する。
+# browserhive のスタックとは port が重ならない (あちらが番号をずらしてある)。
 #
 # アーカイブを選ぶ画面 (picker) は capture-api が配る。これは compose に入れず
 # host 側で動かす: `pnpm run api`。OpenFGA の store/model の ID が起動後にしか
@@ -313,7 +313,7 @@ services:
   # こちらの seaweedfs なので、capture-ledger 用のものが要る。
   # クロールの e2e が辿るフィクスチャ origin。既定では起動しない:
   #
-  #   pnpm run stack:up --profile capture-fixtures
+  #   pnpm run stack:up --profile capture-fixtures capture-fixtures
   #
   # **host 側からは loopback で引く。** macOS 26 では Apple 署名でないバイナリ (node) が
   # コンテナの subnet へ TCP を張れず、DNS 名は引けるのに `EHOSTUNREACH` になる

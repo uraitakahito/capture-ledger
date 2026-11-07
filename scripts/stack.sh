@@ -22,7 +22,7 @@
 #
 #   ./scripts/stack.sh up            # 起動 (-d -b は既定で付く)
 #   ./scripts/stack.sh down          # 停止
-#   ./scripts/stack.sh up --profile capture-fixtures --profile search
+#   ./scripts/stack.sh up --profile capture-fixtures capture-fixtures   # そのサービスだけ起こす (名前が無いと全部作り直す)
 #
 # 余分な引数はそのまま container-compose へ渡る。`capture-fixtures` と `search` を包まないのは、
 # どちらも黙っては壊れないから —— capture-fixtures は実行時に起点として選ぶもので、
