@@ -40,8 +40,8 @@ flowchart LR
 ## capture-ledger とは
 
 capture-ledger が答えるのは **「どの URL を撮るか」** の一点だけです。
-呼び出し元がクロールを頼むと、capture-ledger は起点の URL を揃え（明示された一覧か、Postgres の `capture_targets` テーブルの `enabled` な行）、
-辿る範囲を判断し、1 段ずつ Windmill の flow に渡します。
+クロールは頼みの中の起点の URL から始まります。頼むのは呼び出し元か、頼みを持っている予定（`crawl_schedules`）です。
+capture-ledger は辿る範囲を判断し、1 段ずつ Windmill の flow に渡します。
 実際に投げるのはその flow です。
 
 ## capture-ledger の責務ではないこと
@@ -64,7 +64,7 @@ BrowserHive のチェックアウトで `pnpm run docs:local` を実行して読
 | --------------------------- | --------------------------------------------------------------- |
 | はじめてスタックを立てる    | [クイックスタート](/capture-ledger/ja/quickstart/)              |
 | 開発環境を用意する          | [開発環境](/capture-ledger/ja/development-environment/)         |
-| URL のリストを管理する      | [URL ソース](/capture-ledger/ja/url-source/)                    |
+| 定期的に撮る                | [定期実行](/capture-ledger/ja/schedules/)                       |
 | クロールの撮り方を変える    | [キャプチャオプション](/capture-ledger/ja/capture-options/)     |
 | 新しい BrowserHive に上げる | [BrowserHive の更新](/capture-ledger/ja/upgrading-browserhive/) |
 | 構成を理解する              | [アーキテクチャ](/capture-ledger/ja/architecture/)              |

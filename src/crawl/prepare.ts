@@ -6,7 +6,6 @@
  */
 import type { Kysely } from "kysely";
 import type { CrawlRule, CrawlScript, CrawlSecret, Database } from "../db/database.js";
-import { loadTargets } from "../data/url-source.js";
 import { createChildLogger } from "../logger.js";
 import {
   enabledLatest,
@@ -58,6 +57,7 @@ export const CRAWL_BODY_LIMIT = 1024 * 1024;
 const USER_AGENT_FORM = /^[\x20-\x7e]{1,512}$/;
 
 export interface CrawlBody {
+  /** 起点の URL。**必須** だが、断るのは handler (`CRAWL_BODY_SCHEMA` の注記) なので型では省ける。 */
   seeds?: string[];
   /**
    * クロールごとの変数 (名前 → 文字列)。スクリプトが宣言した名前 (`params` の `variable`) だけを渡せ、
@@ -70,13 +70,6 @@ export interface CrawlBody {
    * `{chrome}` は解かずに BrowserHive まで運ぶ。
    */
   userAgent?: string;
-  /**
-   * 起点を明示せず、`capture_targets` の有効な行から取る。
-   *
-   * これが `runs` を畳んだ先。既定では**辿らない** (`maxDepth: 0`) ので、
-   * 「登録済みの URL 一覧を、いま全部取ってこい」がそのまま表せる。
-   */
-  fromTargets?: { limit?: number };
   /**
    * どのリンクを撮って辿り、撮るだけにし、落とすか。**上から当て、最初に当たった規則が勝つ** (`crawl/rules.ts`)。
    * 省くと `[{ follow: "same-origin" }]` (起点と同じ origin を辿り、外は落とす)。
@@ -103,9 +96,9 @@ export const CRAWL_BODY_SCHEMA = {
   // 知らない鍵は拒む。`server.ts` の `removeAdditional: false` がこれを
   // 「黙って削る」ではなく「400 で返す」意味にしている。
   additionalProperties: false,
-  // **`seeds` と `fromTargets` のどちらか一方**。schema では表さず handler で
-  // 見る —— ajv の `oneOf` は「どちらでもない」と「両方」を同じ 400 にするが、
-  // 呼ぶ側にとっては別の間違いなので、言い分を分けたい。
+  // **`seeds` は必須だが、`required` には書かず handler で断る。** 本文の検査は名乗りより先に走るので、
+  // ここに書くと `{}` が 401 ではなく 400 になる —— capture-scheduler の doctor は、名乗らずに `{}` を
+  // 投げて 401 が返ることで、この口が在ることを確かめている。
   properties: {
     // **1 本以上。** 起点を持たないクロールは始まりが無いので進みようがなく、
     // 受理されたのに何も起きない、という形になる (`011` の CHECK と対)。
@@ -113,11 +106,6 @@ export const CRAWL_BODY_SCHEMA = {
       type: "array",
       minItems: 1,
       items: { type: "string", minLength: 1 },
-    },
-    fromTargets: {
-      type: "object",
-      additionalProperties: false,
-      properties: { limit: { type: "integer", minimum: 1 } },
     },
     // **鍵が 1 つの object** の並び (下の `scripts` の要素と同じ形。誤りの場所だけが 400 に出る)。
     // 当てる物の読み方・前の規則との覆い・起点を辿るかは handler で見て、400 で名指す。
@@ -210,7 +198,7 @@ export const CRAWL_BODY_SCHEMA = {
   },
 } as const;
 
-/** 誰の頼みか。組織は行の帰属と `capture_targets` の絞り込みに、subject は行とログに使う。 */
+/** 誰の頼みか。組織は行の帰属に、subject は行とログに使う。 */
 export interface CrawlRequester {
   orgId: string;
   subject: string;
@@ -326,11 +314,10 @@ export const prepareCrawl = async (
 ): Promise<PreparedCrawl | RefusedCrawl> => {
   const { db, tsCompile } = deps;
 
-  // **どちらか一方。** 両方渡されたら、どちらを使うかをこちらが決めることに
-  // なるので拒む。片方も無ければ始まりが無い。
-  const fromTargets = body.fromTargets;
-  if ((body.seeds === undefined) === (fromTargets === undefined)) {
-    return refused(400, { error: "provide exactly one of seeds or fromTargets" });
+  // 起点が無ければ始まりが無い。保存された予定の頼みを読み直す「固定し直す」もここを通るので、
+  // `seeds` の無い古い行も、500 ではなくこの文で断られる。
+  if (body.seeds === undefined) {
+    return refused(400, { error: "seeds is required" });
   }
 
   // BrowserHive の契約と同じ形 (印字可能な ASCII・512 字以下)。字の中身は頼む人が決める。
@@ -339,32 +326,9 @@ export const prepareCrawl = async (
     return refused(400, { error: "userAgent must be printable ASCII, at most 512 characters" });
   }
 
-  // `fromTargets` なら `capture_targets` から。以前の CLI 経路 (run.ts) が
-  // 読んでいたのと同じ表で、絞り込みだけが変わる (組織で絞る)。
-  const rawSeeds =
-    fromTargets === undefined
-      ? (body.seeds ?? [])
-      : (
-          await loadTargets(db, {
-            orgId: who.orgId,
-            ...(fromTargets.limit === undefined ? {} : { limit: fromTargets.limit }),
-          })
-        ).map((row) => row.url);
-
-  // **1 本も無ければ拒む。** 対象が 0 件のときにここを通すと、`011` の CHECK に
-  // 当たって 500 になる —— 呼ぶ側から見れば「壊れた」で、「対象が無い」ではない。
-  if (rawSeeds.length === 0) {
-    return refused(400, {
-      error:
-        fromTargets === undefined
-          ? "seeds must not be empty"
-          : "no enabled capture targets for this organization",
-    });
-  }
-
   // 読めない起点の URL が 1 本でもあれば拒む。**黙って落とさない** ——
   // 落とすと、投げた側は全部辿ったつもりで結果を読むことになる。
-  const seeds = rawSeeds.map((raw) => parseHttpUrl(raw));
+  const seeds = body.seeds.map((raw) => parseHttpUrl(raw));
   if (seeds.some((parsed) => parsed === undefined)) {
     return refused(400, { error: "every seed must be an http(s) URL" });
   }
@@ -502,10 +466,8 @@ export const prepareCrawl = async (
     kind: "prepared",
     seeds: parsedSeeds,
     rules,
-    // **対象一覧から取るときは、既定で辿らない。** それが `runs` の意味だった。
-    // 明示された値は勝つので、「一覧を起点にして 2 段辿る」も書ける。
-    maxDepth: body.maxDepth ?? (fromTargets === undefined ? DEFAULT_MAX_DEPTH : 0),
-    // 既定の 30 だと対象一覧が切り落とされる。**起点の数は下回らせない。**
+    maxDepth: body.maxDepth ?? DEFAULT_MAX_DEPTH,
+    // 既定の 30 だと、名指しした起点まで切り落とされうる。**起点の数は下回らせない。**
     maxPages: body.maxPages ?? Math.max(DEFAULT_MAX_PAGES, parsedSeeds.length),
     perHostDelayMs: body.perHostDelayMs ?? DEFAULT_PER_HOST_DELAY_MS,
     hostParallelism: body.hostParallelism ?? DEFAULT_HOST_PARALLELISM,

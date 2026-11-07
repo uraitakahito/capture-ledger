@@ -27,7 +27,7 @@ submission time is the only source.
 ```
 what capture-ledger knows          what BrowserHive knows
 ─────────────────          ──────────────────────
-capture_targets.org_id ──┐      taskId
+crawls.org_id ───────────┐      taskId
                          │      where the artifacts are
                          └──→   (no idea about organizations)
               capture_submissions

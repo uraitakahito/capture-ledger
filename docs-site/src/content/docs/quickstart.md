@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Bring the Compose stack up, seed the capture_targets table, and start your first crawl.
+description: Bring the Compose stack up, prepare the database, and start your first crawl.
 ---
 
 The stack brings up everything capture-ledger needs — Postgres, two headless
@@ -135,8 +135,7 @@ pnpm run search:connect   # waits for OpenSearch, then writes CAPTURE_LEDGER_OPE
 
 ```sh
 pnpm install         # first time only
-pnpm run db:migrate  # create the capture_targets table
-pnpm run db:seed     # load the five sample URLs
+pnpm run db:migrate  # create the tables
 pnpm run scripts import .upstream/capture-scripts  # what runs inside the page
 ```
 
@@ -145,16 +144,6 @@ BrowserHive has **no roster of its own**. With no scripts in the ledger, a crawl
 the page — no scrolling, no lazy loading — and still **produces a successful archive**.
 `pnpm run scripts list` says what is in there.
 :::
-
-To capture pages of your own, add them the same way. `--org acme` is the organization
-the crawl in §7 claims, so the rows are visible to it:
-
-```sh
-pnpm run targets add https://example.com/ --org acme
-```
-
-The rest of the CLI (reading a file, listing, disabling) is in
-[URL source](/capture-ledger/url-source/#adding-urls).
 
 ## 5. Prepare authorization
 
@@ -248,8 +237,9 @@ are in effect; `blocked` means the warnings above it name the missing lines
 `pnpm run doctor`, near the end of capture-scheduler's quickstart, shows ✓ on every line, the two
 are connected; the `pnpm run smoke` after it captures one page to prove it.
 
-Once connected, Windmill also captures every enabled `acme` row daily at 04:00 (Asia/Tokyo) —
-[When it runs](https://uraitakahito.github.io/capture-scheduler/schedule/).
+Once connected, the API also starts a crawl whenever a schedule falls due. There are none until
+someone makes one, in capture-workbench's Schedules tab —
+[Schedules](/capture-ledger/schedules/).
 
 ### Start one
 
@@ -272,10 +262,6 @@ Without `scripts`, the registered script `egov-law-search` (for `laws.e-gov.go.j
 default set and searches law titles for the word in `query` within the page. `query` is required; without it the
 answer is `400 missing variables`
 (see "Site scripts" in [Capture options](/capture-ledger/capture-options/)).
-
-To seed from the rows §4 loaded, send `-d '{"fromTargets":{}}'`. It defaults to depth 0 — take them,
-follow nothing. That is what the old `POST /api/runs` did. The rows are taken in insertion (`id`)
-order, so `{"fromTargets":{"limit":1}}` is always the first sample row, not the URL you added in §4.
 
 Ask `GET /api/crawls/<crawlId>`, with the same header, how the crawl ended. A failed crawl carries
 `error` as `[step] message`, pages that could not be captured are in `failures` with their reasons and
@@ -385,6 +371,6 @@ fails. What was missing, capture-scheduler's `pnpm run doctor` names.
 ## Next
 
 - Serve and share archives, and the whole crawl API → [Archive ledger](/capture-ledger/archive-ledger/)
-- Add your own URLs → [URL source](/capture-ledger/url-source/)
+- Capture on a timetable → [Schedules](/capture-ledger/schedules/)
 - Change what gets captured → [Capture options](/capture-ledger/capture-options/)
 - Work without Compose → [Development environment](/capture-ledger/development-environment/)

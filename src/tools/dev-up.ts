@@ -134,7 +134,7 @@ const STEPS: Step[] = [
   { id: "search-connect", run: "pnpm run search:connect" },
   {
     id: "db",
-    run: "pnpm run db:migrate && pnpm run db:seed",
+    run: "pnpm run db:migrate",
     waitFor: { label: "postgres", port: 5432 },
   },
   { id: "catalog", run: "pnpm run scripts import .upstream/capture-scripts" },

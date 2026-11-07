@@ -21,7 +21,7 @@
  *   pnpm run scripts enable autoscroll
  *   pnpm run scripts rm autoscroll --version 2
  *
- * **DB に直接書く開発用の道具で、認可は通らない** (`targets` と同じ)。中身は `store.ts`。
+ * **DB に直接書く開発用の道具で、認可は通らない。** 中身は `store.ts`。
  *
  * ## なぜ台帳がスクリプトを持つのか
  *
@@ -42,7 +42,6 @@ import { parseHttpUrl } from "../crawl/scope.js";
 import type { Database, ScriptParam, ScriptPhase } from "../db/database.js";
 import { createKyselyClient } from "../db/kysely.js";
 import { fatal } from "../logger.js";
-import { readAll } from "../targets/input.js";
 import {
   addHostTypes,
   addScript,
@@ -113,6 +112,16 @@ const paramsNote = (params: readonly ScriptParam[]): string =>
 const fail = (message: string): void => {
   process.stderr.write(`${message}\n`);
   process.exitCode = 1;
+};
+
+/** ストリームを最後まで読んで、文字列にする (`--file -`)。 */
+const readAll = async (stream: NodeJS.ReadableStream): Promise<string> => {
+  stream.setEncoding("utf8");
+  let text = "";
+  for await (const chunk of stream) {
+    text += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+  }
+  return text;
 };
 
 const withDb = async (

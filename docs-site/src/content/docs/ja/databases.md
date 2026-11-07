@@ -6,10 +6,10 @@ description: capture-ledger と OpenFGA がそれぞれ持つ Postgres と、そ
 capture-ledger の開発スタックには **Postgres が 2 つ**あります。別々のものを入れる、
 別々のデータベースです。
 
-| コンテナ                    | 中身                                                                                | 誰が SQL で触るか |
-| --------------------------- | ----------------------------------------------------------------------------------- | ----------------- |
-| `postgres.capture-ledger`   | `capture_targets` / `archives` / `fga_outbox` ほか（[下記](#capture-ledger-の-db)） | capture-ledger    |
-| `openfga-db.capture-ledger` | `tuple` / `authorization_model` ほか（[下記](#openfga-の-db)）                      | OpenFGA だけ      |
+| コンテナ                    | 中身                                                                       | 誰が SQL で触るか |
+| --------------------------- | -------------------------------------------------------------------------- | ----------------- |
+| `postgres.capture-ledger`   | `crawls` / `archives` / `fga_outbox` ほか（[下記](#capture-ledger-の-db)） | capture-ledger    |
+| `openfga-db.capture-ledger` | `tuple` / `authorization_model` ほか（[下記](#openfga-の-db)）             | OpenFGA だけ      |
 
 重なるテーブルは 1 つもありません。資格情報も相互に通らず、`openfga-db` は
 ポートを公開していないので、覗くには `container exec` が要ります。
@@ -29,7 +29,6 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 
 | テーブル                                                                   | 役割                                                                                                                          |
 | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| [`capture_targets`](/capture-ledger/ja/databases/capture-targets/)         | 撮る対象の一覧                                                                                                                |
 | [`capture_submissions`](/capture-ledger/ja/databases/capture-submissions/) | 投げた記録。組織を知る唯一の出どころ                                                                                          |
 | [`archives`](/capture-ledger/ja/databases/archives/)                       | 台帳。アーカイブを生んだ取り込みだけ                                                                                          |
 | `archive_pages`                                                            | アーカイブの頁の一覧（`pages/pages.jsonl`）の 1 行が 1 行。クロールの合本のために 1 度だけ読む                                |
@@ -40,7 +39,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | [`crawl_schedules`](/capture-ledger/ja/databases/crawl-schedules/)         | 定期実行の予定。時計の表で、回は `crawls` の行                                                                                |
 | `scripts`                                                                  | クロールが名指せるスクリプト                                                                                                  |
 | `host_types`                                                               | 受け皿（`__bh`）の型。スクリプトを読む人に見せる写し                                                                          |
-| `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`                  | Kysely が作る帳簿（下記）                                                                                                     |
+| `kysely_migration` / `_lock`                                               | Kysely が作る帳簿（下記）                                                                                                     |
 
 ### OpenFGA の DB
 
@@ -86,13 +85,12 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 以下は**道具が作って道具が使う**もので、capture-ledger 側から意識することがほとんど
 ありません。
 
-### Kysely が作る 4 表
+### Kysely が作る表
 
-`kysely_migration` / `kysely_migration_lock` / `kysely_seed` / `kysely_seed_lock`。
+`kysely_migration` / `kysely_migration_lock`。
 
 中身は「どの migration をもう流したか」の 2 列（`name` / `timestamp`）だけで、
-`_lock` のほうは 1 行だけの鍵です。同じ runner を、記録用のテーブルだけ変えて
-migration と seed に使い回しています。
+`_lock` のほうは 1 行だけの鍵です。
 
 ### authorization_model
 

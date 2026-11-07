@@ -40,10 +40,9 @@ flowchart LR
 
 ## What capture-ledger is
 
-capture-ledger answers one question: **which URLs get captured**. A caller asks for a
-crawl; capture-ledger works out the seeds — an explicit list, or the enabled rows of a
-Postgres `capture_targets` table — decides what is in scope, and hands one level
-at a time to a Windmill flow that does the submitting.
+capture-ledger answers one question: **which URLs get captured**. A crawl starts from the seeds
+in its request, sent by a caller or held by a schedule (`crawl_schedules`). capture-ledger decides
+what is in scope, and hands one level at a time to a Windmill flow that does the submitting.
 
 ## What is not capture-ledger's responsibility
 
@@ -66,7 +65,7 @@ which reads the manifest keys those reports recorded.
 | ------------------------------------- | ------------------------------------------------------------------- |
 | bring the stack up for the first time | [Quickstart](/capture-ledger/quickstart/)                           |
 | set up the dev environment            | [Development environment](/capture-ledger/development-environment/) |
-| manage the URL list                   | [URL source](/capture-ledger/url-source/)                           |
+| capture on a timetable                | [Schedules](/capture-ledger/schedules/)                             |
 | shape how a crawl captures            | [Capture options](/capture-ledger/capture-options/)                 |
 | move to a newer BrowserHive           | [Upgrading BrowserHive](/capture-ledger/upgrading-browserhive/)     |
 | understand the moving parts           | [Architecture](/capture-ledger/architecture/)                       |

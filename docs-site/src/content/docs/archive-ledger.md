@@ -199,24 +199,16 @@ strongly consistent check.
 
 ## Starting a crawl
 
-Deciding _when_ to capture belongs outside capture-ledger — a scheduler does that.
-Deciding _what_ to submit and _how_ stays here. So the boundary is one endpoint
+A crawl's seeds come with its request, so whoever asks decides what to capture: a person on
+[capture-workbench](https://github.com/uraitakahito/capture-workbench)'s screen, or a schedule (`crawl_schedules`), which holds its request and falls due
+on the ledger's own clock ([Schedules](/capture-ledger/schedules/)). The boundary is one endpoint
 that starts a crawl, and one that reports on it.
 
-There used to be a second pair, `POST /api/runs` and `GET /api/runs/:id`, for
-"capture every enabled row of `capture_targets` once". **That is now a crawl with
-`fromTargets` and a depth of 0.** One concept, one table, one set of guarantees.
-
 ```sh
-# From an explicit list of seeds.
 curl -X POST http://localhost:7070/api/crawls \
      -H 'content-type: application/json' \
      -d '{"seeds":["https://example.com/"],"maxDepth":2}'
 # → 202 { "crawlId": "9072b625-…" }
-
-# Or from the target list — this is what the old run did.
-curl -X POST http://localhost:7070/api/crawls \
-     -H 'content-type: application/json' -d '{"fromTargets":{"limit":5}}'
 
 curl http://localhost:7070/api/crawls/9072b625-…
 # → { "state": "succeeded", "stopReason": "max_depth",
@@ -235,39 +227,6 @@ that can hold an in-progress value is called `state`.** `crawls.state` and
 that one keeps `status` even though it is written into `crawl_pages.state`.
 :::
 
-### From the target list
-
-`fromTargets` seeds the crawl from the enabled rows of
-[`capture_targets`](/capture-ledger/databases/capture-targets/), and `limit` takes the
-first _n_ of them. Two things differ from the rest of the endpoint:
-
-- **`maxDepth` defaults to 0** — do not follow anything. That is what the old run
-  meant. An explicit value still wins, so "take the target list and follow two
-  levels out from each" is expressible.
-- **`maxPages` is never lower than the number of seeds.** The ordinary default of
-  30 would silently truncate a longer target list.
-
-The rows are filtered by the caller's organization. A crawl carries one `org_id`,
-so mixing another organization's targets into it would leave attribution
-unanswerable. A caller with no enabled targets gets **400**, not an empty crawl —
-`crawls.seeds` has a `CHECK (array_length(seeds, 1) >= 1)` and a seedless crawl
-could never start.
-
-:::note[`fromTargets` counts links but does not follow them]
-Depth 0 means the first level is also the last, so `stopReason` is `max_depth` when links not
-yet captured are left over, and `completed` when none are. Neither is a fault — it is the
-shape of the request.
-:::
-
-Two consequences of folding runs into crawls, worth knowing before the first
-scheduled one:
-
-- **The daily sweep is now paced.** The old run submitted every target at once;
-  a crawl honours `perHostDelayMs` and `hostParallelism` like any other. Kinder
-  to the other end, and slower.
-- **Pages from the target list now reach full-text search**, because they are
-  `crawl_pages` rows and the search index joins through them.
-
 ### One crawl at a time
 
 A second crawl started while one is running gets **409**, and the guarantee is a
@@ -283,12 +242,11 @@ at twice the rate. A flag in the process would hold only until the day a second
 process appears; Postgres holds it regardless. The route's only job is to
 translate the constraint violation into a 409.
 
-:::caution[The daily crawl and a manual one now block each other]
-There used to be two constraints — one for runs, one for crawls — and a scheduled
-run could start while someone was crawling by hand. There is one now, so it
-cannot. **This is right on the politeness argument** (both would hit the same
-hosts), but the practical cost is that a scheduled crawl is skipped more often
-than a scheduled run used to be.
+:::caution[A schedule and a manual crawl block each other]
+There is one constraint, so a schedule that falls due while someone is crawling by hand waits:
+its due time does not move, and it starts once the running crawl has ended
+([Schedules](/capture-ledger/schedules/)). **This is right on the politeness argument** (both
+would hit the same hosts).
 
 A crawl whose dispatch dies also leaves its row `running`, which blocks the next
 one. `GET` returns `startedAt` so you can judge; clearing it is a manual act.
@@ -296,9 +254,8 @@ one. `GET` returns `startedAt` so you can judge; clearing it is a manual act.
 
 ### What a caller may send
 
-Exactly one of `seeds` (a non-empty array) or `fromTargets` — **both is 400 and
-neither is 400**, with the two reported differently, because they are different
-mistakes. Alongside them: `rules`, `maxDepth`, `maxPages`, `perHostDelayMs`,
+`seeds`, a non-empty array, is required: without it the answer is **400**. Alongside it:
+`rules`, `maxDepth`, `maxPages`, `perHostDelayMs`,
 `hostParallelism`, `scripts` (what runs in the page), `variables` (per-crawl values the
 scripts declared — see [Capture options](/capture-ledger/capture-options/#per-crawl-values)) and
 `userAgent` (see the same page).
@@ -320,17 +277,17 @@ mentions the setting that caused it. See
 
 ### Who calls this
 
-Nothing in capture-ledger does. The scheduler lives in its own repo —
-[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) — which runs a Windmill instance
-whose only job is to call this endpoint on a cron (`trigger_crawl.ts`). The same
-Windmill also runs the flow that does the capturing, which capture-ledger reaches through
-`CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`.
+capture-workbench's screen, and anything else holding a token. A schedule does not call it: the
+ledger's own clock starts each run, from what the schedule pinned when it passed the same checks
+([Schedules](/capture-ledger/schedules/)).
 
-The split is deliberate: **capture-scheduler decides when, capture-ledger decides what.** That is
-why the body takes no capture formats, and why `fromTargets` submits whatever
-`capture_targets` says rather than a list the caller supplies.
+The split is deliberate: **what to capture is held by a schedule (`crawl_schedules`) or by the
+crawl started from the screen, and when a schedule falls due is the ledger's to decide.** The
+Windmill in [capture-scheduler](https://github.com/uraitakahito/capture-scheduler) only does the
+capturing: capture-ledger reaches its flow through `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` and hands it
+one level at a time.
 
-Two things a caller has to get right, and capture-scheduler's script exists to encode them:
+Two things a caller has to get right:
 
 - **409 is not a failure.** It means a crawl is already going. Retrying cannot
   help — the answer stays the same until that crawl ends.
@@ -390,9 +347,7 @@ write `member` for exactly this reason: two homes for one fact means no answer
 when they disagree.
 
 One grant is enough to start a crawl. The crawl is attributed to the **first**
-organization on the caller's identity, and `fromTargets` reads only that
-organization's rows — so a `submitter` cannot pull another tenant's targets into
-a crawl of their own.
+organization on the caller's identity, which need not be the one that gave the grant.
 
 ## Following links
 
@@ -538,8 +493,8 @@ inside a page, not another page — but nothing else is normalised: a reordered 
 string is a different URL to plenty of real servers, and taking the wrong page is
 worse than taking one twice.
 
-Deduplication is a unique index on `(crawl_id, url_hash)`, with `url_hash` the same
-generated `digest(url, 'sha256')` column `capture_targets` uses. Discovered links are
+Deduplication is a unique index on `(crawl_id, url_hash)`, with `url_hash` a
+generated `digest(url, 'sha256')` column. Discovered links are
 inserted with `ON CONFLICT DO NOTHING` and **the rows that actually landed become the
 next level** — so recording and deciding cannot drift apart. BrowserHive's
 `rejectDuplicateUrls` is not a substitute: it only knows about pending and processing

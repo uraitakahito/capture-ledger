@@ -188,23 +188,15 @@ S3 は署名しか見ないので、URL を署名した瞬間に判断は確定�
 
 ## クロールを始める
 
-**いつ**取り込むかを決める仕事は capture-ledger の外 —— スケジューラのもの。**何を**
-**どう**投げるかはここに残る。だから境界は、クロールを始める口と、その様子を返す口の 2 つ。
-
-以前はもう 1 組ありました。`POST /api/runs` と `GET /api/runs/:id` —— 「`capture_targets`
-の有効な行を全部 1 回取る」ための口です。**それは今、`fromTargets` で深さ 0 のクロール**
-になりました。概念が 1 つ、表が 1 つ、担保が 1 組。
+クロールの起点は頼みと一緒に来るので、何を撮るかは頼む側が決める。頼むのは [capture-workbench](https://github.com/uraitakahito/capture-workbench) の画面の人か、
+頼みを持っている予定（`crawl_schedules`）で、予定の期限は台帳の時計が見る（[定期実行](/capture-ledger/ja/schedules/)）。
+境界は、クロールを始める口と、その様子を返す口の 2 つ。
 
 ```sh
-# 起点を明示する形。
 curl -X POST http://localhost:7070/api/crawls \
      -H 'content-type: application/json' \
      -d '{"seeds":["https://example.com/"],"maxDepth":2}'
 # → 202 { "crawlId": "9072b625-…" }
-
-# 対象一覧から始める形。以前の run がしていたのはこれ。
-curl -X POST http://localhost:7070/api/crawls \
-     -H 'content-type: application/json' -d '{"fromTargets":{"limit":5}}'
 
 curl http://localhost:7070/api/crawls/9072b625-…
 # → { "state": "succeeded", "stopReason": "max_depth",
@@ -222,34 +214,6 @@ curl http://localhost:7070/api/crawls/9072b625-…
 書き込む値であっても `status` のままが正しい。
 :::
 
-### 対象一覧から始める
-
-`fromTargets` は[`capture_targets`](/capture-ledger/ja/databases/capture-targets/)の有効な行を起点にする。
-`limit` を渡せば先頭 n 件。他とは 2 点だけ違う:
-
-- **`maxDepth` の既定は 0** —— 辿らない。以前の run が意味していたのはこれ。
-  明示した値は勝つので、「対象一覧を起点にして 2 段辿る」も書ける。
-- **`maxPages` は起点の数を下回らない。** 既定の 30 のままだと、長い対象一覧が黙って
-  切り落とされる。
-
-読む行は呼び出し元の組織で絞る。クロールは `org_id` を 1 つ持つ行なので、別の組織の
-対象を混ぜると帰属が言えなくなる。
-有効な対象が 1 件も無い呼び出し元には、空のクロールではなく **400** を返す —— `crawls.seeds` には `CHECK (array_length(seeds, 1) >= 1)` があり、
-起点の無いクロールはそもそも始まりようがない。
-
-:::note[`fromTargets` はリンクを数えるが、辿らない]
-深さ 0 では 1 段目が最後の段なので、まだ撮っていないリンクがあれば `stopReason` は `max_depth`、
-無ければ `completed` になる。どちらも異常ではなく、頼んだことの形がそうだというだけ。
-:::
-
-run をクロールに畳んだ帰結が 2 つ。最初の定期実行の前に知っておくとよい:
-
-- **日次の取り込みにも礼儀が効くようになった。** 以前の run は対象を全件同時に投げて
-  いたが、クロールは他と同じく `perHostDelayMs` と `hostParallelism` を守る。相手には
-  優しく、そのぶん遅い。
-- **対象一覧のページが全文検索の索引に乗る。** `crawl_pages` の行になり、索引が
-  そこを join するため。
-
 ### クロールは同時に 1 本
 
 走行中に 2 本目を始めようとすると **409**。担保はアプリの旗ではなく、部分 unique index:
@@ -263,10 +227,10 @@ CREATE UNIQUE INDEX crawls_single_active_idx ON crawls ((true)) WHERE state = 'r
 2 つになった日まで**しか**保たない。Postgres はどちらでも保つ。route の仕事は、制約違反を
 409 に翻訳することだけ。
 
-:::caution[日次と手動のクロールが塞ぎ合うようになった]
-以前は制約が 2 つ（run 用とクロール用）あり、手でクロールしている最中でも日次の run は
-始められた。いまは 1 つなので始められない。**礼儀の観点では正しい**（どちらも同じホストを
-叩く）が、実務上の代償として、**日次が見送られる回数は以前より増える**。
+:::caution[予定と手で始めたクロールは塞ぎ合う]
+制約は 1 つなので、手でクロールしている最中に期限の来た予定は待つ。期限は動かず、走っている 1 本が
+終わってから始まる（[定期実行](/capture-ledger/ja/schedules/)）。**礼儀の観点では正しい**（どちらも同じホストを
+叩く）。
 
 dispatch が途中で死んだクロールの行も `running` のまま残り、次を塞ぐ。判断できるように
 `GET` は `startedAt` を返す。片付けは手で行う。
@@ -274,8 +238,7 @@ dispatch が途中で死んだクロールの行も `running` のまま残り、
 
 ### 呼び出し元が渡せるもの
 
-`seeds`（1 本以上の配列）か `fromTargets` の **どちらか一方**。**両方でも 400、
-どちらも無くても 400** で、この 2 つは別の間違いなので言い分を分けてある。ほかに
+`seeds`（1 本以上の配列）は必須で、無ければ **400**。ほかに
 `rules` / `maxDepth` / `maxPages` / `perHostDelayMs` / `hostParallelism` / `scripts`（ページで
 走らせるもの）/ `variables`（スクリプトが宣言した、クロールごとの値。
 [キャプチャオプション](/capture-ledger/ja/capture-options/#クロールごとの値)を参照）/ `userAgent`（同じ頁を参照）。
@@ -296,16 +259,14 @@ CAPTURE_LEDGER_CAPTURE_SIGNING=1      # wacz-auth 署名を要求する。wacz �
 
 ### 誰がこの口を叩くか
 
-capture-ledger の中には誰も居ない。スケジューラは別の repo —— [capture-scheduler](https://github.com/uraitakahito/capture-scheduler)
-—— に住んでいて、そこで動く Windmill が cron でこの endpoint を叩くことだけをしている
-（`trigger_crawl.ts`）。取り込みを回す flow も同じ Windmill に居て、capture-ledger は
-`CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` でそこへ届く。
+capture-workbench の画面と、トークンを持つほかの道具。予定はこの口を叩かない —— 回を始めるのは台帳の時計で、
+作ったときに同じ確かめを通して固定した撮り方で始める（[定期実行](/capture-ledger/ja/schedules/)）。
 
-分けてあるのは意図的で、**capture-scheduler が「いつ」を決め、capture-ledger が「何を」決める**。
-body が取り込む形式を受けないのも、`fromTargets` の対象が呼び出し元の渡す一覧ではなく
-`capture_targets` なのも、同じ線の上にある。
+分けてあるのは意図的で、**何を撮るかは予定（`crawl_schedules`）か、画面から始めるクロールが持ち、
+予定の期限が来たかは台帳が決める**。[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) の
+Windmill は撮るだけで、capture-ledger は `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` でその flow へ 1 段ずつ渡す。
 
-呼ぶ側が外してはならないことが 2 つあり、capture-scheduler のスクリプトはそれを形にしたもの:
+呼ぶ側が外してはならないことが 2 つある:
 
 - **409 は失敗ではない。** 既に走っているという意味で、再試行しても答えは変わらない
   —— その 1 本が終わるまで同じ 409 が返る。
@@ -357,8 +318,7 @@ subject に 202 が出た。
 のは、まさにこのため —— 1 つの事実に住処が 2 つあると、食い違ったとき答えが無くなる。
 
 許可が 1 つあればクロールは始められる。クロールは呼び出し元の身元の**先頭の**組織に
-帰属し、`fromTargets` が読むのもその組織の行だけ —— `submitter` が他のテナントの
-対象を自分のクロールに引き込むことはできない。
+帰属し、許しをくれた組織とは限らない。
 
 ## リンクを辿る
 
@@ -491,8 +451,8 @@ curl 'http://localhost:7070/api/crawl-rules/check?seed=https://www.example.com/&
 —— が、それ以外は正規化しない。クエリを並べ替えると別のページを返すサーバは実在するので、
 取りこぼしより取り違えのほうが悪い。
 
-重複排除は `(crawl_id, url_hash)` の unique index 1 本。`url_hash` は `capture_targets` と
-同じ `digest(url, 'sha256')` の生成列。見つけたリンクは `ON CONFLICT DO NOTHING` で入れ、
+重複排除は `(crawl_id, url_hash)` の unique index 1 本。`url_hash` は
+`digest(url, 'sha256')` の生成列。見つけたリンクは `ON CONFLICT DO NOTHING` で入れ、
 **実際に入った行がそのまま次の段になる** —— 記録と決定がずれようがない。BrowserHive の
 `rejectDuplicateUrls` は代わりにならない: pending と processing しか見ておらず、完了した
 URL を忘れる。

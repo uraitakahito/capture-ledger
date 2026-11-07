@@ -439,7 +439,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       }
 
       // 組織は呼び出し元の 1 つ目。`maySubmit` はどれか 1 つで許されていれば通すので、
-      // 帰属も同じ組織に寄せる。**対象を読むときの絞り込みにも同じ値を使う。**
+      // 許しをくれた組織とは限らない。
       const who = { orgId: identity.organizations[0] ?? "", subject: identity.subject };
 
       const prepared = await prepareCrawl(
@@ -483,10 +483,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    *
    * ## 絞りは `:id` と同じ `maySubmit`
    *
-   * `can_submit` は「取り込みを始めてよい者」で、モデルはそれを **組織を跨ぐ信頼**
-   * として定義している (`fga/model.fga` の `submitter`: 「その 1 つの許可で他の組織の
-   * 対象も投げられる」)。読みだけを狭める規則は増やさない —— 始められるのに見えない、
-   * という食い違いのほうが説明しにくい。
+   * `can_submit` は「取り込みを始めてよい者」で (`fga/model.fga` の `submitter`)、どれか 1 つの
+   * 組織で許されていれば通す (`maySubmit`) ので、**組織を跨ぐ信頼**になる。読みだけを狭める規則は
+   * 増やさない —— 始められるのに見えない、という食い違いのほうが説明しにくい。
    *
    * 代わりに `orgId` を必ず行に出す。**見えている範囲を、workbench が言えるようにするため。**
    * 組織ごとに絞る必要が出たら、そのときは `crawl` 型を認可モデルに足して

@@ -137,8 +137,6 @@ NAME=value     # 値を渡す
 | `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                                                                               |
 | `pnpm run check`                          | push の前に走らせる検査の全部。中身と並びは package.json の `check`（CI の check job と同じ）。                                    |
 | `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                                                                  |
-| `pnpm run db:seed` / `db:seed:down`       | `src/db/seeds/` の seed。                                                                                                          |
-| `pnpm run targets`                        | 撮る対象（`capture_targets`）を足す・見る・外す・消す。DB に直接書く開発用の道具。                                                 |
 | `pnpm run scripts`                        | ページで走らせるスクリプト（`scripts`）を取り込む・足す・見る・読む・外す・消す。受け皿の型（`host_types`）も出す。DB に直接書く。 |
 | `pnpm run openapi:generate`               | 固定した submodule から BrowserHive の `openapi.json` を取り直し、型を再生成 (openapi-typescript)。                                |
 | `pnpm run openapi:check`                  | 型を再生成して `git diff --exit-code` (CI のドリフト検査)。                                                                        |
@@ -292,6 +290,32 @@ Postgres の TLS は `DATABASE_URL` にパラメータを書きます (例: `?ss
 **BrowserHive の TLS はもうここで設定しません。** そのチャンネルを持っているのは
 flow なので、CA は Windmill 側の変数 `u/admin/browserhive_tls_ca` に置きます
 （空文字なら平文）。
+
+## マイグレーション
+
+マイグレーションは `src/db/migrations/<NNN>-<説明>.ts` に置き、`up(db)` /
+`down(db)` を export します。ランナーは Kysely の `Migrator` +
+`FileMigrationProvider` の薄いラッパで、適用済み ID を `kysely_migration`
+テーブルで管理します (同時実行は `kysely_migration_lock` が守ります)。最新の状態で
+`pnpm run db:migrate` を再実行しても何も起きません。
+
+```sh
+pnpm run db:migrate       # 適用
+pnpm run db:migrate:down  # 直前の 1 つを巻き戻す
+```
+
+追加するときは:
+
+1. フォルダの最後のファイルの次の連番を取る (例 `<NNN>-add-priority.ts`)。
+2. スキーマビルダで `up` / `down` を実装する。ビルダで書けないもの (拡張、生成列、
+   他カラムを参照する `CHECK`) は ``sql`…`.execute(db)`` を使う。
+3. ローカルで往復させる:
+   `pnpm run db:migrate && pnpm run db:migrate:down && pnpm run db:migrate`。
+   CI も同じ往復を実行します。
+4. マイグレーションと、それに依存するコードは同じ PR でコミットする。
+
+作った物が無くなっても、古いマイグレーションのファイルは残します。適用済みの DB では、ファイルを消すと
+Kysely が `corrupted migrations` で止まります。表を消すなら、落とすマイグレーションを足します。
 
 ## ローカルで身元を用意する
 
