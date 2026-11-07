@@ -8,7 +8,7 @@ description: capture-ledger・Postgres・BrowserHive・成果物ストアの関�
 ```mermaid
 flowchart LR
   U((呼び出し元)) -->|"POST /api/crawls"| W
-  PG[("Postgres<br/>capture_targets / crawls / crawl_pages")] <--> W
+  PG[("Postgres<br/>crawl_schedules / crawls / crawl_pages")] <--> W
   subgraph W["capture-ledger (Node 26 / TypeScript)"]
     direction TB
     API["api/crawls.ts<br/>範囲・重複排除・上限"]
@@ -121,10 +121,10 @@ flowchart LR
 | `src/api/crawls.ts`             | クロールを始める / 段を受ける / 次の段を返す。認可・方針・記録。                                                                                                  |
 | `src/crawl/`                    | 範囲、上限、段の台帳登録、Windmill への dispatch。                                                                                                                |
 | `src/config/capture-formats.ts` | `CAPTURE_LEDGER_CAPTURE_FORMATS` / `_SIGNING` を、毎回載せる `captureFormats` にする。                                                                            |
-| `src/data/url-source.ts`        | 唯一の SQL クエリ。`capture_targets` から、頼んだ組織のぶんだけ `{ url }[]` を返す。                                                                              |
+| `src/schedules/`                | 時計。cron・状態の語と、予定の期限が来るとクロールを始める周回。                                                                                                  |
 | `src/archive/`                  | manifest、台帳への受け入れ、reconciler。                                                                                                                          |
 | `src/rpc/generated/`            | BrowserHive の契約（submodule から写した `openapi.json`）と、そこから作った型。manifest は `CaptureResultReport` で、台帳が読む前にこれに照らす。手で編集しない。 |
-| `src/db/`                       | プール、Kysely の配線、マイグレーション、seed。                                                                                                                   |
+| `src/db/`                       | プール、Kysely の配線、マイグレーション。                                                                                                                         |
 
 ## エラーの扱い
 
@@ -162,8 +162,8 @@ capture-ledger 自身はホストで動き、下の表の「ホストポート�
 `scripts/stack.sh`（submodule なので `.upstream/seaweedfs/scripts/stack.sh up` でも同じ）。
 中身を空にしたいときは `pnpm run store:wipe`。
 
-compose ファイルは 1 つです。migrate / seed の一発ジョブはサービスではなく、
-`dev:up` が host で走らせます（`pnpm run db:migrate`・`pnpm run db:seed`。container-compose に
+compose ファイルは 1 つです。migrate の一発ジョブはサービスではなく、
+`dev:up` が host で走らせます（`pnpm run db:migrate`。container-compose に
 `run` が無いため）。イメージの `ENTRYPOINT` は `node dist/api/server.js` なので、
 イメージから走らせるときはそれを上書きします。
 

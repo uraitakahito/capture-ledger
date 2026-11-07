@@ -6,10 +6,10 @@ description: The two Postgres instances behind capture-ledger and OpenFGA, and t
 The capture-ledger dev stack runs **two Postgres instances**. They hold different things
 and are different databases.
 
-| Container                   | Holds                                                                                           | Who touches it with SQL |
-| --------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------- |
-| `postgres.capture-ledger`   | `capture_targets` / `archives` / `fga_outbox` and the rest ([below](#capture-ledgers-database)) | capture-ledger          |
-| `openfga-db.capture-ledger` | `tuple` / `authorization_model` and the rest ([below](#openfgas-database))                      | OpenFGA only            |
+| Container                   | Holds                                                                                  | Who touches it with SQL |
+| --------------------------- | -------------------------------------------------------------------------------------- | ----------------------- |
+| `postgres.capture-ledger`   | `crawls` / `archives` / `fga_outbox` and the rest ([below](#capture-ledgers-database)) | capture-ledger          |
+| `openfga-db.capture-ledger` | `tuple` / `authorization_model` and the rest ([below](#openfgas-database))             | OpenFGA only            |
 
 No table appears in both. The credentials do not cross either, and `openfga-db`
 publishes no port, so reaching it takes `container exec`.
@@ -29,7 +29,6 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 
 | Table                                                                   | Role                                                                                                                                       |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`capture_targets`](/capture-ledger/databases/capture-targets/)         | What to capture                                                                                                                            |
 | [`capture_submissions`](/capture-ledger/databases/capture-submissions/) | What was submitted; the only source of organizations                                                                                       |
 | [`archives`](/capture-ledger/databases/archives/)                       | The ledger — captures that produced an archive                                                                                             |
 | `archive_pages`                                                         | One row per line of an archive's page list (`pages/pages.jsonl`), read once for the crawl's replay bundle                                  |
@@ -40,7 +39,7 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 | [`crawl_schedules`](/capture-ledger/databases/crawl-schedules/)         | Scheduled crawls — the clock's table; a run is a `crawls` row                                                                              |
 | `scripts`                                                               | The scripts a crawl can name                                                                                                               |
 | `host_types`                                                            | The receptacle (`__bh`) types, shown to script readers                                                                                     |
-| `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`               | Kysely's own bookkeeping (below)                                                                                                           |
+| `kysely_migration` / `_lock`                                            | Kysely's own bookkeeping (below)                                                                                                           |
 
 ### OpenFGA's database
 
@@ -88,13 +87,12 @@ version is signed.
 These are **created by tooling and used by tooling**; capture-ledger rarely has to think
 about them.
 
-### The four tables Kysely creates
+### The tables Kysely creates
 
-`kysely_migration` / `kysely_migration_lock` / `kysely_seed` / `kysely_seed_lock`.
+`kysely_migration` / `kysely_migration_lock`.
 
 The content is two columns — which migration ran, and when — and the `_lock`
-tables hold a single row each. The same runner is reused for migrations and seeds
-with nothing but the table names changed.
+table holds a single row.
 
 ### authorization_model
 

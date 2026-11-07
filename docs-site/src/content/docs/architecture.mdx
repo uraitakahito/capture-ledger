@@ -8,7 +8,7 @@ description: How capture-ledger, Postgres, BrowserHive and the artifact store fi
 ```mermaid
 flowchart LR
   U((caller)) -->|"POST /api/crawls"| W
-  PG[("Postgres<br/>capture_targets / crawls / crawl_pages")] <--> W
+  PG[("Postgres<br/>crawl_schedules / crawls / crawl_pages")] <--> W
   subgraph W["capture-ledger (Node 26 / TypeScript)"]
     direction TB
     API["api/crawls.ts<br/>rules, dedup, budget"]
@@ -124,10 +124,10 @@ See [Archive ledger](/capture-ledger/archive-ledger/) for the details.
 | `src/api/crawls.ts`             | Start a crawl, report a level, hand back the next one. Authorization, policy, and record-keeping.                                                                                                            |
 | `src/crawl/`                    | Scope, budget, level admission, and the Windmill dispatch.                                                                                                                                                   |
 | `src/config/capture-formats.ts` | `CAPTURE_LEDGER_CAPTURE_FORMATS` / `_SIGNING` → the `captureFormats` every dispatch carries.                                                                                                                 |
-| `src/data/url-source.ts`        | The one SQL query over `capture_targets`. Returns `{ url }[]` for the organization asking.                                                                                                                   |
+| `src/schedules/`                | The clock: cron, the health words, and the tick that starts a crawl when a schedule falls due.                                                                                                               |
 | `src/archive/`                  | Manifests, admission into the ledger, and the reconciler.                                                                                                                                                    |
 | `src/rpc/generated/`            | BrowserHive's contract (`openapi.json`, copied from the submodule) and the types made from it. The manifest is a `CaptureResultReport`, checked against it before the ledger reads it. Never edited by hand. |
-| `src/db/`                       | Pool, Kysely wiring, migrations, seeds.                                                                                                                                                                      |
+| `src/db/`                       | Pool, Kysely wiring, migrations.                                                                                                                                                                             |
 
 ## Error handling
 
@@ -165,10 +165,10 @@ The artifact store (SeaweedFS) is **not in this stack**. It is one store shared 
 [seaweedfs](https://github.com/uraitakahito/seaweedfs)'s `scripts/stack.sh` — the submodule works
 too: `.upstream/seaweedfs/scripts/stack.sh up`. To empty it, `pnpm run store:wipe`.
 
-There is one compose file. The one-shot migrate/seed jobs are not services:
-`dev:up` runs them on the host (`pnpm run db:migrate`, `pnpm run db:seed`), because
+There is one compose file. The one-shot migrate job is not a service:
+`dev:up` runs it on the host (`pnpm run db:migrate`), because
 container-compose has no `run` subcommand. The image's `ENTRYPOINT` is
-`node dist/api/server.js`, so running them from the image means overriding it.
+`node dist/api/server.js`, so running it from the image means overriding it.
 
 Bucket creation is **not** a separate service. BrowserHive's SeaweedFS entrypoint
 spawns its `init-bucket.sh` alongside `weed server`, and its retry loop does the

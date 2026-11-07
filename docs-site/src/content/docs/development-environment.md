@@ -145,8 +145,6 @@ that rule too.
 | `pnpm run audit`                          | Known vulnerabilities in `pnpm-lock.yaml`. CI also runs it daily.                                                                                          |
 | `pnpm run check`                          | Every check to run before pushing. The list and order are package.json's `check` (the same as CI's check job).                                             |
 | `pnpm run db:migrate` / `db:migrate:down` | Kysely migrations against `DATABASE_URL`.                                                                                                                  |
-| `pnpm run db:seed` / `db:seed:down`       | Kysely seeds from `src/db/seeds/`.                                                                                                                         |
-| `pnpm run targets`                        | Add, list, disable or remove capture targets (`capture_targets`). A dev tool that writes to the database directly.                                         |
 | `pnpm run scripts`                        | Import, add, list, show, disable or remove the in-page scripts (`scripts`), and show the receptacle types (`host_types`). Writes to the database directly. |
 | `pnpm run openapi:generate`               | Re-copy BrowserHive's `openapi.json` from the pinned submodule and regenerate its types (openapi-typescript).                                              |
 | `pnpm run openapi:check`                  | Regenerate the types, then `git diff --exit-code` (CI drift gate).                                                                                         |
@@ -303,6 +301,32 @@ For Postgres TLS, encode the parameters in `DATABASE_URL` (e.g.
 **BrowserHive's TLS is not configured here any more.** The flow holds that
 channel, so its CA lives on the Windmill side — the variable
 `u/admin/browserhive_tls_ca`, where an empty string means plaintext.
+
+## Migrations
+
+Migration files live under `src/db/migrations/<NNN>-<description>.ts` and export
+`up(db)` / `down(db)`. The runner is a thin wrapper around Kysely's `Migrator`
+with `FileMigrationProvider`; applied IDs are tracked in the `kysely_migration`
+table (`kysely_migration_lock` guards concurrent runs), so re-running
+`pnpm run db:migrate` is a no-op once current.
+
+```sh
+pnpm run db:migrate       # apply
+pnpm run db:migrate:down  # revert the last one
+```
+
+To add one:
+
+1. Take the next ordinal after the last file in the folder, e.g. `<NNN>-add-priority.ts`.
+2. Implement `up` and `down` with the schema builder, or ``sql`…`.execute(db)``
+   for what it does not cover — extensions, generated columns, `CHECK`
+   expressions referencing other columns.
+3. Round-trip locally: `pnpm run db:migrate && pnpm run db:migrate:down && pnpm run db:migrate`.
+   CI runs the same round trip.
+4. Commit the migration and the code that depends on it together.
+
+An old migration stays even when what it made is gone: on a database that has applied it, deleting
+the file stops Kysely with `corrupted migrations`. To remove a table, add a migration that drops it.
 
 ## Setting up an identity locally
 

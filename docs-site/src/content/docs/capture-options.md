@@ -385,7 +385,7 @@ Pacing and reach, in the `POST /api/crawls` body — see
 | Field             | Default                                                                       | Meaning                                                                   |
 | ----------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `rules`           | `[{ "follow": "same-origin" }]`                                               | Which links to follow, capture or skip                                    |
-| `maxDepth`        | 2, or 0 with `fromTargets`                                                    | How far to follow                                                         |
+| `maxDepth`        | 2                                                                             | How far to follow                                                         |
 | `maxPages`        | 30, never below the number of seeds                                           | Total pages                                                               |
 | `perHostDelayMs`  | 2000                                                                          | Gap between pages on one host                                             |
 | `hostParallelism` | 4                                                                             | Distinct hosts touched at once                                            |

@@ -27,7 +27,7 @@ URL と設定だけを渡し、返ってくるのは `taskId` です。
 ```
 capture-ledger が知っている        BrowserHive が知っている
 ─────────────────          ─────────────────────
-capture_targets.org_id ──┐      taskId
+crawls.org_id ───────────┐      taskId
                          │      成果物の場所
                          └──→   （組織は知らない）
               capture_submissions

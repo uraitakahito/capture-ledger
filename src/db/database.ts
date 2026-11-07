@@ -2,32 +2,12 @@
  * Kysely のデータベース型定義。
  *
  * Kysely の client が触るすべてのテーブルの列について、唯一の出どころ。
- * migration と seed は `Kysely<Database>` を通してこれを参照するので、
+ * client は `Kysely<Database>` を通してこれを参照するので、
  * `insertInto` / `selectFrom` に型検査が効き、`CamelCasePlugin` が TS 側の
  * camelCase (`urlHash`) を DB 側の snake_case (`url_hash`) へ自動で写せる。
- *
- * 取り込む対象は `capture_targets` から読む (`src/data/url-source.ts`)。
  */
 import type { ColumnType, Generated, GeneratedAlways } from "kysely";
 import type { CrawlBody, PreparedCrawl } from "../crawl/prepare.js";
-
-export interface CaptureTargetsTable {
-  // BIGSERIAL —— node-pg は精度を落とさないために int8 を `string` で返す。
-  id: Generated<string>;
-  url: string;
-  // GENERATED ALWAYS AS (digest(url, 'sha256')) STORED —— 書き込むことはない。
-  urlHash: GeneratedAlways<Buffer>;
-  labels: ColumnType<string[], string[] | undefined, string[]>;
-  enabled: ColumnType<boolean, boolean | undefined, boolean>;
-  // この URL がどの組織のために撮られるか。OpenFGA の tuple で使う
-  // `organization:<id>` という識別子と一致する。`004` を見ること。
-  //
-  // **既定値は無い** (`015` で外した)。INSERT では必ず書く —— 型でも省けないようにしてある。
-  // 既定値があった頃は、書き忘れた行が誰の `fromTargets` からも見えないまま黙って残った。
-  orgId: ColumnType<string, string, string>;
-  createdAt: ColumnType<Date, string | undefined, never>;
-  updatedAt: ColumnType<Date, string | undefined, string>;
-}
 
 /**
  * BrowserHive が実際に生んだ WACZ 1 本。運ぶのは在り処と来歴だけ ——
@@ -472,7 +452,6 @@ export interface DerivationsTable {
 
 export interface Database {
   crawlSchedules: CrawlSchedulesTable;
-  captureTargets: CaptureTargetsTable;
   archives: ArchivesTable;
   archivePages: ArchivePagesTable;
   fgaOutbox: FgaOutboxTable;

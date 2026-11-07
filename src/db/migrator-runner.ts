@@ -2,9 +2,9 @@
  * 汎用の Kysely Migrator runner。
  *
  * contact-api の `migrator-runner.ts` と同じ形: `Migrator` と
- * `FileMigrationProvider` を薄く包んだもので、`migrate` と `seed` の CLI が
+ * `FileMigrationProvider` を薄く包んだもので、`migrate` の CLI が
  * `migrationTableName` / `migrationLockTableName` / `migrationFolder` の
- * 3 つ組を変えて使い回す。
+ * 3 つ組を渡して使う。
  *
  * ログと `process.exitCode` 以外に副作用は無い —— Kysely の client も logger も
  * 渡してもらう。`runMigratorCli` は最後に必ず client を `.destroy()` するので、

@@ -1,14 +1,22 @@
 import { createHash } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
+import type { Kysely } from "kysely";
 import {
   registerCrawlRoutes,
   type CrawlRouteDeps,
   type DispatchedCrawl,
 } from "../src/api/crawls.js";
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
+import { prepareCrawl, type CrawlBody } from "../src/crawl/prepare.js";
 import { WindmillUnreachable, type WindmillVariables } from "../src/crawl/windmill-variables.js";
-import type { CrawlRule, CrawlScript, CrawlSecret, ScriptParam } from "../src/db/database.js";
+import type {
+  CrawlRule,
+  CrawlScript,
+  CrawlSecret,
+  Database,
+  ScriptParam,
+} from "../src/db/database.js";
 import {
   TsCompileUnreachable,
   type CompileAnswer,
@@ -305,20 +313,6 @@ interface FakePage {
   skipReason: string | null;
 }
 
-/**
- * 走行中を 1 本だけ許す偽の DB。本物は部分 unique index が守るので、ここでは同じ形の
- * 失敗（`23505` と制約名）を投げて、409 への翻訳だけを固定する。
- *
- * **index そのものはここでは証明できない** —— 制約を持っているのが偽物のほうだから。
- * 本物の Postgres に対して別途確かめること。
- */
-/** `capture_targets` の 1 行。組織で絞れることを見るために `orgId` を持つ。 */
-interface FakeTarget {
-  url: string;
-  enabled: boolean;
-  orgId: string;
-}
-
 /** 台帳の受け皿の型 (`host_types`) の代役。直す係の決まりの文に載る。 */
 const FAKE_HOST_TYPES = {
   version: 1,
@@ -328,9 +322,15 @@ const FAKE_HOST_TYPES = {
   bytes: 64,
 };
 
+/**
+ * 走行中を 1 本だけ許す偽の DB。本物は部分 unique index が守るので、ここでは同じ形の
+ * 失敗（`23505` と制約名）を投げて、409 への翻訳だけを固定する。
+ *
+ * **index そのものはここでは証明できない** —— 制約を持っているのが偽物のほうだから。
+ * 本物の Postgres に対して別途確かめること。
+ */
 const fakeDb = (
   crawls: FakeCrawl[],
-  targets: FakeTarget[] = [],
   pages: FakePage[] = [],
   /** `updateTable(...).set(値)` の値を、呼ばれた順に積む。 */
   updates: Record<string, unknown>[] = [],
@@ -448,8 +448,6 @@ const fakeDb = (
       }),
     }),
     /**
-     * `loadTargets` の読み方を写す。
-     *
      * **問い合わせが指定した条件だけを当てる。** 最初は `enabled` を無条件に
      * 絞っていたが、それだと**本物から `enabled` の条件を外しても試験が緑のまま**に
      * なる (反証で素通りした)。偽物が制約を持っていると、消したことに気づけない。
@@ -467,7 +465,7 @@ const fakeDb = (
       if (table === "scripts") {
         /**
          * `resolveScripts` の読み方を写す。**条件は指定されたものだけを当てる**
-         * (`captureTargets` と同じ判断) —— 偽物が `enabled` で勝手に絞ると、
+         * (上の判断) —— 偽物が `enabled` で勝手に絞ると、
          * 本物からその条件が消えても試験は緑のままになる。
          */
         const scriptQuery = (where: [string, unknown, unknown][]) => ({
@@ -502,7 +500,7 @@ const fakeDb = (
       if (table === "crawls") {
         /**
          * 409 の「走っている 1 本」と、一覧の両方が通る。**指定された条件・並び・上限
-         * だけを当てる** (`captureTargets` と同じ判断) —— 偽物が勝手に新しい順へ
+         * だけを当てる** (上の判断) —— 偽物が勝手に新しい順へ
          * 並べると、本物から `orderBy` が消えても試験は緑のままになる。
          */
         type Cond = [string, unknown, unknown];
@@ -562,24 +560,7 @@ const fakeDb = (
         });
         return pageQuery([], undefined);
       }
-      const build = (where: [string, unknown][], limit: number | undefined) => ({
-        where: (column: string, _op: unknown, value: unknown) =>
-          build([...where, [column, value]], limit),
-        orderBy: () => build(where, limit),
-        limit: (n: number) => build(where, n),
-        execute: async (): Promise<{ url: string }[]> => {
-          const matched = targets.filter((t) =>
-            where.every(
-              ([column, value]) => (t as unknown as Record<string, unknown>)[column] === value,
-            ),
-          );
-          return Promise.resolve(
-            (limit === undefined ? matched : matched.slice(0, limit)).map((t) => ({ url: t.url })),
-          );
-        },
-      });
-      expect(table).toBe("captureTargets");
-      return build([], undefined);
+      throw new Error(`偽の DB に無い表: ${table}`);
     },
   }),
 });
@@ -623,7 +604,6 @@ const depsWith = (opts: {
   crawls: FakeCrawl[];
   allowed: boolean;
   dispatch?: CrawlRouteDeps["dispatch"];
-  targets?: FakeTarget[];
   pages?: FakePage[];
   updates?: Record<string, unknown>[];
   scripts?: FakeScript[];
@@ -641,13 +621,7 @@ const depsWith = (opts: {
   bundleError?: Error;
 }): CrawlRouteDeps =>
   ({
-    db: fakeDb(
-      opts.crawls,
-      opts.targets,
-      opts.pages,
-      opts.updates,
-      opts.scripts ?? DEFAULT_CATALOG,
-    ),
+    db: fakeDb(opts.crawls, opts.pages, opts.updates, opts.scripts ?? DEFAULT_CATALOG),
     fga: { check: async () => Promise.resolve({ allowed: opts.allowed }) },
     resolveIdentity: () => Promise.resolve({ subject: "alice", organizations: ["acme"] }),
     dispatch: opts.dispatch ?? (() => Promise.resolve()),
@@ -706,7 +680,6 @@ describe("クロール route の認可と単一実行", () => {
   });
 
   it("起点を複数受け取り、全部を最初の段に渡す", async () => {
-    // run を畳むための土台。`capture_targets` の一覧はここに複数の起点として入る。
     const sent: { url: string }[][] = [];
     const app = await buildApp(
       depsWith({
@@ -729,7 +702,7 @@ describe("クロール route の認可と単一実行", () => {
 
   it("同じ起点を 2 度渡しても 1 度しか取らない", async () => {
     // 本物では `(crawl_id, url_hash)` の unique index が落とす。
-    // **起点の段にも同じ守りが要る** —— 対象一覧に同じ URL が 2 行あることは普通にありうる。
+    // **起点の段にも同じ守りが要る** —— 長い一覧に同じ URL が 2 度あることは普通にありうる。
     const sent: { url: string }[][] = [];
     const app = await buildApp(
       depsWith({
@@ -1165,86 +1138,73 @@ describe("クロール route の認可と単一実行", () => {
   });
 });
 
-describe("対象一覧から始める", () => {
-  const targets: FakeTarget[] = [
-    { url: "https://a.site.test/1", enabled: true, orgId: "acme" },
-    { url: "https://b.site.test/2", enabled: true, orgId: "acme" },
-    { url: "https://c.site.test/3", enabled: false, orgId: "acme" },
-    { url: "https://d.site.test/4", enabled: true, orgId: "other" },
-  ];
-
-  const start = async (payload: Record<string, unknown>, crawls: FakeCrawl[] = []) => {
-    const sent: { url: string }[][] = [];
-    const app = await buildApp(
-      depsWith({
-        crawls,
-        allowed: true,
-        targets,
-        dispatch: (crawl) => {
-          sent.push(crawl.frontier);
-          return Promise.resolve(undefined);
-        },
-      }),
-    );
+describe("起点の一覧", () => {
+  const post = async (payload: Record<string, unknown>) => {
+    const crawls: FakeCrawl[] = [];
+    const app = await buildApp(depsWith({ crawls, allowed: true }));
     const res = await app.inject({ method: "POST", url: "/api/crawls", payload });
     await app.close();
-    return { res, sent, crawls };
+    return { res, crawls };
   };
 
-  it("有効な行だけを、自分の組織のぶんだけ起点にする", async () => {
-    // **組織で絞る。** 以前の CLI 経路 (run.ts) は「他組織が混じっていたら投げる」
-    // していたが、クロールは `org_id` を 1 つ持つ行なので、混ぜると帰属が言えない。
-    const { res, sent } = await start({ fromTargets: {} });
-    expect(res.statusCode).toBe(202);
-    expect(sent[0]?.map((f) => f.url)).toEqual(["https://a.site.test/1", "https://b.site.test/2"]);
+  it("起点が無ければ、必須だと言う 400", async () => {
+    const { res, crawls } = await post({});
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: "seeds is required" });
+    expect(crawls).toEqual([]);
   });
 
-  it("既定では辿らない（max_depth = 0）", async () => {
-    // それが `runs` の意味だった —— 深さも範囲も持たない 1 回。
-    const { crawls } = await start({ fromTargets: {} });
-    expect(crawls[0]?.maxDepth).toBe(0);
+  it("名乗らない {} は 401（本文の検査で 400 にしない）", async () => {
+    // capture-scheduler の doctor は、名乗らずに `{}` を投げて 401 が返ることで、この口が在ることを
+    // 確かめている。`seeds` を schema の `required` に書くと、ここが 400 になる。
+    const app = await buildApp({
+      ...depsWith({ crawls: [], allowed: true }),
+      resolveIdentity: () => Promise.resolve(undefined),
+    });
+    const res = await app.inject({ method: "POST", url: "/api/crawls", payload: {} });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("保存された頼みに起点が無くても、500 にせず 400 で断る", async () => {
+    // 「固定し直す」は保存された予定の頼みを読み直すので、schema を通らない。ここに来るまでに
+    // fromTargets で作られた予定が、この形になる。
+    const answer = await prepareCrawl(
+      { db: fakeDb([]) as unknown as Kysely<Database>, tsCompile: compilesAll },
+      { fromTargets: {} } as unknown as CrawlBody,
+      { orgId: "acme", subject: "alice" },
+    );
+    expect(answer).toEqual({
+      kind: "refused",
+      status: 400,
+      body: { error: "seeds is required" },
+    });
+  });
+
+  it("fromTargets は知らない鍵として 400", async () => {
+    const { res, crawls } = await post({ fromTargets: true });
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ message: string }>().message).toBe(
+      "body must NOT have additional properties",
+    );
+    expect(crawls).toEqual([]);
   });
 
   it("明示された深さは勝つ", async () => {
-    // 「一覧を起点にして 2 段辿る」も書ける。畳んだことで表せる幅が減っていない。
-    const { crawls } = await start({ fromTargets: {}, maxDepth: 2 });
-    expect(crawls[0]?.maxDepth).toBe(2);
+    const { crawls } = await post({ seeds: [SEED], maxDepth: 0 });
+    expect(crawls[0]?.maxDepth).toBe(0);
   });
 
   it("max_pages が起点の数を下回らない", async () => {
-    // 既定の 30 のままだと、対象が 30 件を超えた瞬間に黙って切り落とされる。
-    const { crawls } = await start({ fromTargets: {} });
-    expect(crawls[0]?.maxPages).toBeGreaterThanOrEqual(2);
+    // 既定の 30 のままだと、起点が 30 本を超えた瞬間に黙って切り落とされる。
+    const seeds = Array.from({ length: 31 }, (_, i) => `https://site.test/${String(i)}`);
+    const { crawls } = await post({ seeds });
+    expect(crawls[0]?.maxPages).toBe(31);
   });
 
-  it("limit は起点の数を絞る", async () => {
-    const { sent } = await start({ fromTargets: { limit: 1 } });
-    expect(sent[0]).toHaveLength(1);
-  });
-
-  it("対象が 1 件も無ければ 400（500 ではない）", async () => {
-    // `011` の CHECK に当たって 500 にすると、呼ぶ側から見て「壊れた」になる。
-    // 実際には「取るものが無い」なので、そう言う。
-    const app = await buildApp(depsWith({ crawls: [], allowed: true, targets: [] }));
-    const res = await app.inject({
-      method: "POST",
-      url: "/api/crawls",
-      payload: { fromTargets: {} },
-    });
-    expect(res.statusCode).toBe(400);
-    expect(res.body).toContain("no enabled capture targets");
-    await app.close();
-  });
-
-  it("seeds と fromTargets の両方は拒む", async () => {
-    // どちらを使うかをこちらが決めることになる。
-    const { res } = await start({ seeds: [SEED], fromTargets: {} });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it("どちらも無ければ拒む", async () => {
-    const { res } = await start({});
-    expect(res.statusCode).toBe(400);
+  it("明示された max_pages は起点の数を下回っても勝つ", async () => {
+    const { crawls } = await post({ seeds: [`${SEED}a`, `${SEED}b`], maxPages: 1 });
+    expect(crawls[0]?.maxPages).toBe(1);
   });
 });
 

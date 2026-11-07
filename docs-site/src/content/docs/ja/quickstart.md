@@ -1,6 +1,6 @@
 ---
 title: クイックスタート
-description: Compose スタックを立ち上げ、capture_targets を seed し、最初のクロールを始めるまで。
+description: Compose スタックを立ち上げ、データベースを準備し、最初のクロールを始めるまで。
 ---
 
 スタックは capture-ledger に必要なものを一式立ち上げます — Postgres、
@@ -134,8 +134,7 @@ pnpm run search:connect   # OpenSearch が答えるのを待ち、CAPTURE_LEDGER
 
 ```sh
 pnpm install         # 初回のみ
-pnpm run db:migrate  # capture_targets テーブルを作成
-pnpm run db:seed     # サンプル 5 件を投入
+pnpm run db:migrate  # テーブルを作成
 pnpm run scripts import .upstream/capture-scripts  # ページの中で走らせるものを入れる
 ```
 
@@ -144,16 +143,6 @@ BrowserHive は**走らせるものの顔ぶれを持ちません**。台帳に�
 何も走らせず —— スクロールも遅延読み込みも起きないまま、**成功したアーカイブが出ます**。
 入っているかは `pnpm run scripts list` が言います。
 :::
-
-自分のページを撮りたいときは、同じように足します。
-`--org acme` は、§7 のクロールが名乗る組織です。こうすると、そのクロールから見えます。
-
-```sh
-pnpm run targets add https://example.com/ --org acme
-```
-
-CLI のほかの使い方（ファイルから読む、一覧、無効にする）は、
-[URL ソース](/capture-ledger/ja/url-source/#url-を追加する)にあります。
 
 ## 5. 認可を準備する
 
@@ -245,8 +234,8 @@ token が変わっています）。API の起動ログの最後の行が `crawl
 capture-scheduler のクイックスタートの最後にある `pnpm run doctor` が全部 ✓ なら、つながっています。
 続く `pnpm run smoke` が 1 本撮って確かめます。
 
-つないだ後は、毎日 04:00（日本時間）にも Windmill が `acme` の有効な行を全部撮ります
-（[いつ走るか](https://uraitakahito.github.io/capture-scheduler/ja/schedule/)）。
+つないだ後は、予定の期限が来ると API がクロールを始めます。予定は、capture-workbench のタブ「定期実行」で
+作るまで 1 つもありません（[定期実行](/capture-ledger/ja/schedules/)）。
 
 ### 始める
 
@@ -267,10 +256,6 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 `scripts` を書かなければ、capture-scripts から入れた `egov-law-search`（対象サイト `laws.e-gov.go.jp`）が既定に入り、頁の中で法令名を
 `query` の語で検索します。`query` は必須で、渡さなければ `400 missing variables` です
 （[キャプチャオプション](/capture-ledger/ja/capture-options/)の「サイト用のスクリプト」）。
-
-§4 で入れた行を起点にするなら `-d '{"fromTargets":{}}'` です。既定は深さ 0 —— 取るだけで辿りません。
-以前の `POST /api/runs` がしていたのはこれです。行は足した順（`id` 順）に起点になるので、
-`{"fromTargets":{"limit":1}}` はいつもサンプルの 1 行目で、§4 で足した URL ではありません。
 
 クロールがどう終わったかは、同じヘッダで `GET /api/crawls/<crawlId>` に訊きます。落ちたなら `error`
 に「[段] 文」が、取れなかったページは `failures` に理由とページの id（`page`）つきで、
@@ -376,6 +361,6 @@ curl -X POST http://127.0.0.1:7070/api/crawls/<crawlId>/failed \
 ## 次に読むもの
 
 - アーカイブを配る・共有する、クロール API の全体 → [アーカイブ台帳](/capture-ledger/ja/archive-ledger/)
-- 自分の URL を追加する → [URL ソース](/capture-ledger/ja/url-source/)
+- 定期的に撮る → [定期実行](/capture-ledger/ja/schedules/)
 - 何を撮るかを変える → [キャプチャオプション](/capture-ledger/ja/capture-options/)
 - Compose を使わずに動かす → [開発環境](/capture-ledger/ja/development-environment/)

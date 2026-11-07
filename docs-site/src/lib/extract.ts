@@ -38,7 +38,7 @@ const read = (rel: string): string => readFileSync(resolve(ROOT, rel), "utf8");
  *          `[ERROR] [starlight-docs-loader] Error rendering …` と記録するだけで
  *          exit 0 になる。
  *
- * region を参照しているページ（capture-options / url-source と各 ja）は全部
+ * region を参照しているページ（databases とその下のページ、各 ja）は全部
  * .md なので、region に関してはビルドはガードにならない。非ゼロで落ちるのは
  * src/tools/check-doc-refs.ts の方で、CI が site:check を走らせるのはこのため。
  */
