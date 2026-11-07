@@ -40,7 +40,7 @@
  * - 「網」: 熟語（安全網・網羅）の外に立つ「網」。browserhive の契約の写し（src/rpc/generated/）も
  *   見る —— 写しに残っていれば、pin の先の browserhive がまだ直っていないということ
  * - 「その場の JS」: 形の並び（OLD_INLINE。dashboard・capture-scheduler と同じ並び）
- * - 「札」: 全部。browserhive の契約の写しに残る 1 つの文だけ許す（FUDA_ALLOWED）
+ * - 「札」: 全部
  *
  * ## 見ないもの
  *
@@ -73,12 +73,6 @@ const AMI_ALLOWED = /安全網|網羅/gu;
  */
 const OLD_INLINE =
   /その場の JS|その場で書いた JS|JS の名前|JS の箱|書きかけの JS|この JS の id|その JS の id|\binline JS\b/u;
-
-/**
- * 「札」のうち許す文。browserhive の契約の写し（src/rpc/generated/）の `labels` の説明で、pin の先の
- * browserhive v27.0.0 がまだこう書いている。browserhive の次の版を取り込むと消えるので、そのときこの形も消す。
- */
-const FUDA_ALLOWED = /成果物のファイル名に入る札/gu;
 
 interface Rule {
   find: (line: string) => boolean;
@@ -113,7 +107,7 @@ const RULES: Rule[] = [
       "（走った JS・変換後の JS・jsSha256 はそのまま）。",
   },
   {
-    find: (line) => line.replace(FUDA_ALLOWED, "").includes("札"),
+    find: (line) => line.includes("札"),
     say:
       "「札」が残っています。スクリプトの `sites` は「対象サイト」、`labels` は「ラベル」、" +
       "`correlationId` は「相関キー」と書きます。",

@@ -150,6 +150,47 @@ describe("readManifest", () => {
     expect(report.errorDetails?.type).toBe("policy");
   });
 
+  /** v28 は、主の頁の renderer が落ちた取り込みを renderer_crashed で失敗にし、落ち方を rendererStatus で言う。 */
+  it("v28 の manifest（errorDetails.type が renderer_crashed）を読む", () => {
+    const report = readManifest({
+      ...v12Manifest,
+      status: "failed",
+      artifacts: {},
+      completeness: undefined,
+      errorDetails: {
+        type: "renderer_crashed",
+        message: "Renderer crashed (killed) — in load-pages (behaviors, dpr=1) for 12s",
+        step: "load-pages",
+        rendererStatus: "killed",
+      },
+    });
+    expect(report.errorDetails).toMatchObject({
+      type: "renderer_crashed",
+      rendererStatus: "killed",
+      step: "load-pages",
+    });
+  });
+
+  /** v28 は、別サイトの iframe の renderer だけが落ちた取り込みを success のまま返し、一覧に載せる。 */
+  it("v28 の manifest（completeness.crashedTargets）を読む。方針で伏せた行は url を持たない", () => {
+    const report = readManifest({
+      ...v12Manifest,
+      completeness: {
+        complete: false,
+        bodylessUrls: [],
+        truncatedUrls: [],
+        uninterceptedUrls: [],
+        crashedTargets: [
+          { type: "iframe", status: "killed" },
+          { type: "iframe", url: "https://ads.test/frame", status: "crashed" },
+        ],
+      },
+    });
+    expect(report.status).toBe("success");
+    expect(report.completeness?.complete).toBe(false);
+    expect(report.completeness?.crashedTargets).toHaveLength(2);
+  });
+
   it("document の withheld が契約に無い綴りなら断る", () => {
     expect(() =>
       readManifest({

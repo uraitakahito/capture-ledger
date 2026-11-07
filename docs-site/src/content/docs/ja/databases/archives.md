@@ -58,24 +58,28 @@ if (report.status !== CaptureStatus.CAPTURE_STATUS_SUCCESS ||
 
 ## 列の要点
 
-| 列                      | 要点                                                                         |
-| ----------------------- | ---------------------------------------------------------------------------- |
-| `id`                    | `gen_random_uuid()`。OpenFGA の `archive:<id>` になる                        |
-| `task_id`               | BrowserHive のタスク id                                                      |
-| `correlation_id`        | capture-ledger のログ行と成果物のファイル名を結ぶ糸（送信ごとの 16 進 8 桁） |
-| `bucket` / `object_key` | **server 自身の報告から取る。** ファイル名を組み直したものではない           |
-| `wacz_complete`         | `false` は本文が 1 つ以上欠けているという意味。詳細は下記                    |
-| `captured_at`           | 取り込みの時刻。一覧はこれの降順                                             |
+| 列                      | 要点                                                                                |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| `id`                    | `gen_random_uuid()`。OpenFGA の `archive:<id>` になる                               |
+| `task_id`               | BrowserHive のタスク id                                                             |
+| `correlation_id`        | capture-ledger のログ行と成果物のファイル名を結ぶ糸（送信ごとの 16 進 8 桁）        |
+| `bucket` / `object_key` | **server 自身の報告から取る。** ファイル名を組み直したものではない                  |
+| `wacz_complete`         | `false` は本文が欠けているか、renderer の落ちた target があるという意味。詳細は下記 |
+| `captured_at`           | 取り込みの時刻。一覧はこれの降順                                                    |
 
 ### `wacz_complete` が `false` になるとき
 
 `CaptureResultReport.completeness.complete` をそのまま入れています。`false` は
-**そのアーカイブに本文が 1 つ以上欠けている**という意味です。
+**そのアーカイブに本文が 1 つ以上欠けているか、取り込みの間に頁の一部が死んだ**という意味です。
 
 - 304 としてしか見なかった URL
 - 容量の上限を超えて BrowserHive が落としたもの
+- 通信には現れたのに、バイト列として読めなかった本文
+- 主の頁ではない target のうち、renderer が落ちた物。別サイトの iframe など
+  （`completeness.crashedTargets`。BrowserHive v28.0.0 から）。本文が欠けたのではなく、
+  取り込みがその target 抜きで続いた印です
 
-後者は BrowserHive v1.11.0 で加わりました。**それ以前、上限に当たった取り込みは
+容量の上限は BrowserHive v1.11.0 で加わりました。**それ以前、上限に当たった取り込みは
 `true` と報告していました。** この field より前の取り込みや、記録しなかった
 取り込みでは `NULL` です。
 
