@@ -1,5 +1,5 @@
 /**
- * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 7 つ。
+ * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 8 つ。
  *
  * ## なぜ要るのか
  *
@@ -11,8 +11,8 @@
  *   起こす）は別の意味で、見ない
  * - **ページで走らせる物は「スクリプト」、置き場は「台帳」と書く。** 2026-10 に「目録」「台本」から
  *   そろえた（CLI の答え「台帳に無い」・docs・コメント・試験の名前で 194 か所）。「目録」は browserhive と
- *   wacz-validator では WACZ の中の storage の目録を、「台本」は dashboard では代役の台本を指す。
- *   台帳はどちらも持たないので、両方とも全部見る（dashboard と capture-scheduler も見張っている）
+ *   wacz-validator では WACZ の中の storage の目録を、「台本」は capture-workbench では代役の台本を指す。
+ *   台帳はどちらも持たないので、両方とも全部見る（capture-workbench と capture-scheduler も見張っている）
  * - **network は「通信」と書く。** 2026-11 に「網」から「通信」へそろえた（browserhive の docs・
  *   コメント・試験の名前・契約の説明で 100 か所あまり、この repo では注記 7 か所と browserhive の
  *   契約の写し）。「網」は network を 1 字で写した書き手の癖で、読み手に通じにくい。通信そのもの
@@ -21,14 +21,16 @@
  *   （回帰の網・網から漏れる・粗い網）も言い換えた。「安全網」「網羅」は別の語で、見ない
  * - **クロールの頼みに書く物は「その場の TS」と書く。** 2026-11 に（Jira CAPTURE-83）、「その場の JS」から
  *   そろえた。`scripts[].inline.source` は compile の段で strict の TypeScript として検査されるのに、JS と名乗って
- *   いた。JS になるのは変換の後なので、走った JS・変換後の JS・`jsSha256` はそのまま（dashboard と
+ *   いた。JS になるのは変換の後なので、走った JS・変換後の JS・`jsSha256` はそのまま（capture-workbench と
  *   capture-scheduler も見張っている）
  * - **スクリプトの `sites` は「対象サイト」と書く。** 2026-11 に「札」からそろえた（docs・コメント・試験の
  *   名前・CLI の答えで 100 行あまり）。「札」は tag を 1 字で写した書き手の癖で、読み手に通じない。同じ字で
- *   書いていた `labels` は「ラベル」、BrowserHive の `correlationId` は「相関キー」（browserhive・dashboard・
+ *   書いていた `labels` は「ラベル」、BrowserHive の `correlationId` は「相関キー」（browserhive・capture-workbench・
  *   capture-scheduler も見張っている）
  * - **repo の一式は「Web Capture」と書く。** 2026-11 に「crawler」からそろえた。crawler はふつうの名詞と紛れ、
  *   動いている識別子（`crawler-storage`・Windmill の workspace の id）とも同じ字になる（capture-scheduler も見張っている）
+ * - **7080 番の Web アプリは「capture-workbench」、文で短く書くときは「workbench」と書く。** 2026-11 に「dashboard」から
+ *   そろえた（repo の改名に合わせて）。この repo に Grafana の dashboard は無いので、語を全部見る（capture-scheduler も同じ）
  *
  * 書き手（人と Claude）は長くこの形で書いてきたので、見張らなければ戻ってくる。
  *
@@ -37,14 +39,15 @@
  * git が追跡する text のファイルの全行。docs に限らない —— 語は、書かれる場所を選ばずに広がる。
  *
  * - 「種」: 熟語（種類・種別）と、数のあとの「N 種」の外に立つ「種」
- * - 「起こす」: クロールを始める意味の形（OKOSU。dashboard・capture-scheduler と同じ並び）
+ * - 「起こす」: クロールを始める意味の形（OKOSU。capture-workbench・capture-scheduler と同じ並び）
  * - 「目録」「台本」: 全部
  * - 「網」: 熟語（安全網・網羅）の外に立つ「網」。browserhive の契約の写し（src/rpc/generated/）も
  *   見る —— 写しに残っていれば、pin の先の browserhive がまだ直っていないということ
- * - 「その場の JS」: 形の並び（OLD_INLINE。dashboard・capture-scheduler と同じ並び）
+ * - 「その場の JS」: 形の並び（OLD_INLINE。capture-workbench・capture-scheduler と同じ並び）
  * - 「札」: 全部
  * - 「crawler」: 一式の意味の形の並び（OLD_SUITE。capture-scheduler と同じ並び）。`crawler-storage`・`/w/crawler/`・
  *   `workspace crawler`・試験の入力値・ふつうの名詞は見ない
+ * - 「dashboard」: 全部（大文字小文字を問わない）。browserhive の契約の写し（src/rpc/generated/）も見る
  *
  * ## 見ないもの
  *
@@ -62,7 +65,7 @@ const SELF = "src/tools/check-terms.ts";
 /** 許す形。足すときは、その形が seed の意味を持ちえないことを確かめる。 */
 const ALLOWED = /種類|種別|\d\s?種/gu;
 /**
- * クロールを始める意味の「起こす」の形。dashboard・capture-scheduler と同じ並び。
+ * クロールを始める意味の「起こす」の形。capture-workbench・capture-scheduler と同じ並び。
  * 足すときは、プロセスの「起こす」（dev:up が起こす・起こし直す・webhook で起こす）に当たらないことを確かめる。
  */
 const OKOSU =
@@ -129,6 +132,12 @@ const RULES: Rule[] = [
     say:
       "repo の一式の古い呼び名が残っています。一式は「Web Capture」と書きます" +
       "（crawler-storage・workspace の id・ふつうの名詞の crawler はそのまま）。",
+  },
+  {
+    find: (line) => /dashboard/iu.test(line),
+    say:
+      "「dashboard」が残っています。7080 番の Web アプリは「capture-workbench」、" +
+      "文で短く書くときは「workbench」と書きます。",
   },
 ];
 

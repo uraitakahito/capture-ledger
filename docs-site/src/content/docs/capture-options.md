@@ -179,7 +179,7 @@ sha256 — and the `sites`, and never the source. What ran in bytes is in the ar
 (`behaviors/custom.jsonl` and `preload/scripts.jsonl`) and in the ledger
 ([Reading a version](#reading-a-version)). An inline entry
 also carries `inline` (`name`, `phase` and the source's size in UTF-8 `bytes`), still without
-the source: the dashboard polls a running crawl every few seconds, and the source can be up to a
+the source: [capture-workbench](https://github.com/uraitakahito/capture-workbench) polls a running crawl every few seconds, and the source can be up to a
 mebibyte. The source itself comes from `GET /api/crawls/:id/inline/:name`, as
 `{ name, phase, source, sha256 }`. It is never registered, and the archive holds the compiled
 JavaScript, so that route is the one place to get back what you wrote. Registered scripts answer 404
@@ -314,7 +314,7 @@ declaration cannot be read (`BH0002`) also gets a row, so the same step can say 
 may take are under "Per-crawl values" in capture-scripts' README.
 
 A registered script's variables are copied into `params` in `catalog.json` as well (`GET /api/scripts` returns
-them as `params`), and the dashboard builds its fields from them:
+them as `params`), and the workbench builds its fields from them:
 
 ```json
 {

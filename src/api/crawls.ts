@@ -138,8 +138,8 @@ const RULE_PATTERN_MAX = 2048;
 /** 規則の本数の上限。始める口と確かめの口で同じ数。 */
 const RULES_MAX = 32;
 /**
- * `POST /api/crawls` が受ける本文の上限。**dashboard の門（dashboard の src/lib.mjs の WRITE_LIMIT）と
- * 同じ 1 MiB** —— 片方だけを変えると、dashboard が通すのに台帳が 413、の形になる。Fastify の既定と同じ値だが、
+ * `POST /api/crawls` が受ける本文の上限。**capture-workbench の門（その src/lib.mjs の WRITE_LIMIT）と
+ * 同じ 1 MiB** —— 片方だけを変えると、workbench が通すのに台帳が 413、の形になる。Fastify の既定と同じ値だが、
  * 既定に頼らずにこの口に書く。その先の BrowserHive は 4 MiB で、変換後の JS と台帳のスクリプトを足しても収まる。
  */
 export const CRAWL_BODY_LIMIT = 1024 * 1024;
@@ -460,7 +460,7 @@ interface PageRow {
  * 数を読んでいない」(`025`)。
  *
  * `capturedAt` と `bundledRev` は WACZ の物 (無ければ null)。`bundledRev` はその WACZ が最初に入った合本の版で、
- * `bundledRev ≤ replayBundle.rev` なら、そのページは台帳が指す合本の中で開ける (dashboard が replay の
+ * `bundledRev ≤ replayBundle.rev` なら、そのページは台帳が指す合本の中で開ける (workbench が replay の
  * `#view=replay&url=…&ts=…` を組むのに使う)。
  */
 const pageOf = (row: PageRow) => ({
@@ -1118,7 +1118,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
-   * クロールの一覧。**dashboard のためではなく資源として返す** —— 並べ方も、どの列を
+   * クロールの一覧。**workbench のためではなく資源として返す** —— 並べ方も、どの列を
    * 見せるかも、呼ぶ側が決める。doctor も smoke も CLI も同じ口を使える。
    *
    * ## 絞りは `:id` と同じ `maySubmit`
@@ -1128,7 +1128,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 対象も投げられる」)。読みだけを狭める規則は増やさない —— 始められるのに見えない、
    * という食い違いのほうが説明しにくい。
    *
-   * 代わりに `orgId` を必ず行に出す。**見えている範囲を、dashboard が言えるようにするため。**
+   * 代わりに `orgId` を必ず行に出す。**見えている範囲を、workbench が言えるようにするため。**
    * 組織ごとに絞る必要が出たら、そのときは `crawl` 型を認可モデルに足して
    * `archives` と同じ `batchCheck` で絞ることになる (モデルの変更なので、
    * `fga:deploy` と assertion が一緒に動く)。
@@ -1205,7 +1205,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           orgId: crawl.orgId,
           startedAt: crawl.startedAt,
           finishedAt: crawl.finishedAt,
-          // 深さ 0 (辿らないクロール) かどうか。dashboard が「このページだけ」と言うのに要る
+          // 深さ 0 (辿らないクロール) かどうか。workbench が「このページだけ」と言うのに要る
           maxDepth: crawl.maxDepth,
           pagesDiscovered: crawl.pagesDiscovered,
           pagesCaptured: crawl.pagesCaptured,
@@ -1214,7 +1214,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           waczCount: crawl.waczCount,
           lastJob:
             crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
-          // 合本 (`027`)。dashboard は走っているクロールを 2 秒ごとに引くので、欄は行の列から (保管庫を読まない)
+          // 合本 (`027`)。workbench は走っているクロールを 2 秒ごとに引くので、欄は行の列から (保管庫を読まない)
           replayBundle: replayBundleOf(crawl),
         })),
       });
@@ -1285,7 +1285,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // **台帳のスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
         // 中身はスクリプトの 1 版の口 (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
         // archive に在る。**その場の TS には頼まれた
-        // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は dashboard が 2 秒ごとに引き直すので、
+        // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は workbench が 2 秒ごとに引き直すので、
         // 1 MiB の TS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
         // ときだけで、`GET /api/crawls/:id/inline/:name` から取る。
         // `jsSha256` と `compiledWith` は最初の段の報告で埋まる。それまでは null。
@@ -1433,7 +1433,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
   /**
    * クロール 1 本のページ。**`crawl_pages` の行を、入った順に `limit` 本ずつ。** 続きは答えの `next` を
-   * `after` に渡して引く。続きを本文で言うのは、dashboard の中継が状態・content-type・本文の外のヘッダを
+   * `after` に渡して引く。続きを本文で言うのは、workbench の中継が状態・content-type・本文の外のヘッダを
    * 落とすから。
    *
    * 1 行は `pageOf` の形で、取り込みのログの数 (`logCounts`) を持つ —— 数は段の登録が `.result.json` から
@@ -1888,7 +1888,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
-   * 規則の並びを、始める前に確かめる。**書かない口なので GET** —— dashboard は GET の `/api/*` を
+   * 規則の並びを、始める前に確かめる。**書かない口なので GET** —— workbench は GET の `/api/*` を
    * そのまま通すので、書く口を増やさずに載る。何度呼んでも何も変わらない。
    *
    * 規則は `rule=動き:当てる物` を並べる (当てる物の URL の `:` は、最初の 1 つで切るので構わない)。

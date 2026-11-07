@@ -164,7 +164,7 @@ source・sha256・options・対象サイト・宣言 —— をクロールの�
 `GET /api/crawls/:id` が返すのは、台帳のスクリプトは身元 —— id・版・phase・sha256 —— と対象サイトだけで、
 source は返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
 `preload/scripts.jsonl`）と台帳（[版を読む](#版を読む)）に在ります。その場の TS には `inline`（`name`・`phase`・
-source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。dashboard は走行中の
+source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。[capture-workbench](https://github.com/uraitakahito/capture-workbench) は走行中の
 クロールを数秒ごとに引き直し、source は 1 MiB まであり得るからです。source は
 `GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。台帳に登録されず、
 アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこの口だけです。台帳のスクリプトには 404 を
@@ -290,7 +290,7 @@ const { query } = defineParams(z.object({ query: z.string().min(1).describe("法
 書ける形は capture-scripts の README の「クロールごとの値」にあります。
 
 台帳のスクリプトの変数は `catalog.json` の `params` にも写され（`GET /api/scripts` が `params` で返します）、
-dashboard はそれで欄を作ります。
+workbench はそれで欄を作ります。
 
 ```json
 {

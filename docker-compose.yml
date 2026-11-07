@@ -199,7 +199,7 @@ services:
       # 同じ設定が同じ理由で入っている。
       BROWSERHIVE_ALLOW_PRIVATE_TARGETS: "true"
       # WARC の本を 1 MiB で切り替える（BrowserHive v21・profile 1.14.0）。本番の既定は 1 GB。dev で
-      # 多本の WACZ（archive/data-000・001…）を毎日作り、dashboard と validator がそれを読む所を踏ませる。
+      # 多本の WACZ（archive/data-000・001…）を毎日作り、capture-workbench と validator がそれを読む所を踏ませる。
       # fixtures の /warc/rollover（8 × 250,000 バイト）がちょうど 2 本に分かれる大きさ。
       BROWSERHIVE_WACZ_MAX_WARC_BYTES: "1048576"
       #

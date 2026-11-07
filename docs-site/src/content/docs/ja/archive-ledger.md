@@ -544,7 +544,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/log
 ```
 
 一覧は、ページがクロールに入った順に `limit` 本ずつ返ります。続きは、前の答えの `next` を `after`
-に渡して引きます（終わりなら `next` は `null`）。続きをヘッダでなく本文で言うのは、dashboard
+に渡して引きます（終わりなら `next` は `null`）。続きをヘッダでなく本文で言うのは、[capture-workbench](https://github.com/uraitakahito/capture-workbench)
 の中継が状態・content-type・本文のほかを落とすからです。`id` は `bigserial` を文字列にした物で、
 `reason` は `skip_reason` —— 取らなかった理由も、取れなかった理由も入ります。
 

@@ -542,9 +542,9 @@ export const enabledLatest = async (
 /**
  * 選べるスクリプト (`GET /api/scripts`)。各 id に 1 行で、**既定で走る版があればそれ** (有効な版の中の最新)、
  * 無ければ最新版を `enabled: false` で返す。既定に入らないスクリプト (カタログの `default: false`) も、
- * 名指しすれば走るので見せる —— dashboard はこれで新しいクロールの画面のチェックを並べ、`enabled` で
+ * 名指しすれば走るので見せる —— capture-workbench はこれで新しいクロールの画面のチェックを並べ、`enabled` で
  * 初めのチェックを決める。並べ替えの `enabled desc` が「有効な版を先に」で、`distinct on` がその先頭を取る。
- * 答えは既定の実行順 (`inRunOrder`) —— dashboard の初めの順がこれになる。
+ * 答えは既定の実行順 (`inRunOrder`) —— workbench の初めの順がこれになる。
  */
 export const pickable = async (
   db: Kysely<Database>,

@@ -37,9 +37,9 @@ you can capture.
 `dev:up` also runs commands in neighbouring repos (**it never writes files there**):
 capture-scheduler (Windmill and the crawl flow),
 [wacz-validator](https://github.com/uraitakahito/wacz-validator) (the validation daemon) and
-[dashboard](https://github.com/uraitakahito/dashboard). In the `--dry-run` list they are
+[capture-workbench](https://github.com/uraitakahito/capture-workbench) (the web app you open locally while developing Web Capture). In the `--dry-run` list they are
 the lines that start with `cd ../…`. If they are not next to capture-ledger, under the same parent directory, pass
-`--scheduler`, `--validator` and `--dashboard` with their paths; a missing one stops `dev:up` at
+`--scheduler`, `--validator` and `--workbench` with their paths; a missing one stops `dev:up` at
 its step, by name. capture-scheduler also needs its DNS domain registered once —
 see [capture-scheduler's quickstart](https://uraitakahito.github.io/capture-scheduler/quickstart/).
 :::
@@ -304,7 +304,7 @@ The quickest look is the screen. `dev:up` starts it last, so just open it:
 open http://127.0.0.1:7080/
 ```
 
-[dashboard](https://github.com/uraitakahito/dashboard) is **one row per crawl**: state, pages
+[capture-workbench](https://github.com/uraitakahito/capture-workbench) is **one row per crawl**: state, pages
 captured, how many WACZ, and links out to the run (Windmill) and to replay. On the archives
 face, each row's 検証 (Validate) button reports **whether what was captured matches the WACZ
 spec** — answered by [wacz-validator](https://github.com/uraitakahito/wacz-validator), which is

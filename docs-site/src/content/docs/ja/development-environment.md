@@ -151,7 +151,7 @@ NAME=value     # 値を渡す
 
 スタックに入っていないものがあります。**`pnpm run oidc:issuer` (9099)・
 `pnpm run api` (7070)・[wacz-validator](https://github.com/uraitakahito/wacz-validator) の
-daemon (7180)・[dashboard](https://github.com/uraitakahito/dashboard) の
+daemon (7180)・[capture-workbench](https://github.com/uraitakahito/capture-workbench) の
 `pnpm run dev` (7080) はホストのプロセス**で、コンテナではありません。
 
 検証の daemon には **store の鍵を渡していません**。読むのは台帳が署名した URL
@@ -161,12 +161,12 @@ daemon の既定の port は `0`（OS 任せ）なので、`--port 7180` で固�
 
 daemon は **自分で建て直りません**。wacz-validator を出しても、7180 は起こした時の
 build のまま動き続けます（2026-09-26 に見たとき、v0.28.1 が 2 日動いていて、その間に
-出た v0.29.0・v0.30.0 の rule はどれも dashboard に出ていませんでした）。`pnpm run dev:status` が、
+出た v0.29.0・v0.30.0 の rule はどれも workbench に出ていませんでした）。`pnpm run dev:status` が、
 動いている build（`/healthz` が名乗る commit）を wacz-validator の checkout の HEAD と
 比べます。違えば、checkout が先に進んだのか（古い build）、それ以外か（違う build）を言い、
 起こし直す 1 行を添えます。
 
-dashboard が 7000 ではなく **7080** なのは、macOS の ControlCenter (AirPlay Receiver) が
+workbench が 7000 ではなく **7080** なのは、macOS の ControlCenter (AirPlay Receiver) が
 `*:7000` を握っているためです（実測）。`127.0.0.1:7000` に bind できてしまうので
 気づきにくいのですが、port から持ち主を引く下の道具が毎回「別のものが握っている」と
 言うことになります。
