@@ -294,8 +294,12 @@ try {
   );
 
   // ── 止める ─────────────────────────────────────────────
+  // 待っている頼みごと止める
+  await store.requestRun(calm.id, now);
   await store.pause(calm.id);
   check("止めた予定は期限が来ても候補にならない", (await store.candidate(now)) === undefined);
+  const stillOn = await store.resume(waiting.id, new Date(now.getTime() + day));
+  check("動いている予定に再開を当てても書かない", stillOn === undefined);
   await store.requestRun(calm.id, now);
   const pausedPick = await store.candidate(now);
   check("止めた予定もいま撮るなら候補になる", pausedPick?.id === calm.id, String(pausedPick?.id));
@@ -338,6 +342,11 @@ try {
     failedRow?.state === "failed" && (failedRow.error ?? "") !== "",
     String(failedRow?.error),
   );
+  check(
+    "failed の行の終わりは始まりより前にならない",
+    (failedRow?.finishedAt?.getTime() ?? 0) >= (failedRow?.startedAt.getTime() ?? 1),
+    `${iso(failedRow?.startedAt)} → ${iso(failedRow?.finishedAt)}`,
+  );
   const secretAfter = await store.get(secret.id);
   check(
     "始められなくても次の回へ進む",
@@ -377,7 +386,9 @@ try {
   const latest = await store.latestVersions();
   check(
     "スクリプトの版は数で返る",
-    [...latest.values()].every((version) => typeof version === "number"),
+    [...latest.named.values(), ...latest.byDefault.values()].every(
+      (version) => typeof version === "number",
+    ),
   );
 } finally {
   // 回 → 予定の順に消す (参照がある)。自分の組織の物だけ

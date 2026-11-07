@@ -103,6 +103,8 @@ const fakeStore = () => {
   let runs: ScheduleRun[] = [];
   let running: { crawlId: string; startedAt: Date } | undefined;
   let createAnswer: CreateResult | undefined;
+  const latestNamed = new Map([["autoscroll", 2]]);
+  const latestByDefault = new Map([["autoscroll", 2]]);
   const store = {
     create: (schedule: NewSchedule) => {
       created.push(schedule);
@@ -115,7 +117,7 @@ const fakeStore = () => {
     get: (id: string) => Promise.resolve(rows.get(id)),
     recentRuns: () => Promise.resolve(runs),
     runningCrawl: () => Promise.resolve(running),
-    latestVersions: () => Promise.resolve(new Map([["autoscroll", 2]])),
+    latestVersions: () => Promise.resolve({ named: latestNamed, byDefault: latestByDefault }),
     pause: (id: string) => {
       const row = rows.get(id);
       if (row === undefined) return Promise.resolve(undefined);
@@ -157,6 +159,8 @@ const fakeStore = () => {
     answerCreate: (value: CreateResult) => {
       createAnswer = value;
     },
+    latestNamed,
+    latestByDefault,
   };
 };
 
@@ -360,6 +364,29 @@ describe("定期実行の口", () => {
       });
     });
 
+    it("省いた頼みは有効な版と比べる（新しい版を無効にしたら outdated にしない）", async () => {
+      fake.latestNamed.set("autoscroll", 3);
+      fake.rows.set(ID, rowOf());
+      const res = await app.inject({ url: `/api/schedules/${ID}` });
+      expect(res.json()).toMatchObject({
+        outdated: false,
+        scripts: [{ id: "autoscroll", version: 2, latest: 2 }],
+      });
+    });
+
+    it("名指しの頼みは有効かを見ずに最新と比べる", async () => {
+      fake.latestNamed.set("autoscroll", 3);
+      fake.rows.set(
+        ID,
+        rowOf({ request: { seeds: ["https://site.test/"], scripts: [{ catalog: "autoscroll" }] } }),
+      );
+      const res = await app.inject({ url: `/api/schedules/${ID}` });
+      expect(res.json()).toMatchObject({
+        outdated: true,
+        scripts: [{ id: "autoscroll", version: 2, latest: 3 }],
+      });
+    });
+
     it("台帳に無いスクリプト（その場の TS）は latest が null で、outdated にしない", async () => {
       fake.rows.set(
         ID,
@@ -389,6 +416,28 @@ describe("定期実行の口", () => {
       fake.setRunning({ crawlId: OTHER, startedAt: new Date(NOW.getTime() - 3 * 3_600_000) });
       const res = await app.inject({ url: `/api/schedules/${ID}` });
       expect(res.json()).toMatchObject({ health: "overdue", blockedBy: { crawlId: OTHER } });
+    });
+
+    it("直近の回が失敗でも、順番を待っていれば塞いでいる行を名指す", async () => {
+      fake.rows.set(ID, rowOf({ nextRunAt: new Date(NOW.getTime() - 60_000) }));
+      fake.setRuns([runOf({ state: "failed" })]);
+      fake.setRunning({ crawlId: OTHER, startedAt: new Date(NOW.getTime() - 60_000) });
+      const res = await app.inject({ url: `/api/schedules/${ID}` });
+      expect(res.json()).toMatchObject({ health: "failing", blockedBy: { crawlId: OTHER } });
+    });
+
+    it("止めた予定のいま撮るが待っていれば、塞いでいる行を名指す", async () => {
+      fake.rows.set(ID, rowOf({ enabled: false, runRequestedAt: NOW }));
+      fake.setRunning({ crawlId: OTHER, startedAt: NOW });
+      const res = await app.inject({ url: `/api/schedules/${ID}` });
+      expect(res.json()).toMatchObject({ health: "paused", blockedBy: { crawlId: OTHER } });
+    });
+
+    it("走行中の行が在っても、待っていなければ名指さない", async () => {
+      fake.rows.set(ID, rowOf());
+      fake.setRunning({ crawlId: OTHER, startedAt: NOW });
+      const res = await app.inject({ url: `/api/schedules/${ID}` });
+      expect(res.json()).toMatchObject({ health: "ok", blockedBy: null });
     });
 
     it("回が走ったままなら stuck で、その行を名指す", async () => {
@@ -426,6 +475,14 @@ describe("定期実行の口", () => {
         health: "ok",
         nextRunAt: jst("2026-11-08T04:00:00").toISOString(),
       });
+    });
+
+    it("動いている予定の再開は何も変えない（順番待ちの回を消さない）", async () => {
+      const due = new Date(NOW.getTime() - 60_000);
+      fake.rows.set(ID, rowOf({ nextRunAt: due }));
+      const res = await post(`/api/schedules/${ID}/resume`);
+      expect(res.statusCode).toBe(200);
+      expect(fake.rows.get(ID)?.nextRunAt).toEqual(due);
     });
 
     it("いま撮るは頼みを立てて周回を呼び、202", async () => {

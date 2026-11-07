@@ -64,6 +64,7 @@ const schedule = (overrides: Partial<ScheduleRow> = {}): ScheduleRow => ({
 /** 周回が使う所だけの偽物。行の状態を持ち、`fire` の渡した値で進める (本物のトランザクションは smoke が見る)。 */
 const fakeStore = (rows: ScheduleRow[]) => {
   const fired: FirePlan[] = [];
+  const throws: Error[] = [];
   let running: { crawlId: string; startedAt: Date } | undefined;
   let lastStarted: Date | undefined;
   let nextFire: FireResult | undefined;
@@ -85,6 +86,8 @@ const fakeStore = (rows: ScheduleRow[]) => {
     },
     fire: (plan: FirePlan): Promise<FireResult> => {
       fired.push(plan);
+      const thrown = throws.shift();
+      if (thrown !== undefined) return Promise.reject(thrown);
       if (nextFire !== undefined) {
         const answer = nextFire;
         nextFire = undefined;
@@ -92,7 +95,7 @@ const fakeStore = (rows: ScheduleRow[]) => {
       }
       const row = rows.find((one) => one.id === plan.scheduleId);
       if (row !== undefined) {
-        row.nextRunAt = plan.nextRunAt;
+        if (plan.nextRunAt !== undefined) row.nextRunAt = plan.nextRunAt;
         row.runRequestedAt = null;
       }
       if (plan.failure !== undefined) return Promise.resolve({ kind: "failed" });
@@ -118,6 +121,9 @@ const fakeStore = (rows: ScheduleRow[]) => {
     },
     answerNextFire: (value: FireResult) => {
       nextFire = value;
+    },
+    throwOnNextFire: (value: Error) => {
+      throws.push(value);
     },
   };
 };
@@ -210,7 +216,7 @@ describe("定期実行の周回", () => {
     expect(levels).toHaveLength(1);
     expect(fake.fired[0]?.scheduledFor).toBeNull();
     expect(fake.fired[0]?.missed).toBe(0);
-    expect(fake.fired[0]?.nextRunAt).toEqual(next);
+    expect(fake.fired[0]?.nextRunAt).toBeUndefined();
   });
 
   it("止めた予定もいま撮るなら始まり、期限は動かない", async () => {
@@ -219,7 +225,9 @@ describe("定期実行の周回", () => {
     const { deps } = depsOf(fake.store);
     expect((await tickSchedules(deps)).kind).toBe("started");
     expect(fake.fired[0]?.scheduledFor).toBeNull();
-    expect(fake.fired[0]?.nextRunAt).toEqual(stale);
+    // 書かない。Windmill を待つ間に再開されても、この古い期限で上書きしない
+    expect(fake.fired[0]?.nextRunAt).toBeUndefined();
+    expect(stale.getTime()).toBeLessThan(NOW.getTime());
   });
 
   it("期限の来た予定にいま撮るが重なれば、本来の回として 1 本だけ始める", async () => {
@@ -300,6 +308,46 @@ describe("定期実行の周回", () => {
         error: "windmill unreachable",
       });
     });
+  });
+
+  it("シークレットを訊いて投げられても、failed の行にして次の回へ進む（ほかの予定を止めない）", async () => {
+    const windmill = {
+      exists: () => Promise.reject(new SyntaxError("Unexpected token < in JSON")),
+    } as unknown as WindmillVariables;
+    const declaredSecret = recipe({
+      declaredSecrets: [
+        { name: "token", path: "f/waggle_secrets/token", required: true, declaredBy: ["login"] },
+      ],
+    });
+    const fake = fakeStore([schedule({ recipe: declaredSecret })]);
+    const { deps, levels } = depsOf(fake.store, { windmill });
+    expect(await tickSchedules(deps)).toMatchObject({
+      kind: "failed",
+      error: "could not ask about secrets: Unexpected token < in JSON",
+    });
+    expect(levels).toHaveLength(0);
+    expect(fake.fired[0]?.nextRunAt).toEqual(jst("2026-11-08T04:00:00"));
+  });
+
+  it("行を足せずに投げても、failed の行にして次の回へ進む（ほかの予定を止めない）", async () => {
+    const fake = fakeStore([schedule()]);
+    fake.throwOnNextFire(new Error("bind message has 70000 parameters"));
+    const { deps, levels } = depsOf(fake.store);
+    expect(await tickSchedules(deps)).toMatchObject({
+      kind: "failed",
+      error: "could not start: bind message has 70000 parameters",
+    });
+    expect(levels).toHaveLength(0);
+    expect(fake.fired).toHaveLength(2);
+    expect(fake.fired[1]?.failure).toBe("could not start: bind message has 70000 parameters");
+  });
+
+  it("failed の行も足せなければ投げる（DB が落ちている。次の周回でまた見る）", async () => {
+    const fake = fakeStore([schedule()]);
+    fake.throwOnNextFire(new Error("db down"));
+    fake.throwOnNextFire(new Error("db down"));
+    const { deps } = depsOf(fake.store);
+    await expect(tickSchedules(deps)).rejects.toThrow("db down");
   });
 
   it("走行中の行とぶつかれば webhook を投げない", async () => {

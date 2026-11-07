@@ -15,7 +15,12 @@ import type { ScheduleRecipe } from "../db/database.js";
 import { createChildLogger } from "../logger.js";
 import { checkCron, nextRunAfter } from "../schedules/cron.js";
 import { scheduleHealth } from "../schedules/health.js";
-import type { ScheduleRow, ScheduleRun, ScheduleStore } from "../schedules/store.js";
+import type {
+  LatestVersions,
+  ScheduleRow,
+  ScheduleRun,
+  ScheduleStore,
+} from "../schedules/store.js";
 import { maySubmit, unauthorized } from "./authorization.js";
 import type { IdentityResolver } from "./identity.js";
 
@@ -63,7 +68,7 @@ const answerOf = (
   row: ScheduleRow,
   runs: readonly ScheduleRun[],
   running: { crawlId: string; startedAt: Date } | undefined,
-  latest: ReadonlyMap<string, number>,
+  latest: LatestVersions,
   now: Date,
 ) => {
   const last = runs[0];
@@ -74,12 +79,16 @@ const answerOf = (
     lastRun: last === undefined ? null : { state: last.state, startedAt: last.startedAt },
     now,
   });
+  const versions = row.request.scripts === undefined ? latest.byDefault : latest.named;
   const scripts = row.recipe.scripts.map((script) => ({
     id: script.id,
     version: script.version,
     // その場の TS は台帳に行が無いので null。新しい版の有無を言えない
-    latest: latest.get(script.id) ?? null,
+    latest: versions.get(script.id) ?? null,
   }));
+  // 待っている物があるか。状態の語は 1 つだけなので、語からは読まない (直近の回の失敗でも順番を待っていることがある)
+  const waiting =
+    row.runRequestedAt !== null || (row.enabled && row.nextRunAt.getTime() <= now.getTime());
   return {
     id: row.id,
     name: row.name,
@@ -88,11 +97,8 @@ const answerOf = (
     timezone: row.timezone,
     enabled: row.enabled,
     health,
-    // 塞いでいる行。走っている回そのものか、走っている別のクロール
-    blockedBy:
-      (health === "stuck" || health === "overdue" || health === "blocked") && running !== undefined
-        ? running
-        : null,
+    // 塞いでいる行。走ったままの回そのものか、この予定を待たせている走行中のクロール
+    blockedBy: (health === "stuck" || waiting) && running !== undefined ? running : null,
     nextRunAt: row.nextRunAt,
     runRequestedAt: row.runRequestedAt,
     seeds: row.recipe.seeds.map((seed) => seed.normalized),
@@ -257,6 +263,8 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
       if (identity === null) return reply;
       const current = await store.get(request.params.id);
       if (current === undefined) return notFound(reply);
+      // 動いている予定は何も変えない (期限を計算し直すと順番待ちの回が消える)
+      if (current.enabled) return reply.code(200).send(await answerFor(current));
       const row = await store.resume(
         current.id,
         nextRunAfter(current.cron, current.timezone, deps.now()),

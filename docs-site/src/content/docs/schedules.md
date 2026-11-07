@@ -20,12 +20,12 @@ The screen is the Schedules tab in capture-workbench. This page covers the ledge
 5. In one transaction, add the crawl row and its seed pages, and move on to the next run.
 6. Send the webhook after the commit.
 
-| What happened                                    | What follows                                                                                      |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| It collided with a running row                   | Rollback. The due time does not move and the schedule stays queued. There is no "skipped" outcome |
-| A secret is missing, or Windmill cannot be asked | A `failed` row is added and the schedule moves to its next run                                    |
-| The webhook could not be sent                    | The row is closed as `failed` (the same as a crawl started by hand)                               |
-| The ledger was down                              | One run when it comes back. How many runs passed stays in `crawls.schedule_missed`                |
+| What happened                                                             | What follows                                                                                      |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| It collided with a running row                                            | Rollback. The due time does not move and the schedule stays queued. There is no "skipped" outcome |
+| A secret is missing, Windmill cannot be asked, or the row cannot be added | A `failed` row is added and the schedule moves to its next run                                    |
+| The webhook could not be sent                                             | The row is closed as `failed` (the same as a crawl started by hand)                               |
+| The ledger was down                                                       | One run when it comes back. How many runs passed stays in `crawls.schedule_missed`                |
 
 A row left running is not closed by the tick, so that a run that really is running does not get
 closed. Its health becomes `stuck`, and the "close" button on the screen or
@@ -48,8 +48,8 @@ action is a POST (capture-workbench only relays POST for writes).
 | `POST /api/schedules`            | The body is `{name, cron, request}`. `request` has the shape of `POST /api/crawls` and is refused for the same reasons. Cron takes 5 fields only, and is a 400 if any gap among the next 20 runs is under the minimum. The same name is a 409 |
 | `GET /api/schedules`             | The schedules not deleted, with health and recent runs                                                                                                                                                                                        |
 | `GET /api/schedules/:id`         | One schedule, shaped like an element of the list                                                                                                                                                                                              |
-| `POST /api/schedules/:id/pause`  | Pause. A run in progress carries on                                                                                                                                                                                                           |
-| `POST /api/schedules/:id/resume` | Resume. The next run is computed from now, and the paused time does not count as missed                                                                                                                                                       |
+| `POST /api/schedules/:id/pause`  | Pause. A run-now request that is waiting goes too. A run in progress carries on                                                                                                                                                               |
+| `POST /api/schedules/:id/resume` | Resume. The next run is computed from now, and the paused time does not count as missed. A schedule that is not paused is left alone                                                                                                          |
 | `POST /api/schedules/:id/run`    | Run now. Answers 202 and the tick starts it. Works on a paused schedule                                                                                                                                                                       |
 | `POST /api/schedules/:id/repin`  | Resolve the request again against the current ledger. Refused for the same reasons if a script has gone                                                                                                                                       |
 | `POST /api/schedules/:id/delete` | Delete. The row stays, because crawl rows show its name                                                                                                                                                                                       |

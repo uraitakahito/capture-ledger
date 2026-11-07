@@ -106,17 +106,20 @@ describe("予定の窓口", () => {
     expect(queries[0]!.parameters).toEqual(["running"]);
   });
 
-  it("スクリプトの版は id ごとの最新（既定に入らない物も）", async () => {
+  it("スクリプトの版は、名指しの最新と、省いた頼みが選ぶ有効な版の最新の 2 つ", async () => {
     const { db, queries } = recordingDb([
       [
-        { id: "autoscroll", version: 3 },
-        { id: "autofetch", version: 5 },
+        { id: "autoscroll", latest: 3, latestEnabled: 2 },
+        { id: "autofetch", latest: 5, latestEnabled: null },
       ],
     ]);
     const latest = await scheduleStoreOf(db).latestVersions();
-    expect(latest.get("autoscroll")).toBe(3);
-    expect(queries[0]!.sql).toContain('distinct on ("id")');
-    expect(queries[0]!.sql).not.toContain('"enabled"');
+    expect(latest.named.get("autoscroll")).toBe(3);
+    expect(latest.byDefault.get("autoscroll")).toBe(2);
+    expect(latest.named.get("autofetch")).toBe(5);
+    expect(latest.byDefault.has("autofetch")).toBe(false);
+    expect(queries[0]!.sql).toContain("filter (where enabled)");
+    expect(queries[0]!.sql).toContain('group by "id"');
   });
 
   describe("回を始める", () => {
@@ -142,6 +145,16 @@ describe("予定の窓口", () => {
       expect(sqls[5]).toBe("commit");
     });
 
+    it("いま撮る（次の期限が無い）は、期限を書かない", async () => {
+      const { db, queries } = recordingDb([[{ id: ID }], [], seeded, []]);
+      const manual = plan({ scheduledFor: null, missed: 0 });
+      delete manual.nextRunAt;
+      await scheduleStoreOf(db).fire(manual);
+      const update = queries.find((query) => query.sql.includes('update "crawl_schedules"'))!;
+      expect(update.sql).not.toContain('"next_run_at"');
+      expect(update.sql).toContain('"run_requested_at"');
+    });
+
     it("掴めなければ何も足さない", async () => {
       const { db, queries } = recordingDb([[]]);
       expect(await scheduleStoreOf(db).fire(plan())).toEqual({ kind: "gone" });
@@ -155,6 +168,8 @@ describe("予定の窓口", () => {
       const insert = queries.find((query) => query.sql.includes('insert into "crawls"'))!;
       expect(insert.parameters).toContain("failed");
       expect(insert.parameters).toContain("unknown secrets: token");
+      // 終わりの時刻は DB の時計 (周回の時計だと始まりより前になりうる)
+      expect(insert.sql).toContain("now()");
       expect(queries.some((query) => query.sql.includes('insert into "crawl_pages"'))).toBe(false);
       expect(queries.some((query) => query.sql.includes('update "crawl_schedules"'))).toBe(true);
     });
@@ -173,6 +188,20 @@ describe("予定の窓口", () => {
       expect(sql).toContain('update "crawl_schedules"');
       expect(sql).toContain('"deleted_at" is null');
     }
+  });
+
+  it("止めるときは待っている頼みも消す", async () => {
+    const { db, queries } = recordingDb([[]]);
+    await scheduleStoreOf(db).pause(ID);
+    expect(queries[0]!.sql).toContain('"enabled" = $1');
+    expect(queries[0]!.sql).toContain('"run_requested_at" = $2');
+    expect(queries[0]!.parameters.slice(0, 2)).toEqual([false, null]);
+  });
+
+  it("再開は止めた予定だけを書く", async () => {
+    const { db, queries } = recordingDb([[]]);
+    await scheduleStoreOf(db).resume(ID, NOW);
+    expect(queries[0]!.sql).toMatch(/"enabled" = \$\d+ returning/);
   });
 
   it("再開は有効にして渡した期限を入れる", async () => {

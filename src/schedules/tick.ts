@@ -26,9 +26,10 @@ import type { CaptureSettings } from "../config/capture-formats.js";
 import { firstLevel, type DispatchedCrawl } from "../crawl/launch.js";
 import { resolveSecrets, type PreparedCrawl, type RefusedCrawl } from "../crawl/prepare.js";
 import type { WindmillVariables } from "../crawl/windmill-variables.js";
+import type { CrawlSecret } from "../db/database.js";
 import { createChildLogger } from "../logger.js";
 import { missedSince, nextRunAfter } from "./cron.js";
-import type { ScheduleStore } from "./store.js";
+import type { FirePlan, FireResult, ScheduleStore } from "./store.js";
 
 const log = createChildLogger({ module: "schedules" });
 
@@ -53,6 +54,8 @@ export type TickResult =
   | { kind: "failed"; scheduleId: string; crawlId: string; error: string }
   | { kind: "busy"; scheduleId: string }
   | { kind: "gone"; scheduleId: string };
+
+const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /** 断られた答えを、行の `error` に残す 1 行にする。 */
 const refusalText = ({ status, body }: RefusedCrawl): string => {
@@ -89,15 +92,20 @@ export const tickSchedules = async (deps: TickDeps): Promise<TickResult> => {
   const who = { orgId: row.orgId, subject: row.createdBy };
   const crawlId = randomUUID();
 
-  const secrets = await resolveSecrets(deps.windmill, row.recipe.declaredSecrets, who.subject);
-  const prepared: PreparedCrawl = {
-    ...row.recipe,
-    kind: "prepared",
-    secrets: secrets.kind === "resolved" ? secrets.secrets : {},
-  };
-  const failure = secrets.kind === "refused" ? refusalText(secrets) : undefined;
+  // **この予定の問題で、周回を止めない。** Windmill の変な答えや大きすぎる行で投げたまま次の周回へ渡すと、同じ予定を
+  // 選び続けて、ほかの予定も始まらない。どれも failed の行にして次の回へ進める
+  let secrets: Record<string, CrawlSecret> = {};
+  let failure: string | undefined;
+  try {
+    const answer = await resolveSecrets(deps.windmill, row.recipe.declaredSecrets, who.subject);
+    if (answer.kind === "resolved") secrets = answer.secrets;
+    else failure = refusalText(answer);
+  } catch (err) {
+    failure = `could not ask about secrets: ${messageOf(err)}`;
+  }
+  const prepared: PreparedCrawl = { ...row.recipe, kind: "prepared", secrets };
 
-  const result = await store.fire({
+  const plan: FirePlan = {
     scheduleId: row.id,
     crawlId,
     prepared,
@@ -105,10 +113,20 @@ export const tickSchedules = async (deps: TickDeps): Promise<TickResult> => {
     sink,
     scheduledFor: isDue ? row.nextRunAt : null,
     missed: isDue ? missedSince(row.cron, row.timezone, row.nextRunAt, now) : 0,
-    nextRunAt: isDue ? nextRunAfter(row.cron, row.timezone, now) : row.nextRunAt,
+    // 「いま撮る」は書かない。止めた予定の古い期限で、その間の再開を上書きしないため
+    ...(isDue && { nextRunAt: nextRunAfter(row.cron, row.timezone, now) }),
     ...(failure !== undefined && { failure }),
     now,
-  });
+  };
+  let result: FireResult;
+  try {
+    result = await store.fire(plan);
+  } catch (err) {
+    if (failure !== undefined) throw err;
+    failure = `could not start: ${messageOf(err)}`;
+    log.error({ err, scheduleId: row.id, crawlId }, "Schedule could not add its crawl");
+    result = await store.fire({ ...plan, failure });
+  }
 
   switch (result.kind) {
     case "started":

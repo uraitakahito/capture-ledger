@@ -53,8 +53,8 @@ export interface FirePlan {
   /** 本来の時刻。「いま撮る」は null。 */
   scheduledFor: Date | null;
   missed: number;
-  /** 次の期限。「いま撮る」はいまの値のまま。 */
-  nextRunAt: Date;
+  /** 次の期限。期限の回だけが持つ。「いま撮る」は書かない。 */
+  nextRunAt?: Date;
   /** 在れば、始めずに failed の行を足す (シークレットが足りないなど)。期限は進める。 */
   failure?: string;
   now: Date;
@@ -70,6 +70,15 @@ export type FireResult =
 
 export type CreateResult = { kind: "created"; row: ScheduleRow } | { kind: "duplicate-name" };
 
+/**
+ * 「固定し直す」で上がる先の版。**頼みの形で違う** (`resolveScripts`): 名指しは有効かを見ずに最新を選び、省いた頼みは
+ * 有効な版の最新を選ぶ。片方だけで比べると、版を無効にしたときに「新しい版があります」が消えなくなる。
+ */
+export interface LatestVersions {
+  named: ReadonlyMap<string, number>;
+  byDefault: ReadonlyMap<string, number>;
+}
+
 export interface ScheduleStore {
   create(schedule: NewSchedule): Promise<CreateResult>;
   /** 消していない予定を、作った順に。 */
@@ -82,16 +91,13 @@ export interface ScheduleStore {
   runningCrawl(): Promise<{ crawlId: string; startedAt: Date } | undefined>;
   /** 直近に始まったクロールの時刻。手で始めた物も数える。 */
   lastCrawlStartedAt(): Promise<Date | undefined>;
-  /**
-   * スクリプトの id ごとの最新の版。`enabled` は見ない —— 名指しの解決は有効かを見ずに最新を選ぶので
-   * (`resolveScripts`)、既定に入らないスクリプトの新しい版も「固定し直す」の対象になる。
-   */
-  latestVersions(): Promise<Map<string, number>>;
+  /** スクリプトの id ごとの最新の版。 */
+  latestVersions(): Promise<LatestVersions>;
   /** 次に始める候補を 1 つ。「いま撮る」の頼みが先で、次に期限の古い順。 */
   candidate(now: Date): Promise<ScheduleRow | undefined>;
   fire(plan: FirePlan): Promise<FireResult>;
   pause(id: string): Promise<ScheduleRow | undefined>;
-  /** 再開。次の期限は呼ぶ側が今から計算し直す (止めていた間は欠けに数えない)。 */
+  /** 再開。次の期限は呼ぶ側が今から計算し直す (止めていた間は欠けに数えない)。止めていない予定には何もしない。 */
   resume(id: string, nextRunAt: Date): Promise<ScheduleRow | undefined>;
   requestRun(id: string, now: Date): Promise<ScheduleRow | undefined>;
   repin(id: string, recipe: ScheduleRecipe, now: Date): Promise<ScheduleRow | undefined>;
@@ -184,12 +190,21 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
   async latestVersions() {
     const rows = await db
       .selectFrom("scripts")
-      .select(["id", "version"])
-      .distinctOn("id")
-      .orderBy("id")
-      .orderBy("version", "desc")
+      .select([
+        "id",
+        sql<number>`max(version)::int`.as("latest"),
+        sql<number | null>`(max(version) filter (where enabled))::int`.as("latestEnabled"),
+      ])
+      .groupBy("id")
       .execute();
-    return new Map(rows.map((row) => [row.id, row.version]));
+    return {
+      named: new Map(rows.map((row) => [row.id, row.latest])),
+      byDefault: new Map(
+        rows.flatMap((row) =>
+          row.latestEnabled === null ? [] : [[row.id, row.latestEnabled] as const],
+        ),
+      ),
+    };
   },
 
   async candidate(now) {
@@ -210,7 +225,6 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
   },
 
   async fire(plan) {
-    const now = plan.now.toISOString();
     const mark = {
       scheduleId: plan.scheduleId,
       scheduledFor: plan.scheduledFor === null ? null : plan.scheduledFor.toISOString(),
@@ -254,7 +268,8 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
               ...crawlValues(plan.prepared, plan.crawlId, plan.who, plan.sink, mark),
               state: "failed",
               stopReason: "failed",
-              finishedAt: now,
+              // `started_at` と同じ DB の時計 (トランザクションの時刻)。周回の時計だと始まりより前になりうる
+              finishedAt: sql<string>`now()`,
               error: plan.failure,
             })
             .execute();
@@ -263,7 +278,10 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
 
         await trx
           .updateTable("crawlSchedules")
-          .set({ nextRunAt: plan.nextRunAt.toISOString(), runRequestedAt: null })
+          .set({
+            ...(plan.nextRunAt !== undefined && { nextRunAt: plan.nextRunAt.toISOString() }),
+            runRequestedAt: null,
+          })
           .where("id", "=", plan.scheduleId)
           .execute();
         return result;
@@ -276,23 +294,30 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
   },
 
   async pause(id) {
-    return db
-      .updateTable("crawlSchedules")
-      .set({ enabled: false })
-      .where("id", "=", id)
-      .where("deletedAt", "is", null)
-      .returningAll()
-      .executeTakeFirst();
+    return (
+      db
+        .updateTable("crawlSchedules")
+        // 待っている「いま撮る」の頼みも消す。止めたのに後で始まると、止めた意味が無い
+        .set({ enabled: false, runRequestedAt: null })
+        .where("id", "=", id)
+        .where("deletedAt", "is", null)
+        .returningAll()
+        .executeTakeFirst()
+    );
   },
 
   async resume(id, nextRunAt) {
-    return db
-      .updateTable("crawlSchedules")
-      .set({ enabled: true, nextRunAt: nextRunAt.toISOString() })
-      .where("id", "=", id)
-      .where("deletedAt", "is", null)
-      .returningAll()
-      .executeTakeFirst();
+    return (
+      db
+        .updateTable("crawlSchedules")
+        .set({ enabled: true, nextRunAt: nextRunAt.toISOString() })
+        .where("id", "=", id)
+        .where("deletedAt", "is", null)
+        // 止めた予定だけ。動いている予定の期限を動かすと、順番待ちの回が消える
+        .where("enabled", "=", false)
+        .returningAll()
+        .executeTakeFirst()
+    );
   },
 
   async requestRun(id, now) {

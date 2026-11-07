@@ -313,7 +313,8 @@ const start = async (options: ServerOptions): Promise<void> => {
    * 途中で落ちたクロールの行は `running` のまま残り、**部分 unique index が次を全部
    * 塞ぐ** —— 生きているものと区別する術が行に無い。締めるのは flow の failure_module で、
    * `POST /api/crawls/:id/failed` を叩く (capture-scheduler の fail_crawl.ts)。**ledger と flow が
-   * 同時に落ちたときだけ**、残った行を手で締めることになる。
+   * 同時に落ちたとき**と、行を足してから webhook を投げ終えるまでの間に ledger が落ちたときは、残った行を
+   * 手で締めることになる (定期の回なら状態が `stuck` になり、画面に「締める」が出る)。
    */
   const shutdown = async (): Promise<void> => {
     clearInterval(drainTimer);
