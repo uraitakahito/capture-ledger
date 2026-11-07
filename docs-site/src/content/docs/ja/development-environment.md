@@ -35,7 +35,7 @@ pnpm run check       # push の前に走らせる検査の全部（中身は pac
 `.upstream/` の submodule、そして**共有 store が起きているか**を確かめ、足りなければ
 名前を挙げて止まります。
 
-成果物を置く store（SeaweedFS）は、このスタックには入っていません。crawler の 3 つの repo が
+成果物を置く store（SeaweedFS）は、このスタックには入っていません。[Web Capture](https://uraitakahito.github.io/capture-ledger/ja/#web-capture) の repo が
 共有する 1 つの store（`seaweedfs.crawler-storage`）で、submodule から起こします:
 
 ```sh

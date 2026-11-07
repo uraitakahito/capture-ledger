@@ -1,5 +1,5 @@
 /**
- * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 6 つ。
+ * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 7 つ。
  *
  * ## なぜ要るのか
  *
@@ -27,6 +27,8 @@
  *   名前・CLI の答えで 100 行あまり）。「札」は tag を 1 字で写した書き手の癖で、読み手に通じない。同じ字で
  *   書いていた `labels` は「ラベル」、BrowserHive の `correlationId` は「相関キー」（browserhive・dashboard・
  *   capture-scheduler も見張っている）
+ * - **repo の一式は「Web Capture」と書く。** 2026-11 に「crawler」からそろえた。crawler はふつうの名詞と紛れ、
+ *   動いている識別子（`crawler-storage`・Windmill の workspace の id）とも同じ字になる（capture-scheduler も見張っている）
  *
  * 書き手（人と Claude）は長くこの形で書いてきたので、見張らなければ戻ってくる。
  *
@@ -41,6 +43,8 @@
  *   見る —— 写しに残っていれば、pin の先の browserhive がまだ直っていないということ
  * - 「その場の JS」: 形の並び（OLD_INLINE。dashboard・capture-scheduler と同じ並び）
  * - 「札」: 全部
+ * - 「crawler」: 一式の意味の形の並び（OLD_SUITE。capture-scheduler と同じ並び）。`crawler-storage`・`/w/crawler/`・
+ *   `workspace crawler`・試験の入力値・ふつうの名詞は見ない
  *
  * ## 見ないもの
  *
@@ -73,6 +77,14 @@ const AMI_ALLOWED = /安全網|網羅/gu;
  */
 const OLD_INLINE =
   /その場の JS|その場で書いた JS|JS の名前|JS の箱|書きかけの JS|この JS の id|その JS の id|\binline JS\b/u;
+
+/**
+ * repo の一式の古い呼び名（2026-11 まで）。capture-scheduler と同じ並び。
+ * 足すときは、動いている識別子（`crawler-storage`・`/w/crawler/`・`workspace crawler`）と、ふつうの名詞
+ * （The crawler honoured robots）に当たらないことを確かめる。
+ */
+const OLD_SUITE =
+  /(?<!workspace )\bcrawler ?(の|で|が|を|全体)|\bcrawler repo(s|sitory|sitories)\b|\ball of crawler\b|\b[Tt]he crawler's development\b/u;
 
 interface Rule {
   find: (line: string) => boolean;
@@ -111,6 +123,12 @@ const RULES: Rule[] = [
     say:
       "「札」が残っています。スクリプトの `sites` は「対象サイト」、`labels` は「ラベル」、" +
       "`correlationId` は「相関キー」と書きます。",
+  },
+  {
+    find: (line) => OLD_SUITE.test(line),
+    say:
+      "repo の一式の古い呼び名が残っています。一式は「Web Capture」と書きます" +
+      "（crawler-storage・workspace の id・ふつうの名詞の crawler はそのまま）。",
   },
 ];
 

@@ -16,7 +16,7 @@
  *
  * ## 落とさないもの
  *
- * 共有 store (`seaweedfs.crawler-storage`) は crawler で 1 つしかなく、他の repo も
+ * 共有 store (`seaweedfs.crawler-storage`) は Web Capture で 1 つしかなく、他の repo も
  * 使っている。**ここから落としてよいものではない。**
  */
 import { spawnSync } from "node:child_process";
@@ -105,7 +105,7 @@ for (const stack of stacks) {
 }
 
 console.log(
-  "\n共有 store (seaweedfs.crawler-storage) は落としていない —— crawler で 1 つしかなく、" +
+  "\n共有 store (seaweedfs.crawler-storage) は落としていない —— Web Capture で 1 つしかなく、" +
     "他の repo も使っている。",
 );
 

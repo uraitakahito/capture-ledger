@@ -8,7 +8,7 @@ headless の Chromium 2 台、そしてその 1 台ずつに付く BrowserHive
 （[固定した submodule](/capture-ledger/ja/upgrading-browserhive/)からビルド）です。実行基盤は
 [Apple Container](https://github.com/apple/container)で、`container-compose` が駆動します。
 
-成果物を置く store（SeaweedFS）は**このスタックには入っていません** —— crawler の 3 つの
+成果物を置く store（SeaweedFS）は**このスタックには入っていません** —— [Web Capture](https://uraitakahito.github.io/capture-ledger/ja/#web-capture) の
 repo が共有する 1 つの store で、[seaweedfs](https://github.com/uraitakahito/seaweedfs) が
 起こします（§3）。
 
@@ -83,7 +83,7 @@ build context はどれもここを指すので、空のままでは何もビル
 
 ## 3. 共有 store とスタックを起動する
 
-成果物を置く store は crawler で 1 つだけ立てます。まだ起きていなければ先に起こします
+成果物を置く store は Web Capture で 1 つだけ立てます。まだ起きていなければ先に起こします
 （submodule に入っているので、この repo から出る必要はありません）:
 
 ```sh
