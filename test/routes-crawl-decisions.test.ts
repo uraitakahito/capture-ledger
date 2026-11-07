@@ -38,6 +38,7 @@ const crawlRow = (
   orgId: "acme",
   requestedBy: "alice",
   state: "running",
+  stopReason: null,
   maxDepth: 2,
   maxPages: 20,
   perHostDelayMs: 0,
@@ -121,7 +122,7 @@ describe("段の報告で、規則が決めたことを残す", () => {
         [crawlRow(rules, [seed])], // クロールの行
         [{ id: "11" }], // 報告した行を閉じる (returning id)
         [], // crawl_decisions
-        [{ count: "1" }], // crawl_pages の数
+        [{ url: seed }], // crawl_pages の URL
         [], // 次の段の行
         [], // crawls の集計
       ],
@@ -215,7 +216,7 @@ describe("段の報告で、規則が決めたことを残す", () => {
         [{ ...crawlRow([{ follow: "same-host" }], [seed]), maxDepth: 1 }], // クロールの行
         [{ id: "11" }], // 報告した行を閉じる
         [], // crawl_decisions
-        [{ count: "1" }], // crawl_pages の数
+        [{ url: seed }], // crawl_pages の URL
         [{ url: `${FIXTURES}/links/leaf/1`, host: "capture-fixtures.capture-ledger:8080" }], // 次の階層の行
         [], // crawls の集計
         [], // ホストごとの最後の時刻
@@ -243,7 +244,11 @@ describe("段の報告で、規則が決めたことを残す", () => {
       results: [
         [crawlRow(rules, [seed])],
         [{ id: "12" }],
-        [{ count: "3" }],
+        [
+          { url: seed },
+          { url: `${FIXTURES}/links/leaf/1` },
+          { url: "http://outside.invalid/page" },
+        ],
         [], // crawls の集計 (次が無いので締める)
       ],
     });
@@ -275,7 +280,7 @@ describe("段の報告で、規則が決めたことを残す", () => {
       results: [
         [crawlRow(rules, [seed])],
         [{ id: "13" }],
-        [{ count: "1" }],
+        [{ url: seed }, { url: `${FIXTURES}/links/moved` }],
         [], // crawls の集計 (次が無いので締める)
       ],
       links: {
@@ -344,7 +349,7 @@ describe("次の段を送る前に、シークレットの更新時刻を読み�
     [row], // クロールの行
     [{ id: "11" }], // 報告した行を閉じる (returning id)
     [], // crawl_decisions
-    [{ count: "1" }], // crawl_pages の数
+    [{ url: seed }], // crawl_pages の URL
     [{ url: `${FIXTURES}/links/leaf/1`, host: "capture-fixtures.capture-ledger:8080" }], // 次の段の行
     [], // crawls の集計
     [], // ホストごとの最後の時刻
@@ -738,7 +743,7 @@ describe("段の報告で締めるのは、走っているクロールだけ", (
       results: [
         [{ ...crawlRow([{ follow: "same-host" }], [seed]), state }], // クロールの行
         [{ id: "11" }], // 報告した行を閉じる
-        [{ count: "1" }], // crawl_pages の数
+        [{ url: seed }], // crawl_pages の URL
         [], // crawls の集計
       ],
     });
@@ -775,5 +780,176 @@ describe("段の報告で締めるのは、走っているクロールだけ", (
   it("読んだ時に failed だった行にも、同じ条件つきの UPDATE を送る（読んだ状態で決めない）", async () => {
     const update = await closeByReport("failed");
     expect(update?.sql).toContain('"state" = case when "state" = $4 then $5 else "state" end');
+  });
+});
+
+/**
+ * 切った物があるときだけ、打ち切りと言う。まだ撮っていない候補が残っていなければ、深さや枚数の上限に当たっていても
+ * 切っていない。**既に行のある URL は `crawl_pages` の答えとして並べる** —— この代役は SQL を流さないので、
+ * 既知の URL を除くかどうかは、ここに並べた行と、報告したリンクの組で見える。
+ */
+describe("切った物があるときだけ、打ち切りと言う", () => {
+  const seed = `${FIXTURES}/start`;
+  const page = `${FIXTURES}/a`;
+  const unseen = `${FIXTURES}/b`;
+  const HOST = "capture-fixtures.capture-ledger:8080";
+
+  /** `page` を撮った報告を投げる。そのページのリンクが `hrefs`、既に行のある URL が `known`。 */
+  const reportPage = async (opts: {
+    depth: number;
+    maxDepth: number;
+    maxPages?: number;
+    /** 前の階層までに行に残った理由。 */
+    rowReason?: string;
+    hrefs: string[];
+    known: string[];
+    /** 次の階層に入ると見込む行。 */
+    inserted?: string[];
+  }) => {
+    const { app, queries } = await build({
+      results: [
+        [
+          {
+            ...crawlRow([{ follow: "same-host" }], [seed]),
+            maxDepth: opts.maxDepth,
+            maxPages: opts.maxPages ?? 20,
+            stopReason: opts.rowReason ?? null,
+          },
+        ], // クロールの行
+        [{ id: "11" }], // 報告した行を閉じる
+        ...(opts.hrefs.length > 0 ? [[]] : []), // crawl_decisions
+        opts.known.map((url) => ({ url })), // crawl_pages の URL
+        ...(opts.inserted === undefined ? [] : [opts.inserted.map((url) => ({ url, host: HOST }))]), // 次の階層の行
+        [], // crawls の集計
+        [], // ホストごとの最後の時刻 (次の階層があるときだけ読まれる)
+      ],
+      links: { "page.links.json": { links: opts.hrefs.map((href) => ({ href })) } },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/crawls/${CRAWL}/pages`,
+      headers: SUBJECT,
+      payload: {
+        depth: opts.depth,
+        compiled: COMPILED,
+        results: [{ url: page, status: "captured", linksLocation: "s3://b/page.links.json" }],
+      },
+    });
+    await app.close();
+    return {
+      body: res.json<{ next: { url: string }[]; stopReason: string | null }>(),
+      queries,
+      update: queries.find((query) => query.sql.startsWith('update "crawls" set "pages_captured"')),
+      insert: queries.find((query) => query.sql.startsWith('insert into "crawl_pages"')),
+    };
+  };
+
+  it("最後の階層のリンクが既に行のある URL だけなら、切っていない", async () => {
+    const { body, queries, update, insert } = await reportPage({
+      depth: 1,
+      maxDepth: 1,
+      hrefs: [seed],
+      known: [seed, page],
+    });
+    expect(body).toEqual({ next: [], stopReason: "completed" });
+    expect(insert).toBeUndefined();
+    // 撮れた 1・リンク 1。**リンクは既知の URL も数える** (延べ)
+    expect(update?.parameters.slice(0, 3)).toEqual([1, 1, "completed"]);
+    expect(queries.map((query) => query.sql)).toContain(
+      'select "url" from "crawl_pages" where "crawl_id" = $1',
+    );
+  });
+
+  it("最後の階層に新しい URL があれば、深さで切った", async () => {
+    const { body, update, insert } = await reportPage({
+      depth: 1,
+      maxDepth: 1,
+      hrefs: [seed, unseen],
+      known: [seed, page],
+    });
+    expect(body).toEqual({ next: [], stopReason: "max_depth" });
+    expect(insert).toBeUndefined();
+    expect(update?.parameters.slice(0, 3)).toEqual([1, 2, "max_depth"]);
+  });
+
+  it("リンクが無ければ、深さ 0 でも切っていない", async () => {
+    const { body, update } = await reportPage({ depth: 0, maxDepth: 0, hrefs: [], known: [page] });
+    expect(body).toEqual({ next: [], stopReason: "completed" });
+    expect(update?.parameters.slice(0, 3)).toEqual([1, 0, "completed"]);
+  });
+
+  it("深さ 0 で新しい URL があれば、深さで切った", async () => {
+    const { body, update } = await reportPage({
+      depth: 0,
+      maxDepth: 0,
+      hrefs: [unseen],
+      known: [page],
+    });
+    expect(body).toEqual({ next: [], stopReason: "max_depth" });
+    expect(update?.parameters.slice(0, 3)).toEqual([1, 1, "max_depth"]);
+  });
+
+  it("枠を使い切っていても、候補が無ければ枚数で切ったとは言わない", async () => {
+    const { body } = await reportPage({
+      depth: 1,
+      maxDepth: 5,
+      maxPages: 2,
+      hrefs: [seed],
+      known: [seed, page],
+    });
+    expect(body).toEqual({ next: [], stopReason: "completed" });
+  });
+
+  it("枠を使い切って新しい URL があれば、枚数で切った", async () => {
+    const { body } = await reportPage({
+      depth: 1,
+      maxDepth: 5,
+      maxPages: 2,
+      hrefs: [unseen],
+      known: [seed, page],
+    });
+    expect(body).toEqual({ next: [], stopReason: "max_pages" });
+  });
+
+  it("枚数で切った後に候補が無くなっても、返事は行の理由のまま", async () => {
+    // 行は coalesce で max_pages のまま。返事だけ completed にすると、run のログが「全部辿った」と言う
+    const { body, update } = await reportPage({
+      depth: 1,
+      maxDepth: 5,
+      maxPages: 3,
+      rowReason: "max_pages",
+      hrefs: [],
+      known: [seed, page, unseen],
+    });
+    expect(body).toEqual({ next: [], stopReason: "max_pages" });
+    expect(update?.sql).toContain('"stop_reason" = coalesce("stop_reason", $3)');
+  });
+
+  it("枚数で切った後に深さでも切ったら、返事は先に立った理由", async () => {
+    const { body } = await reportPage({
+      depth: 1,
+      maxDepth: 1,
+      rowReason: "max_pages",
+      hrefs: [unseen],
+      known: [seed, page],
+    });
+    expect(body).toEqual({ next: [], stopReason: "max_pages" });
+  });
+
+  it("既に行のある URL は枠を取らない", async () => {
+    // 枠は 1 本。既知の URL を先に見つけても、新しい URL が入る
+    const { body, update, insert } = await reportPage({
+      depth: 0,
+      maxDepth: 5,
+      maxPages: 3,
+      hrefs: [seed, unseen],
+      known: [seed, page],
+      inserted: [unseen],
+    });
+    expect(insert?.parameters).toContain(unseen);
+    expect(insert?.parameters).not.toContain(seed);
+    expect(body).toEqual({ next: [{ url: unseen, host: HOST, depth: 1 }], stopReason: null });
+    // 切っていないので、理由は書かない
+    expect(update?.sql).not.toContain('"stop_reason"');
   });
 });

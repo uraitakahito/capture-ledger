@@ -428,6 +428,7 @@ describe("段の報告で、取り込みのログの数をページの行に写�
     orgId: "acme",
     requestedBy: "alice",
     state: "running",
+    stopReason: null,
     maxDepth: 0,
     maxPages: 20,
     perHostDelayMs: 0,
@@ -455,7 +456,7 @@ describe("段の報告で、取り込みのログの数をページの行に写�
         [{ id: "42" }], // 報告した行を閉じる (returning id)
         [], // capture_submissions
         ...(counted ? [[]] : []), // log_counts
-        [{ count: "1" }], // crawl_pages の数
+        [{ url: "https://site.test/" }], // crawl_pages の URL
         [], // crawls の集計 (次が無いので締める)
       ],
       store: { [KEY]: stored },

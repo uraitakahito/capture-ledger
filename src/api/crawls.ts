@@ -2291,18 +2291,25 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       }
 
       // ── 4. 上限を当てる ──────────────────────────────────────────────
-      const { count } = await db
+      // **既に行のある URL は候補にしない。** まだ撮っていない候補が無ければ、深さや枚数で切ったとは言えない。
+      // 上限より先に除くので、既知の URL が枠を取ることも無い (入れる瞬間の守りは 5 の unique index)。
+      // `in` で引かずに行を全部読む —— 行数は `max_pages` で上が決まり、リンクの本数で引数が増えない。
+      const knownRows = await db
         .selectFrom("crawlPages")
-        .select((eb) => eb.fn.countAll<string>().as("count"))
+        .select("url")
         .where("crawlId", "=", crawlId)
-        .executeTakeFirstOrThrow();
+        .execute();
+      const knownUrls = new Set(knownRows.map((row) => row.url));
 
-      const { toInsert, stopReason } = planNextLevel(discovered, {
-        nextDepth,
-        maxDepth: crawl.maxDepth,
-        maxPages: crawl.maxPages,
-        known: Number(count),
-      });
+      const { toInsert, stopReason } = planNextLevel(
+        discovered.filter((link) => !knownUrls.has(link.url)),
+        {
+          nextDepth,
+          maxDepth: crawl.maxDepth,
+          maxPages: crawl.maxPages,
+          known: knownRows.length,
+        },
+      );
 
       // ── 5. 重複を index に落とさせ、入った行だけを次の段にする ──────────
       const inserted =
@@ -2442,7 +2449,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       return reply.code(200).send({
         next: inserted.map((row) => ({ url: row.url, host: row.host, depth: nextDepth })),
-        stopReason: done ? (nothingCaptured ? "failed" : (stopReason ?? "completed")) : null,
+        // **行の理由が先** (上の `coalesce`)。枚数で切った後の階層で、返事だけ「全部辿った」と言わない
+        stopReason: done ? (nothingCaptured ? "failed" : (crawl.stopReason ?? reason)) : null,
       });
     },
   );

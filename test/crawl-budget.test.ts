@@ -65,6 +65,18 @@ describe("件数の上限", () => {
   });
 });
 
+describe("切る物が無いとき", () => {
+  it("候補が 0 件なら、深さの上限を超えていても切ったと言わない", () => {
+    const plan = planNextLevel(links(0), { nextDepth: 1, maxDepth: 0, maxPages: 30, known: 1 });
+    expect(plan).toEqual({ toInsert: [], stopReason: null });
+  });
+
+  it("候補が 0 件なら、枠を使い切っていても切ったと言わない", () => {
+    const plan = planNextLevel(links(0), { nextDepth: 1, maxDepth: 5, maxPages: 30, known: 30 });
+    expect(plan).toEqual({ toInsert: [], stopReason: null });
+  });
+});
+
 describe("上限に当たらないとき", () => {
   it("passes everything through and reports no reason", () => {
     const plan = planNextLevel(links(3), { nextDepth: 1, maxDepth: 5, maxPages: 30, known: 1 });
