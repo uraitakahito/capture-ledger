@@ -134,6 +134,18 @@ const log = {
   dropped: 0,
 };
 
+describe("クロールの一覧の行", () => {
+  it("深さの上限を選んで行に載せる（dashboard が「このページだけ」と言うのに要る）", async () => {
+    // 手書きの代役 (`routes-crawls.test.ts`) は行を丸ごと返すので、select に書き忘れても緑のまま。ここで SQL を見る
+    const { res, queries } = await get("/api/crawls", {
+      results: [[{ id: CRAWL, maxDepth: 0 }]],
+    });
+    expect(res.statusCode).toBe(200);
+    expect(queries[0]?.sql).toContain('"max_depth"');
+    expect(res.json<{ crawls: { maxDepth: number }[] }>().crawls[0]?.maxDepth).toBe(0);
+  });
+});
+
 describe("クロールのページを読む", () => {
   const url = `/api/crawls/${CRAWL}/pages`;
 

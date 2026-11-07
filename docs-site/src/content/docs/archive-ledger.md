@@ -165,8 +165,10 @@ are: the authorization model has no `crawl` type, and `can_submit` is defined as
 **trust that crosses organizations** in the first place (`submitter` in
 `fga/model.fga`). A caller without the permission gets neither 403 nor 404 but an
 **empty array**, and every row carries its `orgId` so the caller can say what it is
-seeing. Rows carry both `state` and `stopReason`, because most `succeeded` crawls
-were truncated (`max_depth`) and the state alone cannot tell that from a full walk.
+seeing. Rows carry both `state` and `stopReason`: `succeeded` only says that a page was
+captured, so the state alone cannot tell a full walk (`completed`) from a crawl that was cut
+(`max_depth`, `max_pages`). Rows also carry `maxDepth`, which tells a crawl that never meant
+to follow links (depth 0).
 
 **A `succeeded` crawl captured at least one page.** A crawl that ends with none (every page
 failed or was skipped by robots) closes as `failed`, with `stopReason` `failed` and an `error`
@@ -251,9 +253,10 @@ unanswerable. A caller with no enabled targets gets **400**, not an empty crawl 
 `crawls.seeds` has a `CHECK (array_length(seeds, 1) >= 1)` and a seedless crawl
 could never start.
 
-:::note[`fromTargets` always ends in `max_depth`]
-Depth 0 means the first level is also the last, so `stopReason` is `max_depth`
-every time. That is not a fault — it is the shape of the request.
+:::note[`fromTargets` counts links but does not follow them]
+Depth 0 means the first level is also the last, so `stopReason` is `max_depth` when links not
+yet captured are left over, and `completed` when none are. Neither is a fault — it is the
+shape of the request.
 :::
 
 Two consequences of folding runs into crawls, worth knowing before the first
@@ -451,15 +454,18 @@ ran fast" without the timestamps.
 ### Where it stops, and why
 
 `stopReason` is one of `completed`, `max_depth`, `max_pages`, or `failed`. Without it
-a finished crawl cannot say whether it followed everything or was cut off. With the
-default of 30 pages, `max_pages` is the ordinary outcome — that is deliberate, so the
-limit is visible in normal use rather than a surprise.
+a finished crawl cannot say whether it followed everything or was cut off. `max_depth` and
+`max_pages` are set only when links not yet captured were left over (reaching a limit with
+nothing left is `completed`). With the default of 30 pages, `max_pages` is the ordinary
+outcome — that is deliberate, so the limit is visible in normal use rather than a surprise.
 
 `pagesCaptured` is the number of pages captured, seeds included. `pagesDiscovered` is the
-number of links on those pages that the rules let through, seeds not included. `pagesFailed`
-is the number of pages that could not be captured. They count different things, so their
-difference is not what was dropped (a crawl of one seed has 1 captured and 0 discovered). What
-the rules and robots dropped is on `GET /api/crawls/:id/decisions`.
+number of links on those pages that the rules let through, and a depth-0 crawl counts them
+too. It includes links that were never captured (skipped by robots, cut by a limit) and URLs
+already captured (such as a link back to the seed), and it is added up level by level, so a
+URL found on two levels counts twice. `pagesFailed` is the number of pages that could not be
+captured. They count different things, so their difference is not what was dropped. What the
+rules and robots dropped is on `GET /api/crawls/:id/decisions`.
 
 ### What gets followed
 

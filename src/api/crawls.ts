@@ -1170,6 +1170,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           "orgId",
           "startedAt",
           "finishedAt",
+          "maxDepth",
           "pagesDiscovered",
           "pagesCaptured",
           "error",
@@ -1196,14 +1197,16 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         crawls: rows.map((crawl) => ({
           crawlId: crawl.id,
           state: crawl.state,
-          // **state だけでは足りない。** `succeeded` の大半は打ち切り (`max_depth`) で、
-          // 「全部辿った」(`completed`) と区別が付かない。呼ぶ側が両方を受け取れるようにする。
+          // **state だけでは足りない。** `succeeded` は「1 枚以上撮れた」なので、切った物があるクロール
+          // (`max_depth`・`max_pages`) と全部辿ったクロール (`completed`) の区別が付かない。呼ぶ側が両方を受け取れるようにする。
           stopReason: crawl.stopReason,
           seeds: crawl.seeds,
           requestedBy: crawl.requestedBy,
           orgId: crawl.orgId,
           startedAt: crawl.startedAt,
           finishedAt: crawl.finishedAt,
+          // 深さ 0 (辿らないクロール) かどうか。dashboard が「このページだけ」と言うのに要る
+          maxDepth: crawl.maxDepth,
           pagesDiscovered: crawl.pagesDiscovered,
           pagesCaptured: crawl.pagesCaptured,
           pagesFailed: crawl.pagesFailed,
@@ -2449,7 +2452,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       return reply.code(200).send({
         next: inserted.map((row) => ({ url: row.url, host: row.host, depth: nextDepth })),
-        // **行の理由が先** (上の `coalesce`)。枚数で切った後の階層で、返事だけ「全部辿った」と言わない
+        // **行の理由が先** (上の `coalesce`)。枚数で切った後の段で、返事だけ「全部辿った」と言わない
         stopReason: done ? (nothingCaptured ? "failed" : (crawl.stopReason ?? reason)) : null,
       });
     },

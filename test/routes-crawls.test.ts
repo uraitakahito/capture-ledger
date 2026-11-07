@@ -2132,6 +2132,7 @@ describe("クロールの一覧", () => {
     crawlId: string;
     state: string;
     stopReason: string | null;
+    maxDepth: number;
     orgId: string;
     waczCount: number;
     pagesFailed: number;
@@ -2204,6 +2205,7 @@ describe("クロールの一覧", () => {
       id: "44444444-4444-4444-8444-444444444444",
       startedAt: new Date(4),
       stopReason: "max_depth",
+      maxDepth: 0,
       orgId: "other",
       lastJobId: "01a0bfad",
       lastJobDepth: 2,
@@ -2214,6 +2216,7 @@ describe("クロールの一覧", () => {
     expect(res.json<{ crawls: ListedCrawl[] }>().crawls[0]).toMatchObject({
       state: "succeeded",
       stopReason: "max_depth",
+      maxDepth: 0,
       orgId: "other",
       waczCount: 3,
       pagesFailed: 2,

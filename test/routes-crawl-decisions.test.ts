@@ -209,7 +209,7 @@ describe("段の報告で、規則が決めたことを残す", () => {
     ]);
   });
 
-  it("最後の階層にも links を頼む", async () => {
+  it("最後の段にも links を頼む", async () => {
     // **最後でも数える。** 頼まないと、次に撮る物が残っているかどうかを言えない
     const { app, dispatched } = await build({
       results: [
@@ -217,7 +217,7 @@ describe("段の報告で、規則が決めたことを残す", () => {
         [{ id: "11" }], // 報告した行を閉じる
         [], // crawl_decisions
         [{ url: seed }], // crawl_pages の URL
-        [{ url: `${FIXTURES}/links/leaf/1`, host: "capture-fixtures.capture-ledger:8080" }], // 次の階層の行
+        [{ url: `${FIXTURES}/links/leaf/1`, host: "capture-fixtures.capture-ledger:8080" }], // 次の段の行
         [], // crawls の集計
         [], // ホストごとの最後の時刻
       ],
@@ -799,11 +799,11 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     depth: number;
     maxDepth: number;
     maxPages?: number;
-    /** 前の階層までに行に残った理由。 */
+    /** 前の段までに行に残った理由。 */
     rowReason?: string;
     hrefs: string[];
     known: string[];
-    /** 次の階層に入ると見込む行。 */
+    /** 次の段に入ると見込む行。 */
     inserted?: string[];
   }) => {
     const { app, queries } = await build({
@@ -819,9 +819,9 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
         [{ id: "11" }], // 報告した行を閉じる
         ...(opts.hrefs.length > 0 ? [[]] : []), // crawl_decisions
         opts.known.map((url) => ({ url })), // crawl_pages の URL
-        ...(opts.inserted === undefined ? [] : [opts.inserted.map((url) => ({ url, host: HOST }))]), // 次の階層の行
+        ...(opts.inserted === undefined ? [] : [opts.inserted.map((url) => ({ url, host: HOST }))]), // 次の段の行
         [], // crawls の集計
-        [], // ホストごとの最後の時刻 (次の階層があるときだけ読まれる)
+        [], // ホストごとの最後の時刻 (次の段があるときだけ読まれる)
       ],
       links: { "page.links.json": { links: opts.hrefs.map((href) => ({ href })) } },
     });
@@ -844,7 +844,7 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     };
   };
 
-  it("最後の階層のリンクが既に行のある URL だけなら、切っていない", async () => {
+  it("最後の段のリンクが既に行のある URL だけなら、切っていない", async () => {
     const { body, queries, update, insert } = await reportPage({
       depth: 1,
       maxDepth: 1,
@@ -860,7 +860,7 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     );
   });
 
-  it("最後の階層に新しい URL があれば、深さで切った", async () => {
+  it("最後の段に新しい URL があれば、深さで切った", async () => {
     const { body, update, insert } = await reportPage({
       depth: 1,
       maxDepth: 1,
