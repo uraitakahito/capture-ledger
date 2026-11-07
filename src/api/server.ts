@@ -23,6 +23,13 @@ import { registerScriptsRoute } from "./scripts.js";
 import { registerPicker, replaywebServerOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
+import { registerScheduleRoutes } from "./schedules.js";
+import type { ReplayBundleWriter } from "../crawl/launch.js";
+import { levelDispatcher } from "../crawl/launch.js";
+import { prepareCrawl } from "../crawl/prepare.js";
+import { scheduleSettings } from "../config/schedules.js";
+import { scheduleStoreOf } from "../schedules/store.js";
+import { scheduleClock, type ScheduleClock } from "../schedules/tick.js";
 import { registerReplayBundleRoutes } from "./replay-bundle.js";
 import { signerFromEnv } from "../config/signer.js";
 import { createReplayBundleSigner } from "../replay-bundle/sign.js";
@@ -180,6 +187,8 @@ const start = async (options: ServerOptions): Promise<void> => {
   // 設定が無ければ口ごと出さない。**404 になるのは正しい** —— その配備にこの能力は
   // 本当に無いので、「してはいけない」と同じ答えでよい。log で区別が付くようにする。
   const dispatch = createWindmillDispatcher();
+  // 定期実行の周回 (`schedules/tick.ts`)。クロールの口と同じ設定で動くので、口が無い配備では周回も無い
+  let clock: ScheduleClock | undefined;
   if (dispatch === undefined) {
     logger.info("CAPTURE_LEDGER_CRAWL_WEBHOOK_URL is not set — /api/crawls is not served");
   } else {
@@ -206,6 +215,14 @@ const start = async (options: ServerOptions): Promise<void> => {
         "CAPTURE_LEDGER_ANTHROPIC_API_KEY is not set — /api/crawls/:id/inline/:name/fix is not served",
       );
     }
+    // 締めた後の合本 (`/failed`・投げられなかった段)。合本の口と同じ関数・同じ署名の窓口
+    const bundleWriter: ReplayBundleWriter = (crawlId, depth) =>
+      writeReplayBundle(crawlId, depth, {
+        db,
+        s3,
+        bucket: storage.bucket,
+        ...(signer && { signer }),
+      });
     registerCrawlRoutes(app, {
       db,
       fga,
@@ -222,14 +239,35 @@ const start = async (options: ServerOptions): Promise<void> => {
         claudeBudgetUsd: claudeBudgetUsd(),
       }),
       capture,
-      // 締めた後の合本 (`/failed`・投げられなかった段)。合本の口と同じ関数・同じ署名の窓口
-      writeReplayBundle: (crawlId, depth) =>
-        writeReplayBundle(crawlId, depth, {
-          db,
-          s3,
-          bucket: storage.bucket,
-          ...(signer && { signer }),
-        }),
+      writeReplayBundle: bundleWriter,
+    });
+
+    // 定期実行。周回はクロールを始める窓口を口と分け合う。始める前に確かめる関数も同じ物
+    const settings = scheduleSettings();
+    const store = scheduleStoreOf(db);
+    const { dispatchLevel } = levelDispatcher({ db, dispatch, writeReplayBundle: bundleWriter });
+    const scheduleClockHere = scheduleClock({
+      store,
+      capture,
+      ...(sink && { sink }),
+      ...(windmill && { windmill }),
+      dispatchLevel,
+      startedAt: new Date(),
+      quietMs: settings.quietMinutes * 60_000,
+      now: () => new Date(),
+    });
+    clock = scheduleClockHere;
+    registerScheduleRoutes(app, {
+      fga,
+      resolveIdentity,
+      store,
+      prepare: (body, who) =>
+        prepareCrawl({ db, tsCompile, ...(windmill && { windmill }) }, body, who),
+      poke: () => {
+        scheduleClockHere.poke();
+      },
+      minIntervalMinutes: settings.minIntervalMinutes,
+      now: () => new Date(),
     });
     // 合本の口 (`api/replay-bundle.ts`)。クロールの flow が段ごとに叩く。合本は保管庫に書くので bucket が要る
     registerReplayBundleRoutes(app, {
@@ -279,6 +317,7 @@ const start = async (options: ServerOptions): Promise<void> => {
    */
   const shutdown = async (): Promise<void> => {
     clearInterval(drainTimer);
+    await clock?.stop();
     await app.close();
     await db.destroy();
   };
@@ -286,6 +325,8 @@ const start = async (options: ServerOptions): Promise<void> => {
   process.on("SIGTERM", () => void shutdown().then(() => process.exit(0)));
 
   await app.listen(listen);
+  // **待ち受けの後に回す。** 周回が投げた段の報告は、この API に戻ってくる
+  clock?.start();
   // 最後に、待ち受け・名乗り方と、段の報告を受けられるかを言う (`startup-notes.ts`)。
   // 開発用ヘッダの警告もここから出る —— ヘッダが実際に効いているときだけ。
   const notes = startupNotes({

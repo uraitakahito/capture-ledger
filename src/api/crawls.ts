@@ -64,6 +64,7 @@ import {
   type CrawlBody,
 } from "../crawl/prepare.js";
 import { nothingCapturedError } from "../crawl/close.js";
+import { pagesFailed } from "../crawl/page-counts.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
 import { WindmillUnreachable, type WindmillVariables } from "../crawl/windmill-variables.js";
 import {
@@ -140,14 +141,23 @@ const waczCount = sql<number>`(
   where p.crawl_id = crawls.id
 )`;
 
-/**
- * 一覧が返す、取れなかったページの数 (`waczCount` と同じ相関副問い合わせで、列は増やさない)。詳しい所の
- * `failures` は新しい 5 件だけなので、全体の数はこれで言う。
- */
-const pagesFailed = sql<number>`(
-  select count(*)::int from crawl_pages p
-  where p.crawl_id = crawls.id and p.state = 'failed'
+/** その回の予定の名前。消した予定の行も残っているので、消した後も名前を言える (`032`)。 */
+const scheduleName = sql<string | null>`(
+  select s.name from crawl_schedules s where s.id = crawls.schedule_id
 )`;
+
+/** 定期の回の欄。手で始めたクロールは `schedule` が null。 */
+const scheduleOf = (crawl: {
+  scheduleId: string | null;
+  scheduleName: string | null;
+  scheduledFor: Date | null;
+  scheduleMissed: number;
+}) => ({
+  schedule:
+    crawl.scheduleId === null ? null : { id: crawl.scheduleId, name: crawl.scheduleName ?? "" },
+  scheduledFor: crawl.scheduledFor,
+  scheduleMissed: crawl.scheduleMissed,
+});
 
 export interface CrawlRouteDeps {
   /** 取り込む形式と署名。起動時に env から解釈したもの (`config/capture-formats.ts`)。 */
@@ -536,6 +546,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           "replayBundleSignError",
           waczCount.as("waczCount"),
           pagesFailed.as("pagesFailed"),
+          "scheduleId",
+          scheduleName.as("scheduleName"),
+          "scheduledFor",
+          "scheduleMissed",
         ])
         .orderBy("startedAt", "desc")
         .limit(CRAWLS_PAGE);
@@ -566,6 +580,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
           // 合本 (`027`)。workbench は走っているクロールを 2 秒ごとに引くので、欄は行の列から (保管庫を読まない)
           replayBundle: replayBundleOf(crawl),
+          ...scheduleOf(crawl),
         })),
       });
     },
@@ -593,6 +608,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       const crawl = await db
         .selectFrom("crawls")
         .selectAll()
+        .select(scheduleName.as("scheduleName"))
         .where("id", "=", request.params.id)
         .executeTakeFirst();
       if (!crawl) return reply.code(404).send({ error: "not found" });
@@ -660,6 +676,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
         // 台帳が指す合本と、書けなかった理由 (`027`)。一覧と同じ形
         replayBundle: replayBundleOf(crawl),
+        ...scheduleOf(crawl),
         failures: failures.map((page) => ({
           page: page.id,
           url: page.url,

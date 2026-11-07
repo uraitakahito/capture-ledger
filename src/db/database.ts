@@ -9,6 +9,7 @@
  * 取り込む対象は `capture_targets` から読む (`src/data/url-source.ts`)。
  */
 import type { ColumnType, Generated, GeneratedAlways } from "kysely";
+import type { CrawlBody, PreparedCrawl } from "../crawl/prepare.js";
 
 export interface CaptureTargetsTable {
   // BIGSERIAL —— node-pg は精度を落とさないために int8 を `string` で返す。
@@ -212,6 +213,38 @@ export interface CrawlsTable {
    * 署名の設定が無い配備では NULL。
    */
   replayBundleSignError: ColumnType<string | null, never, string | null>;
+  /** どの予定の回か (`032`)。手で始めたクロールは NULL。 */
+  scheduleId: ColumnType<string | null, string | null | undefined, never>;
+  /** 本来の時刻 (`032`)。「いま撮る」と手で始めたクロールは NULL。 */
+  scheduledFor: ColumnType<Date | null, string | null | undefined, never>;
+  /** 1 回にまとめた欠けの数 (`032`)。 */
+  scheduleMissed: ColumnType<number, number | undefined, never>;
+}
+
+/** 解決して固定した撮り方 (`032`)。シークレットは宣言だけを持ち、回ごとに Windmill へ訊き直す。 */
+export type ScheduleRecipe = Omit<PreparedCrawl, "kind" | "secrets">;
+
+/** 定期実行の予定 (`032`)。回は `crawls` の行そのもので、回だけの表は無い。 */
+export interface CrawlSchedulesTable {
+  id: string;
+  orgId: string;
+  name: string;
+  /** 5 欄の cron の式。 */
+  cron: string;
+  timezone: ColumnType<string, string | undefined, never>;
+  enabled: ColumnType<boolean, boolean | undefined, boolean>;
+  /** 次の期限。回を始めたときと再開のときに進める。 */
+  nextRunAt: ColumnType<Date, string, string>;
+  /** 「いま撮る」の頼み。周回が始めたら消す。 */
+  runRequestedAt: ColumnType<Date | null, string | null | undefined, string | null>;
+  /** form の中身。`POST /api/crawls` と同じ形で、「固定し直す」が読み直す。 */
+  request: ColumnType<CrawlBody, string, never>;
+  recipe: ColumnType<ScheduleRecipe, string, string>;
+  pinnedAt: ColumnType<Date, string, string>;
+  createdBy: string;
+  createdAt: ColumnType<Date, string | undefined, never>;
+  /** 消した時刻。行は残す (クロールの行に名前を出すため)。 */
+  deletedAt: ColumnType<Date | null, never, string>;
 }
 
 /**
@@ -438,6 +471,7 @@ export interface DerivationsTable {
 }
 
 export interface Database {
+  crawlSchedules: CrawlSchedulesTable;
   captureTargets: CaptureTargetsTable;
   archives: ArchivesTable;
   archivePages: ArchivePagesTable;

@@ -2,7 +2,7 @@
 /**
  * いま何が立っているかを 1 画面で言う。**何も変えない。**
  *
- * 見るのは 5 つ。コンテナ・ホストのプロセス・設定・保管庫・スクリプト。どれも「立ち上げの
+ * 見るのは 6 つ。コンテナ・ホストのプロセス・設定・保管庫・定期実行・スクリプト。どれも「立ち上げの
  * どこまで済んでいるか」を答えるためのもので、`pnpm run dev:up` が止まったとき
  * (段 6) と、朝いちばんに「昨日のが残っているか」を見るときに使う。
  *
@@ -13,6 +13,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+
+import pg from "pg";
 
 import { ROOT } from "./root.js";
 import type { HostProcess } from "./daemons.js";
@@ -204,6 +206,36 @@ if (store === undefined) {
   );
   if (topology?.Free === 0) {
     console.log(row("", "枠が尽きている。枠が 8 なら古い entrypoint で立っている (stack.sh up)"));
+  }
+}
+
+// ── 定期実行 ────────────────────────────────────────────────────────
+// 周回は台帳の API の中で動く。予定の数と次の回を DB から言う。詳しいことは workbench のタブ「定期実行」。
+const databaseUrl = settingOf("DATABASE_URL");
+if (databaseUrl === undefined) {
+  console.log(row("定期実行", "読めない (DATABASE_URL が無い)"));
+} else {
+  const client = new pg.Client({ connectionString: databaseUrl, connectionTimeoutMillis: 3000 });
+  try {
+    await client.connect();
+    const { rows } = await client.query<{ total: number; paused: number; next: Date | null }>(
+      `select count(*)::int as total,
+              count(*) filter (where not enabled)::int as paused,
+              min(next_run_at) filter (where enabled) as next
+         from crawl_schedules where deleted_at is null`,
+    );
+    const counted = rows[0];
+    console.log(
+      row(
+        "定期実行",
+        `予定 ${String(counted?.total)} 本 (止めている ${String(counted?.paused)})` +
+          (counted?.next ? `  次の回 ${counted.next.toISOString()}` : ""),
+      ),
+    );
+  } catch (err) {
+    console.log(row("定期実行", `読めない (${err instanceof Error ? err.message : String(err)})`));
+  } finally {
+    await client.end().catch(() => undefined);
   }
 }
 

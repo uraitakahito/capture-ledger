@@ -37,6 +37,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | `crawls`                                                                   | クロール 1 本につき 1 行。方針・状態・停止理由と、合本の版・署名（[下記](#crawls-の合本の列)）                                |
 | `crawl_pages`                                                              | クロールが触った URL 1 つにつき 1 行（取る前の pending も）。重複排除の索引でもあり、取り込みのログの数（`log_counts`）も持つ |
 | `crawl_decisions`                                                          | クロールの規則が決めたこと。段 × 規則 × ホスト名で 1 行                                                                       |
+| [`crawl_schedules`](/capture-ledger/ja/databases/crawl-schedules/)         | 定期実行の予定。時計の表で、回は `crawls` の行                                                                                |
 | `scripts`                                                                  | クロールが名指せるスクリプト                                                                                                  |
 | `host_types`                                                               | 受け皿（`__bh`）の型。スクリプトを読む人に見せる写し                                                                          |
 | `kysely_migration` / `_lock`<br />`kysely_seed` / `_lock`                  | Kysely が作る帳簿（下記）                                                                                                     |

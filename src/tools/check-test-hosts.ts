@@ -33,7 +33,12 @@ import { repoFiles } from "./repo-files.js";
 import { ROOT } from "./root.js";
 
 /** この repo の試験の場所。repo ごとに違うのはここだけ。 */
-const SCOPES = ["test", "src/tools/targets-smoke.ts", "src/tools/scripts-smoke.ts"];
+const SCOPES = [
+  "test",
+  "src/tools/targets-smoke.ts",
+  "src/tools/scripts-smoke.ts",
+  "src/tools/schedules-smoke.ts",
+];
 
 const FIND = [
   // example.com・.org・.net とその下（www.example.com・someone@example.com・example\.com）

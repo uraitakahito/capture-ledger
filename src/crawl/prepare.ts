@@ -242,6 +242,8 @@ export interface PreparedCrawl {
   scripts: CrawlScript[];
   variables: Record<string, string>;
   secrets: Record<string, CrawlSecret>;
+  /** 宣言から集めたシークレット。定期実行は回ごとに、これを `resolveSecrets` で訊き直す。 */
+  declaredSecrets: DeclaredSecret[];
   /** 打った字のまま (指定なしは `""`)。 */
   userAgent: string;
 }
@@ -251,6 +253,71 @@ const refused = (status: number, body: Record<string, unknown>): RefusedCrawl =>
   status,
   body,
 });
+
+export type ResolvedSecrets =
+  { kind: "resolved"; secrets: Record<string, CrawlSecret> } | RefusedCrawl;
+
+/**
+ * 宣言したシークレットが Windmill に在るかを訊き、行に固定する形 (path と更新時刻) にする。値は読まない。
+ * 定期実行は作ったときだけでなく、回ごとにここを通す (消された変数で flow まで進まないため)。
+ */
+export const resolveSecrets = async (
+  windmill: WindmillVariables | undefined,
+  declared: readonly DeclaredSecret[],
+  subject: string,
+): Promise<ResolvedSecrets> => {
+  // **宣言したシークレットが Windmill に在るか。** 値は読まない (`crawl/windmill-variables.ts`)。required の
+  // 物が無ければ 400 で名前と path を言い、secret でない変数が置かれていれば 400。required でない物が無ければ
+  // 渡さないだけ (スクリプトは undefined を読む)。訊けなければ 503 で始めない —— Windmill に届かないなら
+  // flow も動かない。
+  const secrets: Record<string, CrawlSecret> = {};
+  if (declared.length > 0) {
+    if (windmill === undefined) {
+      return refused(400, {
+        error: "secrets need the windmill webhook",
+        names: declared.map((secret) => secret.name),
+      });
+    }
+    const unknown: DeclaredSecret[] = [];
+    const notSecret: DeclaredSecret[] = [];
+    try {
+      for (const secret of declared) {
+        const meta = (await windmill.exists(secret.path))
+          ? await windmill.meta(secret.path)
+          : undefined;
+        if (meta === undefined) {
+          if (secret.required) unknown.push(secret);
+          continue;
+        }
+        if (!meta.isSecret) {
+          notSecret.push(secret);
+          continue;
+        }
+        secrets[secret.name] = { path: secret.path, editedAt: meta.editedAt, rotated: null };
+      }
+    } catch (err) {
+      if (!(err instanceof WindmillUnreachable)) throw err;
+      log.warn({ err, subject: subject }, "Could not ask Windmill about the secrets");
+      return refused(503, { error: "windmill unreachable" });
+    }
+    const named = (list: DeclaredSecret[]) =>
+      list.map(({ name, path, declaredBy }) => ({ name, path, declaredBy }));
+    if (unknown.length > 0) {
+      return refused(400, {
+        error: "unknown secrets",
+        secrets: named(unknown),
+        // wmill CLI の綴り (値が先、path が後)。置き場は capture-scheduler の docs が案内する
+        hint: unknown
+          .map((secret) => `wmill variable add <value> ${secret.path} --secret`)
+          .join(" / "),
+      });
+    }
+    if (notSecret.length > 0) {
+      return refused(400, { error: "not a secret variable", secrets: named(notSecret) });
+    }
+  }
+  return { kind: "resolved", secrets };
+};
 
 export const prepareCrawl = async (
   deps: PrepareDeps,
@@ -428,57 +495,8 @@ export const prepareCrawl = async (
   const values = checkValues(pinned, variables, { unreadable });
   if (values.kind === "refused") return refused(400, values.body);
 
-  // **宣言したシークレットが Windmill に在るか。** 値は読まない (`crawl/windmill-variables.ts`)。required の
-  // 物が無ければ 400 で名前と path を言い、secret でない変数が置かれていれば 400。required でない物が無ければ
-  // 渡さないだけ (スクリプトは undefined を読む)。訊けなければ 503 で始めない —— Windmill に届かないなら
-  // flow も動かない。
-  const secrets: Record<string, CrawlSecret> = {};
-  if (values.secrets.length > 0) {
-    const windmill = deps.windmill;
-    if (windmill === undefined) {
-      return refused(400, {
-        error: "secrets need the windmill webhook",
-        names: values.secrets.map((secret) => secret.name),
-      });
-    }
-    const unknown: DeclaredSecret[] = [];
-    const notSecret: DeclaredSecret[] = [];
-    try {
-      for (const secret of values.secrets) {
-        const meta = (await windmill.exists(secret.path))
-          ? await windmill.meta(secret.path)
-          : undefined;
-        if (meta === undefined) {
-          if (secret.required) unknown.push(secret);
-          continue;
-        }
-        if (!meta.isSecret) {
-          notSecret.push(secret);
-          continue;
-        }
-        secrets[secret.name] = { path: secret.path, editedAt: meta.editedAt, rotated: null };
-      }
-    } catch (err) {
-      if (!(err instanceof WindmillUnreachable)) throw err;
-      log.warn({ err, subject: who.subject }, "Could not ask Windmill about the secrets");
-      return refused(503, { error: "windmill unreachable" });
-    }
-    const named = (list: DeclaredSecret[]) =>
-      list.map(({ name, path, declaredBy }) => ({ name, path, declaredBy }));
-    if (unknown.length > 0) {
-      return refused(400, {
-        error: "unknown secrets",
-        secrets: named(unknown),
-        // wmill CLI の綴り (値が先、path が後)。置き場は capture-scheduler の docs が案内する
-        hint: unknown
-          .map((secret) => `wmill variable add <value> ${secret.path} --secret`)
-          .join(" / "),
-      });
-    }
-    if (notSecret.length > 0) {
-      return refused(400, { error: "not a secret variable", secrets: named(notSecret) });
-    }
-  }
+  const resolvedSecrets = await resolveSecrets(deps.windmill, values.secrets, who.subject);
+  if (resolvedSecrets.kind === "refused") return resolvedSecrets;
 
   return {
     kind: "prepared",
@@ -493,7 +511,8 @@ export const prepareCrawl = async (
     hostParallelism: body.hostParallelism ?? DEFAULT_HOST_PARALLELISM,
     scripts: pinned,
     variables,
-    secrets,
+    secrets: resolvedSecrets.secrets,
+    declaredSecrets: values.secrets,
     userAgent,
   };
 };
