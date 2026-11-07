@@ -30,7 +30,7 @@ import { relative, resolve } from "node:path";
 import { ROOT } from "./root.js";
 import { upsertEnvLocal } from "./env.js";
 
-/** 既定の相手。crawler の 9 つの repo は横並びに clone してある。 */
+/** 既定の相手。Web Capture の repo は横並びに clone してある。 */
 const DEFAULT_DIR = "../capture-scheduler";
 /**
  * 向こうが置く場所。**capture-scheduler の scripts/env-local.ts の HANDOFF と同じ綴り**

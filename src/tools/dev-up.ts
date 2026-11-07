@@ -116,7 +116,7 @@ const STEPS: Step[] = [
   {
     id: "store",
     run: "sh .upstream/seaweedfs/scripts/stack.sh up",
-    // **共有 store は、動いているなら触らない。** crawler で 1 つしかなく、他の repo も
+    // **共有 store は、動いているなら触らない。** Web Capture で 1 つしかなく、他の repo も
     // 使っている —— `up` は動いているコンテナも作り直すので、隣の作業を落としうる。
     skipIf: { label: "seaweedfs", port: 8333 },
   },
@@ -335,7 +335,7 @@ for (const [index, step] of STEPS.entries()) {
   // 気づかない** よう、名指しで止まる。daemon も同じ (根が隣の repo のことがある)。
   const needs = step.cwd ?? step.daemon?.root;
   if (needs !== undefined && !existsSync(needs)) {
-    process.stdout.write(`✗ ${needs} がありません (crawler の repo を横に clone すること)\n`);
+    process.stdout.write(`✗ ${needs} がありません (Web Capture の repo を横に clone すること)\n`);
     process.stdout.write(`\n直したら: pnpm run dev:up --from ${step.id}\n`);
     process.exit(1);
   }

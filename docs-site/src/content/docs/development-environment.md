@@ -37,8 +37,8 @@ directly: before starting anything it checks whether the shared store is up, the
 `capture-ledger` DNS domain and the `.upstream/` submodules that every build
 context points at, and stops, naming whatever is missing.
 
-The artifact store (SeaweedFS) is not part of this stack. It is one store shared by the three
-crawler repos (`seaweedfs.crawler-storage`), started from the submodule:
+The artifact store (SeaweedFS) is not part of this stack. It is one store shared by the
+[Web Capture](https://uraitakahito.github.io/capture-ledger/#web-capture) repos (`seaweedfs.crawler-storage`), started from the submodule:
 
 ```sh
 sudo container system dns create crawler-storage   # once per machine

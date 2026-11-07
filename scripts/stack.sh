@@ -39,7 +39,7 @@ shift || true
 
 # ## store はこのスタックに居ない
 #
-# 成果物の store は crawler で 1 つ (`seaweedfs.crawler-storage`)。起こすのは
+# 成果物の store は Web Capture で 1 つ (`seaweedfs.crawler-storage`)。起こすのは
 # `.upstream/seaweedfs/scripts/stack.sh` で、この compose には service が無い。
 #
 # **写しを profile で持つ道は採らなかった。** container-compose は `environment:` の

@@ -9,8 +9,8 @@ Chromiums, and a BrowserHive in front of each, built from the
 [Apple Container](https://github.com/apple/container), driven by
 `container-compose`.
 
-The artifact store (SeaweedFS) is **not part of this stack**: it is one store shared by the three
-crawler repos, brought up by [seaweedfs](https://github.com/uraitakahito/seaweedfs) (§3).
+The artifact store (SeaweedFS) is **not part of this stack**: it is one store shared by the
+[Web Capture](https://uraitakahito.github.io/capture-ledger/#web-capture) repos, brought up by [seaweedfs](https://github.com/uraitakahito/seaweedfs) (§3).
 
 ## The short way
 
@@ -83,7 +83,7 @@ lines (§7) only exist once something has run, so **the tools write them into
 
 ## 3. Start the shared store and the stack
 
-There is one artifact store for all of crawler. Start it first if it is not already up (it lives in
+There is one artifact store for all of Web Capture. Start it first if it is not already up (it lives in
 the submodule, so you do not have to leave this repo):
 
 ```sh
