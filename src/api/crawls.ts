@@ -32,13 +32,11 @@ import type { OpenFgaClient } from "@openfga/sdk";
 import { sql } from "kysely";
 import type { Insertable, Kysely, Selectable } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
-import { randomUUID } from "node:crypto";
 import type {
   CaptureSubmissionsTable,
   CrawlPageState,
   CrawlRule,
   CrawlRuleAction,
-  CrawlScript,
   CrawlSecret,
   CrawlsTable,
   CrawlState,
@@ -46,25 +44,27 @@ import type {
   Database,
   LogCounts,
 } from "../db/database.js";
-import {
-  readHostTypes,
-  enabledLatest,
-  INLINE_PREFIX,
-  isInlineId,
-  offsiteScripts,
-  readParams,
-  resolveScripts,
-  VALUE_NAME,
-  VALUE_NAME_MAX,
-  VALUE_TEXT_MAX,
-  VALUES_MAX,
-  type RequestedScript,
-} from "../scripts/store.js";
+import { readHostTypes, INLINE_PREFIX, isInlineId } from "../scripts/store.js";
 import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
+import {
+  launchCrawl,
+  levelDispatcher,
+  pathsOf,
+  toDispatched,
+  type CrawlDispatcher,
+  type ReplayBundleWriter,
+} from "../crawl/launch.js";
+import {
+  CRAWL_BODY_LIMIT,
+  CRAWL_BODY_SCHEMA,
+  prepareCrawl,
+  RULE_PATTERN_MAX,
+  RULES_MAX,
+  type CrawlBody,
+} from "../crawl/prepare.js";
 import { nothingCapturedError } from "../crawl/close.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
-import { checkValues, pinDeclarations, type DeclaredSecret } from "../crawl/values.js";
 import { WindmillUnreachable, type WindmillVariables } from "../crawl/windmill-variables.js";
 import {
   attributeDiagnostics,
@@ -85,7 +85,6 @@ import {
   checkRules,
   compileRules,
   decideLinks,
-  DEFAULT_RULES,
   ruleOf,
   ruleParts,
   takeLinksFrom,
@@ -95,30 +94,16 @@ import { aggregateDecisions, SAMPLES } from "../crawl/decisions.js";
 import { planNextLevel } from "../crawl/budget.js";
 import { getJsonObject } from "../archive/s3.js";
 import { manifestOutcome, readManifest } from "../archive/manifest.js";
-import { isUniqueViolation, maySubmit, unauthorized } from "./authorization.js";
-import type { CaptureFormats, CaptureSettings } from "../config/capture-formats.js";
-import { loadTargets } from "../data/url-source.js";
+import { maySubmit, unauthorized } from "./authorization.js";
+import type { CaptureSettings } from "../config/capture-formats.js";
 import { createChildLogger } from "../logger.js";
-import type { ReplayBundleResult } from "../replay-bundle/write.js";
-import { crawlKeyPrefix, sinkForCrawl, type SinkConfig } from "./sink.js";
+import { sinkForCrawl, type SinkConfig } from "./sink.js";
+
+export type { CrawlDispatcher, DispatchedCrawl, ReplayBundleWriter } from "../crawl/launch.js";
+export { CRAWL_BODY_LIMIT } from "../crawl/prepare.js";
 
 const log = createChildLogger({ module: "api" });
 
-/**
- * 既定の方針。**控えめな側に倒してある。**
- *
- * `MAX_PAGES` が小さいのは、深さより先にこちらで止まるのが普通であってほしいから ——
- * 上限が働いていることが日常的に見えていれば、「全部辿った」と思い込む余地が消える。
- * 広げるのは呼ぶ側の意図的な行為にする。
- *
- * `PER_HOST_DELAY_MS` は 1 回の取り込みが 1 リクエストではないことを踏まえた値。
- * ブラウザはサブリソースまで取るので、1 ページが相手には数十本のバーストに見える。
- */
-const DEFAULT_MAX_DEPTH = 2;
-const DEFAULT_MAX_PAGES = 30;
-const DEFAULT_PER_HOST_DELAY_MS = 2000;
-const DEFAULT_HOST_PARALLELISM = 4;
-/** `GET /api/crawls/:id` が返す、取れなかったページの数の上限。理由を読むには数本で足りる。 */
 const FAILURES_SHOWN = 5;
 /** `GET /api/crawls/:id/pages` の 1 回の既定の行数と上限。続きは答えの `next` で引く。 */
 const PAGES_DEFAULT = 100;
@@ -133,17 +118,6 @@ const PAGE_ID = "^[0-9]{1,18}$";
 const CRAWLS_PAGE = 50;
 /** `GET /api/decisions` が返す行の上限。超えたら `truncated` で言う (`com` のような広いドメインのため)。 */
 const DECISIONS_SHOWN = 500;
-/** 規則の当てる物の長さの上限。始める口と確かめの口で同じ数。 */
-const RULE_PATTERN_MAX = 2048;
-/** 規則の本数の上限。始める口と確かめの口で同じ数。 */
-const RULES_MAX = 32;
-/**
- * `POST /api/crawls` が受ける本文の上限。**capture-workbench の門（その src/lib.mjs の WRITE_LIMIT）と
- * 同じ 1 MiB** —— 片方だけを変えると、workbench が通すのに台帳が 413、の形になる。Fastify の既定と同じ値だが、
- * 既定に頼らずにこの口に書く。その先の BrowserHive は 4 MiB で、変換後の JS と台帳のスクリプトを足しても収まる。
- */
-export const CRAWL_BODY_LIMIT = 1024 * 1024;
-
 /**
  * そのクロールから出た WACZ の数。
  *
@@ -174,87 +148,6 @@ const pagesFailed = sql<number>`(
   select count(*)::int from crawl_pages p
   where p.crawl_id = crawls.id and p.state = 'failed'
 )`;
-
-/**
- * Windmill に投げる関数。既定は webhook を叩くもので、試験だけが差し替える。
- * 起こした job の id を返す (Windmill が返さなければ undefined)。
- */
-export type CrawlDispatcher = (crawl: DispatchedCrawl) => Promise<string | undefined>;
-
-/**
- * Windmill の flow に渡す 1 段ぶんの仕事。
- *
- * **段の繰り返しは ledger が回す。** flow は 1 段を処理して報告するだけで、次があるかを
- * 判断しない。そうしたのは、Windmill の while ループが止まらなかったから ——
- * `stop_after_if` を付けた最小の flow が 643 回まで回り続けた (実測)。相手のサーバに
- * 負荷をかけない仕組みを、暴走しうるループの上には載せられない。
- *
- * 上限の判定は `budget.ts` に在って単体試験がある。**繰り返しは、その判定と同じ場所に置く。**
- */
-export interface DispatchedCrawl {
-  crawlId: string;
-  depth: number;
-  /**
-   * この段で取る URL。空で渡すことはない。
-   *
-   * `lastFinishedAt` は **そのホストを最後に触り終えた時刻**。段をまたぐ間隔を
-   * 守るために要る —— 間隔は `crawl_host` の呼び出し 1 回の中でしか効かないので、
-   * これが無いと段の境目だけ間隔が空かない。実測で 521ms まで詰まった。
-   */
-  frontier: { url: string; host: string; lastFinishedAt: string | null }[];
-  perHostDelayMs: number;
-  hostParallelism: number;
-  /**
-   * 取り込む形式と署名。**必ず載せる。**
-   *
-   * flow の schema の既定値には頼れない —— Windmill は webhook 起動のとき
-   * 既定値を埋めないので、送らなければ `undefined` が届く (実測)。決めるのは
-   * 依然として ledger 側で、flow は言われたとおりに投げる。
-   */
-  captureFormats: CaptureFormats;
-  /**
-   * 成果物の送り先。**在れば BrowserHive はそこへ押し出し、自前の保管庫へは書かない。**
-   *
-   * 段ごとに作る —— クロールは長く続きうるので、後の段には新しい期限を配る。
-   * 無ければ従来どおり BrowserHive が自前の保管庫へ書く (2 つの経路は同時に生きる)。
-   */
-  artifactSink?: { url: string; token: string };
-  signing: boolean;
-  /**
-   * ページの中で走らせるもの。**クロールを始めた時点で解決して固定したもの**を、
-   * 段ごとにそのまま配る (`crawls.scripts`)。
-   *
-   * **必ず載せる。** BrowserHive は顔ぶれを持たないので、送らなければページでは
-   * 何も走らない —— そしてそれは、成功した取り込みと archive を見分けられない形の
-   * 劣化になる。空配列を送ることと、鍵ごと送らないことを区別する必要も無い
-   * (どちらも「何も走らない」) ので、常に載せて形を 1 つに保つ。
-   */
-  scripts: CrawlScript[];
-  /**
-   * クロールごとの変数 (名前 → 文字列)。**必ず載せる** (空なら `{}`)。行に固定した物を段ごとにそのまま配る。
-   * flow は運ぶだけで、BrowserHive が頁に渡して WACZ の `settings.variables` に値を書く。
-   */
-  variables: Record<string, string>;
-  /**
-   * 宣言で結んだシークレット (名前 → Windmill の変数の path)。**必ず載せる** (空なら `{}`)。値は無い ——
-   * 解くのは flow の `crawl_host` で、BrowserHive に送る直前に読む。台帳・webhook・WACZ が持つのは名前と path だけ。
-   */
-  secrets: Record<string, string>;
-  /**
-   * 頼まれた User-Agent。打った字のままで、`{chrome}` は BrowserHive が解く。**必ず載せる** (指定なしは `""`)。
-   * flow が省いた入力は `null` で届くので、`""` と分ければ `crawl_host` が取り違えに気づける。
-   */
-  userAgent: string;
-}
-
-/**
- * 合本を 1 本書く (`replay-bundle/write.ts` の `writeReplayBundle` を、配備の db・保管庫・署名の窓口で包んだ物)。
- * クロールを締めた後に、ここから呼ぶ。
- */
-export type ReplayBundleWriter = (
-  crawlId: string,
-  depth: number | null,
-) => Promise<ReplayBundleResult | undefined>;
 
 export interface CrawlRouteDeps {
   /** 取り込む形式と署名。起動時に env から解釈したもの (`config/capture-formats.ts`)。 */
@@ -301,49 +194,6 @@ export interface CrawlRouteDeps {
   writeReplayBundle: ReplayBundleWriter;
 }
 
-/** BrowserHive の契約 (`CaptureRequest.userAgent`) と同じ形。 */
-const USER_AGENT_FORM = /^[\x20-\x7e]{1,512}$/;
-
-interface CrawlBody {
-  seeds?: string[];
-  /**
-   * クロールごとの変数 (名前 → 文字列)。スクリプトが宣言した名前 (`params` の `variable`) だけを渡せ、
-   * 行に固定されて段ごとに配られ、WACZ の `settings.variables` に**値が残る**。シークレットには欄が無い ——
-   * 宣言した名前を Windmill の変数に結ぶ (`crawl/values.ts`)。
-   */
-  variables?: Record<string, string>;
-  /**
-   * このクロールで送る User-Agent。空白だけは省くのと同じ。形だけをここで断り、
-   * `{chrome}` は解かずに BrowserHive まで運ぶ。
-   */
-  userAgent?: string;
-  /**
-   * 起点を明示せず、`capture_targets` の有効な行から取る。
-   *
-   * これが `runs` を畳んだ先。既定では**辿らない** (`maxDepth: 0`) ので、
-   * 「登録済みの URL 一覧を、いま全部取ってこい」がそのまま表せる。
-   */
-  fromTargets?: { limit?: number };
-  /**
-   * どのリンクを撮って辿り、撮るだけにし、落とすか。**上から当て、最初に当たった規則が勝つ** (`crawl/rules.ts`)。
-   * 省くと `[{ follow: "same-origin" }]` (起点と同じ origin を辿り、外は落とす)。
-   */
-  rules?: CrawlRule[];
-  maxDepth?: number;
-  maxPages?: number;
-  perHostDelayMs?: number;
-  hostParallelism?: number;
-  /**
-   * ページの中で走らせるもの。**並びがそのまま実行順**。要素は台帳のスクリプトの名指し (`{ catalog }`) か、
-   * その場で書いた TS (`{ inline }`)。その場の TS は台帳に登録されず、この行の写しにだけ固定される。
-   *
-   * 省くと台帳の**有効な各 id の最新版**のうち、対象サイトの無い物と、起点に合うサイト用の物が走る
-   * (`017`・`021`)。空配列を渡せば何も走らない ——
-   * 「既定でよい」と「何も走らせない」は別の意思なので、書き分けられるようにしてある。
-   */
-  scripts?: RequestedScript[];
-}
-
 /** 段の報告 1 件。flow が 1 ページ処理するたびに 1 つ積む。 */
 interface PageReport {
   url: string;
@@ -370,30 +220,6 @@ interface LevelBody {
   /** 走った JS の sha256 と、何で・何に向けて変換したか。**必ず載せる** (`crawl/compiled.ts`)。 */
   compiled: CompiledReport;
 }
-
-/**
- * flow へ渡す形は変えない。報告で写した JS の hash と変換の記録は台帳の物で、
- * 変換サービスと BrowserHive には見せない (見せても読まないが、契約を 1 つに保つ)。
- */
-export const toDispatched = ({
-  id,
-  version,
-  phase,
-  source,
-  sha256,
-  options,
-}: CrawlScript): CrawlScript => ({
-  id,
-  version,
-  phase,
-  source,
-  sha256,
-  options,
-});
-
-/** flow へ渡すシークレットの形: 名前 → Windmill の変数の path。行が持つ更新時刻は渡さない (flow には要らない)。 */
-const pathsOf = (secrets: Readonly<Record<string, CrawlSecret>>): Record<string, string> =>
-  Object.fromEntries(Object.entries(secrets).map(([name, secret]) => [name, secret.path]));
 
 /** `GET /api/crawls/:id` が返すシークレットの形。名前順の列で、値は無い。 */
 const secretsOf = (
@@ -527,68 +353,11 @@ type LogUnreadable =
 export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps): void => {
   const { db, fga, resolveIdentity, dispatch, capture, sink, tsCompile, fixModel, derivations } =
     deps;
-
-  /**
-   * 締めた後に、合本を 1 本書く (`writeReplayBundle` の注)。**投げない** —— 締めたことが答えで、合本は撮った物から
-   * 作る派生物 (書けなければ `crawls.replay_bundle_error` と log に残る)。
-   */
-  const bundleAfterClose = async (crawlId: string): Promise<void> => {
-    try {
-      const result = await deps.writeReplayBundle(crawlId, null);
-      log.info({ crawlId, ...result }, "Wrote the replay bundle of a closed crawl");
-    } catch (err) {
-      log.error({ err, crawlId }, "Could not write the replay bundle of a closed crawl");
-    }
-  };
-
-  /**
-   * 段を 1 つ Windmill へ投げる。**待たない** —— この Promise の行き先は `crawls` の行で、
-   * 応答ではない。
-   *
-   * 起こした job の id を `last_job_*` に残す (`016`)。失敗したクロールから、その run へ
-   * 1 回で辿れるように。**深さが戻る書き込みはしない** —— 段の報告は速いので、前の段の
-   * id が次の段の id の後に届くことがありうる。
-   *
-   * 投げられなければクロールを締める。黙って `running` のまま置くと、部分 unique index が
-   * 以後のクロールを全部塞ぐ。以前はこの 2 つを、最初の段と次の段の 2 か所に写していた。
-   * 締めるのは走行中の行だけで (`/failed` と同じ)、締めたら終わった状態の合本を書く (CAPTURE-61)。
-   */
-  const dispatchLevel = (level: DispatchedCrawl): void => {
-    const { crawlId, depth } = level;
-    void dispatch(level)
-      .then(
-        async (jobId) => {
-          if (jobId === undefined) return;
-          await db
-            .updateTable("crawls")
-            .set({ lastJobId: jobId, lastJobDepth: depth })
-            .where("id", "=", crawlId)
-            .where((eb) => eb.or([eb("lastJobDepth", "is", null), eb("lastJobDepth", "<=", depth)]))
-            .execute();
-        },
-        async (err: unknown) => {
-          log.error({ err, crawlId, depth }, "Could not dispatch a level");
-          const closed = await db
-            .updateTable("crawls")
-            .set({
-              state: "failed",
-              stopReason: "failed",
-              finishedAt: new Date().toISOString(),
-              error: err instanceof Error ? err.message : String(err),
-            })
-            .where("id", "=", crawlId)
-            // **走行中のものだけ** (`/failed` と同じ)。先に締めた者の理由を上書きしない
-            .where("state", "=", "running")
-            .returning("id")
-            .execute();
-          // 締めたなら、終わった状態の合本を書く (次の段が無いので、ほかに書く者が居ない)
-          if (closed.length > 0) await bundleAfterClose(crawlId);
-        },
-      )
-      .catch((updateErr: unknown) => {
-        log.error({ err: updateErr, crawlId, depth }, "Could not record the dispatch");
-      });
-  };
+  const { bundleAfterClose, dispatchLevel } = levelDispatcher({
+    db,
+    dispatch,
+    writeReplayBundle: deps.writeReplayBundle,
+  });
 
   /**
    * 次の段を送る前に、シークレットの更新時刻を読み直す。**続ける** —— 段の先で解くのは新しい値で、
@@ -647,117 +416,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
     {
       bodyLimit: CRAWL_BODY_LIMIT,
       schema: {
-        body: {
-          type: "object",
-          // 知らない鍵は拒む。`server.ts` の `removeAdditional: false` がこれを
-          // 「黙って削る」ではなく「400 で返す」意味にしている。
-          additionalProperties: false,
-          // **`seeds` と `fromTargets` のどちらか一方**。schema では表さず handler で
-          // 見る —— ajv の `oneOf` は「どちらでもない」と「両方」を同じ 400 にするが、
-          // 呼ぶ側にとっては別の間違いなので、言い分を分けたい。
-          properties: {
-            // **1 本以上。** 起点を持たないクロールは始まりが無いので進みようがなく、
-            // 受理されたのに何も起きない、という形になる (`011` の CHECK と対)。
-            seeds: {
-              type: "array",
-              minItems: 1,
-              items: { type: "string", minLength: 1 },
-            },
-            fromTargets: {
-              type: "object",
-              additionalProperties: false,
-              properties: { limit: { type: "integer", minimum: 1 } },
-            },
-            // **鍵が 1 つの object** の並び (下の `scripts` の要素と同じ形。誤りの場所だけが 400 に出る)。
-            // 当てる物の読み方・前の規則との覆い・起点を辿るかは handler で見て、400 で名指す。
-            rules: {
-              type: "array",
-              minItems: 1,
-              maxItems: RULES_MAX,
-              items: {
-                type: "object",
-                additionalProperties: false,
-                minProperties: 1,
-                maxProperties: 1,
-                properties: {
-                  follow: { type: "string", minLength: 1, maxLength: RULE_PATTERN_MAX },
-                  capture: { type: "string", minLength: 1, maxLength: RULE_PATTERN_MAX },
-                  skip: { type: "string", minLength: 1, maxLength: RULE_PATTERN_MAX },
-                },
-              },
-            },
-            maxDepth: { type: "integer", minimum: 0, maximum: 10 },
-            maxPages: { type: "integer", minimum: 1, maximum: 10000 },
-            // 0 を許すのは、試験で意図的に間隔を外せるようにするため。
-            perHostDelayMs: { type: "integer", minimum: 0, maximum: 600000 },
-            hostParallelism: { type: "integer", minimum: 1, maximum: 32 },
-            // 字の形は handler で見て、読める文で断る (`pattern` の 400 は読めない)。
-            userAgent: { type: "string" },
-            // クロールごとの変数。名前の綴りと長さ・数・値の長さは BrowserHive の契約 (ValueName・ValueText・
-            // Values) と同じ。宣言に在るか・required が揃っているかは handler で見て 400 で名指す (`crawl/values.ts`)。
-            variables: {
-              type: "object",
-              maxProperties: VALUES_MAX,
-              propertyNames: {
-                type: "string",
-                pattern: VALUE_NAME.source,
-                maxLength: VALUE_NAME_MAX,
-              },
-              additionalProperties: { type: "string", maxLength: VALUE_TEXT_MAX },
-            },
-            // **空配列を許す。** 「既定でよい」(省く) と「何も走らせない」([]) を
-            // 書き分けられるようにするため。
-            //
-            // 要素は**鍵が 1 つの object**。`oneOf` にしないのは、400 の文に別の枝の誤りが
-            // 混ざるため (名前の綴りの誤りに「catalog が要る」が並ぶ)。この形なら誤りの場所だけが出る。
-            scripts: {
-              type: "array",
-              items: {
-                type: "object",
-                additionalProperties: false,
-                minProperties: 1,
-                maxProperties: 1,
-                properties: {
-                  catalog: { type: "string", minLength: 1 },
-                  inline: {
-                    type: "object",
-                    additionalProperties: false,
-                    required: ["name", "phase", "source"],
-                    properties: {
-                      // `inline-` と合わせて、ts-compile-service の ScriptId
-                      // (`^[a-z][a-z0-9-]*$`・64 字) に収まる綴り。変換の段まで行ってから
-                      // 400 になると、失敗したクロールが残る。
-                      name: { type: "string", pattern: "^[a-z][a-z0-9-]*$", maxLength: 57 },
-                      phase: { type: "string", enum: ["behavior", "preload"] },
-                      source: { type: "string", minLength: 1 },
-                      // シークレットの宣言 (catalog.json の params と同じ形)。変数は source の `defineParams` で
-                      // 宣言するので、kind: variable は handler が断る。重複と required の既定も handler
-                      params: {
-                        type: "array",
-                        maxItems: VALUES_MAX,
-                        items: {
-                          type: "object",
-                          additionalProperties: false,
-                          required: ["name", "kind"],
-                          properties: {
-                            name: {
-                              type: "string",
-                              pattern: VALUE_NAME.source,
-                              maxLength: VALUE_NAME_MAX,
-                            },
-                            kind: { type: "string", enum: ["variable", "secret"] },
-                            required: { type: "boolean" },
-                            summary: { type: "string" },
-                          },
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        body: CRAWL_BODY_SCHEMA,
       },
     },
     async (request, reply) => {
@@ -769,351 +428,42 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         return reply.code(404).send({ error: "not found" });
       }
 
-      const body = request.body ?? {};
-
-      // **どちらか一方。** 両方渡されたら、どちらを使うかをこちらが決めることに
-      // なるので拒む。片方も無ければ始まりが無い。
-      const fromTargets = body.fromTargets;
-      if ((body.seeds === undefined) === (fromTargets === undefined)) {
-        return reply.code(400).send({ error: "provide exactly one of seeds or fromTargets" });
-      }
-
-      // BrowserHive の契約と同じ形 (印字可能な ASCII・512 字以下)。字の中身は頼む人が決める。
-      const userAgent = body.userAgent?.trim() ?? "";
-      if (userAgent !== "" && !USER_AGENT_FORM.test(userAgent)) {
-        return reply
-          .code(400)
-          .send({ error: "userAgent must be printable ASCII, at most 512 characters" });
-      }
-
       // 組織は呼び出し元の 1 つ目。`maySubmit` はどれか 1 つで許されていれば通すので、
       // 帰属も同じ組織に寄せる。**対象を読むときの絞り込みにも同じ値を使う。**
-      const orgId = identity.organizations[0] ?? "";
+      const who = { orgId: identity.organizations[0] ?? "", subject: identity.subject };
 
-      // `fromTargets` なら `capture_targets` から。以前の CLI 経路 (run.ts) が
-      // 読んでいたのと同じ表で、絞り込みだけが変わる (組織で絞る)。
-      const rawSeeds =
-        fromTargets === undefined
-          ? (body.seeds ?? [])
-          : (
-              await loadTargets(db, {
-                orgId,
-                ...(fromTargets.limit === undefined ? {} : { limit: fromTargets.limit }),
-              })
-            ).map((row) => row.url);
-
-      // **1 本も無ければ拒む。** 対象が 0 件のときにここを通すと、`011` の CHECK に
-      // 当たって 500 になる —— 呼ぶ側から見れば「壊れた」で、「対象が無い」ではない。
-      if (rawSeeds.length === 0) {
-        return reply.code(400).send({
-          error:
-            fromTargets === undefined
-              ? "seeds must not be empty"
-              : "no enabled capture targets for this organization",
-        });
-      }
-
-      // 読めない起点の URL が 1 本でもあれば拒む。**黙って落とさない** ——
-      // 落とすと、投げた側は全部辿ったつもりで結果を読むことになる。
-      const seeds = rawSeeds.map((raw) => parseHttpUrl(raw));
-      if (seeds.some((parsed) => parsed === undefined)) {
-        return reply.code(400).send({ error: "every seed must be an http(s) URL" });
-      }
-      const parsedSeeds = seeds as ParsedUrl[];
-
-      // **規則を確かめる。** 読めない・前の規則に覆われて二度と当たらない・起点を辿らない、のどれも 400 で
-      // 名指す —— 通すと、効いているつもりの規則でクロールが走る。確かめの口と同じ関数で見る。
-      const checked = checkRules(body.rules ?? DEFAULT_RULES, parsedSeeds);
-      if (checked.invalid.length > 0) {
-        return reply.code(400).send({ error: "invalid rule patterns", rules: checked.invalid });
-      }
-      if (checked.covered.length > 0) {
-        return reply
-          .code(400)
-          .send({ error: "rules that can never match", rules: checked.covered });
-      }
-      if (checked.unfollowedSeeds.length > 0) {
-        return reply
-          .code(400)
-          .send({ error: "seeds the rules do not follow", seeds: checked.unfollowedSeeds });
-      }
-      // 読んだ形で固定する (前方一致は正規化した URL)。報告のたびにこれを読み直して当てる
-      const rules = checked.read.filter((rule) => rule !== undefined).map(ruleOf);
-
-      // 走らせるものを **いま 1 度だけ** 決める。台帳のスクリプトは後から変わりうるが、
-      // このクロールが走らせるものは変わらない (`018`)。対象サイト (`021`) と比べるのは起点のホスト名で、
-      // ポートは見ない —— 省いた頼みでは、対象サイトの無い物と、起点に合うサイト用の物が走る
-      const seedHosts = [...new Set(parsedSeeds.map((parsed) => parsed.hostname))];
-      // その場の TS の宣言は、catalog と同じ決まりで読んでから写す (重複と required の既定は schema が見ない)。
-      // 添えなかった物は添えないまま —— 「宣言が無い」と「何も読まない」は別 (`crawl/values.ts`)
-      const requested: RequestedScript[] = [];
-      for (const element of body.scripts ?? []) {
-        if (!("inline" in element) || element.inline.params === undefined) {
-          requested.push(element);
-          continue;
-        }
-        // 変数の宣言の正は source の `defineParams`。ここにも書けると、宣言が 2 か所になって片方が腐る
-        if (element.inline.params.some((param) => param.kind === "variable")) {
-          return reply.code(400).send({
-            error: "invalid params",
-            script: INLINE_PREFIX + element.inline.name,
-            hint: "params に書けるのはシークレットだけ。変数は source の defineParams で宣言する",
-          });
-        }
-        const params = readParams(element.inline.params, { summaryRequired: false });
-        if (typeof params === "string") {
-          return reply.code(400).send({
-            error: "invalid params",
-            script: INLINE_PREFIX + element.inline.name,
-            hint: params,
-          });
-        }
-        requested.push({ inline: { ...element.inline, params } });
-      }
-      const resolved = await resolveScripts(
-        db,
-        body.scripts === undefined ? undefined : requested,
-        seedHosts,
+      const prepared = await prepareCrawl(
+        { db, tsCompile, ...(deps.windmill && { windmill: deps.windmill }) },
+        request.body ?? {},
+        who,
       );
-      if (resolved.kind === "missing") {
-        return reply.code(400).send({ error: "unknown script ids", ids: resolved.ids });
+      if (prepared.kind === "refused") return reply.code(prepared.status).send(prepared.body);
+
+      const launched = await launchCrawl(
+        { db, capture, ...(sink && { sink }), dispatchLevel },
+        prepared,
+        who,
+      );
+      if (launched.kind === "busy") {
+        log.info({ subject: identity.subject }, "Crawl already in progress");
+        return reply.code(409).send(launched.body);
       }
-      if (resolved.kind === "duplicate") {
-        return reply.code(400).send({ error: "duplicate script ids", ids: resolved.ids });
-      }
-
-      // **名指しで入れたサイト用のスクリプトは、起点のどれかがそのサイトにあること。** 通すと、どの頁でも
-      // 冒頭の見分けで何もせずに終わるスクリプトを、走らせたと記録することになる。外す (名指さない) のは自由
-      const offsite = offsiteScripts(resolved.scripts, seedHosts);
-      if (offsite.length > 0) {
-        return reply.code(400).send({
-          error: "site scripts need a seed on their site",
-          ids: offsite.map((script) => script.id),
-          hint: offsite.map((script) => `${script.id}: ${script.sites.join(", ")}`).join(" / "),
-        });
-      }
-
-      // **既定を頼まれたのに、既定が空。** 台帳にスクリプトを入れ忘れた配備はここで止まる ——
-      // 通すと、スクロールも遅延読み込みもしないクロールが「成功」として出ていく。
-      // アーカイブは出るし `completeness` も緑なので、**後から見分ける手が無い**。
-      //
-      // 明示の `scripts: []` は通す: 設定漏れと「何も走らせない」という意思は別物で、
-      // 後者を表せなくすると、素の取り込みが欲しい配備が台帳にスクリプトを入れさせられることになる。
-      if (body.scripts === undefined && resolved.scripts.length === 0) {
-        // スクリプトは在るのに、全部が別のサイト用 —— 「スクリプトが無い」とは言わない (取り込み直しても直らない)
-        const enabled = await enabledLatest(db);
-        if (enabled.length > 0) {
-          return reply.code(400).send({
-            error: "no default scripts for these seeds",
-            hint:
-              enabled.map((script) => `${script.id}: ${script.sites.join(", ")}`).join(" / ") +
-              " (run nothing on purpose: send scripts: [])",
-          });
-        }
-        return reply.code(400).send({
-          error: "no scripts are registered",
-          hint:
-            "pnpm run scripts import .upstream/capture-scripts " +
-            "(run nothing on purpose: send scripts: [])",
-        });
-      }
-
-      // **クロールごとの値を、宣言に照らす。** 変数は頼みの物 (無ければ空)、シークレットは宣言から集める
-      // (`crawl/values.ts`)。断るのは行を立てる前 —— 行は残らない。
-      const variables = body.variables ?? {};
-
-      // **始める前に compile に訊く。** 必須の変数が足りなければ 400 で断り、行も run も残さない —— 判定は
-      // ts-compile-service の 1 か所 (BH0001) で、送るのは名前だけ。答えの宣言は行に固定する。ふつうの型の誤りは
-      // ここでは断らない: 行を立て、flow の compile の段で落ちた行から「直し方を訊く」へ進む。
-      let pinned = resolved.scripts;
-      let unreadable = false;
-      if (resolved.scripts.length > 0) {
-        let answer;
-        try {
-          answer = await tsCompile.compile(
-            resolved.scripts.map(toDispatched),
-            Object.keys(variables),
-          );
-        } catch (err) {
-          if (!(err instanceof TsCompileUnreachable)) throw err;
-          log.warn({ err, subject: identity.subject }, "ts-compile-service did not answer");
-          return reply.code(503).send({ error: "ts-compile unreachable" });
-        }
-        if (!answer.ok && answer.missingVariables.length > 0) {
-          return reply.code(400).send({
-            error: "missing variables",
-            names: answer.missingVariables,
-            diagnostics: answer.diagnostics.filter((d) => d.code === "BH0001"),
-          });
-        }
-        pinned = pinDeclarations(resolved.scripts, answer.declarations);
-        unreadable = answer.declarations.some((declared) => declared.unreadable);
-      }
-
-      const values = checkValues(pinned, variables, { unreadable });
-      if (values.kind === "refused") return reply.code(400).send(values.body);
-
-      // **宣言したシークレットが Windmill に在るか。** 値は読まない (`crawl/windmill-variables.ts`)。required の
-      // 物が無ければ 400 で名前と path を言い、secret でない変数が置かれていれば 400。required でない物が無ければ
-      // 渡さないだけ (スクリプトは undefined を読む)。訊けなければ 503 で始めない —— Windmill に届かないなら
-      // flow も動かない。
-      const secrets: Record<string, CrawlSecret> = {};
-      if (values.secrets.length > 0) {
-        const windmill = deps.windmill;
-        if (windmill === undefined) {
-          return reply.code(400).send({
-            error: "secrets need the windmill webhook",
-            names: values.secrets.map((secret) => secret.name),
-          });
-        }
-        const unknown: DeclaredSecret[] = [];
-        const notSecret: DeclaredSecret[] = [];
-        try {
-          for (const secret of values.secrets) {
-            const meta = (await windmill.exists(secret.path))
-              ? await windmill.meta(secret.path)
-              : undefined;
-            if (meta === undefined) {
-              if (secret.required) unknown.push(secret);
-              continue;
-            }
-            if (!meta.isSecret) {
-              notSecret.push(secret);
-              continue;
-            }
-            secrets[secret.name] = { path: secret.path, editedAt: meta.editedAt, rotated: null };
-          }
-        } catch (err) {
-          if (!(err instanceof WindmillUnreachable)) throw err;
-          log.warn({ err, subject: identity.subject }, "Could not ask Windmill about the secrets");
-          return reply.code(503).send({ error: "windmill unreachable" });
-        }
-        const named = (list: DeclaredSecret[]) =>
-          list.map(({ name, path, declaredBy }) => ({ name, path, declaredBy }));
-        if (unknown.length > 0) {
-          return reply.code(400).send({
-            error: "unknown secrets",
-            secrets: named(unknown),
-            // wmill CLI の綴り (値が先、path が後)。置き場は capture-scheduler の docs が案内する
-            hint: unknown
-              .map((secret) => `wmill variable add <value> ${secret.path} --secret`)
-              .join(" / "),
-          });
-        }
-        if (notSecret.length > 0) {
-          return reply
-            .code(400)
-            .send({ error: "not a secret variable", secrets: named(notSecret) });
-        }
-      }
-
-      const crawlId = randomUUID();
-      // **型注釈を付けること。** 注釈の無い変数に入れてから `.values()` へ渡すと
-      // 余剰プロパティの検査が効かず、存在しない列名を書いても typecheck が緑で通る。
-      const crawl: Insertable<CrawlsTable> = {
-        id: crawlId,
-        seeds: parsedSeeds.map((parsed) => parsed.normalized),
-        rules: JSON.stringify(rules),
-        // **対象一覧から取るときは、既定で辿らない。** それが `runs` の意味だった。
-        // 明示された値は勝つので、「一覧を起点にして 2 段辿る」も書ける。
-        maxDepth: body.maxDepth ?? (fromTargets === undefined ? DEFAULT_MAX_DEPTH : 0),
-        // 既定の 30 だと対象一覧が切り落とされる。**起点の数は下回らせない。**
-        maxPages: body.maxPages ?? Math.max(DEFAULT_MAX_PAGES, parsedSeeds.length),
-        perHostDelayMs: body.perHostDelayMs ?? DEFAULT_PER_HOST_DELAY_MS,
-        hostParallelism: body.hostParallelism ?? DEFAULT_HOST_PARALLELISM,
-        orgId,
-        requestedBy: identity.subject,
-        // 解決済みの写し。並びが実行順。
-        scripts: JSON.stringify(pinned),
-        // クロールごとの値。変数は値ごと、シークレットは path と更新時刻だけ (値は台帳を通らない)
-        variables: JSON.stringify(variables),
-        secrets: JSON.stringify(secrets),
-        // 打った字のまま。解いた字は WACZ の settings.userAgent に残る
-        userAgent: userAgent === "" ? null : userAgent,
-        state: "running" as const,
-        // **置く場所を、いま 1 度だけ決めて書き残す。** 以後は置く側 (受け口) がこの列を読む ——
-        // 段ごとに計算し直すと、受け口の設定を切り替えた配備や月をまたぐクロールでずれる。探す側
-        // (`admitLevel`) はこの列を読まず、報告が運んだ manifest の場所を読む (`014`)。
-        // 受け口を使わない配備では書かない (NULL = 記録が無い)。
-        ...(sink && { artifactKeyPrefix: crawlKeyPrefix(orgId, new Date()) }),
-      };
-
-      try {
-        await db.insertInto("crawls").values(crawl).execute();
-      } catch (err) {
-        if (isUniqueViolation(err, "crawls_single_active")) {
-          log.info({ subject: identity.subject }, "Crawl already in progress");
-          // 塞いでいる 1 本を名指しする (走行中は全体で 1 本 —— `007` の部分 unique index)。
-          // 止まっているなら、呼び手はこの id で `POST /api/crawls/:id/failed` を叩ける。
-          // 呼び手は `can_submit` を通った後で、その許可は組織を跨いで効く (`maySubmit`) ので、
-          // 他の組織のクロールの id を見せても新しく漏れるものは無い。
-          const running = await db
-            .selectFrom("crawls")
-            .select(["id", "startedAt"])
-            .where("state", "=", "running")
-            .executeTakeFirst();
-          return reply.code(409).send({
-            error: "a crawl is already in progress",
-            ...(running && { crawlId: running.id, startedAt: running.startedAt }),
-          });
-        }
-        throw err;
-      }
-
-      // 起点を最初の行として置く。深さ 0。ここから flow が読む。
-      //
-      // **深さ 1 以降と同じ形にしてある** —— 配列で入れ、`onConflict` で重複を
-      // index に落とさせ、`returning` で実際に入った行だけを次に渡す。
-      // 起点が複数になると同じ URL が 2 度渡されうるので、ここも同じ守りが要る。
-      const seeded = await db
-        .insertInto("crawlPages")
-        .values(
-          parsedSeeds.map((parsed) => ({
-            crawlId,
-            url: parsed.normalized,
-            depth: 0,
-            host: parsed.host,
-            state: "pending" as const,
-          })),
-        )
-        .onConflict((oc) => oc.columns(["crawlId", "urlHash"]).doNothing())
-        .returning(["url", "host"])
-        .execute();
-
-      dispatchLevel({
-        crawlId,
-        depth: 0,
-        // 最初の段には「前」が無い。
-        frontier: seeded.map((row) => ({ url: row.url, host: row.host, lastFinishedAt: null })),
-        perHostDelayMs: crawl.perHostDelayMs,
-        hostParallelism: crawl.hostParallelism,
-        captureFormats: capture.formats,
-        signing: capture.signing,
-        // 次の段と同じく `toDispatched` を通す。行の写しには対象サイト (`021`) が在るが、flow には送らない ——
-        // compile の段は scripts をそのまま ts-compile-service に渡すので、知らない欄が届く
-        scripts: pinned.map(toDispatched),
-        // クロールごとの値。段ごとに同じ物を配る (行に固定した物)。シークレットは名前 → path だけ
-        variables,
-        secrets: pathsOf(secrets),
-        userAgent,
-        ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
-      });
 
       log.info(
         {
           subject: identity.subject,
-          crawlId,
+          crawlId: launched.crawlId,
           // **何を走らせるかは、始めたときにしか見えない。** 版まで出す ——
           // id だけだと、後から台帳のスクリプトを書き換えたときに「何が走ったのか」を
           // このログから言えなくなる。
-          scripts: resolved.scripts.map((script) => `${script.id}@${String(script.version)}`),
+          scripts: prepared.scripts.map((script) => `${script.id}@${String(script.version)}`),
           // 値は出さない。変数は行と WACZ に在り、シークレットの値は台帳を通らない
-          variables: Object.keys(variables),
-          secrets: Object.keys(secrets),
+          variables: Object.keys(prepared.variables),
+          secrets: Object.keys(prepared.secrets),
         },
         "Crawl started",
       );
-      return reply.code(202).send({ crawlId });
+      return reply.code(202).send({ crawlId: launched.crawlId });
     },
   );
 
