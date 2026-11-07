@@ -24,7 +24,7 @@
  * 効いているので、締め忘れた行は次のクロールを永久に塞ぐ。
  */
 import { optional } from "../config/env.js";
-import type { CrawlDispatcher, DispatchedCrawl } from "../api/crawls.js";
+import type { CrawlDispatcher, DispatchedCrawl } from "./launch.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
