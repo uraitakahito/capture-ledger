@@ -208,6 +208,36 @@ describe("段の報告で、規則が決めたことを残す", () => {
     ]);
   });
 
+  it("最後の階層にも links を頼む", async () => {
+    // **最後でも数える。** 頼まないと、次に撮る物が残っているかどうかを言えない
+    const { app, dispatched } = await build({
+      results: [
+        [{ ...crawlRow([{ follow: "same-host" }], [seed]), maxDepth: 1 }], // クロールの行
+        [{ id: "11" }], // 報告した行を閉じる
+        [], // crawl_decisions
+        [{ count: "1" }], // crawl_pages の数
+        [{ url: `${FIXTURES}/links/leaf/1`, host: "capture-fixtures.capture-ledger:8080" }], // 次の階層の行
+        [], // crawls の集計
+        [], // ホストごとの最後の時刻
+      ],
+      links: { "hub.links.json": { links: [{ href: `${FIXTURES}/links/leaf/1` }] } },
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/crawls/${CRAWL}/pages`,
+      headers: SUBJECT,
+      payload: {
+        depth: 0,
+        compiled: COMPILED,
+        results: [{ url: seed, status: "captured", linksLocation: "s3://b/hub.links.json" }],
+      },
+    });
+    await app.close();
+    expect(dispatched.map((crawl) => [crawl.depth, crawl.captureFormats.links])).toEqual([
+      [1, true],
+    ]);
+  });
+
   it("撮るだけのページのリンクは読まず、何も残さない", async () => {
     const { app, queries, read } = await build({
       results: [

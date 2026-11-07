@@ -96,7 +96,7 @@ import { planNextLevel } from "../crawl/budget.js";
 import { getJsonObject } from "../archive/s3.js";
 import { manifestOutcome, readManifest } from "../archive/manifest.js";
 import { isUniqueViolation, maySubmit, unauthorized } from "./authorization.js";
-import { withLinks, type CaptureFormats, type CaptureSettings } from "../config/capture-formats.js";
+import type { CaptureFormats, CaptureSettings } from "../config/capture-formats.js";
 import { loadTargets } from "../data/url-source.js";
 import { createChildLogger } from "../logger.js";
 import type { ReplayBundleResult } from "../replay-bundle/write.js";
@@ -1087,8 +1087,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         frontier: seeded.map((row) => ({ url: row.url, host: row.host, lastFinishedAt: null })),
         perHostDelayMs: crawl.perHostDelayMs,
         hostParallelism: crawl.hostParallelism,
-        // 辿るつもりが無いなら `links` は要らない。取り出させても相手と S3 に無駄が出る。
-        captureFormats: withLinks(capture.formats, crawl.maxDepth > 0),
+        captureFormats: capture.formats,
         signing: capture.signing,
         // 次の段と同じく `toDispatched` を通す。行の写しには対象サイト (`021`) が在るが、flow には送らない ——
         // compile の段は scripts をそのまま ts-compile-service に渡すので、知らない欄が届く
@@ -2229,7 +2228,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       // ── 3. 見つけたリンクを読み、規則を当てる ────────────────────────
       // **ページごとに読む。** リンク元が「撮って辿る」でなければ、そのページのリンクは見ない ——
-      // 撮るだけの先は辿らない。段の links は段ごとに取る (`withLinks`) ので撮るだけのページにも
+      // 撮るだけの先は辿らない。links はどのページでも取る (`capture-formats.ts`) ので撮るだけのページにも
       // 在るが、取って読まない。
       const pages: { from: string | null; links: DecidedLink[] }[] = [];
       for (const page of results) {
@@ -2429,7 +2428,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           })),
           perHostDelayMs: crawl.perHostDelayMs,
           hostParallelism: crawl.hostParallelism,
-          captureFormats: withLinks(capture.formats, crawl.maxDepth > nextDepth),
+          captureFormats: capture.formats,
           signing: capture.signing,
           // 台帳のスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
           scripts: crawl.scripts.map(toDispatched),
