@@ -220,7 +220,7 @@ then fails with `EHOSTUNREACH`. `/usr/bin/curl` **is** signed by Apple and gets 
 which makes this easy to misdiagnose: the same URL answers for `curl` and fails for `node`.
 There is no switch for this in System Settings — `node` is not even listed.
 
-Code that runs **inside** a container (`scripts/prod-smoke.sh`) keeps using the names;
+Code that runs **inside** a container (BrowserHive, for one) keeps using the names;
 container-to-container traffic is not affected.
 :::
 
@@ -269,27 +269,14 @@ Both Chromiums are **headless**. To watch one render, open
 `chrome://inspect` in a local Chrome, add `localhost:9222` and `localhost:9223`
 under _Configure…_, and inspect the target.
 
-## Production smoke test
+## The production image
 
-```sh
-./scripts/prod-smoke.sh
-```
+`Dockerfile` builds the image of the API. CI builds it on every change and starts it once: given only
+`DATABASE_URL`, it has to stop at the message that names the missing variables, which shows the image
+boots into the application.
 
-It brings the stack up, polls `GET /status` until both BrowserHives answer, builds
-`capture-ledger:latest`, then runs migrate → seed → the API with `container run --rm`,
-asks the API for `/healthz`, tears the stack down through an `EXIT` trap, and
-forwards the exit code as its own.
-
-**It no longer captures anything.** capture-ledger does not talk to BrowserHive,
-so what this script proves is that the image boots: migrations apply, the seed
-lands, the API answers. The capture path is covered end to end by capture-scheduler's
-`pnpm run test:e2e`, which needs Windmill as well.
-
-The one-shot jobs are plain `container run` calls because container-compose has
-no `run` subcommand. That also retires the old
-`--profile run --exit-code-from capture-ledger` workaround: the Docker Compose behaviour
-it worked around — aborting the whole stack on the migrator's legitimate exit 0
-— has no equivalent here.
+`dev:up` does not use this image, because it runs the API on the host. The path a capture takes is
+proved by `pnpm run dev:up` and capture-scheduler's `pnpm run smoke` and `pnpm run test:e2e`.
 
 ## Working against an external Postgres
 

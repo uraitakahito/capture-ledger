@@ -166,9 +166,9 @@ crawler repos, at `seaweedfs.crawler-storage:8333` (filer on `:8888`). It is bro
 too: `.upstream/seaweedfs/scripts/stack.sh up`. To empty it, `pnpm run store:wipe`.
 
 There is one compose file. The one-shot migrate/seed jobs are not services:
-`scripts/prod-smoke.sh` invokes them with `container run --rm`, because
+`dev:up` runs them on the host (`pnpm run db:migrate`, `pnpm run db:seed`), because
 container-compose has no `run` subcommand. The image's `ENTRYPOINT` is
-`node dist/api/server.js`, so those jobs override it.
+`node dist/api/server.js`, so running them from the image means overriding it.
 
 Bucket creation is **not** a separate service. BrowserHive's SeaweedFS entrypoint
 spawns its `init-bucket.sh` alongside `weed server`, and its retry loop does the

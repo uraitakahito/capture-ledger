@@ -229,3 +229,23 @@ jobs:
 
       - name: Authorization model tests
         run: pnpm run fga:test
+
+  # 本番の image が建ち、起動することを見る。ほかに建てる物が無い —— `dev:up` は API を host で動かす。
+  # 起動は、必須の環境変数の文で止まることで見る。本物の依存 (OpenFGA・OpenSearch) は要らない。
+  # 手本は wacz-validator の image.yml。建てる物が無いと、腐っても誰も気づかない
+  # (scripts/prod-smoke.sh はそれで壊れたまま残り、消した)。
+  image:
+    name: The image builds and starts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build
+        run: docker build -t capture-ledger:ci .
+
+      - name: 起動して、必須の環境変数の文で止まる
+        run: |
+          out=$(docker run --rm -e DATABASE_URL=postgres://ci capture-ledger:ci 2>&1 || true)
+          echo "$out"
+          grep -q '環境変数が足りない' <<<"$out"

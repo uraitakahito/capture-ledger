@@ -11,8 +11,7 @@
 #   - submodule の版 (下の build 引数。渡らないで建った image は、BrowserHive が起動を拒む)
 #   - 起動の前の点検 (道具・DNS ドメイン・submodule)
 #
-# 理由は `scripts/stack.sh` の冒頭に書いてある。例外は `scripts/prod-smoke.sh` で、
-# あちらは版の計算だけを同じ `scripts/submodule-versions.sh` から読んで compose を叩く。
+# 理由は `scripts/stack.sh` の冒頭に書いてある。
 #
 # マシンごとに 1 度だけ要る用意:
 #   sudo container system dns create capture-ledger
@@ -160,7 +159,7 @@ services:
         # WARC の `warcinfo` に入り、署名対象のバイト列の中で確定する。
         #
         # 渡さないと版は "unknown"、revision は "dev" になる。**値は手で書かない** ——
-        # `pnpm run stack:up` (と `prod-smoke.sh`) が `scripts/submodule-versions.sh`
+        # `pnpm run stack:up` が `scripts/submodule-versions.sh`
         # から submodule の実際のタグを渡す。生の `container-compose up` を叩くと既定に
         # 落ち、**そうして建った image は BrowserHive が起動を拒む** (v9.4.0 から。
         # `この build は自分の出どころを名乗れない` で exit 1)。
