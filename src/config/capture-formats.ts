@@ -64,20 +64,9 @@ export const parseCaptureFormats = (raw: string, signing: boolean): CaptureSetti
 
   const chosen = new Set(names);
   const formats = Object.fromEntries(
-    KNOWN_FORMATS.map((name) => [name, chosen.has(name)]),
+    // **`links` は設定に関わらず、どの深さでも頼む。** 無いとリンクを数えられず、「数えなかった」が
+    // 「リンクが 1 本も無かった」に見える。読み込み済みの DOM を読むだけなので、相手への要求は増えない。
+    KNOWN_FORMATS.map((name) => [name, name === "links" || chosen.has(name)]),
   ) as CaptureFormats;
   return { formats, signing };
 };
-
-/**
- * リンクを辿るなら `links` を足す。
- *
- * **設定に関わらず、深さが 1 以上のクロールには `links` が要る。** 無いと 1 段目で
- * 必ず止まり、しかも止まった理由が「リンクが 1 本も無かった」に見える —— 設定の
- * 誤りが「そういうサイトだった」と区別が付かなくなる。
- *
- * 逆に深さ 0 (対象一覧をまとめて取るだけ) では足さない。辿らないものを取り出させても
- * 相手と S3 に無駄が出るだけ。
- */
-export const withLinks = (formats: CaptureFormats, following: boolean): CaptureFormats =>
-  following ? { ...formats, links: true } : formats;

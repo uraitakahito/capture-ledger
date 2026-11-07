@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseCaptureFormats, withLinks } from "../src/config/capture-formats.js";
+import { parseCaptureFormats } from "../src/config/capture-formats.js";
 
 /**
  * 取り込む形式の設定。**起動時に解釈する唯一の場所。**
@@ -22,14 +22,14 @@ describe("形式の設定を読む", () => {
       png: true,
       webp: false,
       html: false,
-      links: false,
+      links: true,
       mhtml: false,
       wacz: true,
     });
   });
 
   it("空白と大小文字を吸収する", () => {
-    expect(on(parseCaptureFormats(" WACZ , Html ", false))).toEqual(["html", "wacz"]);
+    expect(on(parseCaptureFormats(" WACZ , Html ", false))).toEqual(["html", "links", "wacz"]);
   });
 
   it("綴りの誤りを黙って落とさず、名指しする", () => {
@@ -51,22 +51,20 @@ describe("形式の設定を読む", () => {
   });
 });
 
-describe("辿るなら links を足す", () => {
-  it("深さがあるときは設定に無くても links を立てる", () => {
-    // **無いと 1 段目で必ず止まり、しかも「リンクが 1 本も無かった」に見える。**
+describe("links はいつも頼む", () => {
+  it("設定に無くても links を立てる", () => {
+    // **無いとリンクを数えられず、「数えなかった」が「リンクが 1 本も無かった」に見える。**
     // 設定の誤りが「そういうサイトだった」と区別が付かなくなる。
-    const { formats } = parseCaptureFormats("wacz", false);
-    expect(withLinks(formats, true).links).toBe(true);
+    expect(parseCaptureFormats("wacz", false).formats.links).toBe(true);
   });
 
-  it("辿らないときは足さない", () => {
-    // 対象一覧をまとめて取るだけの経路。取り出させても相手と S3 に無駄が出る。
-    const { formats } = parseCaptureFormats("wacz", false);
-    expect(withLinks(formats, false).links).toBe(false);
+  it("設定に書いても同じで、断らない", () => {
+    expect(parseCaptureFormats("wacz,links", false).formats).toEqual(
+      parseCaptureFormats("wacz", false).formats,
+    );
   });
 
-  it("辿らなくても、設定で選ばれていれば残す", () => {
-    const { formats } = parseCaptureFormats("wacz,links", false);
-    expect(withLinks(formats, false).links).toBe(true);
+  it("links だけを書いても、他の形式は足さない", () => {
+    expect(on(parseCaptureFormats("links", false))).toEqual(["links"]);
   });
 });

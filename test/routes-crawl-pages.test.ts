@@ -134,6 +134,18 @@ const log = {
   dropped: 0,
 };
 
+describe("クロールの一覧の行", () => {
+  it("深さの上限を選んで行に載せる（dashboard が「このページだけ」と言うのに要る）", async () => {
+    // 手書きの代役 (`routes-crawls.test.ts`) は行を丸ごと返すので、select に書き忘れても緑のまま。ここで SQL を見る
+    const { res, queries } = await get("/api/crawls", {
+      results: [[{ id: CRAWL, maxDepth: 0 }]],
+    });
+    expect(res.statusCode).toBe(200);
+    expect(queries[0]?.sql).toContain('"max_depth"');
+    expect(res.json<{ crawls: { maxDepth: number }[] }>().crawls[0]?.maxDepth).toBe(0);
+  });
+});
+
 describe("クロールのページを読む", () => {
   const url = `/api/crawls/${CRAWL}/pages`;
 
@@ -428,6 +440,7 @@ describe("段の報告で、取り込みのログの数をページの行に写�
     orgId: "acme",
     requestedBy: "alice",
     state: "running",
+    stopReason: null,
     maxDepth: 0,
     maxPages: 20,
     perHostDelayMs: 0,
@@ -455,7 +468,7 @@ describe("段の報告で、取り込みのログの数をページの行に写�
         [{ id: "42" }], // 報告した行を閉じる (returning id)
         [], // capture_submissions
         ...(counted ? [[]] : []), // log_counts
-        [{ count: "1" }], // crawl_pages の数
+        [{ url: "https://site.test/" }], // crawl_pages の URL
         [], // crawls の集計 (次が無いので締める)
       ],
       store: { [KEY]: stored },

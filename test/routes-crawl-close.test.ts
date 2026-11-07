@@ -32,6 +32,7 @@ const crawlRow = (over: { pagesCaptured?: number; state?: string } = {}) => ({
   orgId: "acme",
   requestedBy: "alice",
   state: "running",
+  stopReason: null,
   maxDepth: 2,
   maxPages: 20,
   perHostDelayMs: 0,
@@ -59,7 +60,7 @@ const close = async (
     ...results.map(() => [{ id: "11" }]), // 報告した行を閉じる
     ...(results.some((page) => "taskId" in page) ? [[]] : []), // capture_submissions
     ...(opts.recovered === undefined ? [] : [[]]), // 拾い直した行を直す
-    [{ count: "1" }], // crawl_pages の数
+    [{ url: SEED }, { url: OTHER }], // crawl_pages の URL
     [], // crawls の集計
   ]);
   const app = Fastify({ logger: false, ajv: { customOptions: { removeAdditional: false } } });

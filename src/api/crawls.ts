@@ -96,7 +96,7 @@ import { planNextLevel } from "../crawl/budget.js";
 import { getJsonObject } from "../archive/s3.js";
 import { manifestOutcome, readManifest } from "../archive/manifest.js";
 import { isUniqueViolation, maySubmit, unauthorized } from "./authorization.js";
-import { withLinks, type CaptureFormats, type CaptureSettings } from "../config/capture-formats.js";
+import type { CaptureFormats, CaptureSettings } from "../config/capture-formats.js";
 import { loadTargets } from "../data/url-source.js";
 import { createChildLogger } from "../logger.js";
 import type { ReplayBundleResult } from "../replay-bundle/write.js";
@@ -1087,8 +1087,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         frontier: seeded.map((row) => ({ url: row.url, host: row.host, lastFinishedAt: null })),
         perHostDelayMs: crawl.perHostDelayMs,
         hostParallelism: crawl.hostParallelism,
-        // 辿るつもりが無いなら `links` は要らない。取り出させても相手と S3 に無駄が出る。
-        captureFormats: withLinks(capture.formats, crawl.maxDepth > 0),
+        captureFormats: capture.formats,
         signing: capture.signing,
         // 次の段と同じく `toDispatched` を通す。行の写しには対象サイト (`021`) が在るが、flow には送らない ——
         // compile の段は scripts をそのまま ts-compile-service に渡すので、知らない欄が届く
@@ -1171,6 +1170,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           "orgId",
           "startedAt",
           "finishedAt",
+          "maxDepth",
           "pagesDiscovered",
           "pagesCaptured",
           "error",
@@ -1197,14 +1197,16 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         crawls: rows.map((crawl) => ({
           crawlId: crawl.id,
           state: crawl.state,
-          // **state だけでは足りない。** `succeeded` の大半は打ち切り (`max_depth`) で、
-          // 「全部辿った」(`completed`) と区別が付かない。呼ぶ側が両方を受け取れるようにする。
+          // **state だけでは足りない。** `succeeded` は「1 枚以上撮れた」なので、切った物があるクロール
+          // (`max_depth`・`max_pages`) と全部辿ったクロール (`completed`) の区別が付かない。呼ぶ側が両方を受け取れるようにする。
           stopReason: crawl.stopReason,
           seeds: crawl.seeds,
           requestedBy: crawl.requestedBy,
           orgId: crawl.orgId,
           startedAt: crawl.startedAt,
           finishedAt: crawl.finishedAt,
+          // 深さ 0 (辿らないクロール) かどうか。dashboard が「このページだけ」と言うのに要る
+          maxDepth: crawl.maxDepth,
           pagesDiscovered: crawl.pagesDiscovered,
           pagesCaptured: crawl.pagesCaptured,
           pagesFailed: crawl.pagesFailed,
@@ -2229,7 +2231,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       // ── 3. 見つけたリンクを読み、規則を当てる ────────────────────────
       // **ページごとに読む。** リンク元が「撮って辿る」でなければ、そのページのリンクは見ない ——
-      // 撮るだけの先は辿らない。段の links は段ごとに取る (`withLinks`) ので撮るだけのページにも
+      // 撮るだけの先は辿らない。links はどのページでも取る (`capture-formats.ts`) ので撮るだけのページにも
       // 在るが、取って読まない。
       const pages: { from: string | null; links: DecidedLink[] }[] = [];
       for (const page of results) {
@@ -2292,18 +2294,25 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       }
 
       // ── 4. 上限を当てる ──────────────────────────────────────────────
-      const { count } = await db
+      // **既に行のある URL は候補にしない。** まだ撮っていない候補が無ければ、深さや枚数で切ったとは言えない。
+      // 上限より先に除くので、既知の URL が枠を取ることも無い (入れる瞬間の守りは 5 の unique index)。
+      // `in` で引かずに行を全部読む —— 行数は `max_pages` で上が決まり、リンクの本数で引数が増えない。
+      const knownRows = await db
         .selectFrom("crawlPages")
-        .select((eb) => eb.fn.countAll<string>().as("count"))
+        .select("url")
         .where("crawlId", "=", crawlId)
-        .executeTakeFirstOrThrow();
+        .execute();
+      const knownUrls = new Set(knownRows.map((row) => row.url));
 
-      const { toInsert, stopReason } = planNextLevel(discovered, {
-        nextDepth,
-        maxDepth: crawl.maxDepth,
-        maxPages: crawl.maxPages,
-        known: Number(count),
-      });
+      const { toInsert, stopReason } = planNextLevel(
+        discovered.filter((link) => !knownUrls.has(link.url)),
+        {
+          nextDepth,
+          maxDepth: crawl.maxDepth,
+          maxPages: crawl.maxPages,
+          known: knownRows.length,
+        },
+      );
 
       // ── 5. 重複を index に落とさせ、入った行だけを次の段にする ──────────
       const inserted =
@@ -2429,7 +2438,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           })),
           perHostDelayMs: crawl.perHostDelayMs,
           hostParallelism: crawl.hostParallelism,
-          captureFormats: withLinks(capture.formats, crawl.maxDepth > nextDepth),
+          captureFormats: capture.formats,
           signing: capture.signing,
           // 台帳のスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
           scripts: crawl.scripts.map(toDispatched),
@@ -2443,7 +2452,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       return reply.code(200).send({
         next: inserted.map((row) => ({ url: row.url, host: row.host, depth: nextDepth })),
-        stopReason: done ? (nothingCaptured ? "failed" : (stopReason ?? "completed")) : null,
+        // **行の理由が先** (上の `coalesce`)。枚数で切った後の段で、返事だけ「全部辿った」と言わない
+        stopReason: done ? (nothingCaptured ? "failed" : (crawl.stopReason ?? reason)) : null,
       });
     },
   );

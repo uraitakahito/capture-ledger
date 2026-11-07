@@ -42,15 +42,16 @@ misspelling stops the server with the bad value named. Parsed per crawl instead,
 `waxz` would surface as a scheduled crawl failing at 3am with "no capture format
 enabled" — a message that never mentions the setting that caused it.
 
-## `links` is added when the crawl follows links
+## `links` is always requested
 
-A crawl with `maxDepth` above 0 gets `links: true` whatever the environment says.
-Without it the first level always stops, and it stops looking as though the page
-had no links at all — a configuration mistake made indistinguishable from a fact
-about the site.
+Every level of every crawl gets `links: true` whatever the environment says (writing
+`links` there changes nothing). Without it the links cannot be counted, and "not counted"
+looks as though the page had no links at all — a configuration mistake made
+indistinguishable from a fact about the site.
 
-A depth-0 crawl does not get it. Extracting links nobody will follow only costs
-the other end and the bucket.
+A depth-0 crawl gets it too: it does not follow the links, but it counts them. Reading the
+already loaded DOM adds no requests to the other end. The cost is one small JSON per page
+in the bucket.
 
 ## Signing fails the capture rather than dropping the signature
 

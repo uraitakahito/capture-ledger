@@ -755,6 +755,28 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
+  it("深さ 0 のクロールにも links を頼む", async () => {
+    // **辿らなくても数える。** 頼まないと、そのページのリンクが何本でも画面の数は 0 になる。
+    const sent: { links: boolean }[] = [];
+    const app = await buildApp(
+      depsWith({
+        crawls: [],
+        allowed: true,
+        dispatch: (crawl) => {
+          sent.push(crawl.captureFormats);
+          return Promise.resolve(undefined);
+        },
+      }),
+    );
+    await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      payload: { seeds: [SEED], maxDepth: 0 },
+    });
+    expect(sent).toEqual([expect.objectContaining({ links: true })]);
+    await app.close();
+  });
+
   it("stores the defaults when the caller asks for nothing", async () => {
     // 既定は控えめな側。**30 が効いていること**が、上限で止まる普通の姿を作る。
     const crawls: FakeCrawl[] = [];
@@ -2110,6 +2132,7 @@ describe("クロールの一覧", () => {
     crawlId: string;
     state: string;
     stopReason: string | null;
+    maxDepth: number;
     orgId: string;
     waczCount: number;
     pagesFailed: number;
@@ -2182,6 +2205,7 @@ describe("クロールの一覧", () => {
       id: "44444444-4444-4444-8444-444444444444",
       startedAt: new Date(4),
       stopReason: "max_depth",
+      maxDepth: 0,
       orgId: "other",
       lastJobId: "01a0bfad",
       lastJobDepth: 2,
@@ -2192,6 +2216,7 @@ describe("クロールの一覧", () => {
     expect(res.json<{ crawls: ListedCrawl[] }>().crawls[0]).toMatchObject({
       state: "succeeded",
       stopReason: "max_depth",
+      maxDepth: 0,
       orgId: "other",
       waczCount: 3,
       pagesFailed: 2,
