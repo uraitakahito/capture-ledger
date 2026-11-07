@@ -23,7 +23,7 @@ export interface paths {
          *     **契約に無い欄も断る。** 綴りの誤り (たとえば snake_case の旧い綴り) を黙って捨てると、頼んだ
          *     上限や方針が効かないまま撮ってしまうため。`fieldList` に path が並び、近い欄名があれば
          *     `message` が提案する。形を持たない欄 (script の `options`) の中は見ない。
-         *     browser に繋がらないのは断りではない —— 取り込みは走り、`connection` の failed の結果で返る。
+         *     browser に繋がらないのは断りではない —— 取り込みは始まらず、`connection` の failed の結果で返る (`.result.json` も書く)。
          *
          *     呼ぶ側が途中で切ったら、取り込みはページごと壊されて cancelled の結果になる。
          *     応答は届かないが、manifest には切られた記録が書かれる。
@@ -822,12 +822,12 @@ export interface components {
         WaczCompleteness: {
             /**
              * @description `304` としてしか現れなかった URL。本文は archive に無く、replay は回復できない
-             *     (オリジン側の事情)。整列済み、常に在る (空のことがある)。
+             *     (オリジン側の事情)。コードポイント順に整列済み、常に在る (空のことがある)。
              */
             bodylessUrls?: string[];
             /**
              * @description 上限 (`maxResponseBytes` / `maxTaskBytes`) で本文を落とした URL。上限を上げれば取り戻せる
-             *     (こちら側の事情)。整列済み、常に在る。方針 (URL / content-type の `no-body`) で省いた本文は、
+             *     (こちら側の事情)。コードポイント順に整列済み、常に在る。方針 (URL / content-type の `no-body`) で省いた本文は、
              *     大きさに関係なくここに載らない —— 呼ぶ側が自分で省いたもので、失ったものではない。
              */
             truncatedUrls?: string[];
@@ -836,13 +836,13 @@ export interface components {
             /**
              * @description 本文は届いたのに、BrowserHive がバイト列として得られなかった URL。文字から組み直した本文で
              *     埋めないので、archive は本文を持たない。取り込みの失敗で、リクエストの設定をどう変えても戻らない。
-             *     整列済み、常に在る。後から足した欄なので最後に置く (並びを変えると smithy diff が危険と言う)。
+             *     コードポイント順に整列済み、常に在る。後から足した欄なので最後に置く (並びを変えると smithy diff が危険と言う)。
              */
             uninterceptedUrls?: string[];
             /**
              * @description 取り込みの間に renderer が落ちた、主の頁以外の target (別サイトの iframe など)。本文の欠けではなく、
              *     頁の一部が死んだことの申告で、スクリーンショットのその場所には Chromium が描く灰色の枠が写る。
-             *     `url`・`type`・`status` の順に整列済み、常に在る。
+             *     `url`・`type`・`status` の順に、それぞれコードポイント順で整列済み、常に在る。
              */
             crashedTargets?: components["schemas"]["CrashedTarget"][];
         };
