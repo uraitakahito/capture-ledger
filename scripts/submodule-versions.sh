@@ -72,6 +72,6 @@ export_submodule_versions() {
   echo "submodule の版:"
   _versions_for BROWSERHIVE .upstream/browserhive || return 1
   _versions_for CAPTURE_FIXTURES .upstream/capture-fixtures || return 1
-  _versions_for REPLAY .upstream/replay || return 1
+  _versions_for REPLAYWEB_SERVER .upstream/replayweb-server || return 1
   echo
 }

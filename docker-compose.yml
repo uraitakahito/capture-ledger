@@ -30,7 +30,7 @@
 #
 #   .upstream/browserhive   本体と、それが動作確認された版の chromium-server-docker
 #   .upstream/seaweedfs     object store の起動設定
-#   .upstream/replay        WACZ のビューア
+#   .upstream/replayweb-server        WACZ のビューア
 #   .upstream/capture-fixtures        取り込み対象のフィクスチャ (profile: capture-fixtures)
 #
 # capture-fixtures を browserhive 越しではなく **直接** vendor しているのは、あちらの pin が
@@ -174,7 +174,7 @@ services:
       BROWSERHIVE_BROWSER_URL: http://chromium-1.capture-ledger:9222
       # 宛先は共有 store。**変数で書かない** —— container-compose は environment の
       # `${VAR}` も `${VAR:-既定}` も展開せず、文字列のまま container に渡す (実測:
-      # replay が `S3_BUCKET_URL must be http(s)://…, got: ${S3_ENDPOINT:-…}` で落ちた)。
+      # replayweb-server が `S3_BUCKET_URL must be http(s)://…, got: ${S3_ENDPOINT:-…}` で落ちた)。
       BROWSERHIVE_S3_ENDPOINT: http://seaweedfs.crawler-storage:8333
       BROWSERHIVE_S3_REGION: us-east-1
       BROWSERHIVE_S3_BUCKET: browserhive
@@ -193,7 +193,7 @@ services:
       # 着地する。
       NODE_OPTIONS: "--dns-result-order=ipv4first"
       # 取り込み対象がこのスタックの中に居るので、私設アドレスへの取り込みを許す
-      # (seaweedfs の filer、replay など。クロールの往復もこれが無いと組めない)。
+      # (seaweedfs の filer、replayweb-server など。クロールの往復もこれが無いと組めない)。
       # **メタデータ(169.254)とループバックはこれでも閉じたまま。**
       # 開発スタック限定で、本番の既定は off (SSRF 対策)。browserhive の compose にも
       # 同じ設定が同じ理由で入っている。
@@ -307,9 +307,6 @@ services:
       - ./.upstream/browserhive/dev-stack/signing-ca:/id:ro
     profiles: ["signing"]
 
-  # browserhive のスタックの replay では代用できない —— replay は内部の DNS 名で
-  # 上流を引くので、あちらは browserhive の seaweedfs を見る。成果物があるのは
-  # こちらの seaweedfs なので、capture-ledger 用のものが要る。
   # クロールの e2e が辿るフィクスチャ origin。既定では起動しない:
   #
   #   pnpm run stack:up --profile capture-fixtures capture-fixtures
@@ -341,13 +338,13 @@ services:
       # **browserhive 側の fixtures が答え続ける**ので、気づかずに緑を見る)。
       - "127.0.0.1:18085:8080"
 
-  replay:
+  replayweb-server:
     build:
-      context: ./.upstream/replay
+      context: ./.upstream/replayweb-server
       args:
-        # browserhive と同じ理由。replay は `/__version` に書き出す。
-        GIT_TAG: "${REPLAY_TAG:-}"
-        GIT_REV: "${REPLAY_REV:-dev}"
+        # browserhive と同じ理由。replayweb-server は `/__version` に書き出す。
+        GIT_TAG: "${REPLAYWEB_SERVER_TAG:-}"
+        GIT_REV: "${REPLAYWEB_SERVER_REV:-dev}"
     environment:
       # 上流は複合値で渡す。素のサービス名を値に書くと container-compose が
       # その IP に書き換えてしまい、読みが全部 403 になる (browserhive で実測)。

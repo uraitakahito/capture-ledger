@@ -3,14 +3,14 @@ import Fastify from "fastify";
 import {
   PICKER_DOCS_URL,
   registerPicker,
-  replayHref,
+  replaywebHref,
   type PickerOptions,
 } from "../src/api/picker.js";
 
 /**
  * picker は route が返す 1 枚の HTML。DB も OpenFGA も要らないので、route だけを立てて見る。
  *
- * 見るのは 2 つ。「画面から外へ出る道」—— 使い方のページと replay。どちらも、壊れても画面は
+ * 見るのは 2 つ。「画面から外へ出る道」—— 使い方のページと replayweb-server。どちらも、壊れても画面は
  * 普通に開くので、ここで見ないと気づけない。もう 1 つは「名乗り方ごとの画面」—— 名乗り方を
  * 見ない画面は、JWT の設定の API で何を入れても 401 になり、原因を言わなかった (2026-09-20)。
  */
@@ -23,7 +23,7 @@ const DENY: PickerOptions["identity"] = { mode: "deny" };
 const open = async (options: Partial<PickerOptions> = {}): Promise<string> => {
   const app = Fastify();
   registerPicker(app, {
-    replayOrigin: "http://127.0.0.1:8899",
+    replaywebServerOrigin: "http://127.0.0.1:8899",
     identity: HEADER,
     listen: LOOPBACK,
     ...options,
@@ -44,15 +44,15 @@ describe("picker の画面", () => {
     );
   });
 
-  // 行のクリックで開く先は、渡された replay の場所から組む。既定値を焼き込んでいたら、
-  // REPLAY_ORIGIN を変えても古い場所を開き続ける。
-  it("渡された replay の場所を、行のリンクを組む script に埋め込む", async () => {
-    const body = await open({ replayOrigin: "http://replay.test:9000" });
-    expect(body).toContain('const REPLAY_ORIGIN = "http://replay.test:9000";');
+  // 行のクリックで開く先は、渡された replayweb-server の場所から組む。既定値を焼き込んでいたら、
+  // REPLAYWEB_SERVER_ORIGIN を変えても古い場所を開き続ける。
+  it("渡された replayweb-server の場所を、行のリンクを組む script に埋め込む", async () => {
+    const body = await open({ replaywebServerOrigin: "http://replayweb-server.test:9000" });
+    expect(body).toContain('const REPLAYWEB_SERVER_ORIGIN = "http://replayweb-server.test:9000";');
     expect(body).not.toContain("127.0.0.1:8899");
-    // 行のリンクは、下の replayHref と同じ関数で組む。
-    expect(body).toContain("const replayHref = ");
-    expect(body).toContain("const href = replayHref(REPLAY_ORIGIN, a)");
+    // 行のリンクは、下の replaywebHref と同じ関数で組む。
+    expect(body).toContain("const replaywebHref = ");
+    expect(body).toContain("const href = replaywebHref(REPLAYWEB_SERVER_ORIGIN, a)");
   });
 });
 
@@ -62,7 +62,7 @@ describe("行のリンク", () => {
 
   it("取り込んだ URL を撮った時刻で直に開く —— ts は UTC の 14 桁", () => {
     expect(
-      replayHref(ORIGIN, {
+      replaywebHref(ORIGIN, {
         objectKey: KEY,
         sourceUrl: "https://www.apple.com/jp/",
         capturedAt: "2026-11-04T10:39:16.120Z",
@@ -73,7 +73,7 @@ describe("行のリンク", () => {
   });
 
   it("url は台帳の sourceUrl のまま —— 末尾の / が無くても足さない（replay が文書に当てる）", () => {
-    const href = replayHref(ORIGIN, {
+    const href = replaywebHref(ORIGIN, {
       objectKey: KEY,
       sourceUrl: "http://site.test",
       capturedAt: "2026-11-04T10:39:16Z",
@@ -84,7 +84,7 @@ describe("行のリンク", () => {
   });
 
   it("鍵は区切りごとに符号にし、その path を source の値としてもう 1 度符号にする。URL の & や # は url の所で", () => {
-    const href = replayHref(ORIGIN, {
+    const href = replaywebHref(ORIGIN, {
       objectKey: "a/b?c.wacz",
       sourceUrl: "https://site.test/search?q=a&b=1",
       capturedAt: "2026-11-04T10:39:16Z",
@@ -101,7 +101,7 @@ describe("行のリンク", () => {
     ["URL が無い", { capturedAt: "2026-11-04T10:39:16Z" }],
     ["URL が空", { sourceUrl: "", capturedAt: "2026-11-04T10:39:16Z" }],
   ])("%s なら、一覧を開く形のまま", (_, rest) => {
-    expect(replayHref(ORIGIN, { objectKey: KEY, ...rest })).toBe(
+    expect(replaywebHref(ORIGIN, { objectKey: KEY, ...rest })).toBe(
       `${ORIGIN}/?source=%2Fwacz%2F${KEY}`,
     );
   });
@@ -109,11 +109,11 @@ describe("行のリンク", () => {
   it("% を含む鍵も、replay の画面が source を 1 度・server が区切りごとに 1 度解くと元の鍵に戻る", () => {
     // BrowserHive はラベルを百分率の符号で鍵に入れる（`hello world` → `hello%20world`）
     const objectKey = "org/acme/2026-11/hello%20world_%E3%81%82.wacz";
-    const href = replayHref(ORIGIN, { objectKey });
+    const href = replaywebHref(ORIGIN, { objectKey });
     // replay の画面（wabac）は ?source= を URLSearchParams で 1 度解き、その path を取りに行く
     const source = new URL(href).searchParams.get("source") ?? "";
     expect(source.startsWith("/wacz/")).toBe(true);
-    // replay の server（v0.3.0）は /wacz/ の後ろを区切りごとに 1 度だけ解く
+    // replayweb-server（v0.3.0）は /wacz/ の後ろを区切りごとに 1 度だけ解く
     const served = source.slice("/wacz/".length).split("/").map(decodeURIComponent).join("/");
     expect(served).toBe(objectKey);
   });

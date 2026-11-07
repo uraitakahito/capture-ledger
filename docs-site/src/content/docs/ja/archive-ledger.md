@@ -689,9 +689,9 @@ OpenSearch が推測します（エラーは出ません）。
 
 クロールは、撮った頁ごとに WACZ を 1 本残します。**合本は、それを 1 つに綴じ直した物です**:
 段の後に、そのクロールの WACZ を全部並べた `replay.json` と、それらの頁の一覧の行を全部持つ
-`pages.json` を、台帳が保管庫に書きます。[replay](https://github.com/uraitakahito/replay) は
+`pages.json` を、台帳が保管庫に書きます。[replay](https://github.com/uraitakahito/replayweb-server) は
 それを 1 つのアーカイブとして開き、ある WACZ の頁から別の WACZ の頁へリンクで行けます。
-形（v1）は replay の `docs/replay-bundle.md` にあります。
+形（v1）は replayweb-server の `docs/replay-bundle.md` にあります。
 
 ```sh
 # クロールの flow のための口。段を報告した後・その段を索引に載せる前に叩く
@@ -733,7 +733,7 @@ UUID でない・本文が `{depth}` でない）は索引の口と同じです�
 1 度だけ読みます: sha256 と大きさ（`resources[].hash` が sha256 を運びます）、`indexes/index.cdxj`
 が空か、`pages/pages.jsonl` の行。行は `archive_pages` に入れ、後の版は WACZ を読み直しません。
 文書の行には `keys` も付けます ―― 頼んだ URL と、BrowserHive の答え（その取り込みの `.result.json`）の
-`document.url`（リダイレクトの後）を `parseHttpUrl` と同じ形に正規化した物で、replay の server が
+`document.url`（リダイレクトの後）を `parseHttpUrl` と同じ形に正規化した物で、replayweb-server が
 頁を引く鍵です。写しの行には付けません。
 
 記録が 0 の WACZ（索引が空か、`waczStats.totalRecorded` が 0）は外します（`skipped`。名前と sha256 は
@@ -742,7 +742,7 @@ UUID でない・本文が `{depth}` でない）は索引の口と同じです�
 先頭に、続けて深さ・撮った時刻の順です（決まった順にするためです。replay が、頁が持たない物を探す
 3 本は、この並びではなく WACZ の名前の順で選ばれます）。
 `initialPages`（replay が最初に見せる一覧）は文書の行で、起点が先頭です。
-行に `id` が無ければ（契約の外の WACZ）、`<filename>#<何番目の行か>` を振ります。replay の server は
+行に `id` が無ければ（契約の外の WACZ）、`<filename>#<何番目の行か>` を振ります。replayweb-server は
 `id` が文字列でない行を読めないからです。
 
 ### 読み返す
@@ -774,7 +774,7 @@ migration `027` より前のクロール（先に、そのクロールのアー�
 どれでも終了コード 1 です。
 
 :::caution[1 つの物が、クロールの鍵を全部並べる]
-bucket は replay の `/wacz/` を通して匿名で読めるので、合本はクロールの WACZ の鍵を全部、
+bucket は replayweb-server の `/wacz/` を通して匿名で読めるので、合本はクロールの WACZ の鍵を全部、
 1 か所に並べます。WACZ 1 本ずつが既に持っている露出が、1 か所に集まった形です。
 `pnpm run store:wipe` の後は、`replay_bundle_key` は何も無い所を指します。
 :::
@@ -887,7 +887,7 @@ pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5
 
 #### 第三者の手順
 
-台帳を使わずに確かめる手です。読むのは replay の `/wacz/`（bucket の匿名の read）からで、錨は検める人が選びます
+台帳を使わずに確かめる手です。読むのは replayweb-server の `/wacz/`（bucket の匿名の read）からで、錨は検める人が選びます
 （dev なら BrowserHive の `dev-stack/signing-ca/` の `insecure-dev-ca.crt` と `insecure-dev-tsa-ca.crt`）。
 
 塊は手順ごとに分け、塊の中に `#` の注を書いていません。そのまま bash にも zsh にも貼れます —— zsh は既定で、
@@ -953,7 +953,7 @@ epoch の秒にして `-attime` に渡します。`-attime` は LibreSSL（macOS
 ## ブラウザからアーカイブを選ぶ
 
 `capture-api` は `/` に picker も出す —— 上の一覧を画面にしたもので、行をクリックすると
-[replay](https://github.com/uraitakahito/replay) で開く。
+[replay](https://github.com/uraitakahito/replayweb-server) で開く。
 **画面の使い方（名乗り方ごとに何を入れるか、画面に出る文の意味）は、
 [アーカイブを見る](/capture-ledger/ja/picker/)にあります。**
 ここに書くのは、その裏の設計だけです。
@@ -965,7 +965,7 @@ epoch の秒にして `-attime` に渡します。`-attime` は LibreSSL（macOS
 picker はトークンを刷らない。刷る issuer は頼まれれば誰の名前でも刷るので `127.0.0.1` にしか
 居らず、`0.0.0.0` で開ける画面が刷れば、同じネットワークの誰もが刷れてしまう。
 
-picker が replay に渡すのは `objectKey` だけ:
+picker が replayweb-server に渡すのは `objectKey` だけ:
 
 ```
 http://127.0.0.1:8899/?source=/wacz/<objectKey>
@@ -975,14 +975,14 @@ http://127.0.0.1:8899/?source=/wacz/<objectKey>
 [アーカイブを見る（picker）](/capture-ledger/ja/picker/#行をクリックした後)。）
 
 署名付き URL は使わない。あれは S3 を直接指すので viewer から見て別 origin になり、
-bucket に CORS が要る。object key なら読みは replay 自身の上流（`/wacz/`）を通るので、
-picker が replay に求める物はほかに無い。
+bucket に CORS が要る。object key なら読みは replayweb-server 自身の上流（`/wacz/`）を通るので、
+picker が replayweb-server に求める物はほかに無い。
 
 :::caution[絞っているのは一覧だけで、読みではない]
 `can_view` が決めるのは picker に出るかどうか。`/wacz/<key>` を**守ってはいない** ——
 その経路は bucket の匿名 read で配られるので、鍵を知っていれば誰でも読める。
 絞り込みが決めるのは「何を見せるか」であって「何を取れるか」ではない。
-replay の `/q/<置き場>/pages`（クロールの[合本](#合本)の頁の問い）も同じ匿名の read から答える。
+replayweb-server の `/q/<置き場>/pages`（クロールの[合本](#合本)の頁の問い）も同じ匿名の read から答える。
 
 ここを閉じるなら署名付き URL を渡し、bucket に CORS を設定することになる。
 それは別の変更。

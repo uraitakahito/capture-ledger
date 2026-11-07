@@ -7,7 +7,7 @@
  *   open "http://127.0.0.1:8899/?source=/wacz/<key>"
  *
  * 台帳 (archives) には既に必要なものが揃っている —— source_url / labels /
- * captured_at / wacz_complete、そして replay へ渡す object_key。`GET /api/archives`
+ * captured_at / wacz_complete、そして replayweb-server へ渡す object_key。`GET /api/archives`
  * は OpenFGA で 1 件ずつ絞り込んだ結果を返すので、ここは **それを並べるだけ**。
  *
  * @fastify/static を入れず route から HTML を返すのは、依存を増やさないため。
@@ -35,13 +35,14 @@ import { optional } from "../config/env.js";
 import { isLoopback, type StartupFacts } from "./startup-notes.js";
 
 /**
- * replay の場所。picker が組み立てるのは replay 内の相対パスなので、
+ * replayweb-server の場所。picker が組み立てるのは replayweb-server 内の相対パスなので、
  * bucket も資格情報もここには要らない —— 渡すのは object_key 1 つ。
  *
- * env にしてあるのは、replay を別の場所で動かす自由を残すため。replay は
+ * env にしてあるのは、replayweb-server を別の場所で動かす自由を残すため。replayweb-server は
  * ledger 専用ではない。
  */
-export const replayOriginFromEnv = (): string => optional("REPLAY_ORIGIN", "http://127.0.0.1:8899");
+export const replaywebServerOriginFromEnv = (): string =>
+  optional("REPLAYWEB_SERVER_ORIGIN", "http://127.0.0.1:8899");
 
 /**
  * 行のリンク。object_key で WACZ を開き、取り込んだ URL を撮った時刻で直に開く（`#view=replay&url=…&ts=…`。
@@ -52,19 +53,19 @@ export const replayOriginFromEnv = (): string => optional("REPLAY_ORIGIN", "http
  * 記録した文書に当てる（2026-11-04 に replaywebpage 2.5.0 で確かめた）。URL か時刻が無ければ、一覧を開く形のまま。
  *
  * `source` の値は、`/wacz/` ＋ 鍵を区切り（`/`）ごとに符号にした path を、もう 1 度 query の値として符号にした物。
- * replay（v0.3.0 から Node の server）は `/wacz/` の後ろを区切りごとに 1 度だけ解くので、`%XX` を含む鍵
+ * replayweb-server（v0.3.0 から Node の server）は `/wacz/` の後ろを区切りごとに 1 度だけ解くので、`%XX` を含む鍵
  * （BrowserHive はラベルの空白や `_`・`.`・`:`・`/` などを符号で鍵に入れる。日本語はそのまま）も元の鍵で
  * 保管庫に届く。鍵を 1 度だけ符号にすると、replay の画面が source を解いた時点で生の鍵に戻り、server が
  * もう 1 度解いて別の鍵を引く。
  *
  * 画面の script に `toString()` で埋め込むので、外の名前を使わない（ブラウザの組み込みだけを使う）。
  */
-export const replayHref = (
-  replayOrigin: string,
+export const replaywebHref = (
+  replaywebServerOrigin: string,
   archive: { objectKey: string; sourceUrl?: unknown; capturedAt?: unknown },
 ): string => {
   const path = "/wacz/" + archive.objectKey.split("/").map(encodeURIComponent).join("/");
-  const base = replayOrigin + "/?source=" + encodeURIComponent(path);
+  const base = replaywebServerOrigin + "/?source=" + encodeURIComponent(path);
   if (typeof archive.sourceUrl !== "string" || archive.sourceUrl === "") return base;
   if (typeof archive.capturedAt !== "string") return base;
   // new Date("") は Invalid Date で、ここで落とせる。
@@ -89,8 +90,8 @@ export const replayHref = (
 export const PICKER_DOCS_URL = "https://uraitakahito.github.io/capture-ledger/ja/picker/";
 
 export interface PickerOptions {
-  /** replay の場所 (`replayOriginFromEnv`)。 */
-  replayOrigin: string;
+  /** replay の場所 (`replaywebServerOriginFromEnv`)。 */
+  replaywebServerOrigin: string;
   /** API が選んだ名乗り方 (`selectIdentity`)。起動ログ (`startup-notes.ts`) と同じもの。 */
   identity: StartupFacts["identity"];
   /** API が待ち受けるアドレス。ヘッダの設定で外に出ていれば、画面の上でそう言う。 */
@@ -205,12 +206,12 @@ const formHtml = (view: PickerView): string => {
   <p style="text-align:center"><button id="more" type="button" hidden>さらに読む</button></p>`;
 };
 
-const script = (replayOrigin: string, view: PickerView): string => {
+const script = (replaywebServerOrigin: string, view: PickerView): string => {
   if (view.form === "none") return "";
   return `<script>
 const MODE = ${JSON.stringify(view.form)};
-const REPLAY_ORIGIN = ${JSON.stringify(replayOrigin)};
-const replayHref = ${replayHref.toString()};
+const REPLAYWEB_SERVER_ORIGIN = ${JSON.stringify(replaywebServerOrigin)};
+const replaywebHref = ${replaywebHref.toString()};
 const UNAUTHORIZED = ${JSON.stringify(view.unauthorized)};
 const PROMPT = ${JSON.stringify(PROMPT[view.form])};
 const $ = (id) => document.getElementById(id);
@@ -255,9 +256,9 @@ const say = (className, text) => {
 const fmt = (iso) => new Date(iso).toLocaleString();
 
 const rowHtml = (a) => {
-  // replay へ渡すのは object_key と、直に開く URL と時刻。bucket も資格情報も要らない ——
-  // 読みは replay 自身の上流設定を通る。属性に入れるので & は文字参照にする。
-  const href = replayHref(REPLAY_ORIGIN, a).replace(/&/g, "&amp;");
+  // replayweb-server へ渡すのは object_key と、直に開く URL と時刻。bucket も資格情報も要らない ——
+  // 読みは replayweb-server 自身の上流設定を通る。属性に入れるので & は文字参照にする。
+  const href = replaywebHref(REPLAYWEB_SERVER_ORIGIN, a).replace(/&/g, "&amp;");
   const labels = (a.labels ?? []).map((l) => '<span class="label">' + l + "</span>").join("");
   // 完全でない archive は開く前に分かるようにする。開いてから「本文が無い」と
   // 気づくのでは遅い。
@@ -322,7 +323,7 @@ if ($(FIELDS[0]).value !== "") void load(false);
 </script>`;
 };
 
-const html = (replayOrigin: string, view: PickerView): string => `<!doctype html>
+const html = (replaywebServerOrigin: string, view: PickerView): string => `<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -383,13 +384,13 @@ const html = (replayOrigin: string, view: PickerView): string => `<!doctype html
   <code>/wacz/&lt;key&gt;</code> を読む経路に認可は無い。
 </footer>
 
-${script(replayOrigin, view)}
+${script(replaywebServerOrigin, view)}
 </body>
 </html>
 `;
 
 export const registerPicker = (app: FastifyInstance, options: PickerOptions): void => {
   // 名乗り方も待ち受けも起動の後は変わらないので、HTML は 1 回だけ組む。
-  const page = html(options.replayOrigin, pickerView(options.identity, options.listen));
+  const page = html(options.replaywebServerOrigin, pickerView(options.identity, options.listen));
   app.get("/", (_request, reply) => reply.type("text/html; charset=utf-8").send(page));
 };

@@ -4,9 +4,9 @@
 [submodule ".upstream/seaweedfs"]
 	path = .upstream/seaweedfs
 	url = git@github.com:uraitakahito/seaweedfs.git
-[submodule ".upstream/replay"]
-	path = .upstream/replay
-	url = git@github.com:uraitakahito/replay.git
+[submodule ".upstream/replayweb-server"]
+	path = .upstream/replayweb-server
+	url = git@github.com:uraitakahito/replayweb-server.git
 [submodule ".upstream/capture-fixtures"]
 	path = .upstream/capture-fixtures
 	url = https://github.com/uraitakahito/capture-fixtures.git

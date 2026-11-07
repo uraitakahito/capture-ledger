@@ -1,6 +1,6 @@
 ---
 title: Browsing archives (the picker)
-description: How to use the screen at http://127.0.0.1:7070/ that lists captured pages and opens them in replay — what to enter under each way the API identifies callers (two name fields or a token), and what its messages mean
+description: How to use the screen at http://127.0.0.1:7070/ that lists captured pages and opens them in replayweb-server — what to enter under each way the API identifies callers (two name fields or a token), and what its messages mean
 ---
 
 import { Image } from "astro:assets";
@@ -13,7 +13,7 @@ import noIdentity from "../../assets/picker/06-no-identity.png";
 import headerExposed from "../../assets/picker/07-header-exposed.png";
 
 The API started by `pnpm run api` serves one screen at `/`. It lists the pages you have captured and
-opens the one you pick in [replay](https://github.com/uraitakahito/replay), the viewer that plays an
+opens the one you pick in [replay](https://github.com/uraitakahito/replayweb-server), the viewer that plays an
 archive back. These docs call it the picker. Picking is all it does: it captures nothing, and it has
 no button that starts a crawl.
 
@@ -52,7 +52,7 @@ says which one is in effect (`identity: …`) — see
    and `acme` (the organization you claim when starting the crawl in §7).
 2. **Press 読み込む (Load).** The Enter key does not load. Press the button again whenever you
    change a field.
-3. **Click the row you want.** replay opens in a new tab — see
+3. **Click the row you want.** replayweb-server opens in a new tab — see
    [After clicking a row](#after-clicking-a-row).
 
 ## Three steps (JWT)
@@ -208,8 +208,8 @@ An API under the dev headers that listens on `0.0.0.0` shows a red notice at the
 
 ## After clicking a row
 
-Clicking a row opens replay in a new tab, on the captured URL as it was at the capture time. The URL
-is built from where replay lives, the key of that WACZ (`objectKey`), and the captured URL and time
+Clicking a row opens replayweb-server in a new tab, on the captured URL as it was at the capture time. The URL
+is built from where replayweb-server lives, the key of that WACZ (`objectKey`), and the captured URL and time
 (`ts` is the time in UTC, 14 digits):
 
 ```
@@ -217,7 +217,7 @@ http://127.0.0.1:8899/?source=/wacz/<objectKey>#view=replay&url=<captured URL>&t
 ```
 
 The `source` above is shown unencoded. In the link, each segment of the key is percent-encoded and then
-the whole path `/wacz/…` once more, as a query value. replay decodes the path once, segment by segment,
+the whole path `/wacz/…` once more, as a query value. replayweb-server decodes the path once, segment by segment,
 so a key that itself holds `%XX` — BrowserHive writes a space or a symbol such as `_`, `.`, `:` or `/` in
 a label into the key that way, and leaves Japanese as it is — reaches the store unchanged.
 
@@ -232,7 +232,7 @@ because that page was captured into a WACZ of its own. To follow links across a 
 [replay bundle](/capture-ledger/archive-ledger/#replay-bundles) instead: it lists every WACZ of the
 crawl as one archive.
 
-Where replay lives comes from `REPLAY_ORIGIN` in `.env` (default `http://127.0.0.1:8899`). The replay
+Where replay lives comes from `REPLAYWEB_SERVER_ORIGIN` in `.env` (default `http://127.0.0.1:8899`). The replay
 container is started along with the rest by `pnpm run stack:up`.
 
 ## Good to know
@@ -244,5 +244,5 @@ container is started along with the rest by `pnpm run stack:up`.
 - **The picker mints no tokens.** The development issuer does, and it listens only on `127.0.0.1`.
 - **Under the dev headers the screen authenticates nobody.** It is a development screen. Do not expose
   it anywhere reachable from outside.
-- **Only the list is filtered.** Anyone who knows the key of a WACZ can read it through replay — see
+- **Only the list is filtered.** Anyone who knows the key of a WACZ can read it through replayweb-server — see
   [Archive ledger](/capture-ledger/archive-ledger/#picking-an-archive-in-a-browser).

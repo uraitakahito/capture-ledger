@@ -752,8 +752,8 @@ need it, then rebuild as above.
 A crawl leaves one WACZ per page it captured. **A replay bundle binds them back together**: after a
 level, capture-ledger writes the crawl's bundle to the store — a `replay.json` that lists every WACZ
 of the crawl, and a `pages.json` that holds every line of their page lists — so that
-[replay](https://github.com/uraitakahito/replay) opens the whole crawl as one archive, and a link
-leads from a page in one WACZ to a page in another. The format (version 1) is replay's
+[replay](https://github.com/uraitakahito/replayweb-server) opens the whole crawl as one archive, and a link
+leads from a page in one WACZ to a page in another. The format (version 1) is replayweb-server's
 `docs/replay-bundle.md`.
 
 ```sh
@@ -799,7 +799,7 @@ once: its sha256 and size (`resources[].hash` carries the sha256), whether `inde
 empty, and the lines of `pages/pages.jsonl`, which go into `archive_pages` so later versions do not
 read the WACZ again. A document line also gets `keys` — the requested URL and BrowserHive's
 `document.url` (after redirects, from the capture's `.result.json`), normalized the way
-`parseHttpUrl` does — which is what replay's server looks a page up by. Snapshot lines have none.
+`parseHttpUrl` does — which is what replayweb-server looks a page up by. Snapshot lines have none.
 
 A WACZ that recorded nothing — an empty index, or `waczStats.totalRecorded` of 0 — is left out
 (`skipped`; its name and sha256 stay in `replayBundle.skippedResources`): replay would ask for a zero-length range and keep re-reading the JSON on the store's
@@ -807,7 +807,7 @@ answer, a 416. `resources` starts with the seeds' WACZs, then goes by depth and 
 fixed order, not a hint: the three WACZs replay tries for something a page does not hold are picked
 by name, not by this order. `initialPages`, the list replay shows first, holds document lines,
 seeds first. A line without an `id` (a WACZ from outside the contract) gets
-`<filename>#<its position>`, because replay's server cannot read a line whose `id` is not a string.
+`<filename>#<its position>`, because replayweb-server cannot read a line whose `id` is not a string.
 
 ### Reading it back
 
@@ -841,7 +841,7 @@ signed** (it writes a new version and signs that). It exits 1 when the bundle co
 written, when a WACZ could not be read, or when the signature did not come.
 
 :::caution[One object lists every key of the crawl]
-The bucket is read anonymously through replay's `/wacz/`, so a bundle lists every WACZ key of the
+The bucket is read anonymously through replayweb-server's `/wacz/`, so a bundle lists every WACZ key of the
 crawl in one place — the exposure each WACZ already has, gathered together. After
 `pnpm run store:wipe`, `replay_bundle_key` points at nothing.
 :::
@@ -969,7 +969,7 @@ and `--timestamp-anchor` override them.
 
 #### Checking it as a third party
 
-Without capture-ledger. Everything is read through replay's `/wacz/` (the bucket's anonymous read),
+Without capture-ledger. Everything is read through replayweb-server's `/wacz/` (the bucket's anonymous read),
 and the anchors are the checker's choice (in dev, `insecure-dev-ca.crt` and
 `insecure-dev-tsa-ca.crt` from BrowserHive's `dev-stack/signing-ca/`).
 
@@ -1039,7 +1039,7 @@ LibreSSL (macOS's `/usr/bin/openssl`) has no `-attime`; use OpenSSL.
 ## Picking an archive in a browser
 
 `capture-api` also serves a picker at `/` — the list above, rendered, with each
-row opening the archive in [replay](https://github.com/uraitakahito/replay). **How to use the
+row opening the archive in [replay](https://github.com/uraitakahito/replayweb-server). **How to use the
 screen — what to enter under each way the API identifies callers, and what its messages mean — is in
 [Browsing archives](/capture-ledger/picker/).** This section covers only the design behind it.
 
@@ -1051,7 +1051,7 @@ The browser cannot tell "no name given" from "this API wants a JWT" — both are
 anyone's name on request, so it lives only on `127.0.0.1`; a screen reachable on `0.0.0.0` that
 could mint would let anyone on the network do it.
 
-The picker hands replay the `objectKey` and nothing else:
+The picker hands replayweb-server the `objectKey` and nothing else:
 
 ```
 http://127.0.0.1:8899/?source=/wacz/<objectKey>
@@ -1062,14 +1062,14 @@ query value — see [Browsing archives](/capture-ledger/picker/#after-clicking-a
 
 Not the signed URL. A signed URL points straight at S3, which is a different
 origin from the viewer, so the browser would need CORS on the bucket. The
-object key goes through replay's own upstream (`/wacz/`), so the picker needs
-nothing else from replay.
+object key goes through replayweb-server's own upstream (`/wacz/`), so the picker needs
+nothing else from replayweb-server.
 
 :::caution[The list is filtered; the read is not]
 `can_view` decides what appears in the picker. It does **not** guard
 `/wacz/<key>` — anyone who knows a key can read it, because that path is served
 by the bucket's anonymous read. The filtering decides what you are shown, not
-what you could fetch. The same holds for replay's `/q/<dir>/pages`, which answers
+what you could fetch. The same holds for replayweb-server's `/q/<dir>/pages`, which answers
 the page lookups of a crawl's [replay bundle](#replay-bundles) from that read.
 
 Closing that gap means handing out the signed URL instead and setting CORS on

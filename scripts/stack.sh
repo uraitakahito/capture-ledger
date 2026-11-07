@@ -66,7 +66,7 @@ signing_enabled() {
 #     中の** /etc/hosts へ相手の行を追記する方式に落ちる (ホスト側の /etc/hosts は触らない)。
 #     その追記は非 root のコンテナ (browserhive=uid 1000、chromium=uid 999) では書き込めずに
 #     失敗するが、container-compose は exec の終了状態を見ず stderr も捨てるので **何も
-#     言わない**。しかも root のコンテナ (postgres、seaweedfs、replay) では成功するため、
+#     言わない**。しかも root のコンテナ (postgres、seaweedfs、replayweb-server) では成功するため、
 #     「一部のサービスだけ名前が引けない」という追いにくい症状になる。
 #   - submodule: 空なら submodule-versions.sh が「初期化されていません」で止める。
 #   - 共有 store: 起きているか。**403 は「立っている」** ——

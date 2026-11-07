@@ -4,21 +4,21 @@
  * `replay-bundle/write.ts` (版を払い出して書く)。
  *
  * 合本は、クロールの WACZ を全部並べた `replay.json` (replay の `?source=` に渡す物) と、その頁の行を全部並べた
- * `pages.json` (replay の server が `pagesQueryUrl` に答えるために読む物) の組。形の約束は replay の
+ * `pages.json` (replayweb-server が `pagesQueryUrl` に答えるために読む物) の組。形の約束は replayweb-server の
  * docs/replay-bundle.md (合本の形 v1) で、両方の repo が同じ正規化の例 (`test/vectors/canonical-url.json`) で試す。
  *
  * ## 並び
  *
  * - `resources`: **起点 (深さ 0) の WACZ を先頭に**、深さ・撮った時刻の順。決まった順にして、人が読む順と、
  *   版どうしで比べられる形にするため。replay (ReplayWeb.page 2.5.0) が頁の中で見つからない物 (favicon など) を
- *   探す 3 本は、この並びではなく WACZ の名前の順で選ばれる (replay の docs/replay-bundle.md。段 1 で確かめた)
+ *   探す 3 本は、この並びではなく WACZ の名前の順で選ばれる (replayweb-server の docs/replay-bundle.md。段 1 で確かめた)
  * - `initialPages`: 文書の行だけ、起点の頁を先頭に深さ・時刻の順で 25 行まで。replay は一覧の 1 ページ目をここから
  *   作る (問いの口は検索と 2 ページ目以降だけ)。写しの行は入れない
  * - `pages.json`: 並びの約束は無い (server が自分で引けるように持つ)。ここでは `resources` の順・行の順
  *
  * ## 行の id は必ず文字列
 
-replay の server は `id` を文字列に限って読む (null の行が 1 つでもあると `/q/` が 502)。BrowserHive の
+replayweb-server は `id` を文字列に限って読む (null の行が 1 つでもあると `/q/` が 502)。BrowserHive の
 pages.jsonl の行は id を持つが、契約の外の WACZ では欠けうる (`archive_pages.page_id` が null)。そのときは
 `<filename>#<ordinal>` を振る —— filename はクロールの中で一意、ordinal は WACZ の中で一意なので、合本の中で一意。
 
@@ -39,7 +39,7 @@ pages.jsonl の行は id を持つが、契約の外の WACZ では欠けうる 
  * 置いた物が別のバイト列になりうる)。
  *
  * 形の `version` は 1 のまま。欄を足しただけで、replay は `replayBundle` を読まない。定数は `pages.json` の
- * `version` と共用で、上げると replay の server が `pages.json` を読めなくなる (`/q/` が 502)。
+ * `version` と共用で、上げると replayweb-server が `pages.json` を読めなくなる (`/q/` が 502)。
  */
 import { createHash } from "node:crypto";
 import { parseHttpUrl } from "../crawl/scope.js";
@@ -47,7 +47,7 @@ import type { CrawlState, CrawlStopReason } from "../db/database.js";
 import type { PageLine } from "../search/document.js";
 import type { SignedData } from "./verify-signed-data.js";
 
-/** 合本の形の版。replay の docs/replay-bundle.md と対。 */
+/** 合本の形の版。replayweb-server の docs/replay-bundle.md と対。 */
 export const REPLAY_BUNDLE_VERSION = 1;
 
 /** `initialPages` の行の数の上限。replay の一覧の 1 ページの大きさ。 */
@@ -56,7 +56,7 @@ export const INITIAL_PAGES = 25;
 /**
  * 正規化。WHATWG の URL として読み、http(s) でなければ null、fragment を外して直列化した物。
  * **台帳の `parseHttpUrl` (`crawl/scope.ts`) そのもの** —— クロールが重複を落とす形と、合本が頁を引く形を
- * 1 つにする。replay の server も同じ例で試す (`test/vectors/canonical-url.json`)。
+ * 1 つにする。replayweb-server も同じ例で試す (`test/vectors/canonical-url.json`)。
  */
 export const canonicalUrl = (raw: string): string | null => parseHttpUrl(raw)?.normalized ?? null;
 

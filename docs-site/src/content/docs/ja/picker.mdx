@@ -1,6 +1,6 @@
 ---
 title: アーカイブを見る（picker）
-description: 取り込んだページを一覧から選んで replay で開く画面（http://127.0.0.1:7070/）の使い方 —— API の名乗り方ごとに何を入れるか（名乗りの 2 欄かトークン）、画面に出る文の意味
+description: 取り込んだページを一覧から選んで replayweb-server で開く画面（http://127.0.0.1:7070/）の使い方 —— API の名乗り方ごとに何を入れるか（名乗りの 2 欄かトークン）、画面に出る文の意味
 ---
 
 import { Image } from "astro:assets";
@@ -13,7 +13,7 @@ import noIdentity from "../../../assets/picker/06-no-identity.png";
 import headerExposed from "../../../assets/picker/07-header-exposed.png";
 
 `pnpm run api` で起動した API は、`/` に画面を 1 枚出します。取り込んだページを一覧から選んで、
-[replay](https://github.com/uraitakahito/replay)（アーカイブを再生するビューア）で開くための画面で、
+[replay](https://github.com/uraitakahito/replayweb-server)（アーカイブを再生するビューア）で開くための画面で、
 この docs では picker と呼びます。できるのは「選んで開く」だけです。ページを撮る機能も、
 クロールを始めるボタンもありません。
 
@@ -49,7 +49,7 @@ API は起動したときに、呼び出し元がどう名乗るかを 1 つに�
    （§7 でクロールを始めるときに名乗る組織）を入れます。
 2. **「読み込む」を押します。** Enter キーでは読み込まれません。入力を変えたら、毎回押します。
 3. **見たい行をクリックします。**
-   別のタブで replay が開きます（[行をクリックした後](#行をクリックした後)）。
+   別のタブで replayweb-server が開きます（[行をクリックした後](#行をクリックした後)）。
 
 ## 3 手で使う（JWT の設定）
 
@@ -204,8 +204,8 @@ JWT の設定では、API は JWT だけを受け付けます。
 
 ## 行をクリックした後
 
-行をクリックすると、別のタブで replay が開き、取り込んだ URL を、取り込んだ時刻の姿で見せます。
-開く URL は、replay の場所と、その WACZ の鍵（`objectKey`）、取り込んだ URL と時刻（`ts` は UTC の 14 桁）で
+行をクリックすると、別のタブで replayweb-server が開き、取り込んだ URL を、取り込んだ時刻の姿で見せます。
+開く URL は、replayweb-server の場所と、その WACZ の鍵（`objectKey`）、取り込んだ URL と時刻（`ts` は UTC の 14 桁）で
 組み立てたものです。
 
 ```
@@ -214,7 +214,7 @@ http://127.0.0.1:8899/?source=/wacz/<objectKey>#view=replay&url=<取り込んだ
 
 上の `source` は符号にする前の形です。
 link では、鍵を区切りごとに百分率の符号にし、その path（`/wacz/…`）全体を query の値としてもう 1 度符号にします。
-replay は path を区切りごとに 1 度だけ解くので、鍵そのものに `%XX` を含んでいても
+replayweb-server は path を区切りごとに 1 度だけ解くので、鍵そのものに `%XX` を含んでいても
 （BrowserHive は、ラベルの空白や `_`・`.`・`:`・`/` などをその形で鍵に入れます。日本語はそのままです）、元の鍵で保管庫に届きます。
 
 **再生はすぐに始まります。**
@@ -229,8 +229,8 @@ URL が `urn:browserhive:snapshot:` で始まります。
 クロールの中をリンクで辿るなら、クロールの[合本](/capture-ledger/ja/archive-ledger/#合本)を開きます。
 合本は、クロールの WACZ を全部並べて 1 つのアーカイブとして開きます。
 
-replay の場所は `.env` の `REPLAY_ORIGIN` で決まります（既定は `http://127.0.0.1:8899`）。
-replay のコンテナは、`pnpm run stack:up` で一緒に起動しています。
+replay の場所は `.env` の `REPLAYWEB_SERVER_ORIGIN` で決まります（既定は `http://127.0.0.1:8899`）。
+replayweb-server のコンテナは、`pnpm run stack:up` で一緒に起動しています。
 
 ## 知っておくこと
 
@@ -241,5 +241,5 @@ replay のコンテナは、`pnpm run stack:up` で一緒に起動していま�
 - **picker はトークンを刷りません。** 刷るのは開発用の issuer で、`127.0.0.1` でしか待ちません。
 - **開発用ヘッダの設定では、この画面は誰も認証しません。** 開発用の画面です。外から届く場所には
   出さないでください。
-- **絞っているのは一覧だけです。** WACZ の鍵を知っていれば、replay からは誰でも読めます
+- **絞っているのは一覧だけです。** WACZ の鍵を知っていれば、replayweb-server からは誰でも読めます
   （[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#ブラウザからアーカイブを選ぶ)）。
