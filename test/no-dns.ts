@@ -10,7 +10,7 @@
  * vi.mock("node:dns/promises") を使って差し込む。
  *
  * 同じファイルを 6 repo に置く（browserhive・capture-ledger・capture-scheduler・capture-fixtures・
- * dashboard・wacz-validator）。直すときは 6 つとも直す。
+ * capture-workbench・wacz-validator）。直すときは 6 つとも直す。
  */
 import dns from "node:dns";
 import dnsPromises from "node:dns/promises";

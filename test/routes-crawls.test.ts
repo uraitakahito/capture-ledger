@@ -78,7 +78,7 @@ describe("クロール route の入力検証", () => {
   const post = (payload: Record<string, unknown>) =>
     app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
 
-  it("本文は 1 MiB まで —— 口が自分で決め、ちょうどは通り、1 バイト超えは 413（dashboard の門と同じ数）", async () => {
+  it("本文は 1 MiB まで —— 口が自分で決め、ちょうどは通り、1 バイト超えは 413（capture-workbench の門と同じ数）", async () => {
     // 数は直に書く。CRAWL_BODY_LIMIT を読むと、定数ごと変えた日に試験も一緒に動いてしまう
     const LIMIT = 1024 * 1024;
     // サーバ全体の上限をわざと 1 KiB にした app で見る。口が自分の上限を書いていなければ、
@@ -1564,7 +1564,7 @@ describe("走らせるものの解決", () => {
   });
 
   it("GET の inline は名前・口・バイト数だけ —— source は運ばない", async () => {
-    // 走行中の行は dashboard が 2 秒ごとに引き直す。source を載せると、1 MiB の TS なら 2 秒に 1 MiB
+    // 走行中の行は workbench が 2 秒ごとに引き直す。source を載せると、1 MiB の TS なら 2 秒に 1 MiB
     const { crawls } = await start({
       seeds: [SEED],
       scripts: [{ inline: INLINE }, { catalog: "autoscroll" }],
@@ -2200,7 +2200,7 @@ describe("クロールの一覧", () => {
 
   it("state だけでは足りない欄を、行に載せる", async () => {
     // 打ち切り (`max_depth`) と完走 (`completed`) は state が同じ。org と run の行き先も、
-    // dashboard が「どこまで見えているか」を言うのに要る。
+    // workbench が「どこまで見えているか」を言うのに要る。
     const truncated = row({
       id: "44444444-4444-4444-8444-444444444444",
       startedAt: new Date(4),
@@ -2230,7 +2230,7 @@ describe("クロールの一覧", () => {
   });
 
   it("合本の欄を行に載せる（書けた合本も、書けなかった記録も無ければ null）", async () => {
-    // 行の列から組む —— dashboard は走っているクロールを 2 秒ごとに引くので、保管庫は読まない
+    // 行の列から組む —— workbench は走っているクロールを 2 秒ごとに引くので、保管庫は読まない
     const bundled = row({
       id: "55555555-5555-4555-8555-555555555555",
       startedAt: new Date(5),

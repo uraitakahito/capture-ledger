@@ -595,7 +595,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/log
 
 The list comes in the order the pages entered the crawl, `limit` at a time; pass the
 previous answer's `next` as `after` for the rest (`next` is `null` at the end). The
-continuation is in the body rather than a header because the dashboard's relay passes on
+continuation is in the body rather than a header because [capture-workbench](https://github.com/uraitakahito/capture-workbench)'s relay passes on
 only the status, the content type and the body. `id` is the `bigserial` as a string, and
 `reason` is `skip_reason`, so it says why a page failed as well as why it was skipped.
 

@@ -1,5 +1,5 @@
 /**
- * ホストで動く長生きのプロセス (issuer 9099 / api 7070 / validator 7180 / dashboard 7080) を
+ * ホストで動く長生きのプロセス (issuer 9099 / api 7070 / validator 7180 / workbench 7080) を
  * 見つけて、止める。validator には、動いている build も訊く。
  *
  * ## なぜ pidfile ではなく port から探すのか
@@ -37,8 +37,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { ROOT } from "./root.js";
 
-/** dashboard は隣の repo で走る。**cwd が違うので、根も 1 本ごとに持たせる。** */
-const DASHBOARD = resolve(ROOT, "../dashboard");
+/** capture-workbench は隣の repo で走る。**cwd が違うので、根も 1 本ごとに持たせる。** */
+const WORKBENCH = resolve(ROOT, "../capture-workbench");
 /** WACZ を検証する daemon も隣の repo。 */
 const VALIDATOR = resolve(ROOT, "../wacz-validator");
 
@@ -47,7 +47,7 @@ const VALIDATOR = resolve(ROOT, "../wacz-validator");
  *
  * **末尾の `/` の有無で比べない。** `fileURLToPath(new URL("..", …))` は `/` 付きを
  * 返し、`resolve()` は付けない —— 文字列のまま比べると、同じ場所なのに一致しない。
- * dev:up が `--dashboard` の既定を `resolve()` で作った日に、動いている dashboard が
+ * dev:up が `--workbench` の既定を `resolve()` で作った日に、動いている workbench が
  * **「別のものが握っている」**と報告された (実測)。`resolve` で両側を揃える。
  */
 const sameDir = (a: string | undefined, b: string) => a !== undefined && resolve(a) === resolve(b);
@@ -65,7 +65,7 @@ export interface HostProcess {
  * ホストに残るもの。**compose では消えない** —— どれもコンテナではないので、
  * `container-compose down` は 1 つも止めない。
  *
- * `root` を 1 本ごとに持つのは、dashboard が **隣の repo** で走るから。持ち主の判定に
+ * `root` を 1 本ごとに持つのは、workbench が **隣の repo** で走るから。持ち主の判定に
  * 使う cwd はこの repo の根と一致しないので、`ROOT` 固定にすると「自分のものではない」
  * と言い続けることになる (実装中に実際にそうなった)。
  */
@@ -92,19 +92,19 @@ export const HOST_PROCESSES: HostProcess[] = [
     run: "pnpm --filter @wacz-validator/daemon... build && node packages/daemon/dist/cli.js --port 7180",
     // **動いている build が名乗る口。** daemon は自分で建て直らない —— wacz-validator を
     // 出しても、:7180 は起こした時の build のまま動き続ける (2026-09-26 に見たとき、
-    // v0.28.1 が 2 日動いていて、その間に出た v0.29.0・v0.30.0 の rule はどれも dashboard に
+    // v0.28.1 が 2 日動いていて、その間に出た v0.29.0・v0.30.0 の rule はどれも workbench に
     // 出ていなかった)。dev:status は、ここで訊いた `gitSha` を根の checkout と比べる。
     identity: "/healthz",
   },
   {
-    name: "dashboard",
+    name: "workbench",
     port: 7080,
-    root: DASHBOARD,
+    root: WORKBENCH,
     entry: "src/server.mjs",
     run: "pnpm run dev",
     // **7000 ではない。** macOS の ControlCenter (AirPlay Receiver) が `*:7000` を
     // 握っているので、port から持ち主を引くこの道具は毎回「別のものが握っている」と
-    // 言うことになる (実測)。dashboard 側も 7080 を既定にしてある。
+    // 言うことになる (実測)。capture-workbench 側も 7080 を既定にしてある。
   },
 ];
 

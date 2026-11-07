@@ -8,7 +8,7 @@
  * 終了コード 0。**
  *
  * - 保管庫から読むときは、台帳 (Postgres) でクロールの組織と版を引き、設定の bucket から読む。`--rev` を省けば
- *   台帳が指す版 (`crawls.replay_bundle_rev`) —— dashboard と replay が開く版。署名した版が別なら、それも言う
+ *   台帳が指す版 (`crawls.replay_bundle_rev`) —— capture-workbench と replay が開く版。署名した版が別なら、それも言う
  * - 手元の写し (`--dir`) は、置き場の 3 つと、`resources[].name` の名前の WACZ が並ぶフォルダ。台帳にも保管庫にも
  *   繋がない。どの置き場の写しかは `--crawl` と `--rev` で言う (r3 の中身を r5 と言えば、`place` が落ちる)
  *

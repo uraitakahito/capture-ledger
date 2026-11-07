@@ -6,7 +6,7 @@
  *   pnpm run dev:up --dry-run      # 何を打つかだけ出す。**何も起こさない**
  *   pnpm run dev:up --from api     # 途中から (失敗したときの続き)
  *   pnpm run dev:up --scheduler ../elsewhere   # capture-scheduler が横に無いとき
- *   pnpm run dev:up --dashboard ../elsewhere   # dashboard が横に無いとき
+ *   pnpm run dev:up --workbench ../elsewhere   # capture-workbench が横に無いとき
  *   pnpm run dev:up --validator ../elsewhere   # wacz-validator が横に無いとき
  *
  * ## 束ねるが、隠さない
@@ -62,7 +62,7 @@ const whoami = (spawnSync("whoami", { encoding: "utf8" }).stdout ?? "").trim() |
  * 「無いときに名指しで止まる」を確かめられるようにするため。
  *
  * **並びではなく名前で引く。** 分割代入だと `HOST_PROCESSES` に 1 本足した日に
- * 黙ってずれる —— 実際、validator を足した瞬間に dashboard の段が validator の
+ * 黙ってずれる —— 実際、validator を足した瞬間に workbench の段が validator の
  * コマンドを打ち始めた (--dry-run で気づいた)。
  */
 const spec = (name: string) => {
@@ -76,9 +76,9 @@ const validator = {
   ...spec("validator"),
   root: resolve(ROOT, flag("--validator") ?? "../wacz-validator"),
 };
-const dashboard = {
-  ...spec("dashboard"),
-  root: resolve(ROOT, flag("--dashboard") ?? "../dashboard"),
+const workbench = {
+  ...spec("workbench"),
+  root: resolve(ROOT, flag("--workbench") ?? "../capture-workbench"),
 };
 
 // `port` か `url` のどちらか一方。もう片方を `?: undefined` にしておくと、probe が
@@ -173,18 +173,18 @@ const STEPS: Step[] = [
   },
   { id: "token", run: "pnpm run windmill:capture-ledger-token", cwd: SCHEDULER },
   { id: "doctor", run: "pnpm run doctor", cwd: SCHEDULER },
-  // **検証の daemon は dashboard より前。** 先に dashboard が立つと、「検証」を押した人が
+  // **検証の daemon は workbench より前。** 先に workbench が立つと、「検証」を押した人が
   // daemon の不在を踏む。
   {
     id: "validator",
     daemon: validator,
     ready: `http://127.0.0.1:${String(validator.port)}/healthz`,
   },
-  // **dashboard は最後。** API が答えるより先に開いても、何も見えない。
+  // **workbench は最後。** API が答えるより先に開いても、何も見えない。
   {
-    id: "dashboard",
-    daemon: dashboard,
-    ready: `http://127.0.0.1:${String(dashboard.port)}/healthz`,
+    id: "workbench",
+    daemon: workbench,
+    ready: `http://127.0.0.1:${String(workbench.port)}/healthz`,
   },
 ];
 
@@ -294,7 +294,7 @@ const startDaemon = async (step: DaemonStep) => {
 
   const log = createWriteStream(logPath, { flags: "a" });
   await new Promise((done) => log.on("open", done));
-  // **その daemon の根で起こす。** dashboard は隣の repo に在るので、この repo の
+  // **その daemon の根で起こす。** workbench は隣の repo に在るので、この repo の
   // 根で起こすと `Missing script` になる。
   const child = spawn("/bin/sh", ["-c", step.daemon.run], {
     cwd: step.daemon.root,
@@ -367,7 +367,7 @@ for (const [index, step] of STEPS.entries()) {
 }
 
 process.stdout.write(
-  `\n全段おわり。dashboard: http://127.0.0.1:${String(dashboard.port)}/\n` +
+  `\n全段おわり。workbench: http://127.0.0.1:${String(workbench.port)}/\n` +
     "\n撮ってみるなら:\n" +
     "  cd ../capture-scheduler && pnpm run smoke\n" +
     "\nいま何が立っているか: pnpm run dev:status   ／   片付け: pnpm run dev:down\n" +

@@ -362,7 +362,7 @@ describe("選べるスクリプト（GET /api/scripts）", () => {
     );
   });
 
-  it("既定の実行順で返す（dashboard の初めの順になる）", async () => {
+  it("既定の実行順で返す（capture-workbench の初めの順になる）", async () => {
     const row = (id: string, position: number) => ({ id, enabled: true, position });
     const { db } = recordingDb([
       [row("autofetch", 2), row("autoscroll", 0), row("egov-law-search", 1)],

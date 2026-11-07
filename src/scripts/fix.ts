@@ -120,7 +120,7 @@ export interface FixModel {
   propose(request: { system: string; messages: readonly FixMessage[] }): Promise<FixReply>;
 }
 
-/** 置き換えた範囲。dashboard が差分 (消した行と足した行) を描く。 */
+/** 置き換えた範囲。capture-workbench が差分 (消した行と足した行) を描く。 */
 export interface FixHunk {
   from: number;
   to: number;

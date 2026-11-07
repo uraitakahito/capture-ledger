@@ -135,7 +135,7 @@ const log = {
 };
 
 describe("クロールの一覧の行", () => {
-  it("深さの上限を選んで行に載せる（dashboard が「このページだけ」と言うのに要る）", async () => {
+  it("深さの上限を選んで行に載せる（capture-workbench が「このページだけ」と言うのに要る）", async () => {
     // 手書きの代役 (`routes-crawls.test.ts`) は行を丸ごと返すので、select に書き忘れても緑のまま。ここで SQL を見る
     const { res, queries } = await get("/api/crawls", {
       results: [[{ id: CRAWL, maxDepth: 0 }]],

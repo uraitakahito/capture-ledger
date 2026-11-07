@@ -7,10 +7,10 @@
  * | `GET /api/scripts/:id/versions` | 1 つの id の版の並び (新しい順)。**source は返さない** |
  * | `GET /api/scripts/:id/versions/:version` | 1 版を丸ごと (source・渡す値・対象サイト・宣言・有効か・取り込んだ時刻) |
  * | `GET /api/host-types` | 受け皿 `__bh` の型のいちばん新しい版 (読む人に見せる写し。`020`) |
- * | `POST /api/scripts/check` | 書きかけの TS の変数の宣言と誤り。行を立てない。dashboard が欄を作るのに使う |
+ * | `POST /api/scripts/check` | 書きかけの TS の変数の宣言と誤り。行を立てない。capture-workbench が欄を作るのに使う |
  *
  * 一覧が身元と対象サイトと宣言 (`id` / `version` / `phase` / `sha256` / `sites` / `params`) だけなのは、何が走るかを知るのに
- * 要るのが「どれの何版か」「どの起点で走るか」「どの値を読むか」だから。dashboard は `params` で、新しいクロールの
+ * 要るのが「どれの何版か」「どの起点で走るか」「どの値を読むか」だから。workbench は `params` で、新しいクロールの
  * 画面に変数の欄を並べる (`024`)。中身は 1 版の口・`pnpm run scripts show`・アーカイブ (`behaviors/custom.jsonl`。
  * こちらは変換後の JS) に在る。1 版の口は**有効かどうかを見ない** —— 無効な版も、過去のクロールが
  * 走らせた物で、読み返す相手になる。
@@ -26,7 +26,7 @@
  * 一覧は `pickable(db)` —— 各 id に 1 行、既定で走る版（有効な版の中の最新）か、無ければ最新版を、
  * サイト用のスクリプト（対象サイトのある物。`021`）も含めて返す。`enabled` が既定に入るかで、既定に入らない物
  * （カタログの `default: false`）も名指しすれば走るので載せる。既定で走るのは `enabled` の物のうち対象サイトの無い物と、
- * 起点に合う物で、選ぶのはクロールを始めるときの `resolveScripts`（起点を見る）。dashboard はこの一覧で対象サイトと
+ * 起点に合う物で、選ぶのはクロールを始めるときの `resolveScripts`（起点を見る）。workbench はこの一覧で対象サイトと
  * `enabled` を見せ、新しいクロールの画面で同じ決まりのとおりに選ぶ。`enabled` の物が 1 つも無い台帳や、対象サイトのある
  * 物しか無い台帳では、一覧が空でなくても既定が空になる（クロールは 400）—— 頼む前に言えるのは「`enabled` の物が在る」まで。
  *
@@ -161,7 +161,7 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
 
   /**
    * 書きかけの TS を読む。**行を立てず、値も受けない。** 名前を渡さずに検査するので、必須の変数の誤り (`BH0001`) は
-   * 答えから除く —— 書いている最中の「まだ渡していない」は誤りではない。dashboard はこの宣言から欄を作る。
+   * 答えから除く —— 書いている最中の「まだ渡していない」は誤りではない。workbench はこの宣言から欄を作る。
    */
   if (tsCompile !== undefined) {
     app.post<{ Body: { source: string; phase: "preload" | "behavior" } }>(
