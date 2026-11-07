@@ -150,8 +150,9 @@ Search runs it by default (without `query`, the request is a 400).
 
 The rule is decided per crawl, from its seeds. A site script still runs on every page of a crawl
 it was chosen for, including pages on other hosts the crawl reaches by following links. So a site
-script checks `location.hostname` itself and does nothing elsewhere; capture-scripts' check
-makes sure each hostname appears in the source.
+script checks `location.hostname` itself and does nothing elsewhere. In capture-scripts you write
+`if (!onSite()) return;`, and `pnpm run build` writes the `sites` from `catalog.json` into that
+comparison. A script you add with `scripts add` writes the comparison itself.
 
 ### What a crawl pins
 

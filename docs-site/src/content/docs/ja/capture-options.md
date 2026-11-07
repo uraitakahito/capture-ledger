@@ -138,8 +138,9 @@ capture-scripts のサイト用のスクリプトの見本は `egov-law-search`�
 
 決まりはクロールの単位で、起点で決まります。選ばれたサイト用のスクリプトは、そのクロールの全部の頁で
 走ります。リンクを辿って別のホストへ出た頁でもです。だからサイト用のスクリプトは、冒頭で
-`location.hostname` を見て、ほかの頁では何もせずに終わります（capture-scripts の check が、対象サイトの
-ホスト名が source に出てくることを見ます）。
+`location.hostname` を見て、ほかの頁では何もせずに終わります。capture-scripts では `if (!onSite()) return;` と
+書き、`pnpm run build` が `catalog.json` の `sites` をこの比較に書き込みます。`scripts add` で入れるスクリプトは、
+この比較を自分で書きます。
 
 ### クロールが固定するもの
 
