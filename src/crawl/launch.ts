@@ -207,17 +207,23 @@ export interface SeededPage {
   host: string;
 }
 
-/**
- * 行と起点のページを足す。`db` はトランザクションでもよい。**走行中の 1 本とぶつかると投げる**
- * (`crawls_single_active`)。呼ぶ側が読み替える。
- */
-export const insertCrawl = async (
-  db: Kysely<Database>,
+/** 定期の回が行に残す欄 (`032`)。ふつうのクロールには無い。 */
+export interface ScheduleMark {
+  scheduleId: string;
+  /** 本来の時刻。「いま撮る」は null。 */
+  scheduledFor: string | null;
+  /** 1 回にまとめた欠けの数。 */
+  scheduleMissed: number;
+}
+
+/** `crawls` の行の値。走行中で足すときも、周回が失敗の行を足すときも同じ形にする。 */
+export const crawlValues = (
   prepared: PreparedCrawl,
   crawlId: string,
   who: CrawlRequester,
   sink: SinkConfig | undefined,
-): Promise<SeededPage[]> => {
+  mark?: ScheduleMark,
+): Insertable<CrawlsTable> => {
   const orgId = who.orgId;
   // **型注釈を付けること。** 注釈の無い変数に入れてから `.values()` へ渡すと
   // 余剰プロパティの検査が効かず、存在しない列名を書いても typecheck が緑で通る。
@@ -244,8 +250,24 @@ export const insertCrawl = async (
     // (`admitLevel`) はこの列を読まず、報告が運んだ manifest の場所を読む (`014`)。
     // 受け口を使わない配備では書かない (NULL = 記録が無い)。
     ...(sink && { artifactKeyPrefix: crawlKeyPrefix(orgId, new Date()) }),
+    ...(mark && mark),
   };
+  return crawl;
+};
 
+/**
+ * 行と起点のページを足す。`db` はトランザクションでもよい。**走行中の 1 本とぶつかると投げる**
+ * (`crawls_single_active`)。呼ぶ側が読み替える。
+ */
+export const insertCrawl = async (
+  db: Kysely<Database>,
+  prepared: PreparedCrawl,
+  crawlId: string,
+  who: CrawlRequester,
+  sink: SinkConfig | undefined,
+  mark?: ScheduleMark,
+): Promise<SeededPage[]> => {
+  const crawl = crawlValues(prepared, crawlId, who, sink, mark);
   await db.insertInto("crawls").values(crawl).execute();
 
   // 起点を最初の行として置く。深さ 0。ここから flow が読む。

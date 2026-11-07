@@ -215,6 +215,14 @@ const NO_REPLAY_BUNDLE = {
   replayBundleSignError: null,
 };
 
+/** 手で始めたクロールの定期の欄 (`032`)。本物の行は null と 0 を持つ。 */
+const NO_SCHEDULE = {
+  scheduleId: null,
+  scheduleName: null,
+  scheduledFor: null,
+  scheduleMissed: 0,
+};
+
 /** 認可と単一実行を見るための、最小の偽物。 */
 interface FakeCrawl {
   id: string;
@@ -264,6 +272,11 @@ interface FakeCrawl {
   secrets: Record<string, CrawlSecret>;
   /** 頼まれた User-Agent (`031`)。本物の行は必ず持つ (nullable なだけ)。 */
   userAgent: string | null;
+  /** 定期の回の欄 (`032`)。本物の行は必ず持つ。手で始めたクロールは null と 0 */
+  scheduleId?: string | null;
+  scheduleName?: string | null;
+  scheduledFor?: Date | null;
+  scheduleMissed?: number;
 }
 
 /** `scripts` の 1 行。解決の並びと、見つからない id の扱いを見るのに要る欄だけ。 */
@@ -385,6 +398,7 @@ const fakeDb = (
           pagesCaptured: 0,
           error: null,
           ...NO_REPLAY_BUNDLE,
+          ...NO_SCHEDULE,
         });
         await Promise.resolve();
       },
@@ -421,6 +435,13 @@ const fakeDb = (
   }),
   selectFrom: (table: string) => ({
     selectAll: () => ({
+      // 予定の名前の相関副問い合わせ (`032`)。偽 DB では `scheduleName` を行に置くだけ
+      select: () => ({
+        where: (_c: unknown, _o: unknown, id: string) => ({
+          executeTakeFirst: async (): Promise<FakeCrawl | undefined> =>
+            Promise.resolve(crawls.find((c) => c.id === id)),
+        }),
+      }),
       where: (_c: unknown, _o: unknown, id: string) => ({
         executeTakeFirst: async (): Promise<FakeCrawl | undefined> =>
           Promise.resolve(crawls.find((c) => c.id === id)),
@@ -948,6 +969,7 @@ describe("クロール route の認可と単一実行", () => {
     lastJobId: "0193b6a1-3c1d-7a2e-9f00-1234567890ab",
     lastJobDepth: 0,
     ...NO_REPLAY_BUNDLE,
+    ...NO_SCHEDULE,
     scripts: [
       {
         id: "autoscroll",
@@ -965,6 +987,37 @@ describe("クロール route の認可と単一実行", () => {
     userAgent: null,
     secrets: {},
   };
+
+  it("GET は定期の回の予定の名前と本来の時刻と欠けを返す", async () => {
+    const app = await buildApp(
+      depsWith({
+        crawls: [
+          {
+            ...finishedCrawl,
+            scheduleId: "44444444-4444-4444-8444-444444444444",
+            scheduleName: "毎朝",
+            scheduledFor: new Date("2026-09-19T00:00:00Z"),
+            scheduleMissed: 2,
+          },
+        ],
+        allowed: true,
+      }),
+    );
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    await app.close();
+    expect(res.json()).toMatchObject({
+      schedule: { id: "44444444-4444-4444-8444-444444444444", name: "毎朝" },
+      scheduledFor: "2026-09-19T00:00:00.000Z",
+      scheduleMissed: 2,
+    });
+  });
+
+  it("GET は手で始めた行の schedule を null で返す", async () => {
+    const app = await buildApp(depsWith({ crawls: [finishedCrawl], allowed: true }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    await app.close();
+    expect(res.json()).toMatchObject({ schedule: null, scheduledFor: null, scheduleMissed: 0 });
+  });
 
   it("GET は最後の段の job と、取れなかったページとその理由とページの id を返す", async () => {
     const pages: FakePage[] = [
@@ -1050,6 +1103,7 @@ describe("クロール route の認可と単一実行", () => {
       lastJobId: null,
       lastJobDepth: null,
       ...NO_REPLAY_BUNDLE,
+      ...NO_SCHEDULE,
       scripts: [],
       variables: {},
       userAgent: null,
@@ -2117,6 +2171,7 @@ describe("クロールの一覧", () => {
     lastJobId: null,
     lastJobDepth: null,
     ...NO_REPLAY_BUNDLE,
+    ...NO_SCHEDULE,
     scripts: [],
     variables: {},
     userAgent: null,
@@ -2167,6 +2222,31 @@ describe("クロールの一覧", () => {
   it("新しい順に並べる —— 古い順で渡しても、新しいほうが先に出る", async () => {
     const res = await list(depsWith({ crawls: [OLD, NEW], allowed: true }));
     expect(ids(res)).toEqual([NEW.id, OLD.id]);
+  });
+
+  it("手で始めた行は schedule が null で、定期の回は予定の名前と本来の時刻と欠けを返す", async () => {
+    const scheduled = row({
+      id: "33333333-3333-4333-8333-333333333333",
+      startedAt: new Date(3),
+      scheduleId: "44444444-4444-4444-8444-444444444444",
+      scheduleName: "毎朝",
+      scheduledFor: new Date(2),
+      scheduleMissed: 3,
+    });
+    const res = await list(depsWith({ crawls: [OLD, scheduled], allowed: true }));
+    const { crawls } = res.json<{ crawls: Record<string, unknown>[] }>();
+    expect(crawls[0]).toMatchObject({
+      crawlId: scheduled.id,
+      schedule: { id: "44444444-4444-4444-8444-444444444444", name: "毎朝" },
+      scheduledFor: new Date(2).toISOString(),
+      scheduleMissed: 3,
+    });
+    expect(crawls[1]).toMatchObject({
+      crawlId: OLD.id,
+      schedule: null,
+      scheduledFor: null,
+      scheduleMissed: 0,
+    });
   });
 
   it("state で絞る", async () => {
