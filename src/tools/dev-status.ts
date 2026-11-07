@@ -2,7 +2,7 @@
 /**
  * いま何が立っているかを 1 画面で言う。**何も変えない。**
  *
- * 見るのは 4 つ。コンテナ・ホストのプロセス・設定・スクリプト。どれも「立ち上げの
+ * 見るのは 5 つ。コンテナ・ホストのプロセス・設定・保管庫・スクリプト。どれも「立ち上げの
  * どこまで済んでいるか」を答えるためのもので、`pnpm run dev:up` が止まったとき
  * (段 6) と、朝いちばんに「昨日のが残っているか」を見るときに使う。
  *
@@ -175,6 +175,35 @@ if (searchUrl === undefined) {
     console.log(
       row("検索", `${searchUrl}  health ${String(health["status"])}  索引 ${searchIndex}: ${docs}`),
     );
+  }
+}
+
+// ── 保管庫 ──────────────────────────────────────────────────────────
+// 枠 (volume の本数の上限) が尽きると、書き込みが 500 で止まる。master の答えをそのまま言う
+// (seaweedfs の docs「枠」)。bucket の本数は、その bucket が書ける volume の数。
+const store = await answerOf("http://127.0.0.1:9333/dir/status");
+if (store === undefined) {
+  console.log(row("保管庫", "答えない (起こすのは sh .upstream/seaweedfs/scripts/stack.sh up)"));
+} else {
+  const topology = store["Topology"] as
+    | {
+        Max?: number;
+        Free?: number;
+        Layouts?: { collection?: string; writables?: number[] | null }[];
+      }
+    | undefined;
+  const buckets = (topology?.Layouts ?? [])
+    .filter((layout) => (layout.collection ?? "") !== "")
+    .map((layout) => `${String(layout.collection)} ${String(layout.writables?.length ?? 0)} 本`)
+    .join(" / ");
+  console.log(
+    row(
+      "保管庫",
+      `枠 ${String(topology?.Max)}  空き ${String(topology?.Free)}  書ける ${buckets === "" ? "(まだ無い)" : buckets}`,
+    ),
+  );
+  if (topology?.Free === 0) {
+    console.log(row("", "枠が尽きている。枠が 8 なら古い entrypoint で立っている (stack.sh up)"));
   }
 }
 
