@@ -15,12 +15,6 @@
 # 中で確定する**。実際、この仕組みが無かった間に撮った WACZ は
 # `software: browserhive/unknown` を名乗っていた (実物を開いて確認)。
 #
-# ## なぜ source なのか
-#
-# 起こし方が 1 つではないから。`scripts/stack.sh` と `scripts/prod-smoke.sh` の
-# 両方が compose を叩く。**同じ答えを 2 か所で計算しない** —— 片方だけ直すと、
-# もう片方から建てた image が黙って `unknown` を名乗る。
-#
 # ## タグの上に無ければ落とす
 #
 # `--exact-match` を付けているのは、外れたときに `describe` が**到達可能なタグ**しか

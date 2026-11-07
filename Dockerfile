@@ -14,8 +14,10 @@
 # Windmill flow (capture-scheduler), which reaches BrowserHive on its own; capture-ledger plans the
 # crawl, records it and admits the archives.
 #
-# The migration and seed jobs share this image but not its ENTRYPOINT — see
-# `run_job` in scripts/prod-smoke.sh, which drives the whole stack end to end.
+# The migration and seed jobs share this image but not its ENTRYPOINT:
+#   container run --rm --entrypoint node -e DATABASE_URL=... capture-ledger:latest dist/db/migrate.js up
+#
+# CI builds this image and starts it once (.github/workflows/ci.yaml, job image).
 
 ARG NODE_VERSION=26.13.0
 

@@ -37,14 +37,15 @@ git add .upstream/browserhive
 pnpm run openapi:generate
 pnpm run openapi:check     # must exit 0 once committed
 
-# 3. Rebuild from a clean state. Old volumes hold the previous bucket and
-#    database, which hides ordering bugs introduced by the upgrade.
-pnpm run stack:down
-pnpm run stack:up
+# 3. Rebuild the dev stack from the new submodule. Name the fixtures' service:
+#    without it, stack:up recreates every container in the stack.
+pnpm run dev:down
+pnpm run dev:up
+pnpm run stack:up --profile capture-fixtures capture-fixtures
 
 # 4. Prove it end to end.
 pnpm run check
-./scripts/prod-smoke.sh
+(cd ../capture-scheduler && pnpm run smoke)
 ```
 
 Chromium follows automatically: it is a submodule of the submodule, so you get

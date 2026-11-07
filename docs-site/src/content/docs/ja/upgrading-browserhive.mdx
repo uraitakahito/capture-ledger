@@ -37,14 +37,15 @@ git add .upstream/browserhive
 pnpm run openapi:generate
 pnpm run openapi:check     # コミット後に exit 0 になること
 
-# 3. まっさらな状態から作り直す。古いボリュームには前のバケットと DB が残っており、
-#    更新で入り込んだ順序の不具合を隠してしまう。
-pnpm run stack:down
-pnpm run stack:up
+# 3. 新しい submodule で dev のスタックを建て直す。fixtures はサービス名を付ける。
+#    無いと stack:up はスタックの全部のコンテナを作り直す。
+pnpm run dev:down
+pnpm run dev:up
+pnpm run stack:up --profile capture-fixtures capture-fixtures
 
 # 4. 端から端まで確認する。
 pnpm run check
-./scripts/prod-smoke.sh
+(cd ../capture-scheduler && pnpm run smoke)
 ```
 
 Chromium は自動的に追随します。submodule の submodule なので、

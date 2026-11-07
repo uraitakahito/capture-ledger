@@ -163,9 +163,9 @@ capture-ledger 自身はホストで動き、下の表の「ホストポート�
 中身を空にしたいときは `pnpm run store:wipe`。
 
 compose ファイルは 1 つです。migrate / seed の一発ジョブはサービスではなく、
-`scripts/prod-smoke.sh` が `container run --rm` で起動します（container-compose に
+`dev:up` が host で走らせます（`pnpm run db:migrate`・`pnpm run db:seed`。container-compose に
 `run` が無いため）。イメージの `ENTRYPOINT` は `node dist/api/server.js` なので、
-これらのジョブはそれを上書きして走らせます。
+イメージから走らせるときはそれを上書きします。
 
 バケットの作成は**独立したサービスではありません**。BrowserHive の SeaweedFS
 entrypoint が `weed server` と並行して `init-bucket.sh` を起動し、そのリトライ

@@ -212,7 +212,7 @@ platform DNS は `<service>.capture-ledger` をホストからも解決します
 同じ URL が curl では答え、node では落ちます。システム設定にこのノブはありません
 （`node` は一覧に載りません）。
 
-**コンテナの中で**動くもの（`scripts/prod-smoke.sh`）は名前のままで構いません。
+**コンテナの中で**動くもの（BrowserHive など）は名前のままで構いません。
 コンテナ同士の通信は、この制限に当たりません。
 :::
 
@@ -261,26 +261,13 @@ Chromium は 2 台とも **headless** です。描画を見たいときは、ロ
 `chrome://inspect` を開き、_Configure…_ に `localhost:9222` と `localhost:9223`
 を登録してターゲットを inspect します。
 
-## 本番イメージのスモークテスト
+## 本番イメージ
 
-```sh
-./scripts/prod-smoke.sh
-```
+`Dockerfile` は API のイメージを建てます。CI は変更のたびにこれを建て、1 度起動します。`DATABASE_URL` だけを渡すと、
+足りない変数を名指しする文で止まらなければなりません。これで、イメージがアプリケーションまで起動することが分かります。
 
-スタックを起動し、BrowserHive が 2 つとも `GET /status` に応答するまでポーリングし、
-`capture-ledger:latest` をビルドしてから migrate → seed → API を `container run --rm` で
-順に実行し、API に `/healthz` を訊き、`EXIT` トラップでスタックを片付け、
-終了コードを自分の終了コードとして返します。
-
-**もう取り込みはしません。** capture-ledger は BrowserHive と話さないので、
-このスクリプトが示すのは「イメージが起動すること」—— migration が当たり、seed が
-入り、API が答えること —— です。取り込みの経路は capture-scheduler の `pnpm run test:e2e` が
-端から端まで見ます（あちらは Windmill も要ります）。
-
-一発ジョブが素の `container run` なのは、container-compose に `run` が無いから
-です。これにより、以前の `--profile run --exit-code-from capture-ledger` の回避策も
-不要になりました — 回避対象だった Docker Compose の挙動（migrator の正当な
-exit 0 でスタック全体が停止する）が、こちらには存在しないためです。
+`dev:up` はこのイメージを使いません。API を host で動かすからです。取り込みの経路は、`pnpm run dev:up` と
+capture-scheduler の `pnpm run smoke`・`pnpm run test:e2e` で確かめます。
 
 ## 外部の Postgres に対して動かす
 
