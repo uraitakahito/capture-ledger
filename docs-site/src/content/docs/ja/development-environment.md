@@ -412,8 +412,10 @@ warn はほかに 3 つあります。名乗りの設定がどちらも無い（
 profile 付きで入っている。見知らぬサイトに向けずにクロールを試せる:
 
 ```sh
-pnpm run stack:up --profile capture-fixtures
+pnpm run stack:up --profile capture-fixtures capture-fixtures
 ```
+
+サービス名を付ける。無いと `stack:up` はスタックの全部のコンテナを作り直す。
 
 宛先は 2 つある。コンテナ（取り込む BrowserHive）からは名前の `capture-fixtures.capture-ledger:8080` で、起点の
 URL もこちらで書く。host からは `127.0.0.1:18085` に publish してある —— macOS 26 は Apple 署名でないバイナリ
