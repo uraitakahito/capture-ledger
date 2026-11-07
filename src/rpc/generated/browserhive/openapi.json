@@ -141,6 +141,7 @@
                                                     "bodylessUrls": [],
                                                     "truncatedUrls": [],
                                                     "uninterceptedUrls": [],
+                                                    "crashedTargets": [],
                                                     "complete": true
                                                 },
                                                 "settle": {
@@ -274,6 +275,7 @@
                                                     "bodylessUrls": [],
                                                     "truncatedUrls": [],
                                                     "uninterceptedUrls": [],
+                                                    "crashedTargets": [],
                                                     "complete": true
                                                 },
                                                 "settle": {
@@ -542,7 +544,11 @@
                     },
                     "step": {
                         "type": "string",
-                        "description": "取り込み全体の予算を使い切ったとき (`timeout`) と、呼ぶ側が切ったとき (`cancelled`)、\n取り込みがどの段階に居たか。起きる順に `check-address` (内部アドレスを拒むための名前解決)・\n`start-recording` (WARC の記録を始める)・`load-pages` (読み込み・待ち・バナー除去・behavior。\nDPR ごと)・`write-formats` (WACZ 以外の形式)・`package-wacz` (WACZ を組み立てて署名)・\n`upload-wacz` (WACZ を書き込み先へ)。操作ごとの予算の時間切れには無い。"
+                        "description": "取り込み全体の予算を使い切ったとき (`timeout`)、呼ぶ側が切ったとき (`cancelled`)、renderer が\n落ちたとき (`renderer_crashed`)、取り込みがどの段階に居たか。起きる順に `check-address` (内部アドレスを拒むための名前解決)・\n`start-recording` (WARC の記録を始める)・`load-pages` (読み込み・待ち・バナー除去・behavior。\nDPR ごと)・`write-formats` (WACZ 以外の形式)・`package-wacz` (WACZ を組み立てて署名)・\n`upload-wacz` (WACZ を書き込み先へ)。操作ごとの予算の時間切れには無い。"
+                    },
+                    "rendererStatus": {
+                        "type": "string",
+                        "description": "`type` が `renderer_crashed` のとき、renderer の落ち方。Chromium の字のまま運ぶ\n(`killed`: プロセスの外から止められた。kernel の OOM killer など。`crashed`: プロセス自身が落ちた)。"
                     }
                 },
                 "required": [
@@ -721,7 +727,7 @@
                         "items": {
                             "type": "string"
                         },
-                        "description": "成果物のファイル名に入る札。制限は合計の長さだけで、\n`{taskId}_{correlationId}[_{labels}].result.json` が 255 UTF-8 バイトを超える要求は server が拒む。"
+                        "description": "成果物のファイル名に入るラベル。制限は合計の長さだけで、\n`{taskId}_{correlationId}[_{labels}].result.json` が 255 UTF-8 バイトを超える要求は server が拒む。"
                     },
                     "correlationId": {
                         "type": "string",
@@ -944,7 +950,7 @@
             },
             "CaptureStatus": {
                 "type": "string",
-                "description": "capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が\n`errorDetails` に入る。\n\n- `success`: 最初の読み込みで主文書が 2xx を返し、すべての読み込みと、求めた形式の保存\n  (WACZ なら組み立て・署名・保存まで) を終えた。\n  または、最初の読み込みの文書を `urlPolicies` の `deny` が止めた —— 方針どおりの結末で、\n  `document.withheld` が `deny`、形式も WACZ も無く、`httpStatusCode` も無い (要求を送っていない)。\n- `failed`: 時間切れ以外の理由で成り立たなかった。分類は `errorDetails.type`\n  (`\"connection\"`・`\"internal\"`・`\"signing\"`・`\"artifact_sink\"`・`\"cancelled\"`・`\"policy\"`)。\n- `timeout`: 時間の予算を使い切った —— 操作ごとの予算 (読み込みなど) か、取り込み全体の予算。\n- `http_error`: 最初の読み込みで主文書の HTTP の status が 2xx でなかった。そこで打ち切り、\n  形式も WACZ も作らない。status は `httpStatusCode` に載る。\n\n失敗より前の段で保存した形式 (PNG など、WACZ 以外) のファイルは書き込み先に残る ——\n`artifacts` が空でも、書き込み先が空とは限らない。",
+                "description": "capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が\n`errorDetails` に入る。\n\n- `success`: 最初の読み込みで主文書が 2xx を返し、すべての読み込みと、求めた形式の保存\n  (WACZ なら組み立て・署名・保存まで) を終えた。\n  または、最初の読み込みの文書を `urlPolicies` の `deny` が止めた —— 方針どおりの結末で、\n  `document.withheld` が `deny`、形式も WACZ も無く、`httpStatusCode` も無い (要求を送っていない)。\n- `failed`: 時間切れ以外の理由で成り立たなかった。分類は `errorDetails.type`\n  (`\"connection\"`・`\"internal\"`・`\"signing\"`・`\"artifact_sink\"`・`\"cancelled\"`・`\"policy\"`・`\"renderer_crashed\"`)。\n- `timeout`: 時間の予算を使い切った —— 操作ごとの予算 (読み込みなど) か、取り込み全体の予算。\n- `http_error`: 最初の読み込みで主文書の HTTP の status が 2xx でなかった。そこで打ち切り、\n  形式も WACZ も作らない。status は `httpStatusCode` に載る。\n\n失敗より前の段で保存した形式 (PNG など、WACZ 以外) のファイルは書き込み先に残る ——\n`artifacts` が空でも、書き込み先が空とは限らない。",
                 "enum": [
                     "success",
                     "failed",
@@ -977,6 +983,28 @@
                 "required": [
                     "action",
                     "prefix"
+                ]
+            },
+            "CrashedTarget": {
+                "type": "object",
+                "description": "renderer が落ちた、主の頁以外の target 1 つ。",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "description": "target の種類。Chromium の字のまま (`iframe`・`service_worker` など)。"
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "target の URL。最初に当たる URL の方針が `no-archive` か `deny` のときと、主文書を伏せた取り込みでは無い。"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "renderer の落ち方。Chromium の字のまま (`killed`・`crashed` など)。"
+                    }
+                },
+                "required": [
+                    "status",
+                    "type"
                 ]
             },
             "DismissBanners": {
@@ -1087,7 +1115,7 @@
             },
             "ErrorType": {
                 "type": "string",
-                "description": "失敗の分類 (`errorDetails.type`)。直し方の種類ごとに分けてある。\n\n- `\"http\"`: 主文書の HTTP の status が 2xx でなかった (status は `http_error`)。\n- `\"timeout\"`: 時間切れ —— 操作ごとの予算か、取り込み全体の予算。署名サービスや書き込み先の\n  時間切れはここではなく `\"signing\"` / `\"artifact_sink\"`。\n- `\"connection\"`: browser に繋がらなかった (取り込みに入れず、所要時間は 0)、または取り込みの\n  途中で browser との接続が切れた。\n- `\"signing\"`: 署名が必須だったのに得られなかった (サービスが無い・届かない・拒まれた・検査に\n  落ちた)。WACZ は書かない。\n- `\"internal\"`: 上のどれにも当たらない失敗。取り込み先へ繋がらない (`net::ERR_…`) もここ。\n  内部アドレスへの取り込みの拒否 (`url is not allowed`) も。\n- `\"artifact_sink\"`: 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け口) へ置けなかった。\n  書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。\n- `\"cancelled\"`: 呼ぶ側が途中で接続を切った。取り込みは打ち切られる (応答は誰にも届かないが、\n  manifest には残る)。\n- `\"policy\"`: 方針を守れなかった —— `deny` の要求を、止め損ねたかもしれない。\n  要求の関所を掛けられなかった target があったか、止めたはずの要求に応答が届いたか、\n  `deny` に当たる WebSocket を開いた (handshake は止められない)。WACZ は書かない。",
+                "description": "失敗の分類 (`errorDetails.type`)。直し方の種類ごとに分けてある。\n\n- `\"http\"`: 主文書の HTTP の status が 2xx でなかった (status は `http_error`)。\n- `\"timeout\"`: 時間切れ —— 操作ごとの予算か、取り込み全体の予算。署名サービスや書き込み先の\n  時間切れはここではなく `\"signing\"` / `\"artifact_sink\"`。\n- `\"connection\"`: browser に繋がらなかった (取り込みに入れず、所要時間は 0)、または取り込みの\n  途中で browser との接続が切れた。\n- `\"signing\"`: 署名が必須だったのに得られなかった (サービスが無い・届かない・拒まれた・検査に\n  落ちた)。WACZ は書かない。\n- `\"internal\"`: 上のどれにも当たらない失敗。取り込み先へ繋がらない (`net::ERR_…`) もここ。\n  内部アドレスへの取り込みの拒否 (`url is not allowed`) も。\n- `\"artifact_sink\"`: 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け口) へ置けなかった。\n  書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。\n- `\"cancelled\"`: 呼ぶ側が途中で接続を切った。取り込みは打ち切られる (応答は誰にも届かないが、\n  manifest には残る)。\n- `\"policy\"`: 方針を守れなかった —— `deny` の要求を、止め損ねたかもしれない。\n  要求の関所を掛けられなかった target があったか、止めたはずの要求に応答が届いたか、\n  `deny` に当たる WebSocket を開いた (handshake は止められない)。WACZ は書かない。\n- `\"renderer_crashed\"`: 主の頁の renderer (頁を描く Chromium のプロセス) が、取り込みの途中で落ちた。\n  メモリ切れが多いが、それに限らない。落ち方は `rendererStatus` が言う。撮り直しても同じ所で落ちるので、\n  時間切れと分ける。WACZ は書かない。別サイトの iframe だけが落ちたときは失敗にせず、\n  `completeness.crashedTargets` に載る。",
                 "enum": [
                     "http",
                     "timeout",
@@ -1096,7 +1124,8 @@
                     "internal",
                     "artifact_sink",
                     "cancelled",
-                    "policy"
+                    "policy",
+                    "renderer_crashed"
                 ]
             },
             "GetServerStatusResponseContent": {
@@ -1477,7 +1506,7 @@
                     },
                     "complete": {
                         "type": "boolean",
-                        "description": "3 つの一覧 (`bodylessUrls`・`truncatedUrls`・`uninterceptedUrls`) がどれも空なら true。"
+                        "description": "4 つの一覧 (`bodylessUrls`・`truncatedUrls`・`uninterceptedUrls`・`crashedTargets`) がどれも空なら true。"
                     },
                     "uninterceptedUrls": {
                         "type": "array",
@@ -1485,6 +1514,13 @@
                             "type": "string"
                         },
                         "description": "本文は届いたのに、BrowserHive がバイト列として得られなかった URL。文字から組み直した本文で\n埋めないので、archive は本文を持たない。取り込みの失敗で、リクエストの設定をどう変えても戻らない。\n整列済み、常に在る。後から足した欄なので最後に置く (並びを変えると smithy diff が危険と言う)。"
+                    },
+                    "crashedTargets": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CrashedTarget"
+                        },
+                        "description": "取り込みの間に renderer が落ちた、主の頁以外の target (別サイトの iframe など)。本文の欠けではなく、\n頁の一部が死んだことの申告で、スクリーンショットのその場所には Chromium が描く灰色の枠が写る。\n`url`・`type`・`status` の順に整列済み、常に在る。"
                     }
                 },
                 "required": [

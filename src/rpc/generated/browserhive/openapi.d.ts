@@ -164,13 +164,18 @@ export interface components {
             /** @description `type` が `timeout` のとき、使い切った予算 (ms)。browser 側の時間切れで値を読めなければ無い。 */
             timeoutMs?: number;
             /**
-             * @description 取り込み全体の予算を使い切ったとき (`timeout`) と、呼ぶ側が切ったとき (`cancelled`)、
-             *     取り込みがどの段階に居たか。起きる順に `check-address` (内部アドレスを拒むための名前解決)・
+             * @description 取り込み全体の予算を使い切ったとき (`timeout`)、呼ぶ側が切ったとき (`cancelled`)、renderer が
+             *     落ちたとき (`renderer_crashed`)、取り込みがどの段階に居たか。起きる順に `check-address` (内部アドレスを拒むための名前解決)・
              *     `start-recording` (WARC の記録を始める)・`load-pages` (読み込み・待ち・バナー除去・behavior。
              *     DPR ごと)・`write-formats` (WACZ 以外の形式)・`package-wacz` (WACZ を組み立てて署名)・
              *     `upload-wacz` (WACZ を書き込み先へ)。操作ごとの予算の時間切れには無い。
              */
             step?: string;
+            /**
+             * @description `type` が `renderer_crashed` のとき、renderer の落ち方。Chromium の字のまま運ぶ
+             *     (`killed`: プロセスの外から止められた。kernel の OOM killer など。`crashed`: プロセス自身が落ちた)。
+             */
+            rendererStatus?: string;
         };
         /**
          * @description 取得する形式。6 つ全部を書く。少なくとも 1 つは true でなければならない (server が検証する)。
@@ -276,7 +281,7 @@ export interface components {
              */
             url: string;
             /**
-             * @description 成果物のファイル名に入る札。制限は合計の長さだけで、
+             * @description 成果物のファイル名に入るラベル。制限は合計の長さだけで、
              *     `{taskId}_{correlationId}[_{labels}].result.json` が 255 UTF-8 バイトを超える要求は server が拒む。
              */
             labels?: string[];
@@ -461,7 +466,7 @@ export interface components {
          *       または、最初の読み込みの文書を `urlPolicies` の `deny` が止めた —— 方針どおりの結末で、
          *       `document.withheld` が `deny`、形式も WACZ も無く、`httpStatusCode` も無い (要求を送っていない)。
          *     - `failed`: 時間切れ以外の理由で成り立たなかった。分類は `errorDetails.type`
-         *       (`"connection"`・`"internal"`・`"signing"`・`"artifact_sink"`・`"cancelled"`・`"policy"`)。
+         *       (`"connection"`・`"internal"`・`"signing"`・`"artifact_sink"`・`"cancelled"`・`"policy"`・`"renderer_crashed"`)。
          *     - `timeout`: 時間の予算を使い切った —— 操作ごとの予算 (読み込みなど) か、取り込み全体の予算。
          *     - `http_error`: 最初の読み込みで主文書の HTTP の status が 2xx でなかった。そこで打ち切り、
          *       形式も WACZ も作らない。status は `httpStatusCode` に載る。
@@ -495,6 +500,15 @@ export interface components {
              *     上限による切り詰めとは記録しない (`completeness.truncatedUrls` に載らない)。
              */
             action: string;
+        };
+        /** @description renderer が落ちた、主の頁以外の target 1 つ。 */
+        CrashedTarget: {
+            /** @description target の種類。Chromium の字のまま (`iframe`・`service_worker` など)。 */
+            type: string;
+            /** @description target の URL。最初に当たる URL の方針が `no-archive` か `deny` のときと、主文書を伏せた取り込みでは無い。 */
+            url?: string;
+            /** @description renderer の落ち方。Chromium の字のまま (`killed`・`crashed` など)。 */
+            status: string;
         };
         /** @description バナーの除去を頼むか。省略すれば除去しない。 */
         DismissBanners: {
@@ -602,9 +616,13 @@ export interface components {
          *     - `"policy"`: 方針を守れなかった —— `deny` の要求を、止め損ねたかもしれない。
          *       要求の関所を掛けられなかった target があったか、止めたはずの要求に応答が届いたか、
          *       `deny` に当たる WebSocket を開いた (handshake は止められない)。WACZ は書かない。
+         *     - `"renderer_crashed"`: 主の頁の renderer (頁を描く Chromium のプロセス) が、取り込みの途中で落ちた。
+         *       メモリ切れが多いが、それに限らない。落ち方は `rendererStatus` が言う。撮り直しても同じ所で落ちるので、
+         *       時間切れと分ける。WACZ は書かない。別サイトの iframe だけが落ちたときは失敗にせず、
+         *       `completeness.crashedTargets` に載る。
          * @enum {string}
          */
-        ErrorType: "http" | "timeout" | "connection" | "signing" | "internal" | "artifact_sink" | "cancelled" | "policy";
+        ErrorType: "http" | "timeout" | "connection" | "signing" | "internal" | "artifact_sink" | "cancelled" | "policy" | "renderer_crashed";
         /**
          * @description この台 (process 1 つ、browser 1 台) の現在。取り込み 1 件の結果は何も知らない —— 結果は
          *     Capture の応答と manifest にしか無い。呼ぶ側が分岐に使うのは `busy` だけ。
@@ -813,7 +831,7 @@ export interface components {
              *     大きさに関係なくここに載らない —— 呼ぶ側が自分で省いたもので、失ったものではない。
              */
             truncatedUrls?: string[];
-            /** @description 3 つの一覧 (`bodylessUrls`・`truncatedUrls`・`uninterceptedUrls`) がどれも空なら true。 */
+            /** @description 4 つの一覧 (`bodylessUrls`・`truncatedUrls`・`uninterceptedUrls`・`crashedTargets`) がどれも空なら true。 */
             complete: boolean;
             /**
              * @description 本文は届いたのに、BrowserHive がバイト列として得られなかった URL。文字から組み直した本文で
@@ -821,6 +839,12 @@ export interface components {
              *     整列済み、常に在る。後から足した欄なので最後に置く (並びを変えると smithy diff が危険と言う)。
              */
             uninterceptedUrls?: string[];
+            /**
+             * @description 取り込みの間に renderer が落ちた、主の頁以外の target (別サイトの iframe など)。本文の欠けではなく、
+             *     頁の一部が死んだことの申告で、スクリーンショットのその場所には Chromium が描く灰色の枠が写る。
+             *     `url`・`type`・`status` の順に整列済み、常に在る。
+             */
+            crashedTargets?: components["schemas"]["CrashedTarget"][];
         };
         /**
          * @description wacz-auth の署名の結末。署名が必須だった取り込みが WACZ を作って成功したときだけ入る ——

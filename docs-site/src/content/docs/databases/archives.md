@@ -66,18 +66,22 @@ already in the ledger, its tuples went out the first time.
 | `task_id`               | BrowserHive's task id                                                                           |
 | `correlation_id`        | The thread tying capture-ledger's log lines to artifact filenames (8 hex digits per submission) |
 | `bucket` / `object_key` | **Taken from the server's own report**, not reassembled from a filename                         |
-| `wacz_complete`         | `false` means at least one body is missing — see below                                          |
+| `wacz_complete`         | `false` means a body is missing or a target's renderer crashed — see below                      |
 | `captured_at`           | Capture time; listings are ordered by this, descending                                          |
 
 ### When `wacz_complete` is `false`
 
 It is `CaptureResultReport.completeness.complete` verbatim. `false` means **the
-archive is missing at least one body**:
+archive is missing at least one body, or a part of the page died during the capture**:
 
 - a URL only ever seen as a 304
 - a body BrowserHive dropped for exceeding the size cap
+- a body that crossed the wire but could not be read as bytes
+- a target other than the main page whose renderer crashed, such as a cross-site iframe
+  (`completeness.crashedTargets`, from BrowserHive v28.0.0). Its body is not what is missing:
+  the capture carried on without it
 
-The latter arrived in BrowserHive v1.11.0. **Before that, a capture that hit the
+The size cap arrived in BrowserHive v1.11.0. **Before that, a capture that hit the
 cap reported `true`.** It is `NULL` for captures from before the field existed,
 or ones that were not recorded.
 
