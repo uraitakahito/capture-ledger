@@ -367,9 +367,12 @@ export interface components {
             variables?: components["schemas"]["Values"];
             /**
              * @description この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。
-             *     **値はどこにも書かない** —— archive の `settings.secrets` には名前だけ (名前順)、受け皿のコード
-             *     (`behaviors/runtime.js`) は値を含まず、ログの報告と例外の文からは伏せる。隠せるのは記録からだけで、
-             *     頁の JS からは読めるし、スクリプトが通信に載せれば WARC には残る。
+             *     archive の `settings.secrets` には名前だけ (名前順) が残り、受け皿のコード (`behaviors/runtime.js`) は
+             *     値を含まない。`secretArchive` に名前の無いシークレットは **隠す**: スクリプトが通信に載せた値も、サイトが
+             *     返した値も、WARC と WACZ と答えの中では `***` に置き換わる。隠す値は 8 字以上で、短い値は 400。
+             *     隠す値のある要求は、PNG・WebP・HTML・MHTML と web storage の値を一緒に頼めず、取り込む URL に値を書けない
+             *     (どれも 400)。隠せるのは記録からだけで、頁の JS からは読めるし、値を受け取ったサイトには届いている。
+             *     値から作った物 (ハッシュ・署名) と、サイトが本文で返した token は追わない。
              */
             secrets?: components["schemas"]["Values"];
             /**
@@ -379,6 +382,13 @@ export interface components {
              *     `session: "shared"` と一緒なら 400 —— 同じタブでは、次の取り込みに字が残るため。
              */
             userAgent?: string;
+            /**
+             * @description シークレットのうち、値を WARC に残すものの名前 → `keep`。名前は `secrets` に在ること (無ければ 400)。
+             *     残すのは通信の記録 (request・response・metadata のレコードと、それらの URL) だけで、DOM の写し・
+             *     ページの文字と題・ツリーの名前・ログからは、長さに依らず消える。8 字未満の値も通る。
+             *     省略と空はどちらも「残す物は無い」で、効いた形は archive の `settings.secretArchive` に残る。
+             */
+            secretArchive?: components["schemas"]["SecretArchive"];
         };
         /** @description Capture の応答。結果そのものと、それを記録できたか。 */
         CaptureResponseContent: {
@@ -687,6 +697,15 @@ export interface components {
             /** @description そのスクリプトに渡す値。中身が任意の JS である以上、その設定も型では守れない。 */
             options?: unknown;
         };
+        /** @description シークレットの名前 → `keep`。1 回の取り込みに 32 個まで (`Values` と同じ)。 */
+        SecretArchive: {
+            [key: string]: components["schemas"]["SecretArchiveMode"];
+        };
+        /**
+         * @description シークレットの値を WARC にどう残すか。`keep` だけで、宣言の無いシークレットは隠す。
+         * @enum {string}
+         */
+        SecretArchiveMode: "keep";
         /** @description サーバが強いる境界。リクエストでは変えられないもの。 */
         ServerLimits: {
             /** @description 1 レスポンスの本文の上限。超えた本文は落とし、切り詰めとして記録する。 */
@@ -948,6 +967,13 @@ export interface components {
              * @default 0
              */
             totalNotIntercepted: number;
+            /**
+             * @description 隠す値を含む文字でない本文を落として記録した応答。WARC には `truncated: secret` の metadata が
+             *     1 つずつ残る。値を隠すと決めた結果なので、`completeness` のどの一覧にも載らない。
+             *     後から足した欄なので最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。
+             * @default 0
+             */
+            totalSkippedSecret: number;
         };
     };
     responses: never;
