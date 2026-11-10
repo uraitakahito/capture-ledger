@@ -407,6 +407,42 @@ describe("次の段を送る前に、シークレットの更新時刻を読み�
     });
   });
 
+  it("読み直して rotated を書いても archive は消えず、次の段の secret_archive に載る（行の写しから組む）", async () => {
+    const NOTE = "f/waggle_secrets/note";
+    const built = await build({
+      results: results(
+        crawlRow(rules, [seed], {
+          secrets: {
+            api_token: { path: PATH, editedAt: AT_START, rotated: null },
+            note: { path: NOTE, editedAt: AT_START, rotated: null, archive: "keep" },
+          },
+        }),
+      ),
+      links,
+      windmill: windmillAnswering(LATER),
+    });
+    const res = await report(built);
+    await built.app.close();
+    expect(res.statusCode).toBe(200);
+    expect(secretsUpdate(built.queries)?.parameters).toEqual([
+      JSON.stringify({
+        api_token: { path: PATH, editedAt: AT_START, rotated: { depth: 1, editedAt: LATER } },
+        note: {
+          path: NOTE,
+          editedAt: AT_START,
+          rotated: { depth: 1, editedAt: LATER },
+          archive: "keep",
+        },
+      }),
+      CRAWL,
+    ]);
+    expect(built.dispatched[0]).toMatchObject({
+      depth: 1,
+      secrets: { api_token: PATH, note: NOTE },
+      secretArchive: { note: "keep" },
+    });
+  });
+
   it("次の段にも、行に固定した User-Agent を打った字のまま配る。無ければ空の字", async () => {
     const asked = await build({
       results: results(crawlRow(rules, [seed], { userAgent: "{chrome} BrowserHive" })),
@@ -475,7 +511,7 @@ describe("次の段を送る前に、シークレットの更新時刻を読み�
     expect((await report(built)).statusCode).toBe(200);
     await built.app.close();
     expect(asked).toEqual([]);
-    expect(built.dispatched[0]).toMatchObject({ variables: {}, secrets: {} });
+    expect(built.dispatched[0]).toMatchObject({ variables: {}, secrets: {}, secretArchive: {} });
   });
 });
 

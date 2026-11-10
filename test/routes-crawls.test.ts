@@ -619,6 +619,8 @@ const depsWith = (opts: {
   bundles?: [string, number | null][];
   /** 締めた後の合本の窓口を、この誤りで落とす。 */
   bundleError?: Error;
+  /** `CAPTURE_LEDGER_CAPTURE_FORMATS` の字。省けば `wacz` だけ */
+  formats?: string;
 }): CrawlRouteDeps =>
   ({
     db: fakeDb(opts.crawls, opts.pages, opts.updates, opts.scripts ?? DEFAULT_CATALOG),
@@ -627,7 +629,7 @@ const depsWith = (opts: {
     dispatch: opts.dispatch ?? (() => Promise.resolve()),
     // **本物の設定を使う。** 手書きの literal だと、`capture-formats.ts` が
     // 6 つ全部を返す約束を破っても、この試験は気づかない。
-    capture: parseCaptureFormats("wacz", false),
+    capture: parseCaptureFormats(opts.formats ?? "wacz", false),
     ...(opts.windmill && { windmill: opts.windmill }),
     tsCompile: opts.tsCompile ?? compilesAll,
     ...(opts.fixModel && { fixModel: opts.fixModel }),
@@ -1170,7 +1172,11 @@ describe("起点の一覧", () => {
     // 「固定し直す」は保存された予定の頼みを読み直すので、schema を通らない。ここに来るまでに
     // fromTargets で作られた予定が、この形になる。
     const answer = await prepareCrawl(
-      { db: fakeDb([]) as unknown as Kysely<Database>, tsCompile: compilesAll },
+      {
+        db: fakeDb([]) as unknown as Kysely<Database>,
+        tsCompile: compilesAll,
+        formats: parseCaptureFormats("wacz", false).formats,
+      },
       { fromTargets: {} } as unknown as CrawlBody,
       { orgId: "acme", subject: "alice" },
     );
@@ -2563,7 +2569,12 @@ describe("クロールごとの値（変数とシークレット）", () => {
 
   const start = async (
     payload: Record<string, unknown>,
-    opts: { windmill?: WindmillVariables; scripts?: FakeScript[]; tsCompile?: TsCompile } = {},
+    opts: {
+      windmill?: WindmillVariables;
+      scripts?: FakeScript[];
+      tsCompile?: TsCompile;
+      formats?: string;
+    } = {},
   ) => {
     const crawls: FakeCrawl[] = [];
     const sent: DispatchedCrawl[] = [];
@@ -2578,6 +2589,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
           return Promise.resolve(undefined);
         },
         ...(opts.windmill && { windmill: opts.windmill }),
+        ...(opts.formats !== undefined && { formats: opts.formats }),
       }),
     );
     const res = await app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
@@ -3036,5 +3048,176 @@ describe("クロールごとの値（変数とシークレット）", () => {
     );
     expect(res.statusCode).toBe(202);
     expect(crawls[0]?.variables).toEqual({ anything: "goes" });
+  });
+});
+
+/**
+ * シークレットの値を WARC に残すか (CAPTURE-166)。宣言の `archive: "keep"` を、行 (`crawls.secrets[名前].archive`)・
+ * 段の本文 (`secret_archive`)・GET の答えに運ぶ。束ね方と形式の判断は `crawl-values.test.ts` が見る。
+ */
+describe("シークレットを WARC に残すか（宣言の archive）", () => {
+  const NOTE = "f/waggle_secrets/note";
+  const PASSWORD = "f/waggle_secrets/password";
+  const EDITED = "2026-11-10T00:00:00.000000Z";
+  const windmillWith = (paths: string[]): WindmillVariables => ({
+    exists: (path) => Promise.resolve(paths.includes(path)),
+    meta: (path) =>
+      Promise.resolve(paths.includes(path) ? { isSecret: true, editedAt: EDITED } : undefined),
+  });
+  /** その場の TS 1 本に、シークレットの宣言を添えた頼み。 */
+  const withParams = (...params: Record<string, unknown>[]) => ({
+    seeds: [SEED],
+    scripts: [{ inline: { name: "login", phase: "behavior", source: "x;", params } }],
+  });
+  const start = async (
+    payload: Record<string, unknown>,
+    opts: { windmill?: WindmillVariables; formats?: string } = {},
+  ) => {
+    const crawls: FakeCrawl[] = [];
+    const sent: DispatchedCrawl[] = [];
+    const app = await buildApp(
+      depsWith({
+        crawls,
+        allowed: true,
+        dispatch: (crawl) => {
+          sent.push(crawl);
+          return Promise.resolve(undefined);
+        },
+        windmill: opts.windmill ?? windmillWith([NOTE, PASSWORD]),
+        ...(opts.formats !== undefined && { formats: opts.formats }),
+      }),
+    );
+    const res = await app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+    await app.close();
+    return { res, crawls, sent };
+  };
+  const read = async (crawls: FakeCrawl[]) => {
+    const app = await buildApp(depsWith({ crawls, allowed: true }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${crawls[0]!.id}` });
+    await app.close();
+    return res.json<Record<string, unknown>>();
+  };
+
+  it("keep の宣言は行のシークレットに archive で写り、段の本文の secret_archive に載り、GET が archive で返す。隠すシークレットは載らない", async () => {
+    const { res, crawls, sent } = await start(
+      withParams(
+        { name: "note", kind: "secret", archive: "keep" },
+        { name: "password", kind: "secret" },
+      ),
+    );
+    expect(res.statusCode).toBe(202);
+    // 写しの宣言にも残る (読み直しの元)
+    expect(crawls[0]?.scripts[0]?.params).toEqual([
+      { name: "note", kind: "secret", required: false, archive: "keep" },
+      { name: "password", kind: "secret", required: false },
+    ]);
+    expect(crawls[0]?.secrets).toEqual({
+      note: { path: NOTE, editedAt: EDITED, rotated: null, archive: "keep" },
+      password: { path: PASSWORD, editedAt: EDITED, rotated: null },
+    });
+    expect(sent[0]).toMatchObject({
+      secrets: { note: NOTE, password: PASSWORD },
+      secretArchive: { note: "keep" },
+    });
+    expect((await read(crawls))["secrets"]).toEqual([
+      { name: "note", path: NOTE, editedAt: EDITED, rotated: null, archive: "keep" },
+      { name: "password", path: PASSWORD, editedAt: EDITED, rotated: null, archive: null },
+    ]);
+  });
+
+  it("任意で Windmill に無い keep のシークレットは、行にも secrets にも secret_archive にも載らない（載せると BrowserHive がクロールの取り込みを全部 400 で断る）", async () => {
+    const { res, crawls, sent } = await start(
+      withParams(
+        { name: "note", kind: "secret", archive: "keep" },
+        { name: "absent_note", kind: "secret", archive: "keep" },
+      ),
+      { windmill: windmillWith([NOTE]) },
+    );
+    expect(res.statusCode).toBe(202);
+    expect(Object.keys(crawls[0]?.secrets ?? {})).toEqual(["note"]);
+    expect(sent[0]?.secrets).toEqual({ note: NOTE });
+    expect(sent[0]?.secretArchive).toEqual({ note: "keep" });
+  });
+
+  it("残すシークレットが無ければ、段の本文の secret_archive は空の object", async () => {
+    const { sent } = await start(withParams({ name: "password", kind: "secret" }));
+    expect(sent[0]?.secretArchive).toEqual({});
+    const none = await start({ seeds: [SEED] });
+    expect(none.sent[0]?.secretArchive).toEqual({});
+  });
+
+  it("その場の TS の archive は schema で keep だけを通す", async () => {
+    const hide = await start(withParams({ name: "password", kind: "secret", archive: "hide" }));
+    expect(hide.res.statusCode).toBe(400);
+    expect(hide.res.json<{ message: string }>().message).toContain("archive");
+    expect(hide.crawls).toEqual([]);
+  });
+
+  it("同じ名前のシークレットを、残す宣言と隠す宣言で食い違えれば 400 conflicting params で、行は立たない", async () => {
+    const { res, crawls, sent } = await start({
+      seeds: [SEED],
+      scripts: [
+        {
+          inline: {
+            name: "a",
+            phase: "behavior",
+            source: "x;",
+            params: [{ name: "note", kind: "secret", archive: "keep" }],
+          },
+        },
+        {
+          inline: {
+            name: "b",
+            phase: "behavior",
+            source: "x;",
+            params: [{ name: "note", kind: "secret" }],
+          },
+        },
+      ],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: "conflicting params", names: ["note"] });
+    expect(crawls).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it("形式に png がある配備で、隠すシークレットを使うクロールは 400 formats that cannot hide secrets で名指し、行は立たず webhook も飛ばない", async () => {
+    const { res, crawls, sent } = await start(
+      withParams(
+        { name: "note", kind: "secret", archive: "keep" },
+        { name: "password", kind: "secret" },
+      ),
+      { formats: "wacz,png" },
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "formats that cannot hide secrets",
+      formats: ["png"],
+      names: ["password"],
+      hint: expect.stringContaining("CAPTURE_LEDGER_CAPTURE_FORMATS") as string,
+    });
+    expect(crawls).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it("対照: 同じ配備でも、シークレットが全部 keep なら始まり、png も頼む", async () => {
+    const { res, sent } = await start(
+      withParams({ name: "note", kind: "secret", archive: "keep" }),
+      {
+        formats: "wacz,png",
+      },
+    );
+    expect(res.statusCode).toBe(202);
+    expect(sent[0]?.captureFormats.png).toBe(true);
+    expect(sent[0]?.secretArchive).toEqual({ note: "keep" });
+  });
+
+  it("対照: 隠すシークレットが任意で Windmill に無ければ送らないので、png の配備でも始まる", async () => {
+    const { res, sent } = await start(withParams({ name: "password", kind: "secret" }), {
+      windmill: windmillWith([]),
+      formats: "wacz,png",
+    });
+    expect(res.statusCode).toBe(202);
+    expect(sent[0]?.secrets).toEqual({});
   });
 });

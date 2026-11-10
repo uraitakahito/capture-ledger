@@ -149,8 +149,9 @@ const readSchema = (name: string, raw: unknown): ParamSchema | string => {
 /**
  * 宣言の列 (`params`) として読めれば返し、読めなければその文を返す。capture-scripts の tools/check.mjs と
  * 同じ決まり —— 配列・`name` の綴りと長さ・`kind` は variable か secret・`required` は真偽値 (省けば false)・
- * `summary` は空でない・名前の重複なし。catalog の `import` と CLI の `--params` と、その場の TS の `params` が
- * 同じ関数を通る。`summary` を求めるのは catalog だけ (その場の TS は人に見せる一覧に並ばない)。
+ * `summary` は空でない・`archive` は kind: secret だけで `"keep"` だけ・名前の重複なし。catalog の `import` と
+ * CLI の `--params` と、その場の TS の `params` が同じ関数を通る。`summary` を求めるのは catalog だけ (その場の TS は
+ * 人に見せる一覧に並ばない)。
  *
  * **既定値は書けない。** 既定値はソースの中にだけ置く (読む側の `??` が既定値で、宣言は名前と種類だけ)。
  */
@@ -165,7 +166,10 @@ export const readParams = (
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
       return "params の要素は { name, kind, required?, summary } の object";
     }
-    const { name, kind, required, summary, schema, ...rest } = entry as Record<string, unknown>;
+    const { name, kind, required, summary, schema, archive, ...rest } = entry as Record<
+      string,
+      unknown
+    >;
     if (typeof name !== "string" || !VALUE_NAME.test(name) || name.length > VALUE_NAME_MAX) {
       return `params の name ${JSON.stringify(name)} は ^[a-z][a-z0-9_]*$ で ${String(VALUE_NAME_MAX)} 字まで`;
     }
@@ -189,12 +193,21 @@ export const readParams = (
     if (kind !== "variable" && schema !== undefined) {
       return `params の ${name} に schema を書けるのは kind: variable だけ`;
     }
+    // シークレットの値を WARC に残すか。省けば BrowserHive が隠す。変数は値が settings.variables に必ず残るので、
+    // 選ぶ物が無い。**読んだら写す** —— 写し忘れると、keep と書いた宣言が黙って隠す側に倒れる
+    if (archive !== undefined) {
+      if (kind !== "secret") return `params の ${name} に archive を書けるのは kind: secret だけ`;
+      if (archive !== "keep") {
+        return `params の ${name} の archive は "keep" だけ (省けば WARC から隠す。いまは ${JSON.stringify(archive)})`;
+      }
+    }
     out.push({
       name,
       kind: kind as ParamKind,
       required: required === true,
       ...(summary === undefined ? {} : { summary }),
       ...(shape === undefined ? {} : { schema: shape }),
+      ...(archive === undefined ? {} : { archive: "keep" as const }),
     });
   }
   return out;

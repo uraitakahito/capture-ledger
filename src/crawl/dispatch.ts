@@ -77,6 +77,9 @@ const FLOW_ARGS: { readonly [K in keyof DispatchedCrawl]-?: string } = {
   // flow は運ぶだけで中身を見ない。値を解くのは `crawl_host` (capture-scheduler)。
   variables: "variables",
   secrets: "secrets",
+  // **これも必ず送る** (空なら `{}`)。値を WARC に残すシークレットの名前 → "keep"。入力を持たない古い flow は
+  // 黙って捨てる (Windmill は既定で引数を schema に照らさない) ので、BrowserHive は全部を隠す側に倒れる
+  secretArchive: "secret_archive",
   // **これも必ず送る** (指定なしは `""`)。`crawl_host` は `null` を「取り違え」として投げる。
   userAgent: "user_agent",
 };

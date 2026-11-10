@@ -103,11 +103,14 @@ const collect = (value: string, previous: string[] = []): string[] => [...previo
 const sitesNote = (sites: readonly string[]): string =>
   sites.length === 0 ? "" : `  対象サイト:${sites.join(",")}`;
 
-/** 読む値の宣言を 1 行の終わりに添える (`query`・`token!` のように、required には `!`)。宣言が無ければ何も添えない */
+/**
+ * 読む値の宣言を 1 行の終わりに添える (`query`・`token(秘)!` のように、シークレットには `(秘)`、値を WARC に残す物は
+ * `(秘・keep)`、required には `!`)。宣言が無ければ何も添えない
+ */
 const paramsNote = (params: readonly ScriptParam[]): string =>
   params.length === 0
     ? ""
-    : `  値:${params.map((p) => `${p.name}${p.kind === "secret" ? "(秘)" : ""}${p.required ? "!" : ""}`).join(",")}`;
+    : `  値:${params.map((p) => `${p.name}${p.kind === "secret" ? (p.archive === "keep" ? "(秘・keep)" : "(秘)") : ""}${p.required ? "!" : ""}`).join(",")}`;
 
 const fail = (message: string): void => {
   process.stderr.write(`${message}\n`);
@@ -162,7 +165,7 @@ program
   .addOption(
     new Option(
       "--params <json>",
-      "読む値の宣言 (catalog.json の params と同じ形: [{ name, kind, required?, summary }])",
+      "読む値の宣言 (catalog.json の params と同じ形: [{ name, kind, required?, summary, archive? }])",
     ).argParser(parseParams),
   )
   .addOption(databaseUrlOption)
@@ -246,10 +249,12 @@ interface CatalogEntry {
 }
 
 /**
- * 宣言 (`params`) を書ける形 (capture-scripts v0.6.0)。`/3` 以前は断る —— `params` を知らない catalog を
- * 読むと、宣言の無いスクリプトとして取り込み、変数を渡すクロールが「知らない名前」で止まる。
+ * 読む形。`/6` (capture-scripts v0.13.0) はシークレットの宣言に `archive` (値を WARC に残すか) を足した形で、それより前は
+ * 断る —— 宣言 (`params`) を知らない catalog を読むと、宣言の無いスクリプトとして取り込み、変数を渡すクロールが
+ * 「知らない名前」で止まる。`archive` を知らない形を読んでも、取り込んだ物は隠す側に倒れるが、どちらの形かを
+ * 黙って取り違えない。
  */
-const CATALOG_PROFILE = "capture-scripts/5";
+const CATALOG_PROFILE = "capture-scripts/6";
 
 /** 読めた catalog か、読めなかった理由。**黙って一部だけ足さない。** */
 const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {

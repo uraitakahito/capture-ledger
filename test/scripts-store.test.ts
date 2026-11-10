@@ -468,6 +468,32 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
     expect(one({ type: "string", enum: [1] })).toContain("enum は文字列の列");
     expect(one({ type: "string" }, "secret")).toContain("kind: variable だけ");
   });
+
+  it("archive は kind: secret の宣言だけが持ち、keep なら写す（写さないと、残すつもりの値が黙って隠れる）", () => {
+    expect(
+      readParams(
+        [
+          { name: "note", kind: "secret", required: true, summary: "メモ", archive: "keep" },
+          { name: "password", kind: "secret", summary: "鍵" },
+        ],
+        { summaryRequired: true },
+      ),
+    ).toEqual([
+      { name: "note", kind: "secret", required: true, summary: "メモ", archive: "keep" },
+      { name: "password", kind: "secret", required: false, summary: "鍵" },
+    ]);
+  });
+
+  it("archive の値は keep だけ、変数には書けない。どちらもその文で断る", () => {
+    const one = (entry: Record<string, unknown>) =>
+      readParams([{ name: "q", ...entry }], { summaryRequired: false });
+    expect(one({ kind: "secret", archive: "hide" })).toContain('archive は "keep" だけ');
+    expect(one({ kind: "secret", archive: "hide" })).toContain('"hide"');
+    expect(one({ kind: "secret", archive: true })).toContain('archive は "keep" だけ');
+    expect(one({ kind: "variable", schema: { type: "string" }, archive: "keep" })).toContain(
+      "archive を書けるのは kind: secret だけ",
+    );
+  });
 });
 
 describe("宣言を足す（対象サイトと同じ扱い）", () => {

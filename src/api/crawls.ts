@@ -50,7 +50,7 @@ import { admitLevel } from "../crawl/admit-level.js";
 import {
   launchCrawl,
   levelDispatcher,
-  pathsOf,
+  secretsForFlow,
   toDispatched,
   type CrawlDispatcher,
   type ReplayBundleWriter,
@@ -231,10 +231,19 @@ interface LevelBody {
   compiled: CompiledReport;
 }
 
-/** `GET /api/crawls/:id` が返すシークレットの形。名前順の列で、値は無い。 */
+/**
+ * `GET /api/crawls/:id` が返すシークレットの形。名前順の列で、値は無い。`archive` は宣言の写しで、`"keep"` なら
+ * 値を WARC に残し、`null` なら BrowserHive が隠す (v29.0.0 から)。
+ */
 const secretsOf = (
   secrets: Readonly<Record<string, CrawlSecret>>,
-): { name: string; path: string; editedAt: string | null; rotated: CrawlSecret["rotated"] }[] =>
+): {
+  name: string;
+  path: string;
+  editedAt: string | null;
+  rotated: CrawlSecret["rotated"];
+  archive: "keep" | null;
+}[] =>
   Object.entries(secrets)
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([name, secret]) => ({
@@ -242,6 +251,7 @@ const secretsOf = (
       path: secret.path,
       editedAt: secret.editedAt,
       rotated: secret.rotated,
+      archive: secret.archive ?? null,
     }));
 
 /**
@@ -443,7 +453,12 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       const who = { orgId: identity.organizations[0] ?? "", subject: identity.subject };
 
       const prepared = await prepareCrawl(
-        { db, tsCompile, ...(deps.windmill && { windmill: deps.windmill }) },
+        {
+          db,
+          tsCompile,
+          formats: capture.formats,
+          ...(deps.windmill && { windmill: deps.windmill }),
+        },
         request.body ?? {},
         who,
       );
@@ -683,7 +698,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           reason: page.skipReason,
         })),
         // クロールごとの値。変数は値ごと (WACZ の settings.variables にも残る)。シークレットは名前・path・
-        // 始めたときの更新時刻と、途中で替わったなら気づいた段と新しい時刻。値は無い
+        // 始めたときの更新時刻と、途中で替わったなら気づいた段と新しい時刻と、WARC に残すか (archive)。値は無い
         variables: crawl.variables,
         secrets: secretsOf(crawl.secrets),
         // 打った字のまま。指定なしは null。解いた字は WACZ の settings.userAgent に在る
@@ -1808,9 +1823,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           signing: capture.signing,
           // 台帳のスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
           scripts: crawl.scripts.map(toDispatched),
-          // 値も行に固定した物をそのまま。変数は値ごと、シークレットは名前 → path
+          // 値も行に固定した物をそのまま。変数は値ごと、シークレットは名前 → path と、残す名前 (読み直した写しから)
           variables: crawl.variables,
-          secrets: pathsOf(secrets),
+          ...secretsForFlow(secrets),
           userAgent: crawl.userAgent ?? "",
           ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
         });
