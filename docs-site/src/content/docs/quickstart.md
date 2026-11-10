@@ -354,8 +354,9 @@ contents are on BrowserHive's storage page.
 
 Only one crawl runs at a time; a second one gets `409`. **A crawl whose level report never reached
 the API stays `running` and blocks every later start with `409`** — the API was bound to
-`127.0.0.1`, the address had gone stale, the JWT setting was switched off mid-crawl. The `409` body
-names the crawl that is blocking; close it by that id:
+`127.0.0.1`, the address had gone stale, the JWT setting was switched off mid-crawl, the token had
+gone stale, the run was cancelled in Windmill ([How a crawl row ends](/capture-ledger/archive-ledger/#how-a-crawl-row-ends)).
+The `409` body names the crawl that is blocking; close it by that id:
 
 ```sh
 # the 409 body: {"error":"a crawl is already in progress","crawlId":"9072b625-…","startedAt":"…"}

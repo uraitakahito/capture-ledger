@@ -134,10 +134,10 @@ See [Archive ledger](/capture-ledger/archive-ledger/) for the details.
 Telling a rejection apart from an outage is the flow's job now — it is the side
 that calls BrowserHive. capture-ledger's half is what happens to the `crawls` row.
 
-A dispatch that cannot be delivered closes the row as `failed` with the message
-on it. **It is never left `running`**: the partial unique index means an unclosed
-row blocks every later crawl, and nothing in the row distinguishes a live crawl
-from an abandoned one.
+A dispatch that cannot be delivered does not leave the row `running`: the ledger closes it
+as `failed` with the message on it, because an unclosed row blocks every later crawl through
+the partial unique index. Once a level has been handed to Windmill, only the reports close the
+row ([How a crawl row ends](/capture-ledger/archive-ledger/#how-a-crawl-row-ends)).
 
 Unexpected failures on the API surface as a bare `500 { "error": "internal
 error" }`. Fastify's default would return `err.message` and `err.code`, and

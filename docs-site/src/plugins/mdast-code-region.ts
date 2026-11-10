@@ -17,6 +17,6 @@ export default defineMdastPlugin({
     // あり、JS の node はそのビュー。書き込みは setProperty 経由で
     // command buffer に積む必要がある。直接代入はエラーにもならず
     // 黙って無視されるので、置換が効いていないことに気づけない。
-    ctx.setProperty(node, "value", sourceRegion(m[1], m[2])); // region 欠落なら throw → ビルドが落ちる
+    ctx.setProperty(node, "value", sourceRegion(m[1], m[2])); // region 欠落なら throw。ただし build が落ちるのは .mdx だけ (.md は Starlight が握ってログに残すのみ)。守るのは site:check の check-doc-refs
   },
 });

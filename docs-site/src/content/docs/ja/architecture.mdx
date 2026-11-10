@@ -131,9 +131,9 @@ flowchart LR
 拒否と障害の見分けは、いまや flow の仕事です —— BrowserHive を呼んでいるのが
 あちらだからです。capture-ledger の側の関心事は、`crawls` の行がどうなるかです。
 
-投げられなかった dispatch は、その行をメッセージ付きで `failed` にして締めます。
-**`running` のまま放置しません。** 部分 unique index が効いているので、締め忘れた
-行は以後のクロールを永久に塞ぎますし、生きているものとの区別が行に無いからです。
+投げられなかった dispatch は、`running` のまま置かず、その行をメッセージ付きの `failed` で締めます。
+締め忘れた行は、部分 unique index のために以後のクロールを塞ぐからです。段を Windmill に渡した後に行を締めるのは
+報告だけです（[クロールの行の終わり方](/capture-ledger/ja/archive-ledger/#クロールの行の終わり方)）。
 
 API 側の予期しない失敗は、素の `500 { "error": "internal error" }` で返します。
 Fastify の既定は `err.message` と `err.code` をそのまま返しますが、Postgres の

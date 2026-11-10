@@ -161,9 +161,10 @@ Unknown query parameters are neither rejected nor dropped: they stay and are ign
 (only the full-text `GET /api/search` refuses them with a 400).
 
 The crawl list is gated on `maySubmit`, not on a per-row `can_view` the way archives
-are: the authorization model has no `crawl` type, and `can_submit` is defined as
-**trust that crosses organizations** in the first place (`submitter` in
-`fga/model.fga`). A caller without the permission gets neither 403 nor 404 but an
+are: the authorization model has no `crawl` type. `maySubmit` lets a caller through when
+`can_submit` holds in any one of its organizations (`src/api/authorization.ts`), and the list
+then returns the rows of every organization, so granting `submitter` is **trust that crosses
+organizations**. A caller without the permission gets neither 403 nor 404 but an
 **empty array**, and every row carries its `orgId` so the caller can say what it is
 seeing. Rows carry both `state` and `stopReason`: `succeeded` only says that a page was
 captured, so the state alone cannot tell a full walk (`completed`) from a crawl that was cut
@@ -248,9 +249,34 @@ its due time does not move, and it starts once the running crawl has ended
 ([Schedules](/capture-ledger/schedules/)). **This is right on the politeness argument** (both
 would hit the same hosts).
 
-A crawl whose dispatch dies also leaves its row `running`, which blocks the next
-one. `GET` returns `startedAt` so you can judge; clearing it is a manual act.
 :::
+
+### How a crawl row ends
+
+A `running` row is closed in exactly three ways, and each one only touches a row whose
+`state` is still `running`:
+
+- **The level report says no level follows.** When a report leaves zero pages for the next
+  level, the row closes; if no page was captured at all, it closes as `failed`.
+- **`POST /api/crawls/:id/failed`.** The flow's closing step calls it when a level fails, and a
+  person can call the same route.
+- **The ledger could not dispatch a level.** A webhook answer other than 2xx, no answer within
+  10 seconds (the default), or no connection closes the row as `failed`, with the message on it.
+
+Nothing closes a row by time. The closing step uses the same token and the same address as the
+level report, so a **stale token (401)**, a caller without `can_submit` (**404**), or an API
+that cannot be reached makes both fail, and the row stays `running`. Cancelling the run in
+Windmill means the closing step never runs. And if the ledger goes down after adding the row but
+before the webhook has been sent, the row stays too.
+
+A row that blocks is named by the body of the **409** (`crawlId`, `startedAt`), and `lastJobId`
+leads from it to the Windmill run. Close it with `POST /api/crawls/:id/failed`, or, when the
+schedule's health is `stuck` or `overdue`, with the "close" button on the schedules tab of
+capture-workbench.
+
+Closing does not stop a flow that is still alive: the level report does not look at the row's
+state, so the flow keeps capturing and the ledger still dispatches its next level. A closed
+row is never turned back into `succeeded`, but the later reports still add their pages and counts.
 
 ### What a caller may send
 
@@ -823,8 +849,9 @@ A bundle is signed only when all three hold:
 
 The bundles written level by level while a crawl runs are not signed. When a crawl is closed by
 `POST /api/crawls/:id/failed`, or because its next level could not be dispatched, **capture-ledger
-writes one more bundle after closing it** — no level follows, so nobody else would. A level report
-does not turn a closed crawl back into `succeeded` (the condition sits inside the row update).
+writes one more bundle after closing it** — closing brings no further level report, so nobody
+else would (a flow that is still alive can send one anyway: [How a crawl row ends](#how-a-crawl-row-ends)).
+A level report does not turn a closed crawl back into `succeeded` (the condition sits inside the row update).
 
 The write order is `pages.json` → `replay-digest.json` → `replay.json`: by the time the entry
 point appears, the digest that covers it is there too. The signature is requested outside the

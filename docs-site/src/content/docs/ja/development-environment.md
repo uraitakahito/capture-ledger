@@ -123,27 +123,27 @@ NAME=value     # 値を渡す
 
 ## 日々のコマンド
 
-| コマンド                                  | 内容                                                                                                                               |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm run dev:up`                         | 立ち上げの段を順に。`--dry-run` で一覧、`--from <段>` で途中から。                                                                 |
-| `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                                                                           |
-| `pnpm run dev:down`                       | ホストで動かしたもの → 両 repo のコンテナ（OpenSearch も）。共有 store は落とさない。                                              |
-| `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                                                                    |
-| `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                                                                               |
-| `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                                                                    |
-| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked)。                                                                    |
-| `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。                                                            |
-| `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                                                                             |
-| `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                                                                               |
-| `pnpm run check`                          | push の前に走らせる検査の全部。中身と並びは package.json の `check`（CI の check job と同じ）。                                    |
-| `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                                                                  |
-| `pnpm run scripts`                        | ページで走らせるスクリプト（`scripts`）を取り込む・足す・見る・読む・外す・消す。受け皿の型（`host_types`）も出す。DB に直接書く。 |
-| `pnpm run openapi:generate`               | 固定した submodule から BrowserHive の `openapi.json` を取り直し、型を再生成 (openapi-typescript)。                                |
-| `pnpm run openapi:check`                  | 型を再生成して `git diff --exit-code` (CI のドリフト検査)。                                                                        |
-| `pnpm run openapi:sync`                   | 固定した submodule から `openapi.json` を取り直すだけ。                                                                            |
-| `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                                                                           |
-| `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                                                                               |
-| `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                                                                             |
+| コマンド                                  | 内容                                                                                                                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm run dev:up`                         | 立ち上げの段を順に。`--dry-run` で一覧、`--from <段>` で途中から。                                                                                                          |
+| `pnpm run dev:status`                     | いま何が立っているか。**何も変えない。**                                                                                                                                    |
+| `pnpm run dev:down`                       | ホストで動かしたもの → 両 repo のコンテナ（OpenSearch も）。共有 store は落とさない。                                                                                       |
+| `pnpm run api`                            | ビルドしてから API を実行 (`tsc` → `node dist/api/server.js`)。                                                                                                             |
+| `pnpm run build`                          | `tsconfig.build.json` で `dist/` に JS/d.ts を出力。                                                                                                                        |
+| `pnpm run typecheck`                      | `tsc --noEmit`。テストと `*.config.ts` も含む。                                                                                                                             |
+| `pnpm run lint` / `lint:fix`              | ESLint flat config (typescript-eslint recommendedTypeChecked)。                                                                                                             |
+| `pnpm run format` / `format:check`        | Prettier。`.prettierignore` が `dist/` と `src/rpc/generated/` を除外。                                                                                                     |
+| `pnpm test` / `test:watch`                | `test/` 配下の Vitest ユニットテスト。                                                                                                                                      |
+| `pnpm run audit`                          | 既知の脆弱性 (`pnpm-lock.yaml`)。CI では毎日も走る。                                                                                                                        |
+| `pnpm run check`                          | push の前に走らせる検査の全部。中身と並びは package.json の `check`（CI の check job は、ほかの job が持つ検査を除いて走らせる。除く物は `src/tools/check-ci-parity.ts`）。 |
+| `pnpm run db:migrate` / `db:migrate:down` | `DATABASE_URL` に対する Kysely マイグレーション。                                                                                                                           |
+| `pnpm run scripts`                        | ページで走らせるスクリプト（`scripts`）を取り込む・足す・見る・読む・外す・消す。受け皿の型（`host_types`）も出す。DB に直接書く。                                          |
+| `pnpm run openapi:generate`               | 固定した submodule から BrowserHive の `openapi.json` を取り直し、型を再生成 (openapi-typescript)。                                                                         |
+| `pnpm run openapi:check`                  | 型を再生成して `git diff --exit-code` (CI のドリフト検査)。                                                                                                                 |
+| `pnpm run openapi:sync`                   | 固定した submodule から `openapi.json` を取り直すだけ。                                                                                                                     |
+| `pnpm run site:dev` / `site:build`        | このドキュメントサイト。                                                                                                                                                    |
+| `pnpm run site:check`                     | サイトをビルドし、参照の整合を検証。                                                                                                                                        |
+| `pnpm run docs:shots`                     | docs に載せる画面の絵を撮り直す (スタックは要らない)。                                                                                                                      |
 
 ### ホストで動くもの
 
@@ -413,7 +413,7 @@ warn はほかに 3 つあります。名乗りの設定がどちらも無い（
   （`… is not set — /api/crawls is not served`）。
 - **クロールが `running` のまま残る（段の報告が届かない・`401`）** — API の起動ログの最後の行が
   `crawl level reports: blocked` なら、その上の warn が足りない行を名指しします
-  （[起動ログで確かめる](#起動ログで確かめる)）。
+  （[起動ログで確かめる](#起動ログで確かめる)）。古いトークンは、起動ログが `crawl level reports: ready` でも `401` になります。
 - **docs のビルドが BrowserHive のピンを読めない** —
   `git submodule update --init --recursive` を実行。
 
