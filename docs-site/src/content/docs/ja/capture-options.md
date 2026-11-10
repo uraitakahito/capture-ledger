@@ -34,6 +34,11 @@ CAPTURE_LEDGER_CAPTURE_SIGNING=1      # wacz-auth 署名を要求する。wacz �
 6 つのキーは毎回**全部を明示して**送ります —— BrowserHive にとって「未設定」と
 `false` は別物です。最低 1 つが true でないとサーバがリクエストを拒みます。
 
+`png`・`webp`・`html`・`mhtml` は頁が描いた物や頁の字をそのまま持つので、シークレットの値を置き換えられません。
+これを 1 つでも頼む配備では、隠すシークレットを送るクロールは始められず、`POST /api/crawls` が
+`400 formats that cannot hide secrets` で断ります（[クロールごとの値](#クロールごとの値)）。通すと、BrowserHive がそのクロールの
+取り込みを全部断るからです。
+
 ## 読むのは起動時の 1 回だけ
 
 `CAPTURE_LEDGER_CAPTURE_FORMATS` はクロールのたびではなく、API の起動時に解釈します。
@@ -128,9 +133,9 @@ capture-scripts v0.7.0 から引数は 1 つ）。`preload` は**遷移の前**�
 scheme・`*` は書けません。対象サイトのあるスクリプトは**サイト用のスクリプト**で、クロールの起点のどれかがそのホストに
 あるときだけ走ります。照らすのは起点のホスト名との完全一致で、ポートは見ません。`example.com` と
 `www.example.com` は別のホストです。対象サイトの無いスクリプトは、今までどおりどこでも走ります。対象サイトは版の一部で、
-`options` と同じく、変えたら版が足されます。`import` が読む `catalog.json` の形は `capture-scripts/5`
-（capture-scripts v0.11.0 で、[クロールごとの値](#クロールごとの値)の変数の宣言に値の形 `schema` が入った）で、`import` は
-それより前の形を断ります。形の悪いホスト名や宣言も、DB に触る前に断ります。
+`options` と同じく、変えたら版が足されます。`import` が読む `catalog.json` の形は `capture-scripts/6`
+（capture-scripts v0.13.0 で、[クロールごとの値](#クロールごとの値)のシークレットの宣言に、値を WARC に残すかの `archive` が
+入った）で、`import` はそれより前の形を断ります。形の悪いホスト名や宣言も、DB に触る前に断ります。
 
 capture-scripts のサイト用のスクリプトの見本は `egov-law-search`（対象サイト `laws.e-gov.go.jp`・v0.4.0 から）です。
 [e-Gov 法令検索](https://laws.e-gov.go.jp/)の頁の中で、必須の変数 `query` の語で法令名を引き、件数と法令名を報告します。
@@ -148,7 +153,7 @@ capture-scripts のサイト用のスクリプトの見本は `egov-law-search`�
 source・sha256・options・対象サイト・宣言 —— をクロールの行に書きます。以後の段はそれをそのまま使い、
 台帳のスクリプトを引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
 変わりません。[クロールごとの値](#クロールごとの値)も同じように固定します。`variables` は値ごと、
-`secrets` は名前を結んだ Windmill の変数の path を。
+`secrets` は名前を結んだ Windmill の変数の path と、値を WARC に残すかを。
 
 | `scripts`                                                         | 走るもの                                                                                                    |
 | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
@@ -311,32 +316,64 @@ workbench はそれで欄を作ります。
 `f/waggle_secrets/<名前>` に結び、そこへは人が前もって置きます（`wmill variable add <値> f/waggle_secrets/<名前> --secret`。
 置き場と手順は capture-scheduler の docs にあります）。クロールを始めるとき、台帳は webhook と同じ URL と token で
 Windmill に「在るか・secret か」を訊き、**値は読まずに**（`variables/get` に `decrypt_secret=false`）、
-`{ path, editedAt }` を行に固定します。値を読むのは flow の `crawl_host` だけで、取り込みの直前に読みます。
-値は台帳にも webhook の本文にもアーカイブ（`settings.secrets` に在るのは名前だけ）にも `GET /api/crawls/:id`
-にも在りません。スクリプトが値を取り込みのログ（`__bh.log`・`__bh.report`・例外の文）に書いても、BrowserHive が
+`{ path, editedAt }` を、宣言の `archive` と一緒に行に固定します。値を読むのは flow の `crawl_host` だけで、取り込みの
+直前に読みます。値は台帳にも webhook の本文にも `GET /api/crawls/:id` にも無く、アーカイブの `settings.secrets` に在るのは
+名前だけです。スクリプトが値を取り込みのログ（`__bh.log`・`__bh.report`・例外の文）に書いても、BrowserHive が
 **長さに依らず** `***` に替えてから行に残すので、`.result.json` と 1 ページのログの口にも在りません。
-隠せるのは記録からだけで、ページの JS からは読めますし、スクリプトが通信に載せれば WARC には残ります。次の段を送る前に台帳は `editedAt` を読み直し、変わっていてもクロールは止めず、
-`rotated`（気づいた段と新しい時刻）に残します。
+隠せるのは記録からだけで、ページの JS からは読めますし、値を受け取ったサイトには届いています。次の段を送る前に台帳は
+`editedAt` を読み直し、変わっていてもクロールは止めず、`rotated`（気づいた段と新しい時刻）に残します。
+
+**WARC の中でも、値は既定で隠れます**（BrowserHive v29.0.0）。スクリプトが値を通信に載せても（URL・見出し・本文）、
+サイトが値を返しても、BrowserHive が WARC のレコードの中と外（文書の URL・ページの文字と題・写し・ツリー・`.links.json`）で
+`***` に置き換えます。置き換えるのは値と、その符号化した形だけで、値から作った物（ハッシュ・暗号文）は追いません。値を
+WARC に残したい宣言は、そう書きます。
+
+```json
+{
+  "name": "api_token",
+  "kind": "secret",
+  "required": true,
+  "summary": "サイトの API の鍵",
+  "archive": "keep"
+}
+```
+
+`archive` を書けるのはシークレットの宣言だけで、値は `"keep"` だけです。省けば隠します。台帳は行に写し
+（`crawls.secrets[<名前>].archive`）、段ごとに、値を残す名前を `secret_archive`（名前 → `"keep"`。無ければ `{}`）で送り、
+`crawl_host` が BrowserHive の `secretArchive` に渡します。**載るのは、そのクロールが実際に送る名前だけです**。
+`required` でなく Windmill に無いシークレットは送らず、その `keep` も送りません（BrowserHive は `secrets` に無い名前の
+`secretArchive` を断り、クロールの取り込みが全部落ちるため）。`crawl_host` も、解いた名前だけを残します。どのシークレットを
+残したかはアーカイブに残ります（`settings.secretArchive`）。
+
+隠すシークレットが BrowserHive の決まりに外れれば、BrowserHive は撮る前に断り、文にはシークレットの名前だけを書きます
+（値は書きません）。台帳は値を見ないので、そのうち 2 つはクロールのページで初めて分かります（ページごとに BrowserHive の
+400 で失敗する）。隠す値は 8 字以上（UTF-16 の code unit で数える）であること、取り込む URL（起点など）に値を書かないこと
+です。短い値は `"keep"` にするか、長くします。3 つ目は台帳が先に見ます。`CAPTURE_LEDGER_CAPTURE_FORMATS` に `png`・`webp`・
+`html`・`mhtml` のある配備では、隠すシークレットを送るクロールは `400 formats that cannot hide secrets` です（`keep` の物は
+通ります）。BrowserHive は web storage の値（`storageValues`）も隠すシークレットと一緒には撮りません。capture-ledger は
+頼まず、BrowserHive の既定も無効ですが、BrowserHive の配備で有効にすると（`BROWSERHIVE_STORAGE_VALUES`）、そうした
+クロールのページは全部失敗します。
 
 名前は `^[a-z][a-z0-9_]*$` で 64 字まで、1 クロールの変数は 32 個まで、値は 4,096 字までの文字列です。
 宣言に既定値は書けません。任意の変数とシークレットは、渡されなければ `undefined` で、スクリプトが自分のソースの既定に倒します。
 
-| 答え                                                                     | いつ                                                                                               |
-| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `400 missing variables`（`names`・`diagnostics`）                        | 必須の変数が渡されていない（`diagnostics` は `BH0001` の行と列）                                   |
-| `400 invalid variables`（`names`・`hint`）                               | 値が宣言の形に合わない（`.min` に足りない字数、`z.enum` に無い字など）                             |
-| `400 unknown variables`（`names`）                                       | どのスクリプトも宣言していない名前を渡した（宣言を読めないスクリプトが在れば見ない）               |
-| `400 secrets cannot be passed as variables`（`names`）                   | シークレットとして宣言された名前を変数で渡した —— アーカイブに値が残ってしまう                     |
-| `400 conflicting params`（`names`）                                      | 同じ名前を、別々のスクリプトが別の種類か別の形で宣言している                                       |
-| `400 invalid params`（`script`・`hint`）                                 | その場の TS の `params` が宣言の決まり（`import` と同じ）に合わない。変数は書けない                |
-| `503 ts-compile unreachable`                                             | ts-compile-service に訊けない（400・409 の答えも含む。版のずれはログの本文で分かる）。何も始めない |
-| `400 unknown secrets`（`secrets: [{ name, path, declaredBy }]`・`hint`） | `required` のシークレットが Windmill に無い。`required` でない物が無ければ渡さないだけ             |
-| `400 not a secret variable`（`secrets`）                                 | Windmill に在るが secret の印が無い                                                                |
-| `400 secrets need the windmill webhook`（`names`）                       | シークレットを宣言したスクリプトが在るのに、この配備の webhook の URL が flow の物でない           |
-| `503 windmill unreachable`                                               | Windmill に訊けなかった。何も始めない                                                              |
+| 答え                                                                     | いつ                                                                                                                |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `400 missing variables`（`names`・`diagnostics`）                        | 必須の変数が渡されていない（`diagnostics` は `BH0001` の行と列）                                                    |
+| `400 invalid variables`（`names`・`hint`）                               | 値が宣言の形に合わない（`.min` に足りない字数、`z.enum` に無い字など）                                              |
+| `400 unknown variables`（`names`）                                       | どのスクリプトも宣言していない名前を渡した（宣言を読めないスクリプトが在れば見ない）                                |
+| `400 secrets cannot be passed as variables`（`names`）                   | シークレットとして宣言された名前を変数で渡した —— アーカイブに値が残ってしまう                                      |
+| `400 conflicting params`（`names`）                                      | 同じ名前を、別々のスクリプトが別の種類か別の形で宣言している。シークレットの値を片方は残し（`archive`）、片方は隠す |
+| `400 invalid params`（`script`・`hint`）                                 | その場の TS の `params` が宣言の決まり（`import` と同じ）に合わない。変数は書けない                                 |
+| `503 ts-compile unreachable`                                             | ts-compile-service に訊けない（400・409 の答えも含む。版のずれはログの本文で分かる）。何も始めない                  |
+| `400 unknown secrets`（`secrets: [{ name, path, declaredBy }]`・`hint`） | `required` のシークレットが Windmill に無い。`required` でない物が無ければ渡さないだけ                              |
+| `400 not a secret variable`（`secrets`）                                 | Windmill に在るが secret の印が無い                                                                                 |
+| `400 secrets need the windmill webhook`（`names`）                       | シークレットを宣言したスクリプトが在るのに、この配備の webhook の URL が flow の物でない                            |
+| `503 windmill unreachable`                                               | Windmill に訊けなかった。何も始めない                                                                               |
+| `400 formats that cannot hide secrets`（`formats`・`names`・`hint`）     | クロールが送るシークレットに隠す物が在り、この配備の形式に `png`・`webp`・`html`・`mhtml` がある                    |
 
 どれもクロールは立ちません。`GET /api/crawls/:id` は `variables`（値ごと）と `secrets`
-（`[{ name, path, editedAt, rotated }]`。名前順）を返します。
+（`[{ name, path, editedAt, rotated, archive }]`。名前順。`archive` は値を WARC に残すなら `"keep"`、隠すなら `null`）を返します。
 
 ## capture-ledger がいまも決めないもの
 

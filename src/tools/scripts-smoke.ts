@@ -180,7 +180,7 @@ try {
   writeFileSync(
     join(dir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/5",
+      profile: "capture-scripts/6",
       scripts: [
         {
           id: imported,
@@ -240,7 +240,7 @@ try {
     writeFileSync(
       join(orderDir, "catalog.json"),
       JSON.stringify({
-        profile: "capture-scripts/5",
+        profile: "capture-scripts/6",
         scripts: ids.map((script) => ({
           id: script,
           phase: "behavior",
@@ -293,7 +293,7 @@ try {
   writeFileSync(
     join(offDir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/5",
+      profile: "capture-scripts/6",
       scripts: [
         {
           id: imported,
@@ -343,7 +343,7 @@ try {
   writeFileSync(
     join(badDir, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/5",
+      profile: "capture-scripts/6",
       scripts: [
         {
           id: `${id}-bad`,
@@ -363,7 +363,8 @@ try {
     why(run),
   );
 
-  // 024: 宣言 (params) は catalog から版に入り、名前の `_` は Kysely で読み返しても化けない
+  // 024: 宣言 (params) は catalog から版に入り、名前の `_` は Kysely で読み返しても化けない。
+  // シークレットの archive (`/6`) も jsonb を往復して残る (落ちると、残すつもりの値が黙って隠れる)
   const withParams = join(work, "params-scripts");
   mkdirSync(join(withParams, "scripts"), { recursive: true });
   const declared = [
@@ -374,12 +375,12 @@ try {
       summary: "検索語",
       schema: { type: "string", minLength: 1 },
     },
-    { name: "api_token", kind: "secret", required: true, summary: "鍵" },
+    { name: "api_token", kind: "secret", required: true, summary: "鍵", archive: "keep" },
   ];
   writeFileSync(
     join(withParams, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/5",
+      profile: "capture-scripts/6",
       scripts: [
         {
           id: withDecl,
@@ -394,8 +395,8 @@ try {
   writeFileSync(join(withParams, "scripts", "x.ts"), A);
   run = cli(["import", withParams]);
   check(
-    "024: import は宣言を版に入れ、読む値を言う",
-    run.status === 0 && run.stdout.includes("値:query,api_token(秘)!"),
+    "024: import は宣言を版に入れ、読む値を言う（WARC に残すシークレットは keep と添える）",
+    run.status === 0 && run.stdout.includes("値:query,api_token(秘・keep)!"),
     why(run),
   );
   const paramsOf = await pool.query<{ params: unknown }>(
@@ -422,39 +423,46 @@ try {
   // 同じ宣言を取り込み直しても版は増えず、宣言を変えると版が増える
   run = cli(["import", withParams]);
   check(
-    "024: 同じ宣言の import は版を増やさない",
+    "024: 同じ宣言の import は版を増やさない（archive も jsonb の往復で同じと読める）",
     run.status === 0 && run.stdout.includes(`= ${withDecl} v1`),
     why(run),
   );
-  writeFileSync(
-    join(withParams, "catalog.json"),
-    JSON.stringify({
-      profile: "capture-scripts/5",
-      scripts: [
-        {
-          id: withDecl,
-          phase: "behavior",
-          file: "scripts/x.ts",
-          summary: "smoke",
-          params: [declared[0]],
-        },
-      ],
-    }),
+  /** 取り込む宣言だけを替えて catalog を書き直す。 */
+  const declare = (params: unknown[]) =>
+    writeFileSync(
+      join(withParams, "catalog.json"),
+      JSON.stringify({
+        profile: "capture-scripts/6",
+        scripts: [
+          { id: withDecl, phase: "behavior", file: "scripts/x.ts", summary: "smoke", params },
+        ],
+      }),
+    );
+  // archive だけを外す (残す → 隠す)。版を足さないと、既定に残った古い版が値を WARC に残し続ける
+  declare([declared[0], { name: "api_token", kind: "secret", required: true, summary: "鍵" }]);
+  run = cli(["import", withParams]);
+  check(
+    "024: シークレットの archive だけを変えた import も版を足す",
+    run.status === 0 &&
+      run.stdout.includes(`✓ ${withDecl} v2`) &&
+      run.stdout.includes("api_token(秘)!"),
+    why(run),
   );
+  declare([declared[0]]);
   run = cli(["import", withParams]);
   check(
     "024: 宣言を変えた import は版を足す",
-    run.status === 0 && run.stdout.includes(`✓ ${withDecl} v2`),
+    run.status === 0 && run.stdout.includes(`✓ ${withDecl} v3`),
     why(run),
   );
 
-  // 壊れた宣言の catalog は 1 本も足さずに断る。/3 の catalog (宣言を知らない形) も断る
+  // 壊れた宣言の catalog は 1 本も足さずに断る。/5 の catalog (archive を知らない形) も断る
   const badParams = join(work, "bad-params");
   mkdirSync(join(badParams, "scripts"), { recursive: true });
   writeFileSync(
     join(badParams, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/5",
+      profile: "capture-scripts/6",
       scripts: [
         {
           id: `${id}-badp`,
@@ -478,15 +486,15 @@ try {
   writeFileSync(
     join(oldProfile, "catalog.json"),
     JSON.stringify({
-      profile: "capture-scripts/3",
+      profile: "capture-scripts/5",
       scripts: [{ id: `${id}-old`, phase: "behavior", file: "scripts/x.ts", summary: "smoke" }],
     }),
   );
   writeFileSync(join(oldProfile, "scripts", "x.ts"), A);
   run = cli(["import", oldProfile]);
   check(
-    "024: import は /3 の catalog を断る (宣言を知らない形)",
-    run.status === 1 && run.stderr.includes("capture-scripts/5 ではない"),
+    "import は /5 の catalog を断る (シークレットの archive を知らない形)",
+    run.status === 1 && run.stderr.includes("capture-scripts/6 ではない"),
     why(run),
   );
 

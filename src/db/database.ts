@@ -131,8 +131,8 @@ export interface CrawlsTable {
   userAgent: ColumnType<string | null, string | null, never>;
   /**
    * 宣言で結んだシークレット (名前 → path と `edited_at`。`024`)。**値は持たない** —— 解くのは flow の
-   * `crawl_host` で、台帳が持つのは Windmill の変数の path と、始めたときの更新時刻だけ。段を送るたびに読み直し、
-   * 変わっていれば `rotated` を書き足す (`CrawlSecret`)。
+   * `crawl_host` で、台帳が持つのは Windmill の変数の path と、始めたときの更新時刻と、値を WARC に残すか
+   * (宣言の `archive`) だけ。段を送るたびに読み直し、変わっていれば `rotated` を書き足す (`CrawlSecret`)。
    *
    * 書くときは JSON の文字列。
    */
@@ -262,7 +262,10 @@ export interface CrawlScript {
   params?: ScriptParam[];
 }
 
-/** クロールごとの値の種類。`variable` は記録に値が残り、`secret` は名前しか残らない。 */
+/**
+ * クロールごとの値の種類。`variable` は記録に値が残る (WACZ の `settings.variables`)。`secret` は WACZ の settings に
+ * 名前しか残らず、値は BrowserHive が WARC からも既定で隠す (`ScriptParam.archive`)。
+ */
 export type ParamKind = "variable" | "secret";
 
 /** 変数の値の JSON Schema。鍵はこの 4 つだけ (capture-scripts の宣言の読み手が書ける物)。 */
@@ -287,18 +290,30 @@ export interface ScriptParam {
   summary?: string;
   /** 値の形。`variable` だけが持つ (シークレットの値を台帳は見ない)。 */
   schema?: ParamSchema;
+  /**
+   * 値を WARC に残すか。`secret` だけが持ち、書けるのは `"keep"` だけ (capture-scripts の `/6`)。**省けば隠す**:
+   * BrowserHive (v29.0.0 から) が、スクリプトが通信に載せた値もサイトが返した値も `***` に置き換える。`keep` なら
+   * 通信の記録に値のまま残る。台帳は行に写し (`CrawlSecret.archive`)、段ごとに BrowserHive の `secretArchive` へ運ぶ。
+   */
+  archive?: "keep";
 }
 
 /**
  * クロールの行に固定したシークレット 1 つ (`crawls.secrets` の値。鍵は名前)。**値は持たない** —— 持つのは
- * Windmill の変数の path (`f/waggle_secrets/<名前>`) と、始めたときの `edited_at`。段を送るたびに読み直し、
- * 変わっていれば `rotated` に、気づいた段の深さと新しい時刻を書く (もう 1 度変われば書き換える)。
+ * Windmill の変数の path (`f/waggle_secrets/<名前>`) と、始めたときの `edited_at` と、宣言の `archive`。段を送るたびに
+ * 読み直し、変わっていれば `rotated` に、気づいた段の深さと新しい時刻を書く (もう 1 度変われば書き換える)。
  */
 export interface CrawlSecret {
   path: string;
   /** Windmill が答えた更新時刻。答えに無ければ null。 */
   editedAt: string | null;
   rotated: { depth: number; editedAt: string | null } | null;
+  /**
+   * 宣言の `archive` の写し (`ScriptParam.archive`)。`"keep"` なら値を WARC に残し、無ければ隠す。段ごとに
+   * BrowserHive の `secretArchive` に組む (`crawl/launch.ts` の `secretsForFlow`)。行に在る名前だけが flow へ行くので、
+   * 任意で Windmill に無いシークレットの `keep` は、ここに無く、送られもしない。
+   */
+  archive?: "keep";
 }
 
 /**

@@ -297,6 +297,49 @@ describe("定期実行の周回", () => {
       expect(fake.fired[0]?.nextRunAt).toEqual(jst("2026-11-08T04:00:00"));
     });
 
+    it("keep の宣言は回ごとに行の写しへ archive で写り、段の secret_archive に載る", async () => {
+      const windmill: WindmillVariables = {
+        exists: () => Promise.resolve(true),
+        meta: () => Promise.resolve({ isSecret: true, editedAt: "2026-11-01T00:00:00Z" }),
+      };
+      const kept = recipe({
+        declaredSecrets: [
+          {
+            name: "note",
+            path: "f/waggle_secrets/note",
+            required: true,
+            declaredBy: ["login"],
+            archive: "keep",
+          },
+          { name: "token", path: "f/waggle_secrets/token", required: true, declaredBy: ["login"] },
+        ],
+      });
+      const fake = fakeStore([schedule({ recipe: kept })]);
+      const { deps, levels } = depsOf(fake.store, { windmill });
+      expect((await tickSchedules(deps)).kind).toBe("started");
+      expect(fake.fired[0]?.prepared.secrets["note"]?.archive).toBe("keep");
+      expect(fake.fired[0]?.prepared.secrets["token"]).not.toHaveProperty("archive");
+      expect(levels[0]?.secretArchive).toEqual({ note: "keep" });
+    });
+
+    it("隠すシークレットが在り、配備の形式が値を置き換えられなければ failed の行にして次の回へ進む。webhook は投げない", async () => {
+      const windmill: WindmillVariables = {
+        exists: () => Promise.resolve(true),
+        meta: () => Promise.resolve({ isSecret: true, editedAt: "2026-11-01T00:00:00Z" }),
+      };
+      const fake = fakeStore([schedule({ recipe: declared })]);
+      const { deps, levels } = depsOf(fake.store, {
+        windmill,
+        capture: parseCaptureFormats("wacz,html", false),
+      });
+      expect(await tickSchedules(deps)).toMatchObject({
+        kind: "failed",
+        error: "formats that cannot hide secrets: token",
+      });
+      expect(levels).toHaveLength(0);
+      expect(fake.fired[0]?.nextRunAt).toEqual(jst("2026-11-08T04:00:00"));
+    });
+
     it("Windmill に届かなければ failed の行にする（順番待ちで塞がない）", async () => {
       const windmill: WindmillVariables = {
         exists: () => Promise.reject(new WindmillUnreachable("down")),

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { checkValues, pinDeclarations, SECRETS_FOLDER, secretPath } from "../src/crawl/values.js";
-import type { CrawlScript, ScriptParam } from "../src/db/database.js";
+import { parseCaptureFormats } from "../src/config/capture-formats.js";
+import {
+  checkValues,
+  formatsRefusal,
+  pinDeclarations,
+  SECRETS_FOLDER,
+  secretPath,
+} from "../src/crawl/values.js";
+import type { CrawlScript, CrawlSecret, ScriptParam } from "../src/db/database.js";
 
 /**
  * クロールごとの値 (変数とシークレット) を、スクリプトの宣言に照らす判断。
@@ -155,6 +162,100 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
   it("path は f/waggle_secrets/ の下に名前で組む（人は名前だけ書く）", () => {
     expect(SECRETS_FOLDER).toBe("f/waggle_secrets/");
     expect(secretPath("api_token")).toBe("f/waggle_secrets/api_token");
+  });
+});
+
+describe("シークレットの値を WARC に残すか（宣言の archive）", () => {
+  const kept = (name: string, required = false): ScriptParam => ({
+    ...secret(name, required),
+    archive: "keep",
+  });
+
+  it("keep の宣言は archive を写し、省いた宣言（隠す）は写さない", () => {
+    expect(checkValues([script("a", [kept("login_note"), secret("password")])], {})).toEqual({
+      kind: "ok",
+      secrets: [
+        {
+          name: "login_note",
+          path: "f/waggle_secrets/login_note",
+          required: false,
+          declaredBy: ["a"],
+          archive: "keep",
+        },
+        { name: "password", path: "f/waggle_secrets/password", required: false, declaredBy: ["a"] },
+      ],
+    });
+  });
+
+  it("同じ名前を、残す宣言と隠す宣言で食い違えれば conflicting params（どちらに倒しても宣言の片方を裏切る）", () => {
+    expect(checkValues([script("a", [kept("token")]), script("b", [secret("token")])], {})).toEqual(
+      { kind: "refused", body: { error: "conflicting params", names: ["token"] } },
+    );
+    // 並びを替えても同じ
+    expect(checkValues([script("b", [secret("token")]), script("a", [kept("token")])], {})).toEqual(
+      { kind: "refused", body: { error: "conflicting params", names: ["token"] } },
+    );
+  });
+
+  it("どの宣言も keep なら食い違いではなく、keep のまま束ねる", () => {
+    const result = checkValues(
+      [script("a", [kept("token")]), script("b", [kept("token", true)])],
+      {},
+    );
+    expect(result).toEqual({
+      kind: "ok",
+      secrets: [
+        {
+          name: "token",
+          path: "f/waggle_secrets/token",
+          required: true,
+          declaredBy: ["a", "b"],
+          archive: "keep",
+        },
+      ],
+    });
+  });
+});
+
+describe("隠すシークレットと、値を置き換えられない形式", () => {
+  const row = (archive?: "keep"): CrawlSecret => ({
+    path: "f/waggle_secrets/x",
+    editedAt: null,
+    rotated: null,
+    ...(archive === undefined ? {} : { archive }),
+  });
+  const formats = (raw: string) => parseCaptureFormats(raw, false).formats;
+
+  it.each(["png", "webp", "html", "mhtml"])(
+    "隠すシークレットを送り、形式に %s があれば、形式と隠す名前を言う 400 の本文",
+    (format) => {
+      expect(
+        formatsRefusal(formats(`wacz,${format}`), { password: row(), note: row("keep") }),
+      ).toEqual({
+        error: "formats that cannot hide secrets",
+        formats: [format],
+        names: ["password"],
+        hint: expect.stringContaining(format) as string,
+      });
+    },
+  );
+
+  it("形式は全部、隠す名前は名前順に言う", () => {
+    expect(
+      formatsRefusal(formats("png,webp,html,mhtml,wacz"), { zeta: row(), alpha: row() }),
+    ).toMatchObject({ formats: ["png", "webp", "html", "mhtml"], names: ["alpha", "zeta"] });
+  });
+
+  it("keep のシークレットだけなら断らない —— 値は通信の記録に残してよく、BrowserHive も断らない", () => {
+    expect(formatsRefusal(formats("png,wacz"), { note: row("keep") })).toBeUndefined();
+  });
+
+  it("形式が wacz と links だけなら断らない（BrowserHive が値を置き換える）", () => {
+    expect(formatsRefusal(formats("wacz,links"), { password: row() })).toBeUndefined();
+  });
+
+  it("送るシークレットが無ければ断らない", () => {
+    expect(formatsRefusal(formats("png,html"), {})).toBeUndefined();
   });
 });
 

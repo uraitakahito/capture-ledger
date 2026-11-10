@@ -35,6 +35,11 @@ All six keys are sent explicitly on every dispatch — **unset and `false` are n
 the same thing** to BrowserHive. At least one must be true, or the server
 rejects the request.
 
+`png`, `webp`, `html` and `mhtml` keep what the page drew or its text as it was, so a secret's value
+cannot be replaced in them. A deployment that asks for any of them cannot run a crawl that sends a
+secret to be hidden: `POST /api/crawls` refuses it with `400 formats that cannot hide secrets`
+([per-crawl values](#per-crawl-values)), because BrowserHive would refuse every capture of that crawl.
+
 ## Read once, at startup
 
 `CAPTURE_LEDGER_CAPTURE_FORMATS` is parsed when the API starts, not per crawl. A
@@ -138,8 +143,8 @@ or `*`. A script with `sites` is a **site script**, and a crawl runs it only whe
 crawl's seeds is on one of those hosts. The seed's hostname is compared exactly and its port is
 ignored, so `example.com` and `www.example.com` are different hosts. A script without `sites`
 runs anywhere, as before. `sites` is part of a version, like `options`: changing it adds a
-version. The `catalog.json` format `import` reads is `capture-scripts/5` (capture-scripts v0.11.0, which
-added `schema`, the shape of a variable's value, to the declaration of
+version. The `catalog.json` format `import` reads is `capture-scripts/6` (capture-scripts v0.13.0, which
+added `archive`, whether a secret's value stays in the WARC, to the declaration of
 [per-crawl values](#per-crawl-values)); `import` refuses older formats, and refuses a malformed hostname or
 declaration before touching the database.
 
@@ -161,7 +166,7 @@ the result — id, version, phase, source, sha256, options, sites, params — on
 levels reuse that; the registered scripts are never consulted again. Adding a version halfway
 through a long crawl therefore cannot change what its later pages run. The crawl pins its
 [per-crawl values](#per-crawl-values) the same way: `variables` with their values, `secrets` with the
-Windmill variable each name was bound to.
+Windmill variable each name was bound to and whether its value stays in the WARC.
 
 | `scripts`                                                            | What runs                                                                                                                                     |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -337,15 +342,48 @@ secret variable `f/waggle_secrets/<name>`, which someone puts there beforehand
 (`wmill variable add <value> f/waggle_secrets/<name> --secret`; capture-scheduler's docs cover where and
 how). When the crawl starts, the ledger asks Windmill — over the same URL and token as the webhook —
 whether the variable exists and is a secret, **without reading the value** (`variables/get` with
-`decrypt_secret=false`), and pins `{ path, editedAt }` on the row. The value is read only by the flow's
-`crawl_host`, right before the capture; it is never in the ledger, the webhook body, the archive
-(`settings.secrets` holds names only) or `GET /api/crawls/:id`. A script that writes the value into the
-capture's log (`__bh.log`, `__bh.report`, an exception's message) does not leak it either: BrowserHive
+`decrypt_secret=false`), and pins `{ path, editedAt }` on the row, with the declaration's `archive`. The value
+is read only by the flow's `crawl_host`, right before the capture; it is never in the ledger, the webhook body
+or `GET /api/crawls/:id`, and the archive's `settings.secrets` holds names only. A script that writes the value
+into the capture's log (`__bh.log`, `__bh.report`, an exception's message) does not leak it either: BrowserHive
 replaces it with `***` **whatever its length** before keeping the line, so it is not in the `.result.json`
 or the log route for the page. Only the records are covered — the page's own JavaScript can read the value,
-and a script that sends it over the network leaves it in the WARC. Before each later level the ledger re-reads
-`editedAt`; a change does not stop the crawl, but is recorded as `rotated` (the depth that noticed it and
-the new time).
+and the site that receives it has it. Before each later level the ledger re-reads `editedAt`; a change does not
+stop the crawl, but is recorded as `rotated` (the depth that noticed it and the new time).
+
+**In the WARC the value is hidden by default** (BrowserHive v29.0.0). When a script sends it over the network
+(in a URL, a header, a body) or the site sends it back, BrowserHive replaces it with `***` in the WARC records
+and outside them (the document URL, the page's text and title, the snapshots, the tree, `.links.json`). It
+replaces the value and its encoded forms only, not anything derived from it (a hash, a ciphertext). A
+declaration that should keep the value in the WARC says so:
+
+```json
+{
+  "name": "api_token",
+  "kind": "secret",
+  "required": true,
+  "summary": "サイトの API の鍵",
+  "archive": "keep"
+}
+```
+
+`archive` is written only on a secret, and `"keep"` is its only value; left out, the value is hidden. The
+ledger copies it onto the row (`crawls.secrets[<name>].archive`) and sends, with every level, the names whose
+value stays as `secret_archive` (name → `"keep"`, `{}` when none), which `crawl_host` passes to BrowserHive as
+`secretArchive`. **Only names the crawl actually sends are in it**: a secret that is not `required` and is
+missing from Windmill is not sent, and neither is its `keep` (BrowserHive refuses a `secretArchive` name that
+`secrets` lacks, which would fail every capture of the crawl). `crawl_host` keeps only the names it resolved,
+too. The archive records which secrets stayed (`settings.secretArchive`).
+
+BrowserHive refuses the capture before taking it when a hidden secret breaks one of its rules, and names the
+secret, never the value. The ledger does not see the values, so two of them surface only on the crawl's pages
+(each page fails with BrowserHive's 400): a hidden value must be at least 8 characters long (UTF-16 code
+units), and the URL to capture (a seed, for one) must not contain it. Keep a short value with `"keep"`, or
+make it longer. The third rule the ledger checks first: a deployment whose `CAPTURE_LEDGER_CAPTURE_FORMATS`
+has `png`, `webp`, `html` or `mhtml` gets `400 formats that cannot hide secrets` for a crawl that would send a
+hidden secret (a `keep` one is fine). BrowserHive also refuses web storage values (`storageValues`) with a
+hidden secret; capture-ledger never asks for them and BrowserHive's default is off, but a BrowserHive deployment
+that turns them on (`BROWSERHIVE_STORAGE_VALUES`) fails every page of such a crawl.
 
 Names match `^[a-z][a-z0-9_]*$` and are at most 64 characters; a crawl takes at most 32 variables; a value
 is a string of at most 4,096 characters. A declaration never carries a default: an optional variable or a
@@ -357,16 +395,18 @@ secret is `undefined` when nothing was passed, and the script falls back in its 
 | `400 invalid variables` (`names`, `hint`)                               | A value does not fit the declaration (too short for `.min`, not in `z.enum`, and so on)                                                     |
 | `400 unknown variables` (`names`)                                       | A passed name that no script declares (not checked while a script whose declaration cannot be read is in the list)                          |
 | `400 secrets cannot be passed as variables` (`names`)                   | A passed name is declared as a secret — it would end up in the archive                                                                      |
-| `400 conflicting params` (`names`)                                      | Two scripts declare the same name as different kinds or different shapes                                                                    |
+| `400 conflicting params` (`names`)                                      | Two scripts declare the same name as different kinds or different shapes, or one keeps a secret's value (`archive`) and the other hides it  |
 | `400 invalid params` (`script`, `hint`)                                 | An inline script's `params` break the declaration rules (the same rules `import` applies); variables cannot be written there                |
 | `503 ts-compile unreachable`                                            | ts-compile-service could not be asked (its 400 and 409 count too; the log has the body, which shows a version mismatch). Nothing is started |
 | `400 unknown secrets` (`secrets: [{ name, path, declaredBy }]`, `hint`) | A `required` secret is not in Windmill. A non-required one that is missing is simply not passed                                             |
 | `400 not a secret variable` (`secrets`)                                 | The Windmill variable exists but is not marked secret                                                                                       |
 | `400 secrets need the windmill webhook` (`names`)                       | A script declares a secret but this deployment's webhook URL is not a flow webhook                                                          |
 | `503 windmill unreachable`                                              | Windmill could not be asked; nothing is started                                                                                             |
+| `400 formats that cannot hide secrets` (`formats`, `names`, `hint`)     | A secret the crawl would send is hidden, and this deployment's formats include `png`, `webp`, `html` or `mhtml`                             |
 
 None of these starts a crawl. `GET /api/crawls/:id` returns `variables` (with values) and `secrets`
-(`[{ name, path, editedAt, rotated }]`, in name order).
+(`[{ name, path, editedAt, rotated, archive }]`, in name order; `archive` is `"keep"` when the value stays in
+the WARC and `null` when it is hidden).
 
 ## What capture-ledger still does not decide
 

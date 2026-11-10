@@ -37,6 +37,7 @@ const CRAWL: DispatchedCrawl = {
   ],
   variables: { query: "個人情報" },
   secrets: { api_token: "f/waggle_secrets/api_token" },
+  secretArchive: { api_token: "keep" },
   userAgent: "{chrome} BrowserHive",
 };
 
@@ -76,6 +77,7 @@ describe("webhook の本文", () => {
       artifact_sink: SINK,
       variables: CRAWL.variables,
       secrets: CRAWL.secrets,
+      secret_archive: CRAWL.secretArchive,
       user_agent: CRAWL.userAgent,
     });
   });
@@ -98,10 +100,17 @@ describe("webhook の本文", () => {
   });
 
   it("変数もシークレットも空なら、空の object を鍵ごと送る", () => {
-    expect(flowArgs({ ...CRAWL, variables: {}, secrets: {} })).toMatchObject({
+    expect(flowArgs({ ...CRAWL, variables: {}, secrets: {}, secretArchive: {} })).toMatchObject({
       variables: {},
       secrets: {},
+      secret_archive: {},
     });
+  });
+
+  it("WARC に残すシークレットが無くても、secret_archive を空の object で鍵ごと送る（省くと flow が null を運ぶ）", () => {
+    const args = flowArgs({ ...CRAWL, secretArchive: {} });
+    expect(args).toHaveProperty("secret_archive");
+    expect(args["secret_archive"]).toEqual({});
   });
 
   it("dispatcher が送る本文に受け口が載る", async () => {

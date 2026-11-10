@@ -97,7 +97,13 @@ export const tickSchedules = async (deps: TickDeps): Promise<TickResult> => {
   let secrets: Record<string, CrawlSecret> = {};
   let failure: string | undefined;
   try {
-    const answer = await resolveSecrets(deps.windmill, row.recipe.declaredSecrets, who.subject);
+    // 隠すシークレットと配備の形式の組み合わせも、ここで回ごとに見る (Windmill に置かれたシークレットは回で変わる)
+    const answer = await resolveSecrets(
+      deps.windmill,
+      row.recipe.declaredSecrets,
+      who.subject,
+      deps.capture.formats,
+    );
     if (answer.kind === "resolved") secrets = answer.secrets;
     else failure = refusalText(answer);
   } catch (err) {

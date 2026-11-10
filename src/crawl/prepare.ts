@@ -5,6 +5,7 @@
  * 状態の番号 (`refused`) か、そのまま行にできる形 (`PreparedCrawl`) を返す。HTTP の応答は呼ぶ側が作る。
  */
 import type { Kysely } from "kysely";
+import type { CaptureFormats } from "../config/capture-formats.js";
 import type { CrawlRule, CrawlScript, CrawlSecret, Database } from "../db/database.js";
 import { createChildLogger } from "../logger.js";
 import {
@@ -23,7 +24,7 @@ import { TsCompileUnreachable, type TsCompile } from "../scripts/ts-compile.js";
 import { checkRules, DEFAULT_RULES, ruleOf } from "./rules.js";
 import { parseHttpUrl, type ParsedUrl } from "./scope.js";
 import { toDispatched } from "./launch.js";
-import { checkValues, pinDeclarations, type DeclaredSecret } from "./values.js";
+import { checkValues, formatsRefusal, pinDeclarations, type DeclaredSecret } from "./values.js";
 import { WindmillUnreachable, type WindmillVariables } from "./windmill-variables.js";
 
 const log = createChildLogger({ module: "api" });
@@ -187,6 +188,8 @@ export const CRAWL_BODY_SCHEMA = {
                     kind: { type: "string", enum: ["variable", "secret"] },
                     required: { type: "boolean" },
                     summary: { type: "string" },
+                    // 値を WARC に残すか (capture-scripts の `/6`)。省けば BrowserHive が隠す
+                    archive: { type: "string", enum: ["keep"] },
                   },
                 },
               },
@@ -208,6 +211,8 @@ export interface PrepareDeps {
   db: Kysely<Database>;
   tsCompile: TsCompile;
   windmill?: WindmillVariables;
+  /** この配備が頼む形式 (`config/capture-formats.ts`)。隠すシークレットと組めない形式なら断る (`formatsRefusal`)。 */
+  formats: CaptureFormats;
 }
 
 /** 断る答え。**行はまだ無い。** `status` は 400 か 503 (窓口が答えない)。 */
@@ -246,13 +251,17 @@ export type ResolvedSecrets =
   { kind: "resolved"; secrets: Record<string, CrawlSecret> } | RefusedCrawl;
 
 /**
- * 宣言したシークレットが Windmill に在るかを訊き、行に固定する形 (path と更新時刻) にする。値は読まない。
- * 定期実行は作ったときだけでなく、回ごとにここを通す (消された変数で flow まで進まないため)。
+ * 宣言したシークレットが Windmill に在るかを訊き、行に固定する形 (path と更新時刻と、宣言の `archive`) にする。値は
+ * 読まない。定期実行は作ったときだけでなく、回ごとにここを通す (消された変数で flow まで進まないため)。
+ *
+ * 答えの行の写しが、そのまま flow へ送る名前になる (`secretsForFlow`)。だから送れるかもここで決める: 隠す物が在るのに
+ * 配備の形式が値を置き換えられなければ 400 (`formatsRefusal`)。周回も同じ答えを受けるので、回ごとに見直される。
  */
 export const resolveSecrets = async (
   windmill: WindmillVariables | undefined,
   declared: readonly DeclaredSecret[],
   subject: string,
+  formats: Readonly<CaptureFormats>,
 ): Promise<ResolvedSecrets> => {
   // **宣言したシークレットが Windmill に在るか。** 値は読まない (`crawl/windmill-variables.ts`)。required の
   // 物が無ければ 400 で名前と path を言い、secret でない変数が置かれていれば 400。required でない物が無ければ
@@ -281,7 +290,13 @@ export const resolveSecrets = async (
           notSecret.push(secret);
           continue;
         }
-        secrets[secret.name] = { path: secret.path, editedAt: meta.editedAt, rotated: null };
+        secrets[secret.name] = {
+          path: secret.path,
+          editedAt: meta.editedAt,
+          rotated: null,
+          // 宣言の `keep` を写す。写し忘れると、残すつもりの値が黙って隠れる
+          ...(secret.archive === "keep" && { archive: "keep" as const }),
+        };
       }
     } catch (err) {
       if (!(err instanceof WindmillUnreachable)) throw err;
@@ -304,6 +319,8 @@ export const resolveSecrets = async (
       return refused(400, { error: "not a secret variable", secrets: named(notSecret) });
     }
   }
+  const withheld = formatsRefusal(formats, secrets);
+  if (withheld !== undefined) return refused(400, withheld);
   return { kind: "resolved", secrets };
 };
 
@@ -459,7 +476,12 @@ export const prepareCrawl = async (
   const values = checkValues(pinned, variables, { unreadable });
   if (values.kind === "refused") return refused(400, values.body);
 
-  const resolvedSecrets = await resolveSecrets(deps.windmill, values.secrets, who.subject);
+  const resolvedSecrets = await resolveSecrets(
+    deps.windmill,
+    values.secrets,
+    who.subject,
+    deps.formats,
+  );
   if (resolvedSecrets.kind === "refused") return resolvedSecrets;
 
   return {

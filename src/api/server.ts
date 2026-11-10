@@ -262,7 +262,11 @@ const start = async (options: ServerOptions): Promise<void> => {
       resolveIdentity,
       store,
       prepare: (body, who) =>
-        prepareCrawl({ db, tsCompile, ...(windmill && { windmill }) }, body, who),
+        prepareCrawl(
+          { db, tsCompile, formats: capture.formats, ...(windmill && { windmill }) },
+          body,
+          who,
+        ),
       poke: () => {
         scheduleClockHere.poke();
       },

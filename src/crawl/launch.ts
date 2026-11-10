@@ -82,6 +82,13 @@ export interface DispatchedCrawl {
    */
   secrets: Record<string, string>;
   /**
+   * 値を WARC に残すシークレット (名前 → `"keep"`。宣言の `archive`)。**必ず載せる** (空なら `{}`)。BrowserHive の
+   * `secretArchive` になり、無い名前の値は BrowserHive が隠す。**名前は `secrets` の部分集合** —— BrowserHive は
+   * `secrets` に無い名前を 400 で断るので、行の同じ写しから組む (`secretsForFlow`)。`crawl_host` も、実際に解いた
+   * 名前だけを残してから送る (二重の守り)。
+   */
+  secretArchive: Record<string, "keep">;
+  /**
    * 頼まれた User-Agent。打った字のままで、`{chrome}` は BrowserHive が解く。**必ず載せる** (指定なしは `""`)。
    * flow が省いた入力は `null` で届くので、`""` と分ければ `crawl_host` が取り違えに気づける。
    */
@@ -117,9 +124,26 @@ export const toDispatched = ({
   options,
 });
 
-/** flow へ渡すシークレットの形: 名前 → Windmill の変数の path。行が持つ更新時刻は渡さない (flow には要らない)。 */
-export const pathsOf = (secrets: Readonly<Record<string, CrawlSecret>>): Record<string, string> =>
-  Object.fromEntries(Object.entries(secrets).map(([name, secret]) => [name, secret.path]));
+/**
+ * flow へ渡すシークレットの 2 つの欄を、行の**同じ写し**から組む: 名前 → Windmill の変数の path と、値を WARC に残す
+ * 名前 → `"keep"`。行が持つ更新時刻は渡さない (flow には要らない)。
+ *
+ * **2 つを別々に組まない。** `secretArchive` を宣言から組むと、任意で Windmill に無いシークレットの `keep` が
+ * `secrets` に無いまま届き、BrowserHive がそのクロールの取り込みを全部 400 で断る (行に無い物は送らない —— `resolveSecrets`)。
+ */
+export const secretsForFlow = (
+  secrets: Readonly<Record<string, CrawlSecret>>,
+): Pick<DispatchedCrawl, "secrets" | "secretArchive"> => {
+  const entries = Object.entries(secrets);
+  return {
+    secrets: Object.fromEntries(entries.map(([name, secret]) => [name, secret.path])),
+    secretArchive: Object.fromEntries(
+      entries
+        .filter(([, secret]) => secret.archive === "keep")
+        .map(([name]) => [name, "keep" as const]),
+    ),
+  };
+};
 
 export interface LevelDeps {
   db: Kysely<Database>;
@@ -310,9 +334,9 @@ export const firstLevel = (
   // 次の段と同じく `toDispatched` を通す。行の写しには対象サイト (`021`) が在るが、flow には送らない ——
   // compile の段は scripts をそのまま ts-compile-service に渡すので、知らない欄が届く
   scripts: prepared.scripts.map(toDispatched),
-  // クロールごとの値。段ごとに同じ物を配る (行に固定した物)。シークレットは名前 → path だけ
+  // クロールごとの値。段ごとに同じ物を配る (行に固定した物)。シークレットは名前 → path と、残す名前だけ
   variables: prepared.variables,
-  secrets: pathsOf(prepared.secrets),
+  ...secretsForFlow(prepared.secrets),
   userAgent: prepared.userAgent,
   ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
 });
