@@ -57,7 +57,8 @@ export const getJsonObject = async (
  * WACZ (zip) を開くのに使う。文字列に変換すると壊れる。
  *
  * **丸ごと読む。** WACZ の大半は WARC なので、`pages.jsonl` 1 本のために全部を
- * 落とすことになる。それを承知でこうしている: 現物は数十 KB〜数 MB で、範囲読みの
+ * 落とすことになる。それを承知でこうしている: 現物は 1 本で数 MiB (2026-11 の 5 サイトの
+ * トップで 3.8〜9.5 MiB) で、どの使い手も 1 本につき 1 回しか読まないので、範囲読みの
  * 複雑さに見合わない。規模が変わったときの直し方は既に書かれていて、
  * wacz-validator の packages/core/src/wacz/s3-range-reader.ts が `HeadObject` で大きさを
  * 訊いてから yauzl に Range で食わせる形を持っている。

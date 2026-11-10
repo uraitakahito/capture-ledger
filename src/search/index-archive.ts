@@ -8,8 +8,7 @@
  * ## zip を丸ごと落とす
  *
  * WACZ の大半は WARC なので、小さな JSONL 1 本のために全部を落としている。
- * 承知のうえ: 現物は数十 KB〜数 MB で、範囲読みの複雑さに見合わない。
- * 直し方は `archive/s3.ts` の `getObjectBytes` の docstring に書いてある。zip の中を読むのは
+ * 承知のうえ。そうしてよい理由と直し方は `archive/s3.ts` の `getObjectBytes` の docstring に書いてある。zip の中を読むのは
  * `archive/wacz.ts` (合本と共有)。
  *
  * ## 失敗しても `indexed_at` を立てない

@@ -28,8 +28,10 @@ The screen is the Schedules tab in capture-workbench. This page covers the ledge
 | The ledger was down                                                       | One run when it comes back. How many runs passed stays in `crawls.schedule_missed`                |
 
 A row left running is not closed by the tick, so that a run that really is running does not get
-closed. Its health becomes `stuck`, and the "close" button on the screen or
-`POST /api/crawls/:id/failed` closes it.
+closed. When that schedule's own latest run has been `running` for an hour or more, its health
+becomes `stuck`, and the "close" button on the screen or `POST /api/crawls/:id/failed` closes it.
+When a crawl started by hand is the one blocking, the schedule only shows `blocked`, and
+`overdue` an hour after its due time ([Health words](#health-words)).
 
 ## The recipe is pinned
 
