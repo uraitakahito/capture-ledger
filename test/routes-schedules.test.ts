@@ -166,7 +166,7 @@ const fakeStore = () => {
 
 const VALID = { name: "毎朝", cron: "0 4 * * *", request: { seeds: ["https://site.test/"] } };
 
-describe("定期実行の口", () => {
+describe("定期実行のエンドポイント", () => {
   let app: FastifyInstance;
   let fake: ReturnType<typeof fakeStore>;
   let poke: ReturnType<typeof vi.fn>;
@@ -288,7 +288,7 @@ describe("定期実行の口", () => {
       expect(fake.created).toHaveLength(0);
     });
 
-    it("窓口が答えなければ 503 のまま返す", async () => {
+    it("型の検査が答えなければ 503 のまま返す", async () => {
       prepare.mockResolvedValueOnce({
         kind: "refused",
         status: 503,

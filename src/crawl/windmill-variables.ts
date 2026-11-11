@@ -1,15 +1,15 @@
 /**
- * Windmill の変数に「在るか」「secret か」「いつ変わったか」を訊く窓口。**値は読まない。**
+ * Windmill の変数に「在るか」「secret か」「いつ変わったか」を訊くクライアント。**値は読まない。**
  *
  * スクリプトが宣言したシークレット (`crawl/values.ts`) は Windmill の secret 変数 `f/waggle_secrets/<名前>` に
  * 結ぶ。台帳が確かめるのは在るか・secret か・更新時刻だけで、値を解くのは flow の `crawl_host`。
  * 値を読まないので、台帳の process にも log にも DB にも値は通らない。
  *
- * ## 口と token は webhook の物を使う
+ * ## 宛先と token は webhook の物を使う
  *
- * 新しい env は足さない。Windmill の口の根と workspace は `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`
+ * 新しい env は足さない。Windmill の URL の根と workspace は `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`
  * (`<base>/api/w/<workspace>/jobs/run/f/<flow の path>`) から読み、token は `CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN`。
- * webhook を設定していない配備にはこの窓口も無く、シークレットを宣言したスクリプトのクロールは
+ * webhook を設定していない配備にはこのクライアントも無く、シークレットを宣言したスクリプトのクロールは
  * 400 で止まる (そもそも flow が無いので解く者も居ない)。
  *
  * ## `decrypt_secret=false` を必ず付ける
@@ -47,7 +47,7 @@ export class WindmillUnreachable extends Error {
 }
 
 /**
- * webhook の URL から、Windmill の口の根と workspace を読む。`<base>/api/w/<workspace>/jobs/run/…` の形で
+ * webhook の URL から、Windmill の URL の根と workspace を読む。`<base>/api/w/<workspace>/jobs/run/…` の形で
  * なければ undefined。export は試験のため。
  */
 export const windmillApiOf = (
@@ -58,7 +58,7 @@ export const windmillApiOf = (
   return { base: matched[1]!, workspace: matched[2]! };
 };
 
-/** 口を直に渡して窓口を作る。`createWindmillVariables` と試験が使う。 */
+/** 宛先を直に渡してクライアントを作る。`createWindmillVariables` と試験が使う。 */
 export const windmillVariablesAt = ({
   base,
   workspace,
@@ -115,7 +115,7 @@ export const windmillVariablesAt = ({
 };
 
 /**
- * 設定を読んで窓口を作る。webhook の設定が無いか、URL が flow の webhook の形でなければ `undefined`
+ * 設定を読んでクライアントを作る。webhook の設定が無いか、URL が flow の webhook の形でなければ `undefined`
  * (`createWindmillDispatcher` と同じく、起動時に 1 回だけ読む)。
  */
 export const createWindmillVariables = (): WindmillVariables | undefined => {

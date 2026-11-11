@@ -12,7 +12,7 @@
 import { ExplainedError } from "../errors.js";
 import { optional, required } from "./read-env.js";
 
-// 読み口は副作用の無い read-env.ts に置き、src にはここから配る (src の import を動かさないため)。
+// 環境変数を読む関数は副作用の無い read-env.ts に置き、src にはここから配る (src の import を動かさないため)。
 export { optional, required };
 
 /**
@@ -284,7 +284,7 @@ export interface SearchConfig {
 /**
  * 全文検索の宛先。**必須** (CAPTURE-53)。
  *
- * 以前は、無ければ検索と索引の口を出さない形だった。すると flow の索引の段は 404 を
+ * 以前は、無ければ検索と索引のエンドポイントを出さない形だった。すると flow の索引の段は 404 を
  * 「飛ばした」として緑で終わり、検索が無いことに誰も気づかなかった (dev:up は OpenSearch を
  * 起こしていなかった)。いまは無ければ起動しない。呼ぶ側の `collectEnv` に渡して、他の設定と
  * 欠落をまとめる (API も search:reindex も S3 と一緒に建てる)。

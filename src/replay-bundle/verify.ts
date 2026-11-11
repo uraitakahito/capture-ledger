@@ -1,6 +1,6 @@
 /**
  * 合本 1 版が、その署名と合っているかを確かめる (CAPTURE-61)。道具 (`replay-bundle/verify-cli.ts`) の本体で、
- * 保管庫からでも手元の写しからでも同じ物を照らす (読み口だけを `BundleSource` で差し替える)。
+ * 保管庫からでも手元の写しからでも同じ物を照らす (読む部品だけを `BundleSource` で差し替える)。
  *
  * ## 照らす物
  *
@@ -38,7 +38,7 @@ import {
   type VerificationChecks,
 } from "./verify-signed-data.js";
 
-/** 合本の置き場の読み口。保管庫と手元の写しで差し替える。 */
+/** 合本の置き場を読む部品。保管庫と手元の写しで差し替える。 */
 export interface BundleSource {
   /** 報告で置き場を言う文字列。 */
   where: string;

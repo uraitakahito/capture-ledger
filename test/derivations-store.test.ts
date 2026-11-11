@@ -7,7 +7,7 @@ import { recordingDb } from "./recording-db.js";
  * 派生の層の SQL の形。**集計は route の試験の偽の DB では真似できない**ので、Kysely が実際に組んだ
  * SQL をここで照らす (Postgres で通るかは、CI の migration の up・down・up と、実機で見る)。
  */
-describe("派生の層の窓口", () => {
+describe("派生の層の store", () => {
   it("月の使った額は、組織と DB の時計の月で usd を足す", async () => {
     const { db, queries } = recordingDb([[{ spent: "1.250000" }]]);
     expect(await derivationStoreOf(db).spentThisMonth("acme")).toBe(1.25);

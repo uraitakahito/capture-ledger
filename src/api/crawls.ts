@@ -1,5 +1,5 @@
 /**
- * リンクを辿る取り込みを、外から始めるための口。
+ * リンクを辿る取り込みを、外から始めるためのエンドポイント。
  *
  * 実行そのものは Windmill の flow が回し、BrowserHive を直接呼ぶ。ここに残るのは
  * **認可・方針・記録** の 3 つ —— つまり「誰が始めてよいか」「どこまで辿るか」
@@ -173,18 +173,18 @@ export interface CrawlRouteDeps {
   s3: S3Client;
   bucket: string;
   resolveIdentity: IdentityResolver;
-  /** 受け口の設定。無ければ送り先を配らない。 */
+  /** 受け取り先の設定。無ければ送り先を配らない。 */
   sink?: SinkConfig;
   dispatch: CrawlDispatcher;
   /**
-   * Windmill の変数に在るかを訊く窓口 (`crawl/windmill-variables.ts`)。webhook と同じ設定から作るので、
+   * Windmill の変数に在るかを訊くクライアント (`crawl/windmill-variables.ts`)。webhook と同じ設定から作るので、
    * 無いのは URL が flow の webhook の形でないときだけ —— そのとき、シークレットを宣言したスクリプトの
    * クロールは 400 で止まる (値を解く flow が無いので)。
    */
   windmill?: WindmillVariables;
   /**
-   * 型の検査の窓口 (`scripts/ts-compile.ts`)。flow の compile の段と同じ ts-compile-service を、host の
-   * loopback で呼ぶ。**必須** —— 始める口が、必須の変数が渡されているかをここに訊く。
+   * 型の検査のクライアント (`scripts/ts-compile.ts`)。flow の compile の段と同じ ts-compile-service を、host の
+   * loopback で呼ぶ。**必須** —— 始めるエンドポイントが、必須の変数が渡されているかをここに訊く。
    */
   tsCompile: TsCompile;
   /**
@@ -192,12 +192,12 @@ export interface CrawlRouteDeps {
    * `POST /api/crawls/:id/inline/:name/fix` を出す (案は型の検査に通してから返し、費用は派生の層に残すため)。
    */
   fixModel?: FixModel;
-  /** 派生の層 (`026`) の窓口。月の上限を数え、Claude を呼んだ回を残す。 */
+  /** 派生の層 (`026`) の store。月の上限を数え、Claude を呼んだ回を残す。 */
   derivations?: DerivationStore;
   /** 組織ごとの月の上限 (USD)。 */
   claudeBudgetUsd?: number;
   /**
-   * 締めた後に合本を書く窓口。**締めた後は誰も合本を書かない** —— 段の合本は flow が段の報告の後に叩くが、締めるのは
+   * 締めた後に合本を書く係。**締めた後は誰も合本を書かない** —— 段の合本は flow が段の報告の後に叩くが、締めるのは
    * flow が落ちた後 (`/failed`) か次の段を投げられなかった後で、どちらの後にも段は来ない。ここで書かないと、
    * クロールの最後の合本は走っている時の (署名の無い) 物のまま残る (CAPTURE-61)。
    */
@@ -216,7 +216,7 @@ interface PageReport {
   /** `.links.json` の置き場所 (`s3://bucket/key`)。中身を読むのはこちら。 */
   linksLocation?: string;
   /**
-   * `.result.json` を書けた場所 (`s3://bucket/key`)。BrowserHive (または受け口) の答えのまま。
+   * `.result.json` を書けた場所 (`s3://bucket/key`)。BrowserHive (または受け取り先) の答えのまま。
    * **台帳はこれを組み直さない。**
    */
   manifestLocation?: string;
@@ -256,7 +256,7 @@ const secretsOf = (
 
 /**
  * クロール 1 本のページの行と、その取り込みの WACZ の id・撮った時刻・WACZ が最初に入った合本の版。ページの一覧と
- * 1 ページのログの口が、同じ形を返すため。
+ * 1 ページのログのエンドポイントが、同じ形を返すため。
  *
  * **繋ぐのは `task_id`** (`archives.crawl_id` は 027 より前の行で空。`waczCount` と同じ)。uuid 側を text に倒す
  * (`waczCount` と同じ理由 —— 素で繋ぐと `operator does not exist`、逆向きは uuid の形でない値が 1 行でもあると
@@ -494,7 +494,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
   /**
    * クロールの一覧。**workbench のためではなく資源として返す** —— 並べ方も、どの列を
-   * 見せるかも、呼ぶ側が決める。doctor も smoke も CLI も同じ口を使える。
+   * 見せるかも、呼ぶ側が決める。doctor も smoke も CLI も同じエンドポイントを使える。
    *
    * ## 絞りは `:id` と同じ `maySubmit`
    *
@@ -663,7 +663,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         pagesFailed: failures[0]?.total ?? 0,
         error: crawl.error,
         // **台帳のスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
-        // 中身はスクリプトの 1 版の口 (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
+        // 中身はスクリプトの 1 版のエンドポイント (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
         // archive に在る。**その場の TS には頼まれた
         // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は workbench が 2 秒ごとに引き直すので、
         // 1 MiB の TS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
@@ -708,9 +708,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
-   * その場の TS 1 本の source。**「欄に戻す」のための口** —— 直して撮り直すときに、書いた物を
+   * その場の TS 1 本の source。**「欄に戻す」のためのエンドポイント** ——直して撮り直すときに、書いた物を
    * 取り戻せるのはここだけ（archive に在るのは変換後の JS）。台帳のスクリプトは台帳と archive に在るので
-   * 返さない（404）。名前の綴りは受け口と同じ schema で、合わなければ許可を見る前に 400。
+   * 返さない（404）。名前の綴りは`POST /api/crawls` の本文と同じ schema で、合わなければ許可を見る前に 400。
    */
   app.get<{ Params: { id: string; name: string } }>(
     "/api/crawls/:id/inline/:name",
@@ -754,12 +754,12 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
   /**
    * クロール 1 本の組み合わせを、ts-compile-service に送り直した型の誤り。**落ちたクロールの誤りを
-   * 行と列で読み直す口** —— 行の失敗の文は台帳の上限の 2,000 字で切られ、最初の数件しか無い。
+   * 行と列で読み直すエンドポイント** —— 行の失敗の文は台帳の上限の 2,000 字で切られ、最初の数件しか無い。
    *
    * 送るのは、始めたときに行へ固定した写しを webhook と同じ形 (`toDispatched`) にした物で、flow の
    * compile の段が送ったのと同じ組み合わせ。だから同じ版のサービスなら、同じ誤りが返る。通る
    * 組み合わせなら `diagnostics` は空。`script` は誤りの在るスクリプトの id (受け皿の型や lib の
-   * 誤りは `file` のまま)。Claude は呼ばない —— 読むだけの口なので GET。
+   * 誤りは `file` のまま)。Claude は呼ばない —— 読むだけのエンドポイントなので GET。
    */
   app.get<{ Params: { id: string } }>(
     "/api/crawls/:id/diagnostics",
@@ -1269,12 +1269,12 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
-   * 規則の並びを、始める前に確かめる。**書かない口なので GET** —— workbench は GET の `/api/*` を
-   * そのまま通すので、書く口を増やさずに載る。何度呼んでも何も変わらない。
+   * 規則の並びを、始める前に確かめる。**書かないエンドポイントなので GET** —— workbench は GET の `/api/*` を
+   * そのまま通すので、書き込みのエンドポイントを増やさずに載る。何度呼んでも何も変わらない。
    *
    * 規則は `rule=動き:当てる物` を並べる (当てる物の URL の `:` は、最初の 1 つで切るので構わない)。
-   * 判定は始める口の 400 と同じ関数 (`checkRules`)。行ごとに読めたか・覆われているか、起点ごとに
-   * 撮って辿るかを返す。認可は始める口と同じ。
+   * 判定は始めるエンドポイントの 400 と同じ関数 (`checkRules`)。行ごとに読めたか・覆われているか、起点ごとに
+   * 撮って辿るかを返す。認可は始めるエンドポイントと同じ。
    */
   app.get<{ Querystring: { seed?: string[]; rule?: string[] } }>(
     "/api/crawl-rules/check",
@@ -1861,7 +1861,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * ## 締めた後に合本を書く
    *
    * 締めたら、終わった状態 (failed) の合本を 1 本書く (署名の設定が在れば署名する。CAPTURE-61)。flow は落ちた段の
-   * 後に合本の口を叩かないので、ここで書かないと、クロールの最後の合本は走っている時の物のまま残る。書き終えてから
+   * 後に合本のエンドポイントを叩かないので、ここで書かないと、クロールの最後の合本は走っている時の物のまま残る。書き終えてから
    * 答える。書けなくても `{closed: true}` は変わらない。
    *
    * ## 落ちた段の取り込みは台帳に入らない

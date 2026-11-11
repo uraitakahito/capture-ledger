@@ -19,16 +19,16 @@ import { recordingDb, type RecordedQuery } from "./recording-db.js";
 import { createTestCa, OPENSSL, type TestCa } from "./signing-ca.js";
 
 /**
- * 合本の口 (`POST /api/crawls/:id/replay-bundle`)。索引の口の試験 (`routes-search.test.ts`) と同じ作り。
+ * 合本のエンドポイント (`POST /api/crawls/:id/replay-bundle`)。索引のエンドポイントの試験 (`routes-search.test.ts`) と同じ作り。
  *
  * DB は本物の Kysely に SQL を組ませて記録する代役 (`recording-db.ts`)。返す行は試験が並べた物なので、**SQL が
  * Postgres で本当に通るか・「前へだけ」を DB が本当に守るかはここでは言えない** (この repo に DB の試験は無い。
  * dev の Postgres で確かめる)。ここで見るのは、組まれた SQL の形 (払い出しと読みが 1 つのトランザクション・
- * 前へだけの条件)、保管庫に書く物、答えの形。WACZ を検める所は差し替え口 (`inspectOne`) にして、zip は
+ * 前へだけの条件)、保管庫に書く物、答えの形。WACZ を検める所は差し替える引数 (`inspectOne`) にして、zip は
  * `replay-bundle-inspect.test.ts` が見る。
  *
  * 署名 (CAPTURE-61) は 2 つの形で見る。いつ頼むか・何を頼むか・どの順に置くかは、頼まれた hash を記録する代役の
- * 窓口で。署名が付かない時に合本を署名なしで書いて理由を残すかは、本物の窓口 (`replay-bundle/sign.ts`) と本物の
+ * クライアントで。署名が付かない時に合本を署名なしで書いて理由を残すかは、本物のクライアント (`replay-bundle/sign.ts`) と本物の
  * 検めに、fetch を差し替えて試験の CA (`test/signing-ca.ts`) の署名を返させて。
  */
 
@@ -56,7 +56,7 @@ const build = async (opts: {
   inspectOne?: (archive: UninspectedArchive) => Promise<void>;
   /** 保管庫への書き込みを、この誤りで落とす。 */
   putError?: Error;
-  /** 署名の窓口。省けば署名の設定が無い配備。 */
+  /** 署名のクライアント。省けば署名の設定が無い配備。 */
   signer?: ReplayBundleSigner;
 }): Promise<{ app: FastifyInstance; queries: RecordedQuery[]; puts: Put[] }> => {
   const { db, queries } = recordingDb(opts.results);
@@ -116,7 +116,7 @@ const post = async (
   return { res, queries: built.queries, puts: built.puts };
 };
 
-/** まだ検めていないアーカイブ (差し替え口に渡る物)。 */
+/** まだ検めていないアーカイブ (差し替える引数に渡る物)。 */
 const uninspected = (id: string): UninspectedArchive => ({
   id,
   bucket: "browserhive",
@@ -199,7 +199,7 @@ const results = (
 
 const sqls = (queries: RecordedQuery[]) => queries.map((query) => query.sql);
 
-describe("合本の口の入口", () => {
+describe("合本のエンドポイントの入口", () => {
   it("身元が解けなければ 401", async () => {
     const { res, queries } = await post({ identity: false });
     expect(res.statusCode).toBe(401);
@@ -429,7 +429,7 @@ describe("合本を書く", () => {
   });
 });
 
-/** 頼まれた hash と、そのときの問い合わせを記録する代役の窓口。答えは `answer` が決める。 */
+/** 頼まれた hash と、そのときの問い合わせを記録する代役のクライアント。答えは `answer` が決める。 */
 const recordingSigner = (
   queries: () => RecordedQuery[],
   answer: (hash: string) => SignOutcome = (hash) => ({
@@ -448,8 +448,8 @@ const recordingSigner = (
 };
 
 /**
- * 代役の窓口が問い合わせを見られるよう、`build` の queries を後から渡す形で投げる。
- * `post` と同じだが、窓口を作るのに queries が要る。
+ * 代役のクライアントが問い合わせを見られるよう、`build` の queries を後から渡す形で投げる。
+ * `post` と同じだが、クライアントを作るのに queries が要る。
  */
 const postSigned = async (
   opts: Omit<Parameters<typeof build>[0], "signer">,
@@ -596,11 +596,11 @@ describe("合本に署名する（CAPTURE-61）", () => {
 });
 
 /**
- * 署名が付かない時は、合本を署名なしで書いて理由を残す。本物の窓口 (`replay-bundle/sign.ts`) と本物の検めに、
+ * 署名が付かない時は、合本を署名なしで書いて理由を残す。本物のクライアント (`replay-bundle/sign.ts`) と本物の検めに、
  * fetch を差し替えて答えさせる。署名は試験の CA (`test/signing-ca.ts`) の本物 —— 置き換えの文字列では、
  * 検めを消しても通ってしまう。
  */
-describe("署名が付かなければ、署名なしで書いて理由を残す（本物の窓口と検め）", () => {
+describe("署名が付かなければ、署名なしで書いて理由を残す（本物のクライアントと検め）", () => {
   const URL = "http://wacz-signer.test:8080/sign";
   let ca: TestCa;
   let other: TestCa;
@@ -621,7 +621,7 @@ describe("署名が付かなければ、署名なしで書いて理由を残す�
   const answering = (respond: (hash: string, signal: AbortSignal) => Promise<Response>) => {
     const requests: { url: string; hash: string; authorization: string | null }[] = [];
     vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
-      // 窓口は本文を JSON の文字列で送る
+      // クライアントは本文を JSON の文字列で送る
       const { hash } = JSON.parse(init.body as string) as { hash: string };
       requests.push({ url, hash, authorization: new Headers(init.headers).get("authorization") });
       return respond(hash, init.signal!);
@@ -728,7 +728,7 @@ describe("署名が付かなければ、署名なしで書いて理由を残す�
 
 /**
  * 作り直しの道具 (`pnpm run replay-bundle:rebuild`) が、合本を書く前に打つ。027 より前の行は `crawl_id` が空なので、
- * 台帳の他の口と同じ `crawl_pages.task_id` でクロールに繋ぐ。
+ * 台帳の他のエンドポイントと同じ `crawl_pages.task_id` でクロールに繋ぐ。
  */
 describe("027 より前のアーカイブをクロールに繋ぐ（作り直しの道具）", () => {
   it("crawl_id が空で、そのクロールの頁の行が同じ task_id を持つ物だけに入れる", async () => {

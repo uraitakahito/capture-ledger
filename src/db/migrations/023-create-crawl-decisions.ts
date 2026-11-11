@@ -16,7 +16,7 @@
  *
  * ## ホスト名で、ポートは外す
  *
- * ドメインの規則も、ドメインで引く口 (`GET /api/decisions`) も、ホスト名で照らす。ポートを含む
+ * ドメインの規則も、ドメインで引くエンドポイント (`GET /api/decisions`) も、ホスト名で照らす。ポートを含む
  * `crawl_pages.host` とは形が違う。
  *
  * ## 例は数本まで
@@ -50,7 +50,7 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     .addCheckConstraint("crawl_decisions_no_rule_skips", sql`rule > 0 OR action = 'skip'`)
     .execute();
 
-  // ドメインから引く口 (`GET /api/decisions`) のため。サブドメインの側は前方の % で index を使えないが、
+  // ドメインから引くエンドポイント (`GET /api/decisions`) のため。サブドメインの側は前方の % で index を使えないが、
   // 行の数が少ないうちはそれで足りる。
   await db.schema
     .createIndex("crawl_decisions_hostname_idx")

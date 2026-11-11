@@ -1,5 +1,5 @@
 /**
- * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 9 つ。
+ * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 10 個。
  *
  * ## なぜ要るのか
  *
@@ -32,6 +32,11 @@
  * - **7080 番の Web アプリは「capture-workbench」、文で短く書くときは「workbench」と書く。** 2026-11 に「dashboard」から
  *   そろえた（repo の改名に合わせて）。この repo に Grafana の dashboard は無いので、語を全部見る（capture-scheduler も同じ）
  * - **WACZ を開くビューアは「replayweb-server」と書く。** 2026-11 に「replay」から替えた（repo の改名に合わせて）
+ * - **HTTP の method と path の組は「エンドポイント」、待ち受けの番号は「ポート」、スクリプトを差し込む時は「phase」、
+ *   成果物を PUT する先は「受け取り先」と書く。** 2026-11 に（Jira CAPTURE-184）、1 字の語から意味ごとに替えた。
+ *   同じ字がエンドポイント・ポート・phase・受け取り先・`POST /api/crawls` の本文の schema を兼ねていた。
+ *   クライアントのオブジェクトを指していた「窓」の付く語も、クライアント・store・物の名前に替えた
+ *   （capture-workbench・capture-scheduler・browserhive も見張っている）
  *
  * 書き手（人と Claude）は長くこの形で書いてきたので、見張らなければ戻ってくる。
  *
@@ -49,6 +54,9 @@
  * - 「crawler」: 一式の意味の形の並び（OLD_SUITE。capture-scheduler と同じ並び）。`crawler-storage`・`/w/crawler/`・
  *   `workspace crawler`・試験の入力値・ふつうの名詞は見ない
  * - 「dashboard」: 全部（大文字小文字を問わない）。browserhive の契約の写し（src/rpc/generated/）も見る
+ * - 「口」: 切り口・入口・出口・窓口・口座を外して残った字。「注入口」は先に名指しで止める。browserhive の契約の写し
+ *   （src/rpc/generated/browserhive/）の 5 文だけは、写しの元の browserhive を直した版へ pin を上げるまで許す
+ *   （KUCHI_ALLOWED。上げたら消す）
  * - 「replay」: 旧い名前の形の並びだけ（OLD_REPLAY_NAMES）。語の replay は合本の形式（replay.json）と、画面の字と、ReplayWeb.page の
  *   振る舞いの文に残るので見ない
  *
@@ -72,10 +80,33 @@ const ALLOWED = /種類|種別|\d\s?種/gu;
  * 足すときは、プロセスの「起こす」（dev:up が起こす・起こし直す・webhook で起こす）に当たらないことを確かめる。
  */
 const OKOSU =
-  /クロールを起こ|クロールは起こ|取り込みを起こ|取り込みの実行を起こ|起こしたクロール|起こせ(ます|ません|る|ない|れば|ば|て)|起こす(面|欄|口)|起こした(人|本人|行)|起こしました|起こしてよ|下敷きにして起こ|「起こす」|"起こす"/u;
+  /クロールを起こ|クロールは起こ|取り込みを起こ|取り込みの実行を起こ|起こしたクロール|起こせ(ます|ません|る|ない|れば|ば|て)|起こす(面|欄)|起こした(人|本人|行)|起こしました|起こしてよ|下敷きにして起こ|「起こす」|"起こす"/u;
 
 /** 「網」のうち許す熟語。足すときは、その形が network の意味を持ちえないことを確かめる。 */
 const AMI_ALLOWED = /安全網|網羅/gu;
+/** 「口」を、エンドポイント・ポート・phase・受け取り先の意味に取れない語。「注入口」は「入口」を含むので先に止める。 */
+const NOT_KUCHI = /切り口|入口|出口|窓口|口座/gu;
+/**
+ * browserhive の契約の写しに残る文（ファイルと文の組）。写しは `pnpm run openapi:generate` が submodule から作るので
+ * 手で直せない。browserhive を直した版へ `.upstream/browserhive` を上げたら、この表ごと消す（CAPTURE-184 の段 5）。
+ */
+const KUCHI_ALLOWED: ReadonlyMap<string, readonly string[]> = new Map(
+  ["src/rpc/generated/browserhive/openapi.json", "src/rpc/generated/browserhive/openapi.d.ts"].map(
+    (file) => [
+      file,
+      [
+        "呼ぶ側が 1 回きりの口を渡し",
+        "受け口が返した値",
+        "呼ぶ側の受け口",
+        "受け口が返した場所",
+        "違うのは注入の口だけ",
+      ],
+    ],
+  ),
+);
+/** 許した文を外した行。 */
+const withoutAllowed = (line: string, file: string): string =>
+  (KUCHI_ALLOWED.get(file) ?? []).reduce((rest, sentence) => rest.split(sentence).join(""), line);
 
 /**
  * その場で書く物の古い呼び名（2026-11 まで）。JS になるのは変換の後なので、走った JS・変換後の JS は当てない。
@@ -93,7 +124,7 @@ const OLD_SUITE =
   /(?<!workspace )\bcrawler ?(の|で|が|を|全体)|\bcrawler repo(s|sitory|sitories)\b|\ball of crawler\b|\b[Tt]he crawler's development\b/u;
 
 interface Rule {
-  find: (line: string) => boolean;
+  find: (line: string, file: string) => boolean;
   say: string;
 }
 
@@ -152,6 +183,16 @@ const RULES: Rule[] = [
       "replay の旧い名前が残っています。WACZ を開くビューアは「replayweb-server」、環境変数は REPLAYWEB_SERVER_*、" +
       "submodule は `.upstream/replayweb-server` と書きます。",
   },
+  {
+    find: (line, file) => {
+      const rest = withoutAllowed(line, file);
+      return rest.includes("注入口") || rest.replace(NOT_KUCHI, "").includes("口");
+    },
+    say:
+      "「口」が残っています。HTTP の method と path の組は「エンドポイント」、待ち受けの番号は「ポート」、" +
+      "スクリプトを差し込む時（behavior・preload）は「phase」、成果物を PUT する先は「受け取り先」と書きます" +
+      "（切り口・入口・出口・口座はそのまま）。",
+  },
 ];
 
 // 追跡している物と、まだ add していない新しい物（`repo-files.ts`）。
@@ -170,7 +211,7 @@ for (const file of files) {
   if (text.includes("\0")) continue; // 画像などの binary
   text.split("\n").forEach((line, i) => {
     found.forEach((rule) => {
-      if (rule.find(line)) rule.hits.push(`${file}:${String(i + 1)}: ${line.trim()}`);
+      if (rule.find(line, file)) rule.hits.push(`${file}:${String(i + 1)}: ${line.trim()}`);
     });
   });
 }

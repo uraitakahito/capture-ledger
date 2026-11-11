@@ -1,10 +1,10 @@
 /**
- * 規則が決めたことを残す・読む・確かめる口。
+ * 規則が決めたことを残す・読む・確かめるエンドポイント。
  *
  * 本物の Kysely に SQL を組ませ、実行の直前で取り上げる代役 (`recording-db.ts`) で見る。返す行は
  * 問い合わせの順に試験が並べた物から渡すので、**SQL が Postgres で本当に通るか・数が本当に置き換わるか**は
  * ここでは言えない —— それは開発の DB で確かめる (この repo に DB の試験は無い)。ここで見るのは配線:
- * 規則で分けた物が表と次の段の両方に届くか、口が認可と言い分を守るか。
+ * 規則で分けた物が表と次の段の両方に届くか、エンドポイントが認可と言い分を守るか。
  */
 import { describe, it, expect } from "vitest";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
@@ -66,7 +66,7 @@ const build = async (opts: {
   results?: readonly (readonly object[])[];
   allowed?: boolean;
   links?: Record<string, unknown>;
-  /** Windmill の変数の窓口。省けば無い配備 (読み直しをしない)。 */
+  /** Windmill の変数のクライアント。省けば無い配備 (読み直しをしない)。 */
   windmill?: WindmillVariables;
 }): Promise<Built> => {
   const { db, queries } = recordingDb(opts.results);

@@ -49,7 +49,7 @@ const DEFAULT_PORT = 7070;
 const DEFAULT_DRAIN_INTERVAL_MS = 5_000;
 /**
  * 待ち受けるアドレス。既定はループバックのまま —— 外に出すのは配備の判断で、
- * このプロセスは取り込みを始められる口を持つ(`api/crawls.ts`)。既定で広げない。
+ * このプロセスは取り込みを始められるエンドポイントを持つ(`api/crawls.ts`)。既定で広げない。
  */
 const DEFAULT_HOST = "127.0.0.1";
 
@@ -126,15 +126,15 @@ const start = async (options: ServerOptions): Promise<void> => {
 
   registerRoutes(app, { db, fga, s3, resolveIdentity });
   registerMeRoute(app, { fga, resolveIdentity });
-  // 型の検査の窓口 (ts-compile-service を host の loopback で)。クロールの口とスクリプトの口の両方が使う
+  // 型の検査のクライアント (ts-compile-service を host の loopback で)。クロールとスクリプトのエンドポイントの両方が使う
   const tsCompile = createTsCompile();
-  // 何が走るかを、**頼む前に**訊ける口。webhook の設定が無い配備でも出す ——
+  // 何が走るかを、**頼む前に**訊けるエンドポイント。webhook の設定が無い配備でも出す ——
   // 台帳にスクリプトが無いことは、クロールを始められるかどうかとは別の問いなので。
   registerScriptsRoute(app, { db, fga, resolveIdentity, ...(tsCompile && { tsCompile }) });
 
-  // 成果物の受け口。**BrowserHive が保管庫を持たずに済むための口。**
+  // 成果物の受け取り先。**BrowserHive が保管庫を持たずに済むためのエンドポイント。**
   //
-  // **両方揃ったときだけ生きる。** 鍵だけでは口を出せない (誰でも書ける受け口になる)。
+  // **両方揃ったときだけ生きる。** 鍵だけでは受け取り先を出せない (誰でも書ける受け取り先になる)。
   // 宛先だけでも配れない (署名できない)。片方だけ設定できる道を残すと
   // 「宛先は在るが誰も検めない」が作れてしまう —— 署名の設定で一度踏んだ形。
   const sinkOrigin = optional("CAPTURE_LEDGER_SINK_ORIGIN", "");
@@ -180,19 +180,19 @@ const start = async (options: ServerOptions): Promise<void> => {
     optional("CAPTURE_LEDGER_CAPTURE_SIGNING", "") === "1",
   );
 
-  // リンクを辿るクロールの口。実行は Windmill の flow が回すので、ここが渡すのは
+  // リンクを辿るクロールのエンドポイント。実行は Windmill の flow が回すので、ここが渡すのは
   // 「頼んだ」という事実だけ。dispatcher は **起動時に** 設定を読む —— 頼まれた瞬間に
   // 「設定がありません」と言うのでは遅く、そのときには行が既に立っている。
   //
-  // 設定が無ければ口ごと出さない。**404 になるのは正しい** —— その配備にこの能力は
+  // 設定が無ければエンドポイントごと出さない。**404 になるのは正しい** —— その配備にこの能力は
   // 本当に無いので、「してはいけない」と同じ答えでよい。log で区別が付くようにする。
   const dispatch = createWindmillDispatcher();
-  // 定期実行の周回 (`schedules/tick.ts`)。クロールの口と同じ設定で動くので、口が無い配備では周回も無い
+  // 定期実行の周回 (`schedules/tick.ts`)。クロールのエンドポイントと同じ設定で動くので、エンドポイントが無い配備では周回も無い
   let clock: ScheduleClock | undefined;
   if (dispatch === undefined) {
     logger.info("CAPTURE_LEDGER_CRAWL_WEBHOOK_URL is not set — /api/crawls is not served");
   } else {
-    // 宣言で結ぶシークレットが Windmill に在るかを訊く窓口。webhook と同じ設定から作る (新しい env は無い)。
+    // 宣言で結ぶシークレットが Windmill に在るかを訊くクライアント。webhook と同じ設定から作る (新しい env は無い)。
     // 無いのは URL が flow の webhook の形でないときだけで、そのときシークレットを宣言したクロールは 400。
     const windmill = createWindmillVariables();
     if (windmill === undefined) {
@@ -201,7 +201,7 @@ const start = async (options: ServerOptions): Promise<void> => {
           "crawls whose scripts declare secrets are refused",
       );
     }
-    // **クロールを始めるには型の検査の窓口が要る。** 始める口が、必須の変数が渡されているかをここに訊く。
+    // **クロールを始めるには型の検査のクライアントが要る。** 始めるエンドポイントが、必須の変数が渡されているかをここに訊く。
     // 無ければ起動で止める (黙って飛ばすと、必須を渡さないクロールが flow まで進んでから落ちる)。
     if (tsCompile === undefined) {
       throw new Error(
@@ -215,7 +215,7 @@ const start = async (options: ServerOptions): Promise<void> => {
         "CAPTURE_LEDGER_ANTHROPIC_API_KEY is not set — /api/crawls/:id/inline/:name/fix is not served",
       );
     }
-    // 締めた後の合本 (`/failed`・投げられなかった段)。合本の口と同じ関数・同じ署名の窓口
+    // 締めた後の合本 (`/failed`・投げられなかった段)。合本のエンドポイントと同じ関数・同じ署名のクライアント
     const bundleWriter: ReplayBundleWriter = (crawlId, depth) =>
       writeReplayBundle(crawlId, depth, {
         db,
@@ -242,7 +242,7 @@ const start = async (options: ServerOptions): Promise<void> => {
       writeReplayBundle: bundleWriter,
     });
 
-    // 定期実行。周回はクロールを始める窓口を口と分け合う。始める前に確かめる関数も同じ物
+    // 定期実行。周回はクロールを始める係をエンドポイントと分け合う。始める前に確かめる関数も同じ物
     const settings = scheduleSettings();
     const store = scheduleStoreOf(db);
     const { dispatchLevel } = levelDispatcher({ db, dispatch, writeReplayBundle: bundleWriter });
@@ -273,7 +273,7 @@ const start = async (options: ServerOptions): Promise<void> => {
       minIntervalMinutes: settings.minIntervalMinutes,
       now: () => new Date(),
     });
-    // 合本の口 (`api/replay-bundle.ts`)。クロールの flow が段ごとに叩く。合本は保管庫に書くので bucket が要る
+    // 合本のエンドポイント (`api/replay-bundle.ts`)。クロールの flow が段ごとに叩く。合本は保管庫に書くので bucket が要る
     registerReplayBundleRoutes(app, {
       db,
       fga,
@@ -284,9 +284,9 @@ const start = async (options: ServerOptions): Promise<void> => {
     });
   }
 
-  // 全文検索の口。**必須** (CAPTURE-53) —— 宛先は上の collectEnv が他の設定と一緒に求める。
+  // 全文検索のエンドポイント。**必須** (CAPTURE-53) —— 宛先は上の collectEnv が他の設定と一緒に求める。
   // 起動の時に OpenSearch に繋いで索引を作る (無ければ)。答えなければここで止まる。以前の
-  // 「設定が無ければ口を出さない」形では、flow の索引の段が 404 を「飛ばした」として緑で終わり、
+  // 「設定が無ければエンドポイントを出さない」形では、flow の索引の段が 404 を「飛ばした」として緑で終わり、
   // 検索が無いことに誰も気づかなかった。
   const search = createSearchClient(searchSettings);
   await ensureSearchReady(search, searchSettings);

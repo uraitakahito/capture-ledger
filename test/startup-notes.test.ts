@@ -78,7 +78,7 @@ describe("startupNotes", () => {
     expect(lastLine(picker)?.msg).toMatch(/crawl level reports: off$/);
   });
 
-  it("受け口だけでも、127.0.0.1 ならコンテナから届かないと言う", () => {
+  it("受け取り先だけでも、127.0.0.1 ならコンテナから届かないと言う", () => {
     const sinkOnly: StartupFacts = { ...FOUR_LINES, host: "127.0.0.1", crawls: false, sink: true };
     expect(warnings(sinkOnly)).toEqual([
       "Containers cannot reach this API: it listens on 127.0.0.1, and artifact uploads (sink) " +

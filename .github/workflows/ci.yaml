@@ -144,13 +144,13 @@ jobs:
 
       # スクリプトの CLI (pnpm run scripts) を、本物の Postgres に当てる。
       #
-      # スクリプトを読む口と同じ関数 (readScript・listScripts の id・受け皿の型) が Postgres で本当に
+      # スクリプトを読むエンドポイントと同じ関数 (readScript・listScripts の id・受け皿の型) が Postgres で本当に
       # 通るか、版を本当に絞るか、`020` の表が版を足すかを見るのは、ここだけ。自分の id
       # (smoke-<pid>) の行と、自分で足した型だけを足して、最後に消す。
       - name: Scripts CLI against Postgres
         run: pnpm run build:tools && node dist/tools/scripts-smoke.js
 
-      # 定期実行の予定の窓口と周回を、本物の Postgres に当てる。
+      # 定期実行の予定の store と周回を、本物の Postgres に当てる。
       #
       # 行のロック (SKIP LOCKED)・走行中の 1 本の一意の索引・ぶつかったときの rollback は、試験の偽の DB では
       # 確かめられない。自分の予定 (smoke-<pid>) とその回だけを足して、最後に消す。

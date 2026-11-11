@@ -1,7 +1,7 @@
 /**
- * スクリプトを読む口。**一覧は身元だけ、中身は 1 版の口。**
+ * スクリプトを読むエンドポイント。**一覧は身元だけ、中身は 1 版のエンドポイント。**
  *
- * | 口 | 返すもの |
+ * | エンドポイント | 返すもの |
  * | --- | --- |
  * | `GET /api/scripts` | 有効な各 id の最新版の身元と対象サイトと宣言 (サイト用のスクリプトも。何も指定しないクロールが走らせるのは、対象サイトの無い物と起点に合う物) |
  * | `GET /api/scripts/:id/versions` | 1 つの id の版の並び (新しい順)。**source は返さない** |
@@ -11,11 +11,11 @@
  *
  * 一覧が身元と対象サイトと宣言 (`id` / `version` / `phase` / `sha256` / `sites` / `params`) だけなのは、何が走るかを知るのに
  * 要るのが「どれの何版か」「どの起点で走るか」「どの値を読むか」だから。workbench は `params` で、新しいクロールの
- * 画面に変数の欄を並べる (`024`)。中身は 1 版の口・`pnpm run scripts show`・アーカイブ (`behaviors/custom.jsonl`。
- * こちらは変換後の JS) に在る。1 版の口は**有効かどうかを見ない** —— 無効な版も、過去のクロールが
+ * 画面に変数の欄を並べる (`024`)。中身は 1 版のエンドポイント・`pnpm run scripts show`・アーカイブ (`behaviors/custom.jsonl`。
+ * こちらは変換後の JS) に在る。1 版のエンドポイントは**有効かどうかを見ない** —— 無効な版も、過去のクロールが
  * 走らせた物で、読み返す相手になる。
  *
- * ## なぜ顔ぶれの口が要るのか
+ * ## なぜ顔ぶれのエンドポイントが要るのか
  *
  * 台帳にスクリプトが無いと、クロールはページの中で何も走らせない —— スクロールも遅延読み込みも
  * 起きないまま、`complete: true` のアーカイブが出る。`POST /api/crawls` はそれを
@@ -33,7 +33,7 @@
  * ## 認可
  *
  * 全部 `POST /api/crawls` と同じ `maySubmit` —— **始められる者だけが、何が走るかを見られる。**
- * 許可が無ければ 404 で、クロールの口と同じ答え方をする (在ることを漏らさない)。
+ * 許可が無ければ 404 で、クロールのエンドポイントと同じ答え方をする (在ることを漏らさない)。
  */
 import { createHash } from "node:crypto";
 
@@ -50,11 +50,11 @@ export interface ScriptsRouteDeps {
   db: Kysely<Database>;
   fga: OpenFgaClient;
   resolveIdentity: IdentityResolver;
-  /** 型の検査の窓口。無ければ `POST /api/scripts/check` を出さない。 */
+  /** 型の検査のクライアント。無ければ `POST /api/scripts/check` を出さない。 */
   tsCompile?: TsCompile;
 }
 
-/** 検査の口が受ける本文の上限。`POST /api/crawls` の上限と同じ 1 MiB。 */
+/** 検査のエンドポイントが受ける本文の上限。`POST /api/crawls` の上限と同じ 1 MiB。 */
 const CHECK_BODY_LIMIT = 1024 * 1024;
 
 /** 台帳のスクリプトの id。綴りは `scripts` の表の CHECK (`017`) が決めるので、ここは空でないことだけを見る */
@@ -95,7 +95,7 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
     });
   });
 
-  /** 1 つの id の版。新しい順。**source は返さない**（読むのは 1 版の口）。無い id は 404。 */
+  /** 1 つの id の版。新しい順。**source は返さない**（読むのは 1 版のエンドポイント）。無い id は 404。 */
   app.get<{ Params: { id: string } }>(
     "/api/scripts/:id/versions",
     {

@@ -11,7 +11,7 @@
  * 知らない値を黙って UNRECOGNIZED に落としていたが、JSON の写しに逆関数は無い ——
  * 照らさずに型だけ名乗ると、v11 の manifest や壊れた物が `status` の比較を素通りして
  * 台帳に入りうる。通らなければ、どの項目が駄目かを添えて投げる。呼ぶ側 (段の登録・
- * reconcile) は 1 件の失敗で止まらず、飛ばしてそう言う。1 ページのログの口
+ * reconcile) は 1 件の失敗で止まらず、飛ばしてそう言う。1 ページのログのエンドポイント
  * (`GET /api/crawls/:id/pages/:page/log`) は、投げたら `manifest-invalid` と答える。
  *
  * 契約に無い項目は通す。BrowserHive が項目を足す版上げで台帳が止まらないため。
@@ -74,7 +74,7 @@ export type ManifestOutcome = { key: string; error: null } | { key: null; error:
 /**
  * 段の報告が運んだ manifest の結末を、台帳に書く形にする。
  *
- * **鍵は組まない。** 書いた本人 (BrowserHive か受け口) が「ここに書いた」と答えた場所から
+ * **鍵は組まない。** 書いた本人 (BrowserHive か受け取り先) が「ここに書いた」と答えた場所から
  * bucket を外し、残りをそのまま鍵にする。以前はここで BrowserHive の命名規則を写して綴りを
  * 組み直していたが、写しは間違えても静かに壊れ、bucket を一覧して拾う reconcile がその穴を
  * 隠していた。答えを持っている相手に訊けば、写しは要らない。

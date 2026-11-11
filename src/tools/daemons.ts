@@ -90,7 +90,7 @@ export const HOST_PROCESSES: HostProcess[] = [
     // 建てると、core を変えたあとに古い core/dist の上で新しい daemon が黙って立つ（実際に
     // そうなっていた。気づかなかったのは、毎回 pnpm run check を先に打っていたから）。
     run: "pnpm --filter @wacz-validator/daemon... build && node packages/daemon/dist/cli.js --port 7180",
-    // **動いている build が名乗る口。** daemon は自分で建て直らない —— wacz-validator を
+    // **動いている build が名乗るエンドポイント。** daemon は自分で建て直らない —— wacz-validator を
     // 出しても、:7180 は起こした時の build のまま動き続ける (2026-09-26 に見たとき、
     // v0.28.1 が 2 日動いていて、その間に出た v0.29.0・v0.30.0 の rule はどれも workbench に
     // 出ていなかった)。dev:status は、ここで訊いた `gitSha` を根の checkout と比べる。

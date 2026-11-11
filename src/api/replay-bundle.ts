@@ -1,5 +1,5 @@
 /**
- * 合本の口。クロールの WACZ を全部並べた `replay.json` と、その頁の行の `pages.json` を、新しい版として保管庫に書く
+ * 合本のエンドポイント。クロールの WACZ を全部並べた `replay.json` と、その頁の行の `pages.json` を、新しい版として保管庫に書く
  * (`replay-bundle/write.ts`)。replay はそれを 1 つのアーカイブとして開き、どの WACZ の頁へもリンクで行ける。
  *
  * 呼ぶのはクロールの flow で、段の報告 (`POST /api/crawls/:id/pages`) の後・索引 (`POST /api/crawls/:id/index`) の
@@ -9,7 +9,7 @@
  *
  * **保管庫に書けなくても 200** で、`error` に理由を入れ、`crawls.replay_bundle_error` にも残す。合本は撮った物から
  * 作る派生物で、flow の段を誤りにするとクロールが failed になり、次の段が既に出ているときに状態が食い違う。
- * 401・404・400 は索引の口と同じ (身元が無い・`can_submit` が無い・id や本文の形が違う)。クロールが無ければ 404
+ * 401・404・400 は索引のエンドポイントと同じ (身元が無い・`can_submit` が無い・id や本文の形が違う)。クロールが無ければ 404
  * (置き場の鍵に組織が要る)。DB に届かないときだけ 500。
  *
  * ## 終わったクロールの合本には署名する (CAPTURE-61)
@@ -23,7 +23,7 @@
  *
  * flow の段の深さで、`replay.json` に記録するだけ。**版ではない** —— 版は作るたびに台帳が払い出す (作り直しで同じ
  * 深さを 2 度書くため)。どの WACZ を入れるかも呼ぶ側に言わせない —— 台帳の `archives.crawl_id` が知っている
- * (索引の口と同じ線引き)。
+ * (索引のエンドポイントと同じ線引き)。
  */
 import type { FastifyInstance } from "fastify";
 import type { Kysely } from "kysely";
@@ -43,10 +43,10 @@ export interface ReplayBundleRouteDeps {
   /** 合本を書く bucket (設定の物。WACZ と同じ bucket)。 */
   bucket: string;
   resolveIdentity: IdentityResolver;
-  /** 差し替え口。試験は zip を作らずに、数え方と答えの形を見る (台帳に DB の試験は無い)。 */
+  /** 差し替える引数。試験は zip を作らずに、数え方と答えの形を見る (台帳に DB の試験は無い)。 */
   inspectOne?: (archive: UninspectedArchive) => Promise<void>;
   now?: () => Date;
-  /** 署名の窓口 (`replay-bundle/sign.ts`)。無ければ署名しない (設定の無い配備)。 */
+  /** 署名のクライアント (`replay-bundle/sign.ts`)。無ければ署名しない (設定の無い配備)。 */
   signer?: ReplayBundleSigner;
 }
 

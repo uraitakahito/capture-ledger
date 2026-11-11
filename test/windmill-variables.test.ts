@@ -7,9 +7,9 @@ import {
 } from "../src/crawl/windmill-variables.js";
 
 /**
- * Windmill の変数に在るかを訊く窓口 (`src/crawl/windmill-variables.ts`)。
+ * Windmill の変数に在るかを訊くクライアント (`src/crawl/windmill-variables.ts`)。
  *
- * fetch を差し替えて、**何を打つか**（口・path・Bearer・`decrypt_secret=false`）と、答えをどう読むかを見る。
+ * fetch を差し替えて、**何を打つか**（宛先・path・Bearer・`decrypt_secret=false`）と、答えをどう読むかを見る。
  * 答えの形は Windmill CE v1.806.0 の実測（`exists` は素の真偽値、`get` は `value: null` と `is_secret`・
  * `edited_at`、無い path は 404）。
  */
@@ -20,8 +20,8 @@ afterEach(() => {
 
 const WEBHOOK = "http://127.0.0.1:8000/api/w/crawler/jobs/run/f/f/waggle/crawl_level";
 
-describe("webhook の URL から口を読む", () => {
-  it("flow の webhook の形なら、口の根と workspace", () => {
+describe("webhook の URL から宛先の根を読む", () => {
+  it("flow の webhook の形なら、URL の根と workspace", () => {
     expect(windmillApiOf(WEBHOOK)).toEqual({ base: "http://127.0.0.1:8000", workspace: "crawler" });
     expect(windmillApiOf("https://wm.example.test/sub/api/w/ws-1/jobs/run/f/f/x/y")).toEqual({
       base: "https://wm.example.test/sub",
@@ -36,7 +36,7 @@ describe("webhook の URL から口を読む", () => {
     ).toBeUndefined();
   });
 
-  it("設定が無いか片方だけなら窓口も無い。形が違う URL でも無い", () => {
+  it("設定が無いか片方だけならクライアントも無い。形が違う URL でも無い", () => {
     vi.stubEnv("CAPTURE_LEDGER_CRAWL_WEBHOOK_URL", "");
     vi.stubEnv("CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN", "");
     expect(createWindmillVariables()).toBeUndefined();

@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import { crawlKeyPrefix } from "../src/api/sink.js";
 
 /**
- * 受け口が成果物を置く接頭辞。クロールを作るときに 1 度だけ計算し、
+ * 受け取り先が成果物を置く接頭辞。クロールを作るときに 1 度だけ計算し、
  * `crawls.artifact_key_prefix` に書く。
  *
- * 台帳はこの接頭辞から鍵を組まない —— 置いた場所は受け口の応答 (`location`) で
+ * 台帳はこの接頭辞から鍵を組まない —— 置いた場所は受け取り先の応答 (`location`) で
  * BrowserHive に返り、段の報告で台帳に戻ってくる。ここで見るのは綴りそのもの。
  */
 

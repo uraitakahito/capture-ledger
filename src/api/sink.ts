@@ -1,5 +1,5 @@
 /**
- * 成果物の受け口。**BrowserHive が保管庫を持たずに済むための口。**
+ * 成果物の受け取り先。**BrowserHive が保管庫を持たずに済むためのエンドポイント。**
  *
  * ## なぜ ledger が受けるのか
  *
@@ -7,7 +7,7 @@
  * どの成果物が誰のものかを知らないので置き場所も分けられない。他人のために動く権限を
  * 持ちながら、誰のためかを判断する材料を持たない形になっている。
  *
- * ここへ押し出させると、BrowserHive が持つのは**1 回きりの口だけ**になる。置き場所を
+ * ここへ押し出させると、BrowserHive が持つのは**1 回きりの受け取り先だけ**になる。置き場所を
  * 決めるのはこちらで、応答で最終的な location を返す。
  *
  * ## 鍵は crawl 単位
@@ -44,7 +44,7 @@ const log = createChildLogger({ module: "api-sink" });
 /** `crawls.id` の形。DB へ渡す前に見る。 */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** 成果物 1 つの上限。上限を持たない口は、いずれ落とされる口になる。 */
+/** 成果物 1 つの上限。上限を持たないエンドポイントは、いずれ落とされるエンドポイントになる。 */
 const MAX_ARTIFACT_BYTES = 512 * 1024 * 1024;
 
 export interface SinkDeps {
@@ -104,9 +104,9 @@ export const crawlKeyPrefix = (orgId: string, at: Date): string =>
   `org/${orgId}/${String(at.getUTCFullYear())}-${String(at.getUTCMonth() + 1).padStart(2, "0")}/`;
 
 /**
- * 受け口の設定。**両方揃ったときだけ生きる。**
+ * 受け取り先の設定。**両方揃ったときだけ生きる。**
  *
- * 鍵だけでは口を出せない (誰でも書ける受け口になる)。宛先だけでも配れない
+ * 鍵だけでは受け取り先を出せない (誰でも書ける受け取り先になる)。宛先だけでも配れない
  * (署名できないから)。片方だけ設定できる道を残すと、**「宛先は在るが誰も検めない」**
  * という最悪の中間状態が作れてしまう —— 署名の設定で同じ形を一度踏んでいる。
  */
@@ -136,7 +136,7 @@ export const sinkForCrawl = (
 export const registerSinkRoutes = (app: FastifyInstance, deps: SinkDeps): void => {
   const { db, s3, bucket, secret } = deps;
 
-  // **受け口だけを封じた plugin にする。** 成果物は本文そのものが中身で、`.links.json` と
+  // **受け取り先だけを封じた plugin にする。** 成果物は本文そのものが中身で、`.links.json` と
   // `.result.json` も解釈せずバイトのまま置く。
   //
   // 以前は root の app に `*` の解析器を足していた。Fastify は既定で `application/json` と
@@ -147,7 +147,7 @@ export const registerSinkRoutes = (app: FastifyInstance, deps: SinkDeps): void =
   //
   // root の解析器を差し替えると段の報告など JSON の API が壊れるので、この plugin の中でだけ
   // 全部外す。**`*` を外に漏らさない** —— 漏れると、JSON の API に JSON でない本文が Buffer の
-  // まま届く (受け口を出していない配備では 415 なのに、出している配備でだけ通る)。
+  // まま届く (受け取り先を出していない配備では 415 なのに、出している配備でだけ通る)。
   void app.register((scope, _options, done) => {
     scope.removeAllContentTypeParsers();
     scope.addContentTypeParser(

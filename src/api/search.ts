@@ -1,5 +1,5 @@
 /**
- * 全文検索の口。索引に載せることと、引くこと。
+ * 全文検索のエンドポイント。索引に載せることと、引くこと。
  *
  * ## 認可を索引に持たせない
  *
@@ -19,11 +19,11 @@
  *
  * ## OpenSearch が答えなければ 503
  *
- * 検索は必須 (CAPTURE-53)。どちらの口も、OpenSearch が答えないときは 503 `search unavailable` を返す。
- * 以前は索引の口が 500、検索の口は索引が無いと 0 件で返り、どちらも「無い」と「壊れている」を
+ * 検索は必須 (CAPTURE-53)。どちらのエンドポイントも、OpenSearch が答えないときは 503 `search unavailable` を返す。
+ * 以前は索引のエンドポイントが 500、検索のエンドポイントは索引が無いと 0 件で返り、どちらも「無い」と「壊れている」を
  * 分けなかった。
  *
- * ## 索引の口が受け取るのはクロール id だけ
+ * ## 索引のエンドポイントが受け取るのはクロール id だけ
  *
  * archive の id を Windmill に持たせない。どれがまだ載っていないかは
  * `indexed_at IS NULL` が知っているので、**呼ぶ側は「このクロールぶんを」と
@@ -67,7 +67,7 @@ export interface SearchRouteDeps {
   index: string;
   resolveIdentity: IdentityResolver;
   /**
-   * 差し替え口。既定は、台帳からこのクロールのまだ載せていない行を引く問い合わせ
+   * 差し替える引数。既定は、台帳からこのクロールのまだ載せていない行を引く問い合わせ
    * (`pendingArchivesOf`) と `indexArchive`。試験は DB と保管庫を立てずに、答えの形と数え方を見る
    * (台帳に DB の試験は無い)。
    */
@@ -175,7 +175,7 @@ export const registerSearchRoutes = (app: FastifyInstance, deps: SearchRouteDeps
           indexed += 1;
         } catch (err) {
           // 1 本の失敗で残りを止めない。`indexed_at` は立っていないので、
-          // もう一度この口を叩けば拾い直す (周回は無い —— 叩くのは flow か search:reindex)。
+          // もう一度このエンドポイントを叩けば拾い直す (周回は無い —— 叩くのは flow か search:reindex)。
           log.warn({ err, archiveId: archive.id }, "could not index this archive");
         }
       }

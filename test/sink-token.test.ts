@@ -1,5 +1,5 @@
 /**
- * 受け口のトークンを試す。
+ * 受け取り先のトークンを試す。
  *
  * **これが権限そのもの。** BrowserHive が持つのはこれ 1 つで、他のクロールの成果物に
  * 触れる手段は無い —— という主張が本当かどうかが、ここで決まる。
@@ -15,7 +15,7 @@ const CRAWL = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
 const future = (ms: number): Date => new Date(Date.now() + ms);
 
-describe("受け口のトークン", () => {
+describe("受け取り先のトークン", () => {
   it("自分で発行したものは通る", () => {
     const token = issueSinkToken(SECRET, CRAWL, future(60_000));
 

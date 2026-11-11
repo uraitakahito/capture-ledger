@@ -36,7 +36,7 @@ flowchart LR
 待ち、報告するのは Windmill の flow で、capture-ledger は次の段を組み立てて記録します。
 capture-ledger の設定に BrowserHive の在り処は 1 つも入っていません。BrowserHive は
 1 プロセスが browser 1 台を持ち、取り込みは 1 度に 1 つ —— 走行中なら
-`429 Busy` で断る —— ので、空いている口を選ぶのも flow の仕事です。
+`429 Busy` で断る —— ので、空いているエンドポイント（BrowserHive の宛先 URL）を選ぶのも flow の仕事です。
 
 1 段が 1 往復です。flow は渡された URL を取り込み、`POST /api/crawls/:id/pages` に
 ページごとの `taskId` と状態を載せて返します。capture-ledger は `crawl_pages` を書き、
@@ -44,7 +44,7 @@ capture-ledger の設定に BrowserHive の在り処は 1 つも入っていま�
 あるいは `stopReason` を返します。
 
 段の報告に**成果物の在り処は載っていません**。載っているのは、
-BrowserHive（または受け口）が成果物の隣に `.result.json`（manifest）を書いた場所だけです。そこで
+BrowserHive（または受け取り先）が成果物の隣に `.result.json`（manifest）を書いた場所だけです。そこで
 capture-ledger は、**報告された場所のとおりに** manifest を読み直します ——
 名前を組み立てて探すことはしません。この file は BrowserHive の再起動にも耐えるので、
 ここで使えます。取り込みのログもこの file に在り、capture-ledger はその数だけを `crawl_pages`
@@ -145,7 +145,7 @@ Fastify の既定は `err.message` と `err.code` をそのまま返しますが
 
 スタックは Apple Container 上で動きます。プロジェクト名がそのまま DNS ドメインに
 なるので、各サービスは `<service>.capture-ledger` で、コンテナどうしはこの名前で呼び合います。
-capture-ledger 自身はホストで動き、下の表の「ホストポート」（`127.0.0.1` に publish した口）を使います。
+capture-ledger 自身はホストで動き、下の表の「ホストポート」（`127.0.0.1` に publish したポート）を使います。
 
 | サービス       | DNS 名                         | コンテナポート | ホストポート |
 | -------------- | ------------------------------ | -------------- | ------------ |

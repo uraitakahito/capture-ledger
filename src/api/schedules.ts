@@ -1,5 +1,5 @@
 /**
- * 定期実行の予定の口。**台帳が持つ資源として返す** —— 文を作るのは workbench で、ここは状態の語だけを返す。
+ * 定期実行の予定のエンドポイント。**台帳が持つ資源として返す** —— 文を作るのは workbench で、ここは状態の語だけを返す。
  *
  * 絞りは `/api/crawls` と同じ `maySubmit`。一覧は 200 の空、1 本と操作は 404 で答える。消した予定は無い物と同じ。
  *
@@ -35,7 +35,7 @@ export interface ScheduleRouteDeps {
   fga: OpenFgaClient;
   resolveIdentity: IdentityResolver;
   store: ScheduleStore;
-  /** 確かめと解決。`POST /api/crawls` と同じ `prepareCrawl` を、配備の窓口で包んだ物。 */
+  /** 確かめと解決。`POST /api/crawls` と同じ `prepareCrawl` を、配備の deps で包んだ物。 */
   prepare: (body: CrawlBody, who: CrawlRequester) => Promise<PreparedCrawl | RefusedCrawl>;
   /** 次の周回を待たずに 1 回回す。 */
   poke: () => void;

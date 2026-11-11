@@ -214,7 +214,7 @@ describe("readManifest", () => {
 
   /**
    * v24.0.0 から、答えと manifest に取り込みのログ (`log`) が載る。任意の欄で既定値も無いので、照らしても
-   * 足されも削られもしない —— 1 ページのログの口は、読んだ物をそのまま返す。時刻は String、数は Integer で、
+   * 足されも削られもしない —— 1 ページのログのエンドポイントは、読んだ物をそのまま返す。時刻は String、数は Integer で、
    * Ajv の知らない format (date-time・double) を持たない (持てば、この file の import の時点で落ちる)。
    */
   const v24Log = {

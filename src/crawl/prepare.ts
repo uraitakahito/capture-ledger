@@ -43,14 +43,14 @@ const DEFAULT_MAX_DEPTH = 2;
 const DEFAULT_MAX_PAGES = 30;
 const DEFAULT_PER_HOST_DELAY_MS = 2000;
 const DEFAULT_HOST_PARALLELISM = 4;
-/** 規則の当てる物の長さの上限。始める口と確かめの口で同じ数。 */
+/** 規則の当てる物の長さの上限。始めると確かめのエンドポイントで同じ数。 */
 export const RULE_PATTERN_MAX = 2048;
-/** 規則の本数の上限。始める口と確かめの口で同じ数。 */
+/** 規則の本数の上限。始めると確かめのエンドポイントで同じ数。 */
 export const RULES_MAX = 32;
 /**
  * `POST /api/crawls` が受ける本文の上限。**capture-workbench の門（その src/lib.mjs の WRITE_LIMIT）と
  * 同じ 1 MiB** —— 片方だけを変えると、workbench が通すのに台帳が 413、の形になる。Fastify の既定と同じ値だが、
- * 既定に頼らずにこの口に書く。その先の BrowserHive は 4 MiB で、変換後の JS と台帳のスクリプトを足しても収まる。
+ * 既定に頼らずにこのエンドポイントに書く。その先の BrowserHive は 4 MiB で、変換後の JS と台帳のスクリプトを足しても収まる。
  */
 export const CRAWL_BODY_LIMIT = 1024 * 1024;
 
@@ -99,7 +99,7 @@ export const CRAWL_BODY_SCHEMA = {
   additionalProperties: false,
   // **`seeds` は必須だが、`required` には書かず handler で断る。** 本文の検査は名乗りより先に走るので、
   // ここに書くと `{}` が 401 ではなく 400 になる —— capture-scheduler の doctor は、名乗らずに `{}` を
-  // 投げて 401 が返ることで、この口が在ることを確かめている。
+  // 投げて 401 が返ることで、このエンドポイントが在ることを確かめている。
   properties: {
     // **1 本以上。** 起点を持たないクロールは始まりが無いので進みようがなく、
     // 受理されたのに何も起きない、という形になる (`011` の CHECK と対)。
@@ -215,7 +215,7 @@ export interface PrepareDeps {
   formats: CaptureFormats;
 }
 
-/** 断る答え。**行はまだ無い。** `status` は 400 か 503 (窓口が答えない)。 */
+/** 断る答え。**行はまだ無い。** `status` は 400 か 503 (呼んだサービスが答えない)。 */
 export interface RefusedCrawl {
   kind: "refused";
   status: number;
@@ -352,7 +352,7 @@ export const prepareCrawl = async (
   const parsedSeeds = seeds as ParsedUrl[];
 
   // **規則を確かめる。** 読めない・前の規則に覆われて二度と当たらない・起点を辿らない、のどれも 400 で
-  // 名指す —— 通すと、効いているつもりの規則でクロールが走る。確かめの口と同じ関数で見る。
+  // 名指す —— 通すと、効いているつもりの規則でクロールが走る。確かめのエンドポイントと同じ関数で見る。
   const checked = checkRules(body.rules ?? DEFAULT_RULES, parsedSeeds);
   if (checked.invalid.length > 0) {
     return refused(400, { error: "invalid rule patterns", rules: checked.invalid });

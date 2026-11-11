@@ -3,7 +3,7 @@ import Fastify, { type FastifyError } from "fastify";
 import { registerSearchRoutes, type SearchRouteDeps } from "../src/api/search.js";
 
 /**
- * 検索の口。**押さえているのは認可で絞っていること**。
+ * 検索のエンドポイント。**押さえているのは認可で絞っていること**。
  *
  * 索引は誰に見せてよいかを知らない (知るべきでもない) ので、絞りは OpenFGA を
  * 訊く 1 か所にしかない。そこが抜けても**索引は正しく答え続ける**ため、
@@ -186,7 +186,7 @@ describe("検索の認可", () => {
   });
 });
 
-describe("索引の口", () => {
+describe("索引のエンドポイント", () => {
   const CRAWL = "33333333-3333-3333-3333-333333333333";
   /** まだ載せていないアーカイブ。中身は indexOne の偽物しか読まない。 */
   const archive = (id: string) => ({

@@ -49,7 +49,7 @@ const reindex = async (opts: { databaseUrl: string; crawl?: string }): Promise<v
       "archives.labels",
       "archives.capturedAt",
     ] as const;
-    // クロールで絞るときは、索引の口と同じ繋ぎ方 (`crawl_pages.task_id` は text なので cast する)。
+    // クロールで絞るときは、索引のエンドポイントと同じ繋ぎ方 (`crawl_pages.task_id` は text なので cast する)。
     const archives =
       opts.crawl === undefined
         ? await db.selectFrom("archives").select(columns).execute()

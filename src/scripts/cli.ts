@@ -152,7 +152,7 @@ program
   .argument("<id>", "報告と archive に出る名前 (例: autoscroll)")
   .requiredOption("--file <path>", "読む JS ファイル。`-` なら標準入力から")
   .addOption(
-    new Option("--phase <phase>", "どちらの口から入れるか")
+    new Option("--phase <phase>", "どちらの phase で入れるか")
       .choices(["behavior", "preload"])
       .default("behavior"),
   )
@@ -480,7 +480,7 @@ program
       if (resolved.kind !== "ok") return fail(`台帳に無い: ${resolved.ids.join(", ")}`);
       const latest = resolved.scripts[0];
       if (latest === undefined) return fail(`台帳に無い: ${id}`);
-      // 読むのは台帳の口 (`GET /api/scripts/:id/versions/:version`) と同じ readScript
+      // 読むのは台帳のエンドポイント (`GET /api/scripts/:id/versions/:version`) と同じ readScript
       const script = await readScript(db, id, opts.version ?? latest.version);
       if (script === undefined) return fail(`${id} に v${String(opts.version)} は無い`);
       process.stdout.write(script.source.endsWith("\n") ? script.source : `${script.source}\n`);
