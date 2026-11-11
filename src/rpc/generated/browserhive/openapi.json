@@ -1274,7 +1274,7 @@
                     "maxLength": 64,
                     "minLength": 1,
                     "pattern": "^[a-z][a-z0-9_]*$",
-                    "description": "取り込みごとの値の名前。英小文字で始め、英小文字・数字・`_` で 64 字まで。\n受け皿の `__bh.vars` / `__bh.secrets` の鍵になる綴りで、呼ぶ側 (台帳) が catalog の宣言と\n突き合わせるのも同じ綴り。"
+                    "description": "取り込みごとの値の名前。英小文字で始め、英小文字・数字・`_` で 64 字まで。\n受け皿の `__bh.vars` / `__bh.secrets` の鍵になる綴りで、呼ぶ側 (capture-ledger) が catalog の宣言と\n突き合わせるのも同じ綴り。"
                 },
                 "maxProperties": 32,
                 "description": "シークレットの名前 → `keep`。1 回の取り込みに 32 個まで (`Values` と同じ)。"
@@ -1487,7 +1487,7 @@
                     "maxLength": 64,
                     "minLength": 1,
                     "pattern": "^[a-z][a-z0-9_]*$",
-                    "description": "取り込みごとの値の名前。英小文字で始め、英小文字・数字・`_` で 64 字まで。\n受け皿の `__bh.vars` / `__bh.secrets` の鍵になる綴りで、呼ぶ側 (台帳) が catalog の宣言と\n突き合わせるのも同じ綴り。"
+                    "description": "取り込みごとの値の名前。英小文字で始め、英小文字・数字・`_` で 64 字まで。\n受け皿の `__bh.vars` / `__bh.secrets` の鍵になる綴りで、呼ぶ側 (capture-ledger) が catalog の宣言と\n突き合わせるのも同じ綴り。"
                 },
                 "maxProperties": 32,
                 "description": "名前 → 値。1 回の取り込みに 32 個まで。"
