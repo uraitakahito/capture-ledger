@@ -63,7 +63,7 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
-         * @description 成果物の送り先。**呼ぶ側が 1 回きりの口を渡し、こちらはそこへ押し出す。**
+         * @description 成果物の送り先。**呼ぶ側が 1 回きりの受け取り先を渡し、こちらはそこへ押し出す。**
          *
          *     省略すればサーバ自身の保管庫へ書く。保管庫を持たない配備では必須で、無ければ受理の時点で断る。
          */
@@ -117,7 +117,7 @@ export interface components {
         /**
          * @description 成果物の置き場所。`status` が `success` のときだけ埋まり、それ以外は空 (`{}`)。
          *     値は書き込み先が答えたものをそのまま入れる —— 自前の bucket なら `s3://<bucket>/<key>`、
-         *     `artifactSink` を持つリクエストなら受け口が返した値 (BrowserHive は解析も整形もしない)。
+         *     `artifactSink` を持つリクエストなら受け取り先が返した値 (BrowserHive は解析も整形もしない)。
          *     求めなかった形式の欄は無い。
          *     主文書が方針に当たって伏せた取り込みでは、`status` は `success` のまま、
          *     ページから作る形式 (`png`・`webp`・`html`・`links`・`mhtml`) の欄が無い —— 在るのは `wacz` だけ。
@@ -619,7 +619,7 @@ export interface components {
          *       落ちた)。WACZ は書かない。
          *     - `"internal"`: 上のどれにも当たらない失敗。取り込み先へ繋がらない (`net::ERR_…`) もここ。
          *       内部アドレスへの取り込みの拒否 (`url is not allowed`) も。
-         *     - `"artifact_sink"`: 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け口) へ置けなかった。
+         *     - `"artifact_sink"`: 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け取り先) へ置けなかった。
          *       書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。
          *     - `"cancelled"`: 呼ぶ側が途中で接続を切った。取り込みは打ち切られる (応答は誰にも届かないが、
          *       manifest には残る)。
@@ -677,13 +677,13 @@ export interface components {
         };
         /** @description 結果の記録 (manifest) の結末。 */
         ManifestOutcome: {
-            /** @description 書けた場所 (`s3://…`、または受け口が返した場所)。 */
+            /** @description 書けた場所 (`s3://…`、または受け取り先が返した場所)。 */
             location: string;
         } | {
             /** @description 書けなかった理由。書き込み先から始まる。 */
             error: string;
         };
-        /** @description 走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは注入の口だけ。 */
+        /** @description 走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは差し込む時（phase）だけ。 */
         Script: {
             /** @description report と provenance に出る名前。サーバは中身を検査しない。 */
             id: string;

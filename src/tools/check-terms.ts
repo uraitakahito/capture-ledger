@@ -55,8 +55,7 @@
  *   `workspace crawler`・試験の入力値・ふつうの名詞は見ない
  * - 「dashboard」: 全部（大文字小文字を問わない）。browserhive の契約の写し（src/rpc/generated/）も見る
  * - 「口」: 切り口・入口・出口・窓口・口座を外して残った字。「注入口」は先に名指しで止める。browserhive の契約の写し
- *   （src/rpc/generated/browserhive/）の 5 文だけは、写しの元の browserhive を直した版へ pin を上げるまで許す
- *   （KUCHI_ALLOWED。上げたら消す）
+ *   （src/rpc/generated/）も見る —— 写しに残っていれば、pin の先の browserhive がまだ直っていないということ
  * - 「replay」: 旧い名前の形の並びだけ（OLD_REPLAY_NAMES）。語の replay は合本の形式（replay.json）と、画面の字と、ReplayWeb.page の
  *   振る舞いの文に残るので見ない
  *
@@ -86,27 +85,6 @@ const OKOSU =
 const AMI_ALLOWED = /安全網|網羅/gu;
 /** 「口」を、エンドポイント・ポート・phase・受け取り先の意味に取れない語。「注入口」は「入口」を含むので先に止める。 */
 const NOT_KUCHI = /切り口|入口|出口|窓口|口座/gu;
-/**
- * browserhive の契約の写しに残る文（ファイルと文の組）。写しは `pnpm run openapi:generate` が submodule から作るので
- * 手で直せない。browserhive を直した版へ `.upstream/browserhive` を上げたら、この表ごと消す（CAPTURE-184 の段 5）。
- */
-const KUCHI_ALLOWED: ReadonlyMap<string, readonly string[]> = new Map(
-  ["src/rpc/generated/browserhive/openapi.json", "src/rpc/generated/browserhive/openapi.d.ts"].map(
-    (file) => [
-      file,
-      [
-        "呼ぶ側が 1 回きりの口を渡し",
-        "受け口が返した値",
-        "呼ぶ側の受け口",
-        "受け口が返した場所",
-        "違うのは注入の口だけ",
-      ],
-    ],
-  ),
-);
-/** 許した文を外した行。 */
-const withoutAllowed = (line: string, file: string): string =>
-  (KUCHI_ALLOWED.get(file) ?? []).reduce((rest, sentence) => rest.split(sentence).join(""), line);
 
 /**
  * その場で書く物の古い呼び名（2026-11 まで）。JS になるのは変換の後なので、走った JS・変換後の JS は当てない。
@@ -184,10 +162,7 @@ const RULES: Rule[] = [
       "submodule は `.upstream/replayweb-server` と書きます。",
   },
   {
-    find: (line, file) => {
-      const rest = withoutAllowed(line, file);
-      return rest.includes("注入口") || rest.replace(NOT_KUCHI, "").includes("口");
-    },
+    find: (line) => line.includes("注入口") || line.replace(NOT_KUCHI, "").includes("口"),
     say:
       "「口」が残っています。HTTP の method と path の組は「エンドポイント」、待ち受けの番号は「ポート」、" +
       "スクリプトを差し込む時（behavior・preload）は「phase」、成果物を PUT する先は「受け取り先」と書きます" +
