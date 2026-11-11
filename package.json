@@ -125,6 +125,7 @@
     "site:check": "pnpm run site:build && pnpm run build:tools && node dist/tools/check-doc-refs.js",
     "docs:shots": "pnpm run build:tools && node dist/tools/docs-shots/docs-shots.js",
     "fix:eval": "pnpm run build:tools && node --env-file-if-exists=.env --env-file-if-exists=.env.local dist/tools/fix-eval.js",
+    "change:eval": "pnpm run build:tools && node --env-file-if-exists=.env --env-file-if-exists=.env.local dist/tools/change-eval.js",
     "fga:migrate": "pnpm run build:tools && node --env-file-if-exists=.env --env-file-if-exists=.env.local dist/tools/fga-migrate.js",
     "fga:test": "fga model test --tests fga/model.fga.yaml",
     "fga:deploy": "pnpm run build:tools && node --env-file-if-exists=.env --env-file-if-exists=.env.local dist/tools/fga-deploy.js",

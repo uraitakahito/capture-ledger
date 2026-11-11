@@ -93,10 +93,59 @@ describe("予定の store", () => {
     const { db, queries } = recordingDb([[]]);
     await scheduleStoreOf(db).recentRuns(ID);
     const { sql, parameters } = queries[0]!;
-    expect(sql).toContain('"schedule_id" = $1');
+    expect(sql).toContain('"crawls"."schedule_id" = $1');
     expect(sql).toContain("p.state = 'failed'");
-    expect(sql).toContain('order by "started_at" desc');
+    expect(sql).toContain('order by "crawls"."started_at" desc');
+    // 前回からの変化 (036) は、まだ比べていない回にも行を返すよう left join
+    expect(sql).toContain(
+      'left join "crawl_changes" on "crawl_changes"."crawl_id" = "crawls"."id"',
+    );
     expect(parameters).toEqual([ID, 14]);
+  });
+
+  it("回の変化の写しは、行が在れば欄にまとめ、無ければ null", async () => {
+    const run = {
+      crawlId: "c1",
+      state: "succeeded",
+      scheduledFor: null,
+      startedAt: new Date(0),
+      finishedAt: new Date(0),
+      scheduleMissed: 0,
+      pagesCaptured: 5,
+      pagesFailed: 0,
+      error: null,
+    };
+    const { db } = recordingDb([
+      [
+        {
+          ...run,
+          changeState: "summarized",
+          pagesCompared: 5,
+          pagesChanged: 3,
+          significance: "minor",
+          headline: "中身の変化は無い",
+        },
+        {
+          ...run,
+          crawlId: "c2",
+          changeState: null,
+          pagesCompared: null,
+          pagesChanged: null,
+          significance: null,
+          headline: null,
+        },
+      ],
+    ]);
+    const runs = await scheduleStoreOf(db).recentRuns(ID);
+    expect(runs[0]?.change).toEqual({
+      state: "summarized",
+      pagesCompared: 5,
+      pagesChanged: 3,
+      significance: "minor",
+      headline: "中身の変化は無い",
+    });
+    expect(runs[1]?.change).toBeNull();
+    expect(runs[0]).not.toHaveProperty("changeState");
   });
 
   it("走行中の行を引く", async () => {

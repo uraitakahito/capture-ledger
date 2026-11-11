@@ -230,7 +230,8 @@ Claude に直し方を訊くエンドポイント（`POST /api/crawls/:id/inline
 `ANTHROPIC_API_KEY` は読みません。鍵があって ts-compile の宛先が無いと API は起動で止まるので、`dev:up` で
 起こします（`dev:up` を使わないなら、宛先も書く）。`pnpm run fix:eval` は、決めた見本（型の誤りのある TS）を本物の
 ts-compile-service と Claude で直させて測ります。**お金が掛かります**（見本ごとと合計の費用を出します）。
-CI では走りません。
+CI では走りません。`pnpm run change:eval` は、前回からの変化の要約を見本の差分（作った文と首相官邸の数行）で
+測ります（Claude を 2 回。同じくお金が掛かり、CI では走りません）。
 
 `pnpm run` 系のコマンドはこの `.env` を自分で読みます
 （`node --env-file-if-exists=.env`）。シェルで `export` する必要はありません。

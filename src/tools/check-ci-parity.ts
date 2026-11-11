@@ -64,6 +64,8 @@ const ONLY_IN_CI = {
     "同上。スクリプトの CLI と、スクリプトを読むエンドポイントの関数を本物の DB に当てる (src/tools/scripts-smoke.ts)",
   "Schedules against Postgres":
     "同上。予定の store と周回を本物の DB に当てる (src/tools/schedules-smoke.ts)",
+  "Changes against Postgres":
+    "同上。前回からの変化の store と読む SQL を本物の DB に当てる (src/tools/changes-smoke.ts)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

@@ -157,6 +157,13 @@ jobs:
       - name: Schedules against Postgres
         run: pnpm run build:tools && node dist/tools/schedules-smoke.js
 
+      # 前回からの変化 (CAPTURE-167) の store と読む SQL を、本物の Postgres に当てる。
+      #
+      # 回を拾う SKIP LOCKED・034 の部分の一意にぶつかったときの ON CONFLICT・jsonb の差分・array(...) は、試験の
+      # 記録する DB では確かめられない。自分の組織 (smoke-<pid>) の予定・回・アーカイブだけを足して、最後に消す。
+      - name: Changes against Postgres
+        run: pnpm run build:tools && node dist/tools/changes-smoke.js
+
       # 契約 (openapi.json) から生成した型が、コミットされた物と一致するか。
       - name: OpenAPI types drift check
         run: pnpm run openapi:check

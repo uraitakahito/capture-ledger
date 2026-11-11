@@ -94,6 +94,7 @@ const runOf = (overrides: Partial<ScheduleRun> = {}): ScheduleRun => ({
   pagesCaptured: 5,
   pagesFailed: 0,
   error: null,
+  change: null,
   ...overrides,
 });
 
