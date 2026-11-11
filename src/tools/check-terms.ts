@@ -63,8 +63,7 @@
  * - **「台帳」は使わない。** 2026-11 に（Jira CAPTURE-186）、意味ごとに書き分けた。capture-ledger というシステムは
  *   capture-ledger、スクリプトの置き場は「登録済みのスクリプト」（CLI の答えは「登録されていない: <id>」）、
  *   DB に入ったことは「capture-ledger に載る」、docs のページの題は「アーカイブの記録」。2 字がシステム・DB の行・
- *   置き場を兼ね、帳簿の語なのに「台帳が 400 で断る」と動く主語になっていた。許す語は無い。BrowserHive の契約の
- *   写しの 1 文だけを、BrowserHive の次の版を取り込むまで許す（DAICHO_ALLOWED）。capture-workbench・
+ *   置き場を兼ね、帳簿の語なのに「台帳が 400 で断る」と動く主語になっていた。許す語は無い。capture-workbench・
  *   capture-scheduler・browserhive も見張っている
  *
  * ## 見ないもの
@@ -118,14 +117,6 @@ interface Rule {
 /** replayweb-server の旧い名前の形。語の replay は禁じない（上の注記）。 */
 const OLD_REPLAY_NAMES =
   /uraitakahito[/:]replay(?![\w-])|\.upstream\/(?:browserhive\/)?replay(?![\w-])|\bREPLAY_(?:ORIGIN|TAG|REV)\b|\breplayOrigin(?:FromEnv)?\b|\breplayHref\b|\breplay\.(?:capture-ledger|browserhive|test)\b/u;
-
-/**
- * 「台帳」を許す文（ファイルと文の組）。BrowserHive の契約の写し（`openapi:generate` が submodule から作る）の説明で、
- * 手では直さない。BrowserHive の次の版で写しが替わったら、この表ごと消す（CAPTURE-186 の段 7）。
- */
-const DAICHO_ALLOWED: ReadonlyMap<string, readonly string[]> = new Map([
-  ["src/rpc/generated/browserhive/openapi.json", ["呼ぶ側 (台帳) が catalog の宣言と"]],
-]);
 
 const RULES: Rule[] = [
   {
@@ -186,8 +177,7 @@ const RULES: Rule[] = [
       "（切り口・入口・出口・口座はそのまま）。",
   },
   {
-    find: (line, file) =>
-      line.includes("台帳") && !(DAICHO_ALLOWED.get(file) ?? []).some((s) => line.includes(s)),
+    find: (line) => line.includes("台帳"),
     say:
       "「台帳」が残っています。システムは capture-ledger、置き場は「登録済みのスクリプト」（登録する・登録されていない）、" +
       "DB に入ったことは「capture-ledger に載る」と書きます（CAPTURE-186）。",
