@@ -26,12 +26,14 @@
 # chromium) では権限が無くて失敗し、しかも container-compose は何も言わない。
 #
 # 上流のソースは git URL からではなく .upstream/ の submodule から来る ——
-# `container build` は context のディレクトリしか受け取らないため。4 本ある:
+# `container build` は context のディレクトリしか受け取らないため。submodule は 6 本 (.gitmodules):
 #
-#   .upstream/browserhive   本体と、それが動作確認された版の chromium-server-docker
-#   .upstream/seaweedfs     object store の起動設定
-#   .upstream/replayweb-server        WACZ のビューア
-#   .upstream/capture-fixtures        取り込み対象のフィクスチャ (profile: capture-fixtures)
+#   .upstream/browserhive        本体と、それが動作確認された版の chromium-server-docker (ここから建てる)
+#   .upstream/seaweedfs          object store の検査と片付けの script (package.json の check:store-name・store:wipe)
+#   .upstream/replayweb-server   改変していない ReplayWeb.page のビューア (ここから建てる)
+#   .upstream/capture-player     ReplayWeb.page を改変した Web Capture のビューア (ここから建てる)
+#   .upstream/capture-fixtures   取り込み対象のフィクスチャ (profile: capture-fixtures。ここから建てる)
+#   .upstream/capture-scripts    登録済みのスクリプトの元 (pnpm run scripts import が読む)
 #
 # capture-fixtures を browserhive 越しではなく **直接** vendor しているのは、あちらの pin が
 # 別の都合で動くため。capture-ledger の試験が要る頁 (`/links/*` など) が browserhive の pin に入るとは
@@ -45,7 +47,7 @@
 #
 # アーカイブを選ぶ画面 (picker) は capture-api が配る。これは compose に入れず
 # host 側で動かす: `pnpm run api`。OpenFGA の store/model の ID が起動後にしか
-# 決まらない (`pnpm run fga:deploy` が出力して .env に入れる) ため、compose に
+# 決まらない (`pnpm run fga:deploy` が出力して .env.local に入れる) ため、compose に
 # 書けない。
 
 # project 名を固定する。指定しないと container-compose はディレクトリ名から導くが、
@@ -255,12 +257,6 @@ services:
     depends_on:
       - chromium-2
 
-  # WACZ のビューア。picker がここへ ?source=/wacz/<key> で渡す。
-  #
-  # picker を配る capture-api は **host 側で動かす** (`pnpm run api`) —— capture-ledger 自身と
-  # 同じ。compose に入れられないのは、OpenFGA の store/model の ID が起動後にしか
-  # 決まらないため (`pnpm run fga:deploy` が出力し、.env に入れる)。
-  #
   # wacz-auth の署名サービス。browserhive のスタックにあるものと同じ構成で、
   # build context だけ pin 済みの upstream (`.upstream/browserhive`) の下を指す —— wacz-signer も
   # timestamp-authority も、あちらの submodule として既に手元に在る。
@@ -363,6 +359,12 @@ services:
       # **browserhive 側の fixtures が答え続ける**ので、気づかずに緑を見る)。
       - "127.0.0.1:18085:8080"
 
+  # 改変していない ReplayWeb.page のビューア (ReplayWeb.page と互換の再生)。picker と workbench の
+  # 「ReplayWeb.page ↗」がここへ ?source=/wacz/<key> で渡す。
+  #
+  # picker を配る capture-api は **host 側で動かす** (`pnpm run api`) —— capture-ledger 自身と
+  # 同じ。compose に入れられないのは、OpenFGA の store/model の ID が起動後にしか
+  # 決まらないため (`pnpm run fga:deploy` が出力し、.env.local に入れる)。
   replayweb-server:
     build:
       context: ./.upstream/replayweb-server
@@ -379,6 +381,24 @@ services:
       # loopback) でしか登録できないので、DNS 名で開くと **ページは出るのに
       # アーカイブが永久に開かない**。公開範囲の話ではない。
       - "127.0.0.1:8899:8080"
+
+  # ReplayWeb.page と wabac.js を改変した Web Capture のビューア (CAPTURE-102)。workbench の
+  # 「Web Capture ↗」がここへ、replayweb-server と同じ形の ?source=/wacz/<key> で渡す。server は
+  # replayweb-server と同じコードで、/wacz/ と /q/ の形も同じ。image はビューアを Node 24 で build する
+  # (Apple Container の builder の 2 GB で、最大 1.88 GiB・75 秒。2026-11-12 に実測)。
+  capture-player:
+    build:
+      context: ./.upstream/capture-player
+      args:
+        # /__version・/SOURCE.txt・About に出る (About のソースのリンクはこのタグを指す。AGPL §13)
+        GIT_TAG: "${CAPTURE_PLAYER_TAG:-}"
+        GIT_REV: "${CAPTURE_PLAYER_REV:-dev}"
+    environment:
+      # replayweb-server と同じ理由で複合値
+      - S3_BUCKET_URL=http://seaweedfs.crawler-storage:8333/browserhive
+    ports:
+      # replayweb-server と同じ理由で loopback
+      - "127.0.0.1:8897:8080"
 
   # 全文検索の索引。capture-ledger の API は検索が無いと起動しない (CAPTURE-53)。dev では dev:up の段 search が
   # **サービス名を付けて**起こす (名前を付け忘れると、全部のコンテナが作り直される):

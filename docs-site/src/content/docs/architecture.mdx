@@ -151,14 +151,21 @@ The stack runs on Apple Container. The project name is the DNS domain, so every
 service is `<service>.capture-ledger`, and the containers reach each other by that name.
 capture-ledger itself runs on the host and uses the host ports below (published on `127.0.0.1`).
 
-| Service        | DNS name                       | Container port | Host port |
-| -------------- | ------------------------------ | -------------- | --------- |
-| postgres       | `postgres.capture-ledger`      | 5432           | 5432      |
-| chromium-1     | `chromium-1.capture-ledger`    | 9222 (CDP)     | 9222      |
-| chromium-2     | `chromium-2.capture-ledger`    | 9222 (CDP)     | 9223      |
-| browserhive-1  | `browserhive-1.capture-ledger` | 50051 (HTTP)   | 50051     |
-| browserhive-2  | `browserhive-2.capture-ledger` | 50051 (HTTP)   | 50052     |
-| capture-ledger | — (runs on the host)           | —              | —         |
+| Service          | DNS name                          | Container port                    | Host port      |
+| ---------------- | --------------------------------- | --------------------------------- | -------------- |
+| postgres         | `postgres.capture-ledger`         | 5432                              | 5432           |
+| chromium-1       | `chromium-1.capture-ledger`       | 9222 (CDP)                        | 9222           |
+| chromium-2       | `chromium-2.capture-ledger`       | 9222 (CDP)                        | 9223           |
+| browserhive-1    | `browserhive-1.capture-ledger`    | 50051 (HTTP)                      | 50051          |
+| browserhive-2    | `browserhive-2.capture-ledger`    | 50051 (HTTP)                      | 50052          |
+| openfga          | `openfga.capture-ledger`          | 8080 (HTTP)                       | 8090           |
+| idp              | `idp.capture-ledger`              | 4566 (Floci)                      | 4566           |
+| replayweb-server | `replayweb-server.capture-ledger` | 8080 (HTTP)                       | 8899           |
+| capture-player   | `capture-player.capture-ledger`   | 8080 (HTTP)                       | 8897           |
+| opensearch       | `opensearch.capture-ledger`       | 9200 (profile `search`)           | 9200           |
+| wacz-signer      | `wacz-signer.capture-ledger`      | 8080 (profile `signing`)          | 18091          |
+| capture-fixtures | `capture-fixtures.capture-ledger` | 8080 (profile `capture-fixtures`) | 18085          |
+| capture-ledger   | — (runs on the host)              | —                                 | 7070 (the API) |
 
 The artifact store (SeaweedFS) is **not in this stack**. It is one store shared by the
 [Web Capture](https://uraitakahito.github.io/capture-ledger/#web-capture) repos, at `seaweedfs.crawler-storage:8333` (filer on `:8888`). It is brought up by

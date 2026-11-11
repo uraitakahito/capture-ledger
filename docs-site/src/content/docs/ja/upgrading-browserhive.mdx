@@ -13,7 +13,8 @@ capture-ledger は `main` ではなく **特定の BrowserHive の版**に固定
 本体・BrowserHive が検証済みの
 `chromium-server-docker`・署名のサービス（`wacz-signer`・`timestamp-authority`）・manifest を照らす
 OpenAPI 文書（`generated/openapi.json`）が入っています。**ピンはこれだけではありません。** object
-store の起動設定は `.upstream/seaweedfs`、WACZ のビューアは `.upstream/replayweb-server`、
+store の起動設定は `.upstream/seaweedfs`、WACZ のビューアは `.upstream/replayweb-server`（改変していない ReplayWeb.page）と
+`.upstream/capture-player`（改変した Web Capture のビューア）、
 取り込み対象のフィクスチャは `.upstream/capture-fixtures`、スクリプトは `.upstream/capture-scripts`
 から来ます。それぞれが自分のタグに固定されていて、この submodule を上げても動きません（スタックが
 build に使う物を分けてある理由は、`docker-compose.yml` の冒頭にあります）。

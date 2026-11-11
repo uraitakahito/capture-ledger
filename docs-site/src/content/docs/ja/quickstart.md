@@ -296,7 +296,8 @@ open http://127.0.0.1:7080/
 ```
 
 [capture-workbench](https://github.com/uraitakahito/capture-workbench) は **1 行 = 1 本のクロール**で、
-状態・撮れた数・WACZ の数と、run（Windmill）と replayweb-server への行き先が並びます。
+状態・撮れた数・WACZ の数と、run（Windmill）と 2 つの再生（[replayweb-server](https://github.com/uraitakahito/replayweb-server) の「ReplayWeb.page ↗」と
+[capture-player](https://github.com/uraitakahito/capture-player) の「Web Capture ↗」）への行き先が並びます。
 アーカイブの画面では、行の「検証」から **撮れたものが WACZ の仕様どおりか**を見られます
 （[wacz-validator](https://github.com/uraitakahito/wacz-validator) が答えます。
 capture-ledger が署名した URL を渡すので、**store の鍵はどこにも増えません**）。

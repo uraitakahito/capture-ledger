@@ -2,7 +2,7 @@
 /**
  * いま何が立っているかを 1 画面で言う。**何も変えない。**
  *
- * 見るのは 6 つ。コンテナ・ホストのプロセス・設定・保管庫・定期実行・スクリプト。どれも「立ち上げの
+ * 見るのは、コンテナ・ホストのプロセス・設定・検索・IdP・ビューア・保管庫・定期実行・スクリプト。どれも「立ち上げの
  * どこまで済んでいるか」を答えるためのもので、`pnpm run dev:up` が止まったとき
  * (段 6) と、朝いちばんに「昨日のが残っているか」を見るときに使う。
  *
@@ -202,6 +202,39 @@ if (searchUrl === undefined) {
           : `${issuer}  プール在り。手元の利用者とパスワードは ${IDP_HANDOFF}`,
       ),
     );
+  }
+}
+
+// ── ビューア ────────────────────────────────────────────────────────
+// WACZ を再生する 2 つ (compose が submodule から建てる)。動いている版を `/__version` で訊き、submodule の
+// pin (タグ) と比べる。違えば、段 stack から起こし直すと pin の版で建て直る。
+{
+  const viewers = [
+    { name: "replayweb-server", port: 8899, path: ".upstream/replayweb-server" },
+    { name: "capture-player", port: 8897, path: ".upstream/capture-player" },
+  ];
+  for (const [index, viewer] of viewers.entries()) {
+    const label = index === 0 ? "ビューア" : "";
+    const pinned = spawnSync(
+      "git",
+      ["-C", resolve(ROOT, viewer.path), "describe", "--tags", "--exact-match"],
+      {
+        encoding: "utf8",
+      },
+    );
+    const pin = pinned.status === 0 ? pinned.stdout.trim() : undefined;
+    const answer = await answerOf(`http://127.0.0.1:${String(viewer.port)}/__version`);
+    const running =
+      answer === undefined
+        ? undefined
+        : `${String(answer["version"])} (${String(answer["revision"])})`;
+    let text = `${viewer.name.padEnd(17)}:${String(viewer.port)}  `;
+    if (running === undefined) text += `答えない (pin は ${pin ?? "読めない"})`;
+    else if (pin === undefined)
+      text += `${running}  pin を読めない (${viewer.path} がタグの上に無いか、初期化されていない)`;
+    else if (answer?.["version"] === pin) text += `${running}  pin と同じ`;
+    else text += `${running}  pin は ${pin} —— 起こし直す: pnpm run dev:up --from stack`;
+    console.log(row(label, text));
   }
 }
 
