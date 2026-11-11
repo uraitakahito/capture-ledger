@@ -72,6 +72,29 @@ export const maySubmit = async (fga: OpenFgaClient, identity: Identity): Promise
 };
 
 /**
+ * 機械（M2M のトークン）の組織。**トークンには載らない**（Cognito の client credentials の
+ * トークンは `cognito:groups` を持たない）ので、OpenFGA に保存した許可から決める:
+ * その subject が `can_submit` を持つ組織の全部。
+ *
+ * 判断材料は保存された tuple だけで、呼び手の申告は混ざらない ——
+ * `maySubmit` が同じ組織に訊き直しても、検査が「名乗った者に訊く」形にはならない。
+ * 取り消し（`fga:revoke`）は次の要求から効く。
+ */
+export const submitterOrganizations = async (
+  fga: OpenFgaClient,
+  subject: string,
+): Promise<string[]> => {
+  const { objects } = await fga.listObjects(
+    { user: `user:${subject}`, relation: "can_submit", type: "organization" },
+    { consistency: ConsistencyPreference.HigherConsistency },
+  );
+  return objects
+    .map((object) => object.replace(/^organization:/, ""))
+    .filter((org) => org !== "")
+    .sort();
+};
+
+/**
  * 部分 unique index の違反か。走行中の 2 本目だけがこれになる。
  *
  * 制約名を受け取るのは、`runs` と `crawls` が**別々の index を持つ**から。

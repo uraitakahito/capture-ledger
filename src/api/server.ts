@@ -15,6 +15,7 @@ import { createKyselyClient } from "../db/kysely.js";
 import { createFgaClient } from "../fga/client.js";
 import { drainOutbox } from "../fga/outbox-worker.js";
 import { createS3Client } from "../archive/s3.js";
+import { submitterOrganizations } from "./authorization.js";
 import { selectIdentity } from "./identity.js";
 import { startupNotes, type StartupFacts } from "./startup-notes.js";
 import { registerRoutes } from "./routes.js";
@@ -88,7 +89,10 @@ const start = async (options: ServerOptions): Promise<void> => {
   const db = createKyselyClient(options.databaseUrl);
   const fga = createFgaClient(fgaSettings);
   const s3 = createS3Client(storage);
-  const identity = selectIdentity();
+  // 機械 (M2M) の組織はトークンに載らないので、OpenFGA に保存した許可から引く。
+  const identity = selectIdentity({
+    machineOrganizations: (subject) => submitterOrganizations(fga, subject),
+  });
   const resolveIdentity = identity.resolve;
   // どの名乗り方で起きたか。起動ログと picker が同じものを言う —— resolver は渡さない
   // (どちらも言うだけで、検めはしない)。

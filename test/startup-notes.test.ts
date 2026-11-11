@@ -24,7 +24,7 @@ const USER_0920: StartupFacts = {
 const FOUR_LINES: StartupFacts = {
   ...USER_0920,
   host: "0.0.0.0",
-  identity: { mode: "jwt", issuer: "http://127.0.0.1:9099" },
+  identity: { mode: "jwt", issuer: "http://127.0.0.1:4566/us-east-1_example" },
 };
 
 const warnings = (facts: StartupFacts): string[] =>
@@ -55,7 +55,7 @@ describe("startupNotes", () => {
   it("4 行を貼った形（JWT・0.0.0.0・webhook あり）は warn を出さず、最後の行は ready", () => {
     expect(warnings(FOUR_LINES)).toEqual([]);
     expect(lastLine(FOUR_LINES)?.msg).toBe(
-      "Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:9099); crawl level reports: ready",
+      "Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:4566/us-east-1_example); crawl level reports: ready",
     );
   });
 
@@ -111,7 +111,7 @@ describe("startupNotes", () => {
       host: "0.0.0.0",
       port: 7070,
       identity: "jwt",
-      issuer: "http://127.0.0.1:9099",
+      issuer: "http://127.0.0.1:4566/us-east-1_example",
       crawls: true,
       sink: false,
       crawlLevelReports: "ready",

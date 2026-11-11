@@ -21,22 +21,27 @@ vi.mock("../src/logger.js", async (importOriginal) => {
 
 const { jwtIdentityResolver } = await import("../src/api/identity.js");
 
-const ISSUER = "http://127.0.0.1:9099";
-const AUDIENCE = "capture-ledger";
+const ISSUER = "http://127.0.0.1:4566/us-east-1_example";
+const CLIENT = "web-client";
 const keys = await generateKeyPair("RS256");
 const other = await generateKeyPair("RS256");
 
-const token = (opts: { key?: CryptoKey; issuer?: string; audience?: string } = {}) =>
-  new SignJWT({ organizations: ["secret-org"] })
+const token = (
+  opts: { key?: CryptoKey; issuer?: string; tokenUse?: string; clientId?: string } = {},
+) =>
+  new SignJWT({
+    "cognito:groups": ["secret-org"],
+    token_use: opts.tokenUse ?? "access",
+    client_id: opts.clientId ?? CLIENT,
+  })
     .setProtectedHeader({ alg: "RS256" })
     .setSubject("alice")
     .setIssuer(opts.issuer ?? ISSUER)
-    .setAudience(opts.audience ?? AUDIENCE)
     .setIssuedAt()
     .setExpirationTime("1h")
     .sign(opts.key ?? keys.privateKey);
 
-const resolve = jwtIdentityResolver(keys.publicKey, { issuer: ISSUER, audience: AUDIENCE });
+const resolve = jwtIdentityResolver(keys.publicKey, { issuer: ISSUER, clientIds: [CLIENT] });
 const bearer = (jwt: string): FastifyRequest =>
   ({ headers: { authorization: `Bearer ${jwt}` } }) as unknown as FastifyRequest;
 
@@ -49,13 +54,14 @@ describe("JWT を拒んだ理由のログ", () => {
     ["別の鍵の署名", { key: other.privateKey }, { code: "ERR_JWS_SIGNATURE_VERIFICATION_FAILED" }],
     [
       "iss が合わない",
-      { issuer: "http://localhost:9099" },
+      { issuer: "http://localhost:4566/us-east-1_example" },
       { code: "ERR_JWT_CLAIM_VALIDATION_FAILED", claim: "iss" },
     ],
+    ["ID token", { tokenUse: "id" }, { code: "ERR_NOT_ACCESS_TOKEN", claim: "token_use" }],
     [
-      "aud が合わない",
-      { audience: "someone-else" },
-      { code: "ERR_JWT_CLAIM_VALIDATION_FAILED", claim: "aud" },
+      "受けない client",
+      { clientId: "someone-else" },
+      { code: "ERR_CLIENT_NOT_ALLOWED", claim: "client_id" },
     ],
   ])("%s: code と claim を残す", async (_, opts, expected) => {
     await expect(resolve(bearer(await token(opts)))).resolves.toBeUndefined();
@@ -63,12 +69,18 @@ describe("JWT を拒んだ理由のログ", () => {
   });
 
   it("トークンとクレームの値は、ログに載せない", async () => {
-    const jwt = await token({ issuer: "http://localhost:9099" });
+    const jwt = await token({ issuer: "http://localhost:4566/us-east-1_example" });
     await resolve(bearer(jwt));
     const logged = JSON.stringify(info.mock.calls);
     expect(logged).not.toContain(jwt);
     expect(logged).not.toContain("secret-org");
     expect(logged).not.toContain("alice");
+  });
+
+  // client の ID もクレームの値。どこで落ちたか (client_id) だけを書く。
+  it("受けない client の ID は、ログに載せない", async () => {
+    await resolve(bearer(await token({ clientId: "someone-else" })));
+    expect(JSON.stringify(info.mock.calls)).not.toContain("someone-else");
   });
 
   it("受け取ったトークンでは、何も残さない", async () => {

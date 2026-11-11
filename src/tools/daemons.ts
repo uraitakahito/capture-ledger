@@ -1,5 +1,5 @@
 /**
- * ホストで動く長生きのプロセス (issuer 9099 / api 7070 / validator 7180 / workbench 7080) を
+ * ホストで動く長生きのプロセス (api 7070 / validator 7180 / workbench 7080) を
  * 見つけて、止める。validator には、動いている build も訊く。
  *
  * ## なぜ pidfile ではなく port から探すのか
@@ -7,9 +7,9 @@
  * 止めたい相手は、たいてい **手で起こしたもの** —— 別のターミナルで
  * `pnpm run api` と打って、そのまま忘れたもの。pidfile を置く道具だけが
  * 書き込む台帳では、そういう置き忘れが 1 件も載らない。2026-09-20 に
- * `EADDRINUSE 127.0.0.1:9099` で止まったのも、まさにそれだった。
+ * `EADDRINUSE 127.0.0.1:9099` (当時ホストで動いていた開発用の issuer) で止まったのも、まさにそれだった。
  *
- * 港は嘘をつかない。`lsof` で「いま 9099 を持っているのは誰か」を訊けば、
+ * 港は嘘をつかない。`lsof` で「いまその番号を持っているのは誰か」を訊けば、
  * 誰が起こしたものでも見つかる。
  *
  * ## 誰のものかは、名乗りで決める
@@ -70,13 +70,6 @@ export interface HostProcess {
  * と言い続けることになる (実装中に実際にそうなった)。
  */
 export const HOST_PROCESSES: HostProcess[] = [
-  {
-    name: "issuer",
-    port: 9099,
-    root: ROOT,
-    entry: "dist/dev/issuer-cli.js",
-    run: "pnpm run oidc:issuer",
-  },
   { name: "api", port: 7070, root: ROOT, entry: "dist/api/server.js", run: "pnpm run api" },
   {
     name: "validator",

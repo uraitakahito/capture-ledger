@@ -3,14 +3,13 @@
  *
  * ## これは継ぎ目であって、実装ではない
  *
- * 呼び出し元を認証することは、認可することとは別の問題で、しかもまだ選んでいない
- * identity provider に依存する。認可の層がそこから必要とするものは小さく安定して
+ * 呼び出し元を認証することは、認可することとは別の問題で、identity provider に依存する。認可の層がそこから必要とするものは小さく安定して
  * いる —— subject と、その人が属する組織 —— ので、その形だけをここで固定し、
  * 裏の検証は他に触れずに差し替えられるようにしてある。
  *
- * 下の開発用 resolver は header を信じる。それが安全なのは、明示的に有効化しない
- * 限り動くことを拒み、起動時に大きな声でそう言うから。本物の IdP が来たら、JWT を
- * 検証する resolver を足して既定にすればよい。`routes.ts` は何も変わらない。
+ * 本番の IdP は Amazon Cognito、手元はその代役の Floci（CAPTURE-185）。どちらも JWT を
+ * 検証する resolver を通る。下の開発用 resolver は header を信じる。それが安全なのは、
+ * 明示的に有効化しない限り動くことを拒み、起動時に大きな声でそう言うから。
  *
  * ## なぜ組織はトークンから来るのか
  *
@@ -20,9 +19,14 @@
  * トークンを短命にすべき理由がそれ。
  */
 import type { FastifyRequest } from "fastify";
-import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
+import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose";
 import { optional } from "../config/env.js";
-import { identityFromClaims, organizationsFromList, type Identity } from "../config/identity.js";
+import {
+  identityFromClaims,
+  isMachineToken,
+  organizationsFromList,
+  type Identity,
+} from "../config/identity.js";
 import { createChildLogger } from "../logger.js";
 
 export type { Identity };
@@ -65,10 +69,47 @@ export const devIdentityResolver: IdentityResolver = (request) => {
   return Promise.resolve({ subject, organizations });
 };
 
+/** 確かめの設定。本番の Cognito でも、手元の Floci でも同じ形。 */
+export interface JwtCheck {
+  /** トークンの `iss`。鍵はその下の `/.well-known/jwks.json` に在る。 */
+  issuer: string;
+  /**
+   * 受ける app client の ID。Cognito の access token は `aud` を持たず、呼び手のアプリを
+   * `client_id` で言う（M2M のトークンは `aud` を持てない）。だから `aud` ではなくこれで照らす。
+   */
+  clientIds: readonly string[];
+  /**
+   * 機械（M2M）の組織を引く。M2M のトークンには `cognito:groups` が載らないので、
+   * 台帳が OpenFGA に保存した許可から決める。渡さなければ、機械の組織は空のまま。
+   */
+  machineOrganizations?: (subject: string) => Promise<string[]>;
+}
+
+/**
+ * 署名と `iss`・`exp` を通った payload を、さらに 2 つで確かめる。**落ちた理由**を返す
+ * (通れば undefined)。形は jose のエラーと同じ `{ code, claim }` で、ログにだけ書く。
+ *
+ *   - `token_use` が `access` であること。ID token は API の名乗りに使わない
+ *     (Cognito の ID token は `aud` に client の ID を持つので、`aud` で照らす式だと通ってしまう)
+ *   - `client_id` が受ける一覧に在ること
+ */
+const accessTokenRefusal = (
+  payload: JWTPayload,
+  clientIds: readonly string[],
+): { code: string; claim: string } | undefined => {
+  if (payload["token_use"] !== "access")
+    return { code: "ERR_NOT_ACCESS_TOKEN", claim: "token_use" };
+  const clientId = payload["client_id"];
+  if (typeof clientId !== "string" || !clientIds.includes(clientId)) {
+    return { code: "ERR_CLIENT_NOT_ALLOWED", claim: "client_id" };
+  }
+  return undefined;
+};
+
 /**
  * JWT を検証する resolver。**本番でもこれを使う。**
  *
- * 鍵を引数で受け取るのは、単体試験で issuer を立てないため。本番は
+ * 鍵を引数で受け取るのは、単体試験で IdP を立てないため。本番と手元は
  * `createRemoteJWKSet(new URL(issuer + "/.well-known/jwks.json"))` を渡し、
  * 試験はその場で作った鍵を渡す —— `jwtVerify` がどちらも受ける。
  *
@@ -76,26 +117,40 @@ export const devIdentityResolver: IdentityResolver = (request) => {
  * 別のものになり、「本番の経路を毎日動かす」という狙いがそこで崩れる。
  */
 export const jwtIdentityResolver =
-  (
-    keys: JWTVerifyGetKey | CryptoKey,
-    options: { issuer: string; audience: string },
-  ): IdentityResolver =>
+  (keys: JWTVerifyGetKey | CryptoKey, options: JwtCheck): IdentityResolver =>
   async (request) => {
     const header = request.headers.authorization;
     if (typeof header !== "string" || !header.startsWith("Bearer ")) return undefined;
 
+    let payload: JWTPayload;
     try {
-      const { payload } = await jwtVerify(header.slice("Bearer ".length), keys, options);
-      // クレームの読み方は CLI と共有する (config/identity.ts)。IdP ごとに違う
-      // クレーム名を差し替えるのは、そこ 1 か所。
-      return identityFromClaims(payload);
+      ({ payload } = await jwtVerify(header.slice("Bearer ".length), keys, {
+        issuer: options.issuer,
+      }));
     } catch (err) {
       // 失敗の理由は呼び手に返さない。どこで落ちたかは総当たりの手がかりになる。
-      // API のログには残す —— 開発で「なぜ 401 か」を辿れるのはここだけ。dev issuer の kid が
-      // 固定だった頃は、署名の照合で落ちていることがどこにも出ず、原因を取り違えた。
+      // API のログには残す —— 開発で「なぜ 401 か」を辿れるのはここだけ。
       log.info(rejection(err), "JWT rejected");
       return undefined;
     }
+    const refused = accessTokenRefusal(payload, options.clientIds);
+    if (refused !== undefined) {
+      log.info(refused, "JWT rejected");
+      return undefined;
+    }
+    // クレームの読み方は config/identity.ts の 1 か所。
+    const identity = identityFromClaims(payload);
+    if (identity === undefined) return undefined;
+    // **try の外で引く。** OpenFGA に届かないのは「名乗りが偽」ではないので、401 に
+    // 化けさせない (投げれば 500 になり、原因がログに出る)。
+    if (
+      isMachineToken(payload) &&
+      identity.organizations.length === 0 &&
+      options.machineOrganizations !== undefined
+    ) {
+      return { ...identity, organizations: await options.machineOrganizations(identity.subject) };
+    }
+    return identity;
   };
 
 /** 全員を拒む。これが既定なので、設定していない配備から漏れることはない。 */
@@ -103,36 +158,49 @@ export const denyAllResolver: IdentityResolver = () => Promise.resolve(undefined
 
 /** 選んだ名乗り方。resolver と一緒に、どれを選んだかを持つ。 */
 export type IdentitySetup =
-  | { mode: "jwt"; issuer: string; audience: string; resolve: IdentityResolver }
+  | { mode: "jwt"; issuer: string; clientIds: string[]; resolve: IdentityResolver }
   | { mode: "header"; resolve: IdentityResolver }
   | { mode: "deny"; resolve: IdentityResolver };
 
 /**
  * 3 つのうちどれを使うか。**既定は拒否**。
  *
- * `CAPTURE_LEDGER_OIDC_ISSUER` が在れば JWT を検証する —— 開発用の issuer でも本物の IdP でも
- * 同じ経路を通り、違うのは URL だけ。無ければ従来どおり `CAPTURE_LEDGER_DEV_IDENTITY=1` の
- * ときにヘッダを信じ、それも無ければ全員を拒む。
+ * `CAPTURE_LEDGER_OIDC_ISSUER` が在れば JWT を検証する —— 手元の Floci でも本番の Cognito でも
+ * 同じ経路を通り、違うのは `CAPTURE_LEDGER_OIDC_ISSUER` と `CAPTURE_LEDGER_OIDC_CLIENT_IDS` の値だけ。
+ * 無ければ従来どおり `CAPTURE_LEDGER_DEV_IDENTITY=1` のときにヘッダを信じ、それも無ければ
+ * 全員を拒む。
  *
  * JWT が開発用ヘッダより優先されるのは、**両方設定されている環境で弱いほうへ
  * 落ちない**ようにするため。
  *
- * resolver だけでなく、どれを選んだかも返す。起動ログ (`startup-notes.ts`) がそれを言うため ——
- * 以前は resolver (関数) だけを返していて、どの名乗り方で起きたかはプロセスの外から訊くしか
- * なかった。`.env` の `CAPTURE_LEDGER_OIDC_ISSUER` が効いていないまま起こした API に気づけたのは、
- * capture-scheduler の doctor だけだった (2026-09-19 と 20)。
+ * issuer が在るのに client の ID が 1 つも無ければ、**起動で落とす。** 全員を 401 にして
+ * 動き続けると、設定の漏れが「トークンが悪い」に見える。
+ *
+ * resolver だけでなく、どれを選んだかも返す。起動ログ (`startup-notes.ts`) がそれを言うため。
  */
-export const selectIdentity = (): IdentitySetup => {
+export const selectIdentity = (
+  deps: Pick<JwtCheck, "machineOrganizations"> = {},
+): IdentitySetup => {
   const issuer = optional("CAPTURE_LEDGER_OIDC_ISSUER", "");
   if (issuer !== "") {
-    const audience = optional("CAPTURE_LEDGER_OIDC_AUDIENCE", "capture-ledger");
+    const clientIds = optional("CAPTURE_LEDGER_OIDC_CLIENT_IDS", "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter((id) => id !== "");
+    if (clientIds.length === 0) {
+      throw new Error(
+        "CAPTURE_LEDGER_OIDC_ISSUER が在るのに CAPTURE_LEDGER_OIDC_CLIENT_IDS が空です。" +
+          "受ける app client の ID をカンマ区切りで書いてください (手元なら pnpm run idp:bootstrap が .env.local に書く)",
+      );
+    }
     return {
       mode: "jwt",
       issuer,
-      audience,
+      clientIds,
       resolve: jwtIdentityResolver(createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)), {
         issuer,
-        audience,
+        clientIds,
+        ...deps,
       }),
     };
   }

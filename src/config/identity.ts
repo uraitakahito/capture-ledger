@@ -3,14 +3,12 @@
  *
  * ## これは形であって、認証ではない
  *
- * ここに在るのは **クレームの読み方** だけで、検証はしない。署名を確かめるのは
- * `api/identity.ts` の resolver の仕事で、こちらは「読めた payload から Identity を
- * どう組み立てるか」を 1 か所に置くためのもの。
+ * ここに在るのは **クレームの読み方** だけで、検証はしない。署名と、トークンの種類・
+ * 呼び手のアプリを確かめるのは `api/identity.ts` の resolver の仕事で、こちらは
+ * 「読めた payload から Identity をどう組み立てるか」を 1 か所に置くためのもの。
  *
- * 入口は API だけになった。以前は CLI 用の経路がもう 1 本あり、環境変数
- * (CAPTURE_LEDGER_DEV_SUBJECT / CAPTURE_LEDGER_DEV_ORGANIZATIONS / CAPTURE_LEDGER_OIDC_TOKEN) から主体を
- * 組み立てていたが、その呼び出し元ごと畳んだので消えている。IdP が来たときに
- * 差し替わるのは `api/identity.ts` の resolver のほうで、この型は変わらない。
+ * 本番の IdP は Amazon Cognito、手元はその代役の Floci（CAPTURE-185）。どちらも同じ形の
+ * access token を出すので、読み方は 1 つで済む。
  */
 import type { JWTPayload } from "jose";
 
@@ -20,21 +18,21 @@ export interface Identity {
 }
 
 /**
- * 組織のクレームの綴り。**IdP ごとに違うのはここだけ** (`groups` / `roles` / 独自)。
+ * 組織のクレームの綴り。Cognito（と代役の Floci）は、利用者が属する群を
+ * `cognito:groups`（文字列の配列）で人の access token に載せる。群の名前が組織の名前。
  *
- * 定数にしてあるのは、試験が同じものを参照できるようにするため —— そうすると
- * 名前を変えたときに API 側と CLI 側の試験が **同時に** 赤くなる。以前は 2 か所に
- * 直書きしてあり、片方を変えても片方の試験しか落ちなかった。
+ * **M2M（client credentials）のトークンには載らない。** 機械の組織は、台帳が OpenFGA に
+ * 保存した許可から引く（`api/identity.ts` の `machineOrganizations`）。
+ *
+ * 定数にしてあるのは、試験が同じものを参照できるようにするため —— 名前を変えた日に
+ * 試験が **同時に** 赤くなる。群を作る側（`src/tools/idp-bootstrap.ts`）も群の名前しか
+ * 書かないので、クレームの綴りを持つのはここだけ。
  */
-export const ORGANIZATIONS_CLAIM = "organizations";
+export const ORGANIZATIONS_CLAIM = "cognito:groups";
 
 /**
- * カンマ区切りから組織を読む。いまの読み手は開発用ヘッダ
- * `X-Capture-ledger-Organizations` だけ。
+ * カンマ区切りから組織を読む。読み手は開発用ヘッダ `X-Capture-ledger-Organizations` だけ。
  *
- * 以前は `CAPTURE_LEDGER_DEV_ORGANIZATIONS` と綴りを共有していて「片方だけ空白の落とし方が
- * 変わってはいけない」ことが分けてある理由だったが、**その環境変数を読む場所は
- * 上に書いたとおり畳んで消えた。** いま呼ぶのは `api/identity.ts` の 1 か所だけで、
  * 関数のまま残しているのは `test/claims.test.ts` が空要素の落とし方を直接見ているから
  * —— `,,  ,` のような入力の扱いは、ヘッダ経路の中に埋めると誰も見なくなる。
  */
@@ -45,10 +43,17 @@ export const organizationsFromList = (value: string): string[] =>
     .filter((item) => item !== "");
 
 /**
- * 検証済みのクレームから主体を組む。**API と CLI が共有する。**
+ * 機械（M2M）のトークンか。Cognito の client credentials のトークンは、`sub` に
+ * app client の ID を入れ、`client_id` と同じ値にする（人のトークンの `sub` は利用者の ID）。
+ */
+export const isMachineToken = (payload: JWTPayload): boolean =>
+  typeof payload.sub === "string" && payload.sub !== "" && payload.sub === payload["client_id"];
+
+/**
+ * 検証済みのクレームから主体を組む。
  *
- * **ここは検証しない。** 呼ぶ側が済ませている —— API は `jwtVerify` で、
- * CLI は `decodeJwt` で「検証しない」と決めたうえで。この関数が答えるのは
+ * **ここは検証しない。** 呼ぶ側（`api/identity.ts` の `jwtVerify` と、トークンの種類・
+ * 呼び手のアプリの確かめ）が済ませている。この関数が答えるのは
  * 「そのクレームが、どんな `Identity` を表すか」だけ。
  *
  * 組織が無いのは不正ではない。「どこにも属さない人」は表せる必要があり、

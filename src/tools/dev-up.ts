@@ -31,7 +31,7 @@
  * 書きに行く段はひとつも無い (4 行の引き渡しは、向こうが自分の中に置き、こちらの
  * `pnpm run connect` が読む)。
  */
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { connect } from "node:net";
 import { relative, resolve } from "node:path";
@@ -39,6 +39,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import { ROOT } from "./root.js";
 import type { HostProcess } from "./daemons.js";
+import { IDP_READY_URL, readHandoff } from "./idp.js";
 import { HOST_PROCESSES, inspect, runningBuild, stop } from "./daemons.js";
 
 const argv = process.argv.slice(2);
@@ -54,8 +55,6 @@ const SCHEDULER = resolve(ROOT, flag("--scheduler") ?? "../capture-scheduler");
 const WINDMILL = "http://127.0.0.1:8000";
 const LOGS = resolve(ROOT, ".dev/logs");
 
-const whoami = (spawnSync("whoami", { encoding: "utf8" }).stdout ?? "").trim() || "you";
-
 /**
  * 隣の repo で走るもの。**読むだけ・向こうのコマンドを打つだけ** で、書きには行かない。
  * 場所を渡せるようにしてあるのは、横に並べていない clone のためと、
@@ -70,7 +69,6 @@ const spec = (name: string) => {
   if (found === undefined) throw new Error(`unknown host process: ${name}`);
   return found;
 };
-const issuer = spec("issuer");
 const api = spec("api");
 const validator = {
   ...spec("validator"),
@@ -98,6 +96,11 @@ interface ShellStep {
 interface DaemonStep {
   id: string;
   daemon: HostProcess;
+  /**
+   * 起こすときに足す環境変数。**起こす直前に** 決める —— 値は前の段（idp）が書いた
+   * 引き渡しファイルから来るので、段の表を組む時点ではまだ無い。
+   */
+  env?: () => Record<string, string>;
   ready: string;
   cwd?: undefined;
   skipIf?: undefined;
@@ -163,15 +166,26 @@ const STEPS: Step[] = [
   },
   { id: "connect", run: `pnpm run connect ${relative(ROOT, SCHEDULER)}` },
   { id: "flow", run: "pnpm run windmill:push", cwd: SCHEDULER },
-  { id: "issuer", daemon: issuer, ready: "http://127.0.0.1:9099/.well-known/openid-configuration" },
-  { id: "api", daemon: api, ready: "http://127.0.0.1:7070/healthz" },
-  // flow が名乗る名前 (capture-scheduler の CAPTURE_LEDGER_SUBJECT。既定は windmill) と、
-  // picker を開く人。**両方に要る** —— 前者が無いとクロールが 401、後者が無いと画面が空。
+  // 手元の Cognito の代役 (compose のサービス floci) にプール・client・利用者を用意し、
+  // iss と client の ID を .env.local に書く。**connect の後に置く** —— 向こうの引き渡しが
+  // 古い CAPTURE_LEDGER_OIDC_ISSUER を持っていても、こちらが後に書くので勝つ。api より前
+  // (API は起動のときに .env.local を読む)。
   {
-    id: "grant",
-    run: `pnpm run fga:grant submitter windmill acme && pnpm run fga:grant submitter ${whoami} acme`,
+    id: "idp",
+    run: "pnpm run idp:bootstrap",
+    waitFor: { label: "floci", url: IDP_READY_URL, timeoutMs: 120_000 },
   },
-  { id: "token", run: "pnpm run windmill:capture-ledger-token", cwd: SCHEDULER },
+  { id: "api", daemon: api, ready: "http://127.0.0.1:7070/healthz" },
+  // flow が名乗る app client と、picker・workbench を開く人。**両方に要る** —— 前者が無いと
+  // クロールを始められず、後者が無いと画面が空。許可は名前でなく sub に付く (idp:grant が読む)。
+  { id: "grant", run: "pnpm run idp:grant" },
+  // 向こうの道具が、こちらの引き渡しファイル (.dev/idp.env) を読みに来る。場所を渡すのは、
+  // worktree のように横並びでない置き方でも届くようにするため。
+  {
+    id: "token",
+    run: `pnpm run windmill:capture-ledger-token ${relative(SCHEDULER, ROOT)}`,
+    cwd: SCHEDULER,
+  },
   { id: "doctor", run: "pnpm run doctor", cwd: SCHEDULER },
   // **検証の daemon は workbench より前。** 先に workbench が立つと、「検証」を押した人が
   // daemon の不在を踏む。
@@ -184,6 +198,14 @@ const STEPS: Step[] = [
   {
     id: "workbench",
     daemon: workbench,
+    // 人の名乗りは Floci のサインイン。プールの ID が iss に入るので、起こす直前に読む。
+    env: () => {
+      const handoff = readHandoff();
+      return {
+        WORKBENCH_OIDC_ISSUER: handoff["IDP_ISSUER"] ?? "",
+        WORKBENCH_OIDC_CLIENT_ID: handoff["IDP_WORKBENCH_CLIENT_ID"] ?? "",
+      };
+    },
     ready: `http://127.0.0.1:${String(workbench.port)}/healthz`,
   },
 ];
@@ -298,6 +320,7 @@ const startDaemon = async (step: DaemonStep) => {
   // 根で起こすと `Missing script` になる。
   const child = spawn("/bin/sh", ["-c", step.daemon.run], {
     cwd: step.daemon.root,
+    env: { ...process.env, ...step.env?.() },
     detached: true,
     stdio: ["ignore", log, log],
   });

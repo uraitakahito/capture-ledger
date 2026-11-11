@@ -128,6 +128,31 @@ services:
     depends_on:
       - openfga-db
 
+  # 手元の Cognito の代役 (Floci)。本番の IdP は Amazon Cognito で、台帳はトークンを Cognito の形で
+  # 確かめる (src/api/identity.ts)。プール・client・利用者は pnpm run idp:bootstrap (dev:up の段 idp)
+  # が作り、iss と client の ID を .env.local に書く (CAPTURE-185)。
+  #
+  # **サービスの名前を floci にしない。** container-compose は全サービスに Docker link 形式の変数
+  # (`<名前>_PORT=tcp://…` とその仲間) を注入する (上の openfga の注記)。floci と名付けると
+  # FLOCI_PORT が生え、Floci が自分の設定 (floci.port) として読みかねない。
+  #
+  # **プールはメモリに持つ。** 作り直すと消え、iss (プールの ID を含む) が替わる。dev:up は毎回
+  # idp:bootstrap を打つので揃う。stack:up だけを打ったら pnpm run dev:up --from idp。
+  #
+  # 管理の API は、Floci の既定の鍵 (test/test) を条件なしに通す (2.4.0 のソースで確かめた)。
+  # このネットワークに届く物は誰でも利用者やトークンを作れる —— 開発用の手元のスタックの中の
+  # 心配として受け入れた (CAPTURE-185 の段 0)。ホストへは loopback にだけ出す。
+  idp:
+    # 版は digest で固定する (Floci は nightly を毎日出す)。上げるのは手で、上げたら
+    # CAPTURE-185 の段 0 の試し (人と機械のトークン・反証) を流し直す。
+    image: docker.io/floci/floci:2.4.0@sha256:5ee85db604c4aa74ac76e07ea5cc83086f37bb472bf3dbb97e34019e48efae9c
+    environment:
+      # トークンの iss の頭。コンテナから idp.capture-ledger の名前で取っても、iss はこの形のまま
+      # (Host の見出しに依らない。実測)。台帳はホストの 127.0.0.1 から鍵を取る。
+      - FLOCI_BASE_URL=http://127.0.0.1:4566
+    ports:
+      - "127.0.0.1:4566:4566"
+
   chromium-1: &chromium
     build:
       # browserhive 自身が動作確認された版の chromium —— submodule の submodule なので、
