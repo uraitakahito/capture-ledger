@@ -71,6 +71,40 @@ export interface ArchivePagesTable {
   textWithheld: ColumnType<string | null, string | null | undefined, string | null>;
 }
 
+/** 前回からの変化の、予定の回ごとの状態 (`036`)。 */
+export type CrawlChangeState =
+  | "comparing"
+  | "no_previous"
+  | "unchanged"
+  | "diffed"
+  | "summarizing"
+  | "summarized"
+  | "budget_wait"
+  | "failed";
+
+/** 要約の重さ。`none` < `minor` < `content`。 */
+export type ChangeSignificance = "none" | "minor" | "content";
+
+/** 前回からの変化の、予定の回 1 本 (`036`・CAPTURE-167)。周回 (`changes/worker.ts`) が作り、進める。 */
+export interface CrawlChangesTable {
+  crawlId: string;
+  scheduleId: string;
+  orgId: string;
+  prevCrawlId: string | null;
+  state: CrawlChangeState;
+  pagesCompared: ColumnType<number, number | undefined, number>;
+  pagesChanged: ColumnType<number, number | undefined, number>;
+  significance: ChangeSignificance | null;
+  headline: string | null;
+  attempts: ColumnType<number, number | undefined, number>;
+  nextAttemptAt: ColumnType<Date, string | undefined, string>;
+  leaseUntil: ColumnType<Date | null, string | null | undefined, string | null>;
+  derivationId: string | null;
+  error: string | null;
+  createdAt: ColumnType<Date, string | undefined, never>;
+  updatedAt: ColumnType<Date, string | undefined, string>;
+}
+
 /**
  * 前回からの変化の、ページ 1 つの差分 (`035`・CAPTURE-167)。Claude なしで 2 本の WACZ から作り直せる物だけを持つ
  * (`changes/change-of.ts`)。要約は派生の層 (`derivations`) に分けて残す。主キーは (crawlId, url)。
@@ -516,4 +550,5 @@ export interface Database {
   hostTypes: HostTypesTable;
   derivations: DerivationsTable;
   pageChanges: PageChangesTable;
+  crawlChanges: CrawlChangesTable;
 }

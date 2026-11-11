@@ -83,6 +83,38 @@ the word.
 `stuck` is separate because a daily schedule's next due time is about 24 hours away. Reading only
 the due time, a run that stopped at 04:00 would say nothing until 05:00 the next morning.
 
+## Changes since last time
+
+When a scheduled run closes, capture-ledger's worker (every 30 seconds, one at a time) pairs it, page URL by
+page URL, with the previous run of the same schedule whose recipe digest is the same, and compares the text
+(CAPTURE-167). The compared line is the after-behaviors snapshot, or the document line when there is none.
+Withheld pages are not compared.
+
+1. **Compare (no Claude).** A page whose text digest (`archive_pages.text_sha256`) is the same is not opened.
+   Only for a page that differs are both WACZ files read back from the store, and the line diff (with two
+   lines of context) is kept in `page_changes`. The diff can be rebuilt from the two WACZ files. If every
+   page is the same the run is `unchanged` and costs nothing.
+2. **Summarize (one Claude call).** The diffs of the pages that differ are read together, and a weight per
+   page (`none`, `minor`, `content`), a line per page and a line for the run are kept in the derived layer
+   (`derivations`, `kind = 'change'`). Claude reads only the diff and two lines around it — never the whole
+   text, a withheld document or a secret's value. Quotes are checked against the changed lines and marked
+   when they are not there. **A summary is not evidence** (the two WACZ files and the diff are).
+
+| State         | Meaning                                                                                   |
+| ------------- | ----------------------------------------------------------------------------------------- |
+| `no_previous` | No earlier run of the same schedule with the same recipe                                  |
+| `unchanged`   | Every page's text is the same (no WACZ read, no Claude)                                   |
+| `diffed`      | The diff is kept. Without the key (`CAPTURE_LEDGER_ANTHROPIC_API_KEY`) the run stops here |
+| `summarized`  | The summary is kept                                                                       |
+| `budget_wait` | The organization's monthly limit (shared with the fixer) is reached; rechecked hourly     |
+| `failed`      | Claude did not answer three times (1, 5 and 30 minutes apart), or refused                 |
+
+Only runs closed within the last 48 hours are picked up. `recentRuns[].change` in the schedule answers
+(`GET /api/schedules`) carries the state, the counts, the weight and the run's line. The details are read with
+`GET /api/changes?before=` (the runs, newest first) and `GET /api/crawls/:id/changes` (per page: the diff, the
+summary, and the WACZ before and after). Both need `can_submit`, and return only pages whose two WACZ files the
+caller may view (`can_view`).
+
 ## Settings
 
 | Environment variable                           | Default | Effect                                                                          |

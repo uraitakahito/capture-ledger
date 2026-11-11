@@ -41,6 +41,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | `host_types`                                                               | 受け皿（`__bh`）の型。スクリプトを読む人に見せる写し                                                                                                     |
 | `derivations`                                                              | 派生の層。Claude が作った物（直す係の案・前回からの変化の要約）を、証拠と分けて model・prompt の版・費用と一緒に残す。組織ごとの月の上限もこの表で数える |
 | `page_changes`                                                             | 前回からの変化の、ページ 1 つの差分。2 本の WACZ から作り直せる物だけ（要約は `derivations`）                                                            |
+| `crawl_changes`                                                            | 前回からの変化の、予定の回ごとの状態（比べ中・変化なし・差分あり・要約済み・上限で待つ・失敗）。周回が作り、進める                                       |
 | `kysely_migration` / `_lock`                                               | Kysely が作る帳簿（下記）                                                                                                                                |
 
 ### OpenFGA の DB

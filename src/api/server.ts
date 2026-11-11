@@ -39,6 +39,10 @@ import { createTsCompile } from "../config/ts-compile.js";
 import { claudeBudgetUsd, createClaude } from "../config/claude.js";
 import { derivationStoreOf } from "../derivations/store.js";
 import { registerSearchRoutes } from "./search.js";
+import { registerChangeRoutes } from "./changes.js";
+import { changeReadsOf } from "../changes/reads.js";
+import { changeStoreOf } from "../changes/store.js";
+import { changeClock } from "../changes/worker.js";
 import { registerSinkRoutes, type SinkConfig } from "./sink.js";
 import { createSearchClient, ensureSearchReady } from "../search/client.js";
 import { createWindmillDispatcher } from "../crawl/dispatch.js";
@@ -193,6 +197,8 @@ const start = async (options: ServerOptions): Promise<void> => {
   const dispatch = createWindmillDispatcher();
   // 定期実行の周回 (`schedules/tick.ts`)。クロールのエンドポイントと同じ設定で動くので、エンドポイントが無い配備では周回も無い
   let clock: ScheduleClock | undefined;
+  // Claude のクライアント。直す係 (下) と前回からの変化の周回が同じ物を使う。鍵が無ければ無い
+  const claude = createClaude();
   if (dispatch === undefined) {
     logger.info("CAPTURE_LEDGER_CRAWL_WEBHOOK_URL is not set — /api/crawls is not served");
   } else {
@@ -213,7 +219,6 @@ const start = async (options: ServerOptions): Promise<void> => {
           "(POST /api/crawls asks ts-compile-service whether the required variables are given)",
       );
     }
-    const claude = createClaude();
     if (claude === undefined) {
       logger.info(
         "CAPTURE_LEDGER_ANTHROPIC_API_KEY is not set — /api/crawls/:id/inline/:name/fix is not served",
@@ -307,6 +312,18 @@ const start = async (options: ServerOptions): Promise<void> => {
     resolveIdentity,
   });
 
+  // 前回からの変化 (CAPTURE-167)。予定の回を前の回と比べ、違えば Claude に要約させる。鍵が無ければ比べるだけ。
+  // webhook の無い配備でも回す (予定の回が在れば比べられる)
+  registerChangeRoutes(app, { fga, resolveIdentity, reads: changeReadsOf(db) });
+  const changes = changeClock({
+    store: changeStoreOf(db),
+    spentThisMonth: (orgId) => derivationStoreOf(db).spentThisMonth(orgId),
+    s3,
+    ...(claude && { claude }),
+    budgetUsd: claudeBudgetUsd(),
+    now: () => new Date(),
+  });
+
   const drainTimer = setInterval(() => {
     void drainOutbox(db, fga).catch((err: unknown) => {
       logger.error({ err }, "Scheduled outbox drain failed");
@@ -327,6 +344,7 @@ const start = async (options: ServerOptions): Promise<void> => {
   const shutdown = async (): Promise<void> => {
     clearInterval(drainTimer);
     await clock?.stop();
+    await changes.stop();
     await app.close();
     await db.destroy();
   };
@@ -336,6 +354,7 @@ const start = async (options: ServerOptions): Promise<void> => {
   await app.listen(listen);
   // **待ち受けの後に回す。** 周回が投げた段の報告は、この API に戻ってくる
   clock?.start();
+  changes.start();
   // 最後に、待ち受け・名乗り方と、段の報告を受けられるかを言う (`startup-notes.ts`)。
   // 開発用ヘッダの警告もここから出る —— ヘッダが実際に効いているときだけ。
   const notes = startupNotes({

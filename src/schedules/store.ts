@@ -12,7 +12,14 @@ import type { SinkConfig } from "../api/sink.js";
 import { crawlValues, insertCrawl, type SeededPage } from "../crawl/launch.js";
 import { pagesFailed } from "../crawl/page-counts.js";
 import type { CrawlBody, CrawlRequester, PreparedCrawl } from "../crawl/prepare.js";
-import type { CrawlSchedulesTable, CrawlState, Database, ScheduleRecipe } from "../db/database.js";
+import type {
+  ChangeSignificance,
+  CrawlChangeState,
+  CrawlSchedulesTable,
+  CrawlState,
+  Database,
+  ScheduleRecipe,
+} from "../db/database.js";
 
 export type ScheduleRow = Selectable<CrawlSchedulesTable>;
 
@@ -30,6 +37,17 @@ export interface ScheduleRun {
   pagesCaptured: number;
   pagesFailed: number;
   error: string | null;
+  /** 前回からの変化 (`036`・CAPTURE-167)。まだ比べていなければ null。 */
+  change: RunChange | null;
+}
+
+/** 回の変化の写し。中身は `GET /api/crawls/:id/changes`。 */
+export interface RunChange {
+  state: CrawlChangeState;
+  pagesCompared: number;
+  pagesChanged: number;
+  significance: ChangeSignificance | null;
+  headline: string | null;
 }
 
 export interface NewSchedule {
@@ -150,23 +168,51 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
   },
 
   async recentRuns(scheduleId) {
-    return db
+    const rows = await db
       .selectFrom("crawls")
+      .leftJoin("crawlChanges", "crawlChanges.crawlId", "crawls.id")
       .select([
-        "id as crawlId",
-        "state",
-        "scheduledFor",
-        "startedAt",
-        "finishedAt",
-        "scheduleMissed",
-        "pagesCaptured",
+        "crawls.id as crawlId",
+        "crawls.state",
+        "crawls.scheduledFor",
+        "crawls.startedAt",
+        "crawls.finishedAt",
+        "crawls.scheduleMissed",
+        "crawls.pagesCaptured",
         pagesFailed.as("pagesFailed"),
-        "error",
+        "crawls.error",
+        "crawlChanges.state as changeState",
+        "crawlChanges.pagesCompared",
+        "crawlChanges.pagesChanged",
+        "crawlChanges.significance",
+        "crawlChanges.headline",
       ])
-      .where("scheduleId", "=", scheduleId)
-      .orderBy("startedAt", "desc")
+      .where("crawls.scheduleId", "=", scheduleId)
+      .orderBy("crawls.startedAt", "desc")
       .limit(RECENT_RUNS)
       .execute();
+    return rows.map(
+      ({
+        changeState,
+        pagesCompared,
+        pagesChanged,
+        significance,
+        headline,
+        ...run
+      }): ScheduleRun => ({
+        ...run,
+        change:
+          changeState === null
+            ? null
+            : {
+                state: changeState,
+                pagesCompared: pagesCompared ?? 0,
+                pagesChanged: pagesChanged ?? 0,
+                significance,
+                headline,
+              },
+      }),
+    );
   },
 
   async runningCrawl() {

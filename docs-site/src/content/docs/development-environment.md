@@ -239,7 +239,9 @@ in `CAPTURE_LEDGER_ANTHROPIC_API_KEY`. Put it in `.env` only and never commit it
 `ANTHROPIC_API_KEY` is not read. With the key but without the ts-compile address the API refuses to start,
 so start it through `dev:up` (or write the address too). `pnpm run fix:eval` measures the fixer on a fixed set of broken samples
 against the real ts-compile-service and Claude — **it spends money** (it prints the cost of each sample
-and the total) and CI never runs it.
+and the total) and CI never runs it. `pnpm run change:eval` measures the summaries of changes since last
+time on sample diffs (made-up text and a few lines of the Prime Minister's Office top page) — two Claude
+calls, also paid, also not in CI.
 
 The `pnpm run` scripts read that `.env` themselves
 (`node --env-file-if-exists=.env`) — no shell `export` needed. **Variables
