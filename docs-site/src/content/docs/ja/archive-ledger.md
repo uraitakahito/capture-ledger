@@ -720,6 +720,11 @@ UUID でない・本文が `{depth}` でない）は索引のエンドポイン�
 `document.url`（リダイレクトの後）を `parseHttpUrl` と同じ形に正規化した物で、replayweb-server が
 頁を引く鍵です。写しの行には付けません。
 
+各行には、文字（`text`）の sha256 と長さ、伏せた理由（`textWithheld`）も入れ、`datapackage.json` から
+撮った BrowserHive と Chrome の版を `archives` に入れます（`035`）。前回からの変化（[定期実行](/capture-ledger/ja/schedules/)）は、
+digest が同じページの WACZ を開かずに「同じ」と言えます。文字そのものは capture-ledger の DB に持ちません。
+`035` より前の行は `pnpm run changes:backfill` が埋めます。
+
 記録が 0 の WACZ（索引が空か、`waczStats.totalRecorded` が 0）は外します（`skipped`。名前と sha256 は
 `replayBundle.skippedResources` に残ります）。replay が
 長さ 0 の Range を求め、保管庫の 416 で JSON を読み直し続けるからです。`resources` は起点の WACZ を

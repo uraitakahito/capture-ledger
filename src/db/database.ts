@@ -43,6 +43,10 @@ export interface ArchivesTable {
   inspectedAt: ColumnType<Date | null, never, string>;
   /** その WACZ が最初に入った合本の版 (`027`)。 */
   replayBundleRev: ColumnType<number | null, never, number>;
+  /** 撮った BrowserHive の版 (`035`。WACZ の `datapackage.json` の `browserhive:capture.build.version`)。検めたときに入る。 */
+  browserhiveVersion: ColumnType<string | null, never, string | null>;
+  /** 撮った Chrome の版 (`035`。同じく `browser.product`)。 */
+  browserVersion: ColumnType<string | null, never, string | null>;
 }
 
 /**
@@ -59,6 +63,33 @@ export interface ArchivePagesTable {
   stage: string | null;
   /** 正規化した URL。文書の行だけが持つ (写しの行は空)。 */
   keys: ColumnType<string[], string[], never>;
+  /** 文字 (`text`) の sha256 (`035`)。文字の無い行は NULL。前回からの変化は、これが同じなら WACZ を開かない。 */
+  textSha256: ColumnType<string | null, string | null | undefined, string | null>;
+  /** 文字の長さ (UTF-16 の数。`035`)。 */
+  textChars: ColumnType<number | null, number | null | undefined, number | null>;
+  /** 伏せた理由 (`textWithheld`。`035`)。伏せた行は比べない。 */
+  textWithheld: ColumnType<string | null, string | null | undefined, string | null>;
+}
+
+/**
+ * 前回からの変化の、ページ 1 つの差分 (`035`・CAPTURE-167)。Claude なしで 2 本の WACZ から作り直せる物だけを持つ
+ * (`changes/change-of.ts`)。要約は派生の層 (`derivations`) に分けて残す。主キーは (crawlId, url)。
+ */
+export interface PageChangesTable {
+  crawlId: string;
+  prevCrawlId: string;
+  url: string;
+  archiveId: string | null;
+  prevArchiveId: string | null;
+  /** 比べた行の時点。文書の行なら null。 */
+  stage: string | null;
+  /** `diffed` は差分を作れた組、`prev_missing` は前の回の WACZ が保管庫に無く作れなかった組。 */
+  state: "diffed" | "prev_missing";
+  added: number;
+  removed: number;
+  hunks: ColumnType<string[][], string, never>;
+  diffVersion: number;
+  createdAt: ColumnType<Date, string | undefined, never>;
 }
 
 /**
@@ -199,6 +230,11 @@ export interface CrawlsTable {
   scheduledFor: ColumnType<Date | null, string | null | undefined, never>;
   /** 1 回にまとめた欠けの数 (`032`)。 */
   scheduleMissed: ColumnType<number, number | undefined, never>;
+  /**
+   * 撮り方の digest (`035`・`crawl/recipe-digest.ts`)。前回からの変化は、同じ予定でこれが同じ回どうしだけを比べる。
+   * 埋める前の古い行は NULL (組にしない)。
+   */
+  recipeSha256: ColumnType<string | null, string | null | undefined, string>;
 }
 
 /** 解決して固定した撮り方 (`032`)。シークレットは宣言だけを持ち、回ごとに Windmill へ訊き直す。 */
@@ -479,4 +515,5 @@ export interface Database {
   scripts: ScriptsTable;
   hostTypes: HostTypesTable;
   derivations: DerivationsTable;
+  pageChanges: PageChangesTable;
 }

@@ -37,6 +37,12 @@ description: 予定の表と、capture-ledger の中で 30 秒ごとに回る時
 スクリプトの本文の写しまで入るので、新しい版が出ても回の中身は変わりません。答えの `outdated` が
 `true` になり、人が `repin` で固定し直します。シークレットだけは宣言を持ち、回ごとに Windmill へ訊き直します。
 
+回の行には撮り方の digest（`crawls.recipe_sha256`・`035`）も入ります。中身はスクリプトの id・版・phase・sha256・
+options、変数の値、User-Agent、宣言したシークレットの名前で、ページの中身を変えうる物だけです。起点・規則・
+`maxDepth`・`maxPages`・間隔は入れません。前回からの変化は、同じ予定でこれが同じ回どうしだけを比べます
+（変数を替えて固定し直した回は、前の回と比べません）。`035` より前の行は `pnpm run changes:backfill` が埋めます
+（`--schedule <id>` でその予定の回だけ）。
+
 ## エンドポイント
 
 どのエンドポイント（HTTP の method と path の組）も `maySubmit` で絞ります。一覧は 200 の空、それ以外は 404 で答えます。操作はすべて POST です

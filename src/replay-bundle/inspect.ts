@@ -1,6 +1,8 @@
 /**
  * WACZ を 1 度だけ検める: sha256 と大きさを数え、索引 (`indexes/index.cdxj`) が空かを見て、`pages/pages.jsonl` の
  * 行を `archive_pages` に入れる (`027`)。合本はここに残した物から組むので、段ごとに全部の WACZ を読み直さない。
+ * 行には文字の sha256 と長さ (`035`) も入れ、`datapackage.json` から撮った BrowserHive と Chrome の版を `archives` に
+ * 入れる。前回からの変化 (CAPTURE-167) は、digest が同じページの WACZ を開かずに済む。
  *
  * ## 読む物
  *
@@ -25,6 +27,9 @@ import type { S3Client } from "@aws-sdk/client-s3";
 import { getJsonObject, getObjectBytes } from "../archive/s3.js";
 import { readManifest } from "../archive/manifest.js";
 import { entrySize, INDEX_ENTRY_PATH, PAGES_ENTRY_PATH, readEntry } from "../archive/wacz.js";
+
+/** 版を読む entry。WACZ の決まりの名前。 */
+const DATAPACKAGE_ENTRY_PATH = "datapackage.json";
 import type { ArchivePagesTable, Database } from "../db/database.js";
 import { parsePagesJsonl, type PageLine } from "../search/document.js";
 import { createChildLogger } from "../logger.js";
@@ -49,17 +54,47 @@ export interface WaczFacts {
   indexEmpty: boolean;
   /** `pages.jsonl` の頁の行 (先頭の format の行は除く)。 */
   lines: PageLine[];
+  /** 撮った BrowserHive と Chrome の版 (`datapackage.json`)。読めなければ null。 */
+  browserhiveVersion: string | null;
+  browserVersion: string | null;
 }
+
+const stringAt = (value: unknown, ...path: string[]): string | null => {
+  let at = value;
+  for (const key of path) {
+    if (at === null || typeof at !== "object") return null;
+    at = (at as Record<string, unknown>)[key];
+  }
+  return typeof at === "string" ? at : null;
+};
+
+/** `datapackage.json` から版を読む。無い・JSON でない・欄が無いときは null (検めは続ける)。 */
+const versionsOf = (
+  raw: string | undefined,
+): Pick<WaczFacts, "browserhiveVersion" | "browserVersion"> => {
+  let parsed: unknown;
+  try {
+    parsed = raw === undefined ? undefined : JSON.parse(raw);
+  } catch {
+    parsed = undefined;
+  }
+  return {
+    browserhiveVersion: stringAt(parsed, "browserhive:capture", "build", "version"),
+    browserVersion: stringAt(parsed, "browserhive:capture", "browser", "product"),
+  };
+};
 
 /** WACZ のバイト列を検める。zip として読めなければ投げる。 */
 export const readWaczFacts = async (zip: Buffer): Promise<WaczFacts> => {
   const raw = await readEntry(zip, PAGES_ENTRY_PATH);
   const indexBytes = await entrySize(zip, INDEX_ENTRY_PATH);
+  const datapackage = await readEntry(zip, DATAPACKAGE_ENTRY_PATH);
   return {
     sha256: createHash("sha256").update(zip).digest("hex"),
     bytes: zip.length,
     indexEmpty: indexBytes === undefined || indexBytes === 0,
     lines: raw === undefined ? [] : parsePagesJsonl(raw),
+    ...versionsOf(datapackage),
   };
 };
 
@@ -107,7 +142,7 @@ export interface InspectOptions {
   now?: () => Date;
 }
 
-/** 1 本を検め、`archives` の 4 つの列と `archive_pages` の行を 1 つのトランザクションで書く。 */
+/** 1 本を検め、`archives` の 6 つの列と `archive_pages` の行を 1 つのトランザクションで書く。 */
 export const inspectArchive = async (
   archive: UninspectedArchive,
   options: InspectOptions,
@@ -133,6 +168,8 @@ export const inspectArchive = async (
         waczBytes: facts.bytes,
         indexEmpty,
         inspectedAt,
+        browserhiveVersion: facts.browserhiveVersion,
+        browserVersion: facts.browserVersion,
       })
       .where("id", "=", archive.id)
       // 先に検めた者が居れば何もしない (行の鍵で待ち、条件に外れる)
@@ -154,6 +191,9 @@ export const inspectArchive = async (
           title: row.title,
           stage: row.stage,
           keys: row.keys,
+          textSha256: row.textSha256,
+          textChars: row.textChars,
+          textWithheld: row.textWithheld,
         })),
       )
       .execute();
