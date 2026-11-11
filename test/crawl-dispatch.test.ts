@@ -1,14 +1,14 @@
 /**
  * クロールを Windmill へ渡す webhook の本文。
  *
- * 以前は本文をその場で書き並べていて、受け口を足したとき `artifactSink` を型に足したまま
+ * 以前は本文をその場で書き並べていて、受け取り先を足したとき `artifactSink` を型に足したまま
  * 載せ忘れた。flow の schema で `artifact_sink` は省略可能なので、何も落ちず、BrowserHive は
  * 黙って自前の保管庫へ書き続けた。見ているのは次の 2 つ:
  *
- * - 受け口が在れば `artifact_sink` が載り、無ければ鍵ごと載らないこと
- * - dispatcher が **実際に送る** 本文に受け口が載ること —— 組み立てが正しくても、
- *   dispatcher が使っていなければ意味が無い。だからこの試験のクロールは受け口を持たせてある
- *   (受け口の無いクロールでは、以前の 7 つを書き並べた本文とも一致してしまい区別できない)
+ * - 受け取り先が在れば `artifact_sink` が載り、無ければ鍵ごと載らないこと
+ * - dispatcher が **実際に送る** 本文に受け取り先が載ること —— 組み立てが正しくても、
+ *   dispatcher が使っていなければ意味が無い。だからこの試験のクロールは受け取り先を持たせてある
+ *   (受け取り先の無いクロールでは、以前の 7 つを書き並べた本文とも一致してしまい区別できない)
  *
  * 欄の書き忘れそのものは試験ではなく typecheck が見る (`src/crawl/dispatch.ts` の対応表)。
  */
@@ -52,11 +52,11 @@ afterEach(() => {
 });
 
 describe("webhook の本文", () => {
-  it("受け口が在れば artifact_sink を載せる", () => {
+  it("受け取り先が在れば artifact_sink を載せる", () => {
     expect(flowArgs({ ...CRAWL, artifactSink: SINK })).toMatchObject({ artifact_sink: SINK });
   });
 
-  it("受け口が無ければ artifact_sink の鍵そのものを送らない", () => {
+  it("受け取り先が無ければ artifact_sink の鍵そのものを送らない", () => {
     expect(flowArgs(CRAWL)).not.toHaveProperty("artifact_sink");
   });
 
@@ -83,7 +83,7 @@ describe("webhook の本文", () => {
   });
 
   /**
-   * 走らせるものは **空でも送る**。受け口と違い、鍵ごと落とすと flow は「省かれた」と
+   * 走らせるものは **空でも送る**。受け取り先と違い、鍵ごと落とすと flow は「省かれた」と
    * 読み、BrowserHive へも何も渡らない —— それは「何も走らせない」と同じ結果になるが、
    * 台帳が何を頼んだのかを本文から読めなくなる。
    */
@@ -113,7 +113,7 @@ describe("webhook の本文", () => {
     expect(args["secret_archive"]).toEqual({});
   });
 
-  it("dispatcher が送る本文に受け口が載る", async () => {
+  it("dispatcher が送る本文に受け取り先が載る", async () => {
     vi.stubEnv(
       "CAPTURE_LEDGER_CRAWL_WEBHOOK_URL",
       "http://windmill.test/api/w/crawl/jobs/run/f/crawl",

@@ -12,11 +12,11 @@ import {
 import { recordingDb } from "./recording-db.js";
 
 /**
- * スクリプトを読む口 (`src/api/scripts.ts`) の検査。
+ * スクリプトを読むエンドポイント (`src/api/scripts.ts`) の検査。
  *
  * DB は Kysely に SQL を組ませて記録する代役 (`recording-db.ts`)。だから「許可が無ければ SQL を
- * 1 本も出さない」と「1 版の口は版で絞る」を、組んだ SQL で言える。Postgres で本当に通るかは
- * CI の `src/tools/scripts-smoke.ts` が見る (口と同じ関数を CLI から呼ぶ)。
+ * 1 本も出さない」と「1 版のエンドポイントは版で絞る」を、組んだ SQL で言える。Postgres で本当に通るかは
+ * CI の `src/tools/scripts-smoke.ts` が見る (エンドポイントと同じ関数を CLI から呼ぶ)。
  */
 const TOUCHED = "fga に訊いた";
 const untouchable = new Proxy(
@@ -62,7 +62,7 @@ const ROUTES = [
   "/api/host-types",
 ];
 
-describe("スクリプトを読む口の認可", () => {
+describe("スクリプトを読むエンドポイントの認可", () => {
   it.each(ROUTES)("名乗りが無ければ 401 で、OpenFGA には訊かない: %s", async (url) => {
     const { res, queries } = await get(url, {
       fga: untouchable,
@@ -426,7 +426,7 @@ describe("POST /api/scripts/check", () => {
     expect(asked).toEqual([]);
   });
 
-  it("窓口の無い配備では口を作らない", async () => {
+  it("型の検査のクライアントの無い配備ではエンドポイントを作らない", async () => {
     const res = await check({ source: "x;", phase: "behavior" }, undefined);
     expect(res.statusCode).toBe(404);
   });

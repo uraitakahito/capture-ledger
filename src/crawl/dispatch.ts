@@ -8,7 +8,7 @@
  * Windmill の flow は path で webhook を持っていて、token 付きの POST 1 回で起動できる。
  * ledger 側に Windmill の client を抱えずに済むので、依存はこの URL と token だけになる。
  *
- * ## 設定していない配備では口ごと出さない
+ * ## 設定していない配備ではエンドポイントごと出さない
  *
  * クロールは後から足した能力なので、URL と token を **必須にはしない** ——
  * 必須にすると、クロールを使わない配備まで起動しなくなる。設定が無ければ
@@ -47,9 +47,9 @@ export const jobIdFrom = (body: string): string | undefined => {
  * `DispatchedCrawl` の欄と flow の引数名の対応。**型で網羅させる** —— `-?` で省略可能な欄も
  * 必須にしてあるので、`DispatchedCrawl` に欄を足してここに書き忘れると typecheck が落ちる。
  *
- * 以前は webhook の本文をその場で書き並べていて、受け口を足したとき `artifactSink` を型に
+ * 以前は webhook の本文をその場で書き並べていて、受け取り先を足したとき `artifactSink` を型に
  * 足したまま本文へ載せ忘れた。flow の schema で `artifact_sink` は省略可能なので、BrowserHive は
- * 口を受け取らないまま黙って自前の保管庫へ書き続け、クロールは受け口を一度も使わなかった
+ * 受け取り先を受け取らないまま黙って自前の保管庫へ書き続け、クロールは受け取り先を一度も使わなかった
  * (2026-09-14 に見つけた)。本文を書き並べる形に戻さないこと。
  *
  * **snake_case で送る。** Windmill の script は引数名がそのまま入力の契約で、
@@ -71,7 +71,7 @@ const FLOW_ARGS: { readonly [K in keyof DispatchedCrawl]-?: string } = {
   // 落とすとページの中で何も走らない —— それでも取り込みは成功し、archive も出る。
   // 送り忘れが静かな劣化になる欄は、他にこれだけ。
   scripts: "scripts",
-  // 受け口を使わない配備では値が無く、鍵ごと送らない (`flowArgs`)。
+  // 受け取り先を使わない配備では値が無く、鍵ごと送らない (`flowArgs`)。
   artifactSink: "artifact_sink",
   // **クロールごとの値も必ず送る** (空なら `{}`)。変数は値ごと、シークレットは名前 → Windmill の変数の path。
   // flow は運ぶだけで中身を見ない。値を解くのは `crawl_host` (capture-scheduler)。

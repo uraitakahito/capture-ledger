@@ -1,5 +1,5 @@
 /**
- * 予定の表を読み書きする窓口。口と周回は直に SQL を書かず、これを deps で受ける —— route の試験の偽の DB は
+ * 予定の表を読み書きする store。エンドポイントと周回は直に SQL を書かず、これを deps で受ける —— route の試験の偽の DB は
  * 行のロックも一意の索引も真似できないので、SQL はここに閉じ込める。形は `test/schedules-store.test.ts` が
  * recording の DB で照らし、Postgres で本当に通るかは `src/tools/schedules-smoke.ts` が CI で見る。
  */

@@ -13,7 +13,7 @@
  *   版どうしで比べられる形にするため。replay (ReplayWeb.page 2.5.0) が頁の中で見つからない物 (favicon など) を
  *   探す 3 本は、この並びではなく WACZ の名前の順で選ばれる (replayweb-server の docs/replay-bundle.md。段 1 で確かめた)
  * - `initialPages`: 文書の行だけ、起点の頁を先頭に深さ・時刻の順で 25 行まで。replay は一覧の 1 ページ目をここから
- *   作る (問いの口は検索と 2 ページ目以降だけ)。写しの行は入れない
+ *   作る (問い合わせのエンドポイントは検索と 2 ページ目以降だけ)。写しの行は入れない
  * - `pages.json`: 並びの約束は無い (server が自分で引けるように持つ)。ここでは `resources` の順・行の順
  *
  * ## 行の id は必ず文字列
@@ -210,7 +210,7 @@ export interface ReplayBundle {
   skipped: number;
 }
 
-/** 合本の置き場。WACZ と同じ bucket の、持ち主を言う鍵の下 (受け口の `org/<orgId>/` と同じ考え)。 */
+/** 合本の置き場。WACZ と同じ bucket の、持ち主を言う鍵の下 (受け取り先の `org/<orgId>/` と同じ考え)。 */
 export const replayBundleDir = (orgId: string, crawlId: string, rev: number): string =>
   `org/${orgId}/crawls/${crawlId}/r${String(rev)}`;
 

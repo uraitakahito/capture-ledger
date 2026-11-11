@@ -9,7 +9,7 @@ import {
 } from "../src/scripts/ts-compile.js";
 
 /**
- * ts-compile-service の窓口。**答えの形が違えば、通ったとも誤りが無いとも読まない** ——
+ * ts-compile-service のクライアント。**答えの形が違えば、通ったとも誤りが無いとも読まない** ——
  * 同じ番号を別のサービスが持っていても、取り直しの結果として渡さないため。
  */
 const BASE = "http://ts-compile.test:28080";
@@ -52,7 +52,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("ts-compile-service の窓口", () => {
+describe("ts-compile-service のクライアント", () => {
   it("送った列を POST /compile の本文にし、200 なら通ったと読む", async () => {
     const calls = answering(200, {
       typescript: "6.0.3",
@@ -175,8 +175,8 @@ describe("ts-compile-service の窓口", () => {
   });
 });
 
-describe("設定から窓口を作る", () => {
-  it("URL が無ければ窓口を作らない", () => {
+describe("設定からクライアントを作る", () => {
+  it("URL が無ければクライアントを作らない", () => {
     vi.stubEnv("CAPTURE_LEDGER_TS_COMPILE_URL", undefined);
     expect(createTsCompile()).toBeUndefined();
   });

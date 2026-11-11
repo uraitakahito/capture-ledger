@@ -437,8 +437,8 @@ describe("合本を確かめる（保管庫）", () => {
 });
 
 /**
- * 台帳が書いた物を、道具がそのまま通す。合本の口 (`POST /api/crawls/:id/replay-bundle`) に終わったクロールの
- * 合本を書かせ (本物の窓口に、fetch を差し替えて試験の CA の署名を返させる)、保管庫に置いた物を手元に写して
+ * 台帳が書いた物を、道具がそのまま通す。合本のエンドポイント (`POST /api/crawls/:id/replay-bundle`) に終わったクロールの
+ * 合本を書かせ (本物の署名のクライアントに、fetch を差し替えて試験の CA の署名を返させる)、保管庫に置いた物を手元に写して
  * 確かめる。書く側と確かめる側が、同じバイト列と同じ hash の作り方を共有していることの確かめ。
  */
 describe("台帳が書いた合本を、道具が通す", () => {
@@ -458,7 +458,7 @@ describe("台帳が書いた合本を、道具が通す", () => {
     vi.unstubAllGlobals();
   });
 
-  it("口が書いた replay.json・pages.json・replay-digest.json と WACZ は、全部 ok", async () => {
+  it("エンドポイントが書いた replay.json・pages.json・replay-digest.json と WACZ は、全部 ok", async () => {
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       const { hash } = JSON.parse(init.body as string) as { hash: string };
       return new Response(JSON.stringify(await ca.sign(hash)), { status: 200 });

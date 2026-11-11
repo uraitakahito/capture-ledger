@@ -53,7 +53,7 @@ manifest を読み直してから登録します。こちらが速い経路で�
 取り込み（manifest の読み取りか、行の書き込みが落ちたもの）を登録します。
 `capture_submissions` のうち `manifest_key` を持ち、まだアーカイブの無い行を読み、
 **その鍵だけ**を取りに行きます。**bucket は歩きません。** 鍵を組み直すこともありません ——
-BrowserHive（または受け口）が `Capture` の応答で manifest を書いた場所を答え、Windmill の
+BrowserHive（または成果物の受け取り先）が `Capture` の応答で manifest を書いた場所を答え、Windmill の
 flow がそれを運び、段の報告が書き留めています。
 
 `--since-days <n>` を渡すと、直近 `n` 日に報告された取り込みだけに絞ります:
@@ -190,7 +190,7 @@ S3 は署名しか見ないので、URL を署名した瞬間に判断は確定�
 
 クロールの起点は頼みと一緒に来るので、何を撮るかは頼む側が決める。頼むのは [capture-workbench](https://github.com/uraitakahito/capture-workbench) の画面の人か、
 頼みを持っている予定（`crawl_schedules`）で、予定の期限は台帳の時計が見る（[定期実行](/capture-ledger/ja/schedules/)）。
-境界は、クロールを始める口と、その様子を返す口の 2 つ。
+境界は、クロールを始めるエンドポイント（HTTP の method と path の組）と、その様子を返すエンドポイントの 2 つ。
 
 ```sh
 curl -X POST http://localhost:7070/api/crawls \
@@ -240,7 +240,7 @@ CREATE UNIQUE INDEX crawls_single_active_idx ON crawls ((true)) WHERE state = 'r
 
 - **段の報告が「次の段は無い」と言ったとき。** 次の段が 0 本になる報告で行を締めます。1 枚も撮れていなければ
   `failed` で締めます。
-- **`POST /api/crawls/:id/failed`。** 段が落ちたとき flow の締める段が叩きます。人も同じ口を叩けます。
+- **`POST /api/crawls/:id/failed`。** 段が落ちたとき flow の締める段が叩きます。人も同じエンドポイントを叩けます。
 - **台帳が段を投げられなかったとき。** webhook の答えが 2xx 以外・10 秒（既定）以内に答えが無い・繋がらない、のいずれかで、
   行をメッセージ付きの `failed` で締めます。
 
@@ -277,9 +277,9 @@ CAPTURE_LEDGER_CAPTURE_SIGNING=1      # wacz-auth 署名を要求する。wacz �
 落ちて初めて見つかる —— しかもその文言は、原因になった設定に一言も触れない。
 詳しくは[キャプチャオプション](/capture-ledger/ja/capture-options/)。
 
-### 誰がこの口を叩くか
+### 誰がこのエンドポイントを叩くか
 
-capture-workbench の画面と、トークンを持つほかの道具。予定はこの口を叩かない —— 回を始めるのは台帳の時計で、
+capture-workbench の画面と、トークンを持つほかの道具。予定はこのエンドポイントを叩かない —— 回を始めるのは台帳の時計で、
 作ったときに同じ確かめを通して固定した撮り方で始める（[定期実行](/capture-ledger/ja/schedules/)）。
 
 分けてあるのは意図的で、**何を撮るかは予定（`crawl_schedules`）か、画面から始めるクロールが持ち、
@@ -318,14 +318,14 @@ pnpm run fga:revoke submitter alice acme
 「ほかの関係で許されています」と添える。
 
 呼び出し元の側から確かめるには `GET /api/me` を訊く。答えるのは呼び出し元自身のことだけで、名前と
-組織はトークン（かヘッダ）から解いたもの、`canSubmit` はクロールの口が訊くのと同じ問いの答え:
+組織はトークン（かヘッダ）から解いたもの、`canSubmit` はクロールのエンドポイントが訊くのと同じ問いの答え:
 
 ```sh
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/me
 # → {"subject":"alice","organizations":["acme"],"canSubmit":true}
 ```
 
-クロールの口の 404 からは「許可が無い」のか「口が無い」のかが読めない。こちらは許可が無くても
+クロールのエンドポイントの 404 からは「許可が無い」のか「エンドポイントが無い」のかが読めない。こちらは許可が無くても
 404 にせず、`canSubmit: false` と答える。
 
 所属で代用してはならない。組織は呼び出し元自身のトークンから組んだ contextual tuple として
@@ -342,7 +342,7 @@ subject に 202 が出た。
 
 ## リンクを辿る
 
-同じ口に深さを 1 以上で渡すと、起点からリンクを辿る。辿る作業は Windmill が回し、
+同じエンドポイントに深さを 1 以上で渡すと、起点からリンクを辿る。辿る作業は Windmill が回し、
 **どのリンクを取るか・既読・打ち切り**を決めるのは capture-ledger。
 
 ```sh
@@ -356,7 +356,7 @@ curl http://localhost:7070/api/crawls/9072b625-…
 #     "pagesCaptured": 6, "pagesDiscovered": 76, … }
 ```
 
-`CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` と `_TOKEN` の両方が無ければ、この口は出さない。片方だけだと
+`CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` と `_TOKEN` の両方が無ければ、このエンドポイントは出さない。片方だけだと
 **起動時に落とす** —— 半端な設定は、頼まれた後にしか気づけない失敗になり、そのときには
 行が既に立っている。
 
@@ -454,7 +454,7 @@ WINDOW w AS (PARTITION BY host ORDER BY submitted_at);
 ドメインを含む。URL の前方一致は、それより短い前方一致と、その URL 自身が当たる範囲や
 ドメインに含まれる。正しい並びを断るほうが、死んだ規則を通すより悪い。
 
-`GET /api/crawl-rules/check` は、何も始めずに同じ検査をする。書かない口なので `GET`。
+`GET /api/crawl-rules/check` は、何も始めずに同じ検査をする。書かないエンドポイントなので `GET`。
 
 ```sh
 curl 'http://localhost:7070/api/crawl-rules/check?seed=https://www.example.com/&rule=follow:same-site&rule=skip:ads.example.com'
@@ -497,14 +497,14 @@ curl 'http://localhost:7070/api/decisions?domain=ads.example.com&days=90&action=
 ```
 
 規則 `0` は、どの規則にも当たらなかったリンク。`robots` は robots.txt のために取らなかった
-ページで、「なぜ撮らなかったか」を 1 か所で読める。ホスト名はポートを外す。ドメインの口は、
+ページで、「なぜ撮らなかったか」を 1 か所で読める。ホスト名はポートを外す。ドメインで引くエンドポイントは、
 そのホストとその下をラベルの境目で照らし、新しいクロールから並べる。`days` の既定は 90、
 `action` の既定は `skip` で、500 行で切ったときは `truncated` が言う。Windmill は run の中身を
 最長 30 日で消すが、この行はクロールの行がある限り残る。
 
 ### ページと取り込みのログ
 
-クロールが触った URL は、取る前の pending も含めて 1 つずつ `crawl_pages` の行です。それを読む口が
+クロールが触った URL は、取る前の pending も含めて 1 つずつ `crawl_pages` の行です。それを読むエンドポイントが
 2 本あります。どちらも認可は `GET /api/crawls/:id` と同じ `maySubmit` で、許可の無い呼び出し元にも、
 無いクロールやページにも 404 を返します。
 
@@ -532,7 +532,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/log
 ページで走ったスクリプトが書いた物（`__bh.log`・`__bh.report`・投げた例外）、取り込みのページ自身の
 console、BrowserHive の出来事 —— で、BrowserHive（v24.0.0 から）が答えと、成果物の隣の
 `.result.json` に載せます。シークレットの値は、長さに依らず `***` に替えてあります。
-ログの口はそのたびに保管庫からこの file を読み、`log` を書かれたまま、届いた順で返します。
+ログのエンドポイントはそのたびに保管庫からこの file を読み、`log` を書かれたまま、届いた順で返します。
 capture-ledger が写すのは数だけで、段の登録が（読めなかったときは reconcile
 が）`crawl_pages.log_counts` に書くので、一覧は file を読みません。数を写すのは台帳に入れる前です ——
 時間切れや失敗の取り込みは WACZ が無く台帳に入りませんが、行と数は在り、
@@ -555,7 +555,7 @@ id（`page`）を持つので、取れなかったページからそのまま行
 
 穴が 2 つ残っています。`timeout`・`connection`・`internal` で落ちた取り込みは 1 度だけ撮り直され、
 台帳が持つのは 2 回目の `taskId` だけなので、1 回目のログは保管庫に在っても、ここからは辿れません。
-また口の認可は組織を見ない `maySubmit` で、クロールを始められる者は、どのクロールの行も ——
+またエンドポイントの認可は組織を見ない `maySubmit` で、クロールを始められる者は、どのクロールの行も ——
 スクリプトが報告した値も、取り込みのページが出した文も —— 読めます。`GET /api/crawls/:id`
 と同じ性質です。
 
@@ -563,7 +563,7 @@ id（`page`）を持つので、取れなかったページからそのまま行
 
 **必須です。** API は `CAPTURE_LEDGER_OPENSEARCH_URL` をほかの必須の設定と一緒に読み、
 起動の時に OpenSearch に索引を訊きます（無ければ mapping ごと作ります）。URL が無いか、
-OpenSearch が答えなければ、API は起動しません。以前は任意で、URL が無ければ口を出さず、
+OpenSearch が答えなければ、API は起動しません。以前は任意で、URL が無ければエンドポイントを出さず、
 クロールの flow の索引の段は 404 を「飛ばした」として受け、検索が無いまま全部が緑でした。
 
 開発では `pnpm run dev:up` が起こします。段 `search` が compose の profile `search` の
@@ -591,7 +591,7 @@ curl ".../api/search?q=responsive"
 ```
 
 `pending` はこのクロールのまだ載せていないアーカイブの数、`failed` は入らなかった数です。
-入らなかったアーカイブは `indexed_at` が空のまま残るので、もう一度この口を叩くか
+入らなかったアーカイブは `indexed_at` が空のまま残るので、もう一度このエンドポイントを叩くか
 `pnpm run search:reindex` で拾い直します（自分で拾い直す係はありません）。クロールの flow は、
 `failed` が 1 以上・404・503 を誤りにします。
 
@@ -674,7 +674,7 @@ OpenSearch が推測します（エラーは出ません）。
 形（v1）は replayweb-server の `docs/replay-bundle.md` にあります。
 
 ```sh
-# クロールの flow のための口。段を報告した後・その段を索引に載せる前に叩く
+# クロールの flow のためのエンドポイント。段を報告した後・その段を索引に載せる前に叩く
 curl -X POST .../api/crawls/<id>/replay-bundle -H 'content-type: application/json' -d '{"depth":1}'
 # → 200 { "rev": 3, "pages": 18, "members": 6, "skipped": 0, "failed": 0, "error": null,
 #         "signed": false, "signError": null, "digestKey": null }
@@ -704,7 +704,7 @@ curl -X POST .../api/crawls/<id>/replay-bundle -H 'content-type: application/jso
 **書けなくても 200 です。** 理由を `error` と `crawls.replay_bundle_error` に残します（後の版が
 書けたら消えます）。合本は撮った物から作る派生物で、flow の段を誤りにすると、次の段が既に走って
 いるのにクロールが failed になります。401・404（`can_submit` が無い・クロールが無い）・400（id が
-UUID でない・本文が `{depth}` でない）は索引の口と同じです。
+UUID でない・本文が `{depth}` でない）は索引のエンドポイントと同じです。
 
 ### 何が入るか
 

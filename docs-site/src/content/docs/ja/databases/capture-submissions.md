@@ -53,7 +53,7 @@ submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
 }));
 ```
 
-**capture-ledger は manifest の鍵を組みません。** BrowserHive（または受け口）は `Capture`
+**capture-ledger は manifest の鍵を組みません。** BrowserHive（または成果物の受け取り先）は `Capture`
 の応答で manifest を書いた場所を答え、Windmill の flow がそれを `manifestLocation` として
 運びます。handler は、その場所が設定の bucket の中なら鍵の部分を残します。manifest を
 書けなかった取り込みは代わりに `manifestError` で報告され、その理由がここに入ります。
@@ -79,7 +79,7 @@ manifest_key を持ち、archives に行の無い capture_submissions の行
   → archives に登録し、その org_id と submitted_by で tuple を積む
 ```
 
-**1 ページの取り込みのログの口**（`GET /api/crawls/:id/pages/:page/log`）が、ページの行の `task_id`
+**1 ページの取り込みのログのエンドポイント**（`GET /api/crawls/:id/pages/:page/log`）が、ページの行の `task_id`
 からこの表の `manifest_key` を引き、その `.result.json` の `log`
 を返します（[ページと取り込みのログ](/capture-ledger/ja/archive-ledger/#ページと取り込みのログ)）。
 `crawl_pages.task_id` は text、この表の `task_id` は uuid なので、uuid の側を text に倒して繋ぎます

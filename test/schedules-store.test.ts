@@ -5,7 +5,7 @@ import type { PreparedCrawl } from "../src/crawl/prepare.js";
 import { recordingDb } from "./recording-db.js";
 
 /**
- * 予定の窓口の SQL の形。**Kysely が実際に組んだ SQL を照らす。** 制約・ロック・rollback は
+ * 予定の store の SQL の形。**Kysely が実際に組んだ SQL を照らす。** 制約・ロック・rollback は
  * `src/tools/schedules-smoke.ts` が本物の Postgres で見る。
  */
 const NOW = new Date("2026-11-07T00:36:00.000Z");
@@ -47,7 +47,7 @@ const plan = (overrides: Partial<FirePlan> = {}): FirePlan => ({
   ...overrides,
 });
 
-describe("予定の窓口", () => {
+describe("予定の store", () => {
   it("候補は消していない予定のうち、頼みか期限の来た物で、頼みを先に 1 つ", async () => {
     const { db, queries } = recordingDb([[]]);
     await scheduleStoreOf(db).candidate(NOW);

@@ -24,9 +24,9 @@ export interface StartupFacts {
   identity: { mode: "jwt"; issuer: string } | { mode: "header" | "deny" };
   /** `CAPTURE_LEDGER_DEV_IDENTITY=1` が立っているか。JWT の設定では無視される。 */
   devIdentity: boolean;
-  /** クロールの口 (webhook の 2 行) が在るか。 */
+  /** クロールのエンドポイント (webhook の 2 行) が在るか。 */
   crawls: boolean;
-  /** 受け口 (sink の 2 行) が在るか。 */
+  /** 受け取り先 (sink の 2 行) が在るか。 */
   sink: boolean;
 }
 
@@ -92,7 +92,7 @@ export const startupNotes = (facts: StartupFacts): Note[] => {
     });
   }
 
-  // ③ コンテナから届くか。段の報告も、受け口への PUT も、コンテナから来る。
+  // ③ コンテナから届くか。段の報告も、受け取り先への PUT も、コンテナから来る。
   const fromContainers = [
     ...(facts.crawls ? ["crawl level reports"] : []),
     ...(facts.sink ? ["artifact uploads (sink)"] : []),

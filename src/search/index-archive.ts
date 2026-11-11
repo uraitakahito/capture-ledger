@@ -13,7 +13,7 @@
  *
  * ## 失敗しても `indexed_at` を立てない
  *
- * 立てるのは送り終えてから。途中で落ちれば列は NULL のままなので、次に索引の口
+ * 立てるのは送り終えてから。途中で落ちれば列は NULL のままなので、次に索引のエンドポイント
  * (`POST /api/crawls/:id/index`。flow の段) か `pnpm run search:reindex` を叩いたときに同じ行を拾う
  * —— 自分で周回する係は無い。**at-least-once** で、`_id` がアーカイブの id と時点
  * (`document.ts` の `searchDocumentId`) なので重複しない。
@@ -48,7 +48,7 @@ export interface IndexArchiveOptions {
  *
  * WACZ が無い、あるいは `pages.jsonl` が無いときは **`indexed_at` を立てる**。
  * 索引に載せるものが無いことは確定していて、拾い直しても同じ答えになるため ——
- * 立てないと、索引の口を叩くたびにその行を読み続けることになる。
+ * 立てないと、索引のエンドポイントを叩くたびにその行を読み続けることになる。
  */
 export const indexArchive = async (
   archive: ArchiveRow & { bucket: string },

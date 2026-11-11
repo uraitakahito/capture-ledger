@@ -152,7 +152,7 @@ export interface CrawlsTable {
   pagesCaptured: ColumnType<number, number | undefined, number>;
   error: ColumnType<string | null, string | null | undefined, string | null>;
   /**
-   * 成果物を置いた場所の接頭辞 (`org/<orgId>/<YYYY-MM>/`)。**置く側 (受け口) が読む
+   * 成果物を置いた場所の接頭辞 (`org/<orgId>/<YYYY-MM>/`)。**置く側 (受け取り先) が読む
    * 唯一の出どころ。** 探す側 (段の登録と reconcile) は読まない —— 報告が運んだ manifest の場所
    * (`capture_submissions.manifest_key`・`014`) を読む。
    *
@@ -317,7 +317,7 @@ export interface CrawlSecret {
 }
 
 /**
- * どちらの口から入れるか。BrowserHive の 2 つの注入口にそのまま対応する。
+ * どちらの phase で入れるか。BrowserHive の 2 つの phase にそのまま対応する。
  *
  * `behavior` は読み込みの後・主フレーム・1 回で、受け皿を通して報告できる。
  * `preload` は遷移の**前**・iframe を含む全フレーム・遷移のたびに走り、報告できない。
@@ -435,7 +435,7 @@ export interface CrawlDecisionsTable {
   /** 当たった規則の番号。1 から数え、0 はどれにも当たらなかった (落とした)。 */
   rule: number;
   action: CrawlRuleAction;
-  /** リンク先のホスト名。**ポートは外す** —— ドメインの規則も、ドメインで引く口も、ホスト名で照らす。 */
+  /** リンク先のホスト名。**ポートは外す** —— ドメインの規則も、ドメインで引くエンドポイントも、ホスト名で照らす。 */
   hostname: string;
   /** 別々の URL の数。1 以上。 */
   links: number;

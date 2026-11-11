@@ -195,7 +195,7 @@ until curl -fsS http://localhost:50051/status >/dev/null 2>&1; do sleep 1; done
 
 capture-ledger のコマンドは、この repo の端末でそのまま打ちます。
 capture-ledger はホストで動き、
-スタックが `127.0.0.1` に publish した口を通してコンテナ側に繋がります。
+スタックが `127.0.0.1` に publish したポートを通してコンテナ側に繋がります。
 接続文字列は雛形に入っているので、写した `.env` にそのまま在ります。
 
 ```sh
@@ -215,7 +215,7 @@ platform DNS は `<service>.capture-ledger` をホストからも解決します
 :::
 
 BrowserHive の在り処はもうここにありません。スタックが公開している 2 つの HTTP の
-口 `localhost:50051` と `localhost:50052`（Chromium 1 台に BrowserHive 1 つ）は、
+エンドポイント `localhost:50051` と `localhost:50052`（Chromium 1 台に BrowserHive 1 つ）は、
 curl と flow のためのもので、capture-ledger のためではありません。
 
 台帳は **ts-compile-service** を呼びます。このスタックには無く、capture-scheduler の compose が
@@ -223,9 +223,9 @@ curl と flow のためのもので、capture-ledger のためではありませ
 capture-scheduler の `windmill:bootstrap` がほかの行と一緒に渡し（capture-scheduler v0.30.0 から）、
 `dev:up` の段の `pnpm run connect` が `.env.local` に `CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` を
 書きます。これで `GET /api/crawls/:id/diagnostics` が出ます。手で書くのは、`dev:up` を使わずに API を起こす
-ときだけです。口は capture-scheduler の `pnpm run doctor` が見ます（`host→ts-compile`）。
+ときだけです。宛先は capture-scheduler の `pnpm run doctor` が見ます（`host→ts-compile`）。
 
-Claude に直し方を訊く口（`POST /api/crawls/:id/inline/:name/fix`）には、Anthropic の Console の API の鍵も
+Claude に直し方を訊くエンドポイント（`POST /api/crawls/:id/inline/:name/fix`）には、Anthropic の Console の API の鍵も
 要ります（`CAPTURE_LEDGER_ANTHROPIC_API_KEY`）。`.env` にだけ書き、commit しません。SDK が自分で読む
 `ANTHROPIC_API_KEY` は読みません。鍵があって ts-compile の宛先が無いと API は起動で止まるので、`dev:up` で
 起こします（`dev:up` を使わないなら、宛先も書く）。`pnpm run fix:eval` は、決めた見本（型の誤りのある TS）を本物の
@@ -388,11 +388,11 @@ Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:9099);
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `ready`               | 段の報告を受けられる —— コンテナから届くアドレスで待ち、JWT を受ける                                                                                         |
 | `blocked`             | 受けられない。その上の warn が、足りない行を名指しする（`CAPTURE_LEDGER_API_HOST=0.0.0.0` と `CAPTURE_LEDGER_OIDC_ISSUER`）。クロールは `running` のまま残る |
-| `off`                 | クロールの口が無い（webhook の 2 行が無い）                                                                                                                  |
+| `off`                 | クロールのエンドポイントが無い（webhook の 2 行が無い）                                                                                                      |
 
 warn はほかに 3 つあります。名乗りの設定がどちらも無い（全員 `401`）、開発用ヘッダを信じる API を
 `127.0.0.1` 以外で待たせている（そのポートに届く誰もが、誰にでもなれる。picker も同じ判定で、
-画面の上に赤い注意を出します）、受け口が在るのに
+画面の上に赤い注意を出します）、受け取り先が在るのに
 `127.0.0.1` で待っている（BrowserHive のコンテナから `PUT` が届かない）。`CAPTURE_LEDGER_DEV_IDENTITY=1`
 の警告は、ヘッダが実際に効いているときだけ出ます —— JWT の設定では「無視される」と info で言います。
 
@@ -511,12 +511,12 @@ pnpm run api
 合っています。起動では openssl が `ts -attime` を持つかを確かめるので、PATH の先頭が macOS の
 `/usr/bin/openssl`（LibreSSL）なら、`CAPTURE_LEDGER_OPENSSL_BIN` に homebrew の openssl を書きます。
 
-### 受け口を通す
+### 受け取り先を通す
 
-既定では、BrowserHive は成果物を自前の bucket へ書きます。受け口はもう 1 つの経路で、
+既定では、BrowserHive は成果物を自前の bucket へ書きます。受け取り先（成果物を PUT する先。`artifactSink`）はもう 1 つの経路で、
 capture-ledger がクロールごとに 1 回きりの URL とトークンを配り、BrowserHive は成果物を
 capture-ledger へ `PUT` します（`src/api/sink.ts`）。BrowserHive が全テナントに書ける鍵を
-持たずに済むための口です。2 つの変数で立ち、**2 つ揃ったときだけ**です —— 片方だけだと
+持たずに済むための仕組みです。2 つの変数で立ち、**2 つ揃ったときだけ**です —— 片方だけだと
 API は起動しません。
 
 ```sh
@@ -534,16 +534,16 @@ dev のスタックでは、コンテナのネットワークから見た host �
 上のコマンドがその場で読みます（この文書を書いた Mac では `192.168.66.1`。network を作り直すと
 変わるので、写さないでください）。API は
 `0.0.0.0` で待ち受ける必要があります —— loopback に bind すると、コンテナからの接続を断ります。
-origin を誤ると、取り込みは受け口の URL で始まる誤り（`http://…/api/sink/…: …`）で落ちます。
+origin を誤ると、取り込みは受け取り先の URL で始まる誤り（`http://…/api/sink/…: …`）で落ちます。
 
 **そのうえで、成果物がどこに置かれたかを見てください。**この経路は、音も無く素通りされることも
-あります。受け口を立てて始めたクロールは `crawls.artifact_key_prefix`（`org/<orgId>/<YYYY-MM>/`）
+あります。受け取り先を立てて始めたクロールは `crawls.artifact_key_prefix`（`org/<orgId>/<YYYY-MM>/`）
 を記録し、そのアーカイブの `object_key` はこれで始まるはずです。平らな
 `<taskId>_<crawlId>.wacz` は BrowserHive が自前の bucket へ書いた印で、クロールは成功し、
-ほかに何も教えてくれません。受け口が足されてから一度も使われなかったのはこのためです ——
+ほかに何も教えてくれません。受け取り先が足されてから一度も使われなかったのはこのためです ——
 `src/crawl/dispatch.ts` の webhook の本文は手で書き並べられていて、`artifact_sink` を一度も
 運んでいませんでした。いまは型が網羅を保つ対応表から組み立てます。capture-scheduler の e2e も、
-API に受け口の有無を訊き（トークン無しの `PUT` が、在れば 401、無ければ 404）、在ればその
+API に受け取り先の有無を訊き（トークン無しの `PUT` が、在れば 401、無ければ 404）、在ればその
 クロールのアーカイブが全部接頭辞の下にあることを求めます。
 
 ## 画面の絵を撮り直す

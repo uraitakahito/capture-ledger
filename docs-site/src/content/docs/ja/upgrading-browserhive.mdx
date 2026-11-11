@@ -96,7 +96,7 @@ API の追加だけの変更 (オプショナルなリクエストフィール�
 
 ### manifest の照合が通すもの
 
-段の登録・reconcile・1 ページのログの口は、どれも `.result.json` を `readManifest`
+段の登録・reconcile・1 ページのログのエンドポイントは、どれも `.result.json` を `readManifest`
 （`src/archive/manifest.ts`）で読み、写した `CaptureResultReport` に Ajv で照らします。版を上げると、
 ここで次のことが効きます。
 
@@ -107,7 +107,7 @@ API の追加だけの変更 (オプショナルなリクエストフィール�
   の値が消えたときは落とします —— 上げる前に、新旧の `openapi.json` どうしで `required` と `enum`
   を比べてください。
 - **任意の項目は、無いまま残ります。** v24.0.0 の `log` は既定値を持たないので、それより前の
-  manifest は、空の log ではなく `log` の無い物として読まれます。1 ページのログの口が、
+  manifest は、空の log ではなく `log` の無い物として読まれます。1 ページのログのエンドポイントが、
   空のログを見せずに `no-log` と言えるのはこのためです。
 - **契約に `format` が入ると、API が起動しません。** Ajv は `date-time` も `double`
   も知らず（ajv-formats は入れていません）、`src/archive/manifest.ts` を import した時点で compile

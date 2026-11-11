@@ -2,7 +2,7 @@
  * 台帳の穴を、報告が書き留めた manifest の鍵から埋める。
  *
  * 段の報告は、取り込みごとに `capture_submissions` へ帰属 (組織・依頼者) と、BrowserHive
- * (または受け口) が `.result.json` を書いた場所の鍵を残す。段の登録 (`crawl/admit-level.ts`)
+ * (または受け取り先) が `.result.json` を書いた場所の鍵を残す。段の登録 (`crawl/admit-level.ts`)
  * はその場で manifest を読んで台帳に入れるが、そこで入らなかったもの —— manifest の
  * 読み取りが一時的に落ちた、台帳への書き込みが落ちた —— が穴になる。これはその行を拾い直す。
  *

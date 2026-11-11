@@ -1,5 +1,5 @@
 /**
- * 受け口の口を、偽の deps に対して試す。
+ * 受け取り先のエンドポイントを、偽の deps に対して試す。
  *
  * 固めているのは **DB に届く前に落ちること**。実地の疎通確認で、UUID でない `crawlId` が
  * そのまま問い合わせに渡り、Postgres の `invalid input syntax for type uuid` で
@@ -67,7 +67,7 @@ afterEach(async () => {
   await app.close();
 });
 
-describe("受け口の口", () => {
+describe("受け取り先のエンドポイント", () => {
   it("正しいトークンなら location を返す", async () => {
     const res = await app.inject({
       method: "PUT",
@@ -82,7 +82,7 @@ describe("受け口の口", () => {
 
   /**
    * **クロールを作ったときに決めた場所へ置く。** ここで `orgId` から組み直すと、
-   * 月をまたいだクロールや受け口の設定を切り替えた配備で、探す側とずれる。
+   * 月をまたいだクロールや受け取り先の設定を切り替えた配備で、探す側とずれる。
    *
    * 月を **いまと違う 2026-01** にしてあるのが肝。同じ月のうちは記録から読んでも
    * 組み直しても同じ綴りになるので、区別できる入力を置かないと検査が素通りする。
@@ -149,7 +149,7 @@ describe("受け口の口", () => {
 });
 
 /**
- * BrowserHive が受け口へ送る content-type を全部並べる (BrowserHive の
+ * BrowserHive が受け取り先へ送る content-type を全部並べる (BrowserHive の
  * src/storage/types.ts の ArtifactContentType)。加えて、BrowserHive は送らないが
  * Fastify が既定の解析器を持つ `text/plain` —— 既定の解析器を持つ型は、どれも同じ形で
  * 本文を取られるので、JSON だけを見ていると取りこぼす。
@@ -164,7 +164,7 @@ const ARTIFACT_TYPES = [
   "text/plain",
 ];
 
-describe("受け口の本文", () => {
+describe("受け取り先の本文", () => {
   /**
    * 本文を **正しい JSON** にしてあるのが肝。JSON として読めない本文なら、既定の解析器に
    * 取られても 400 で落ちるので、「取られて中身が変わる」形と区別できない。
@@ -187,8 +187,8 @@ describe("受け口の本文", () => {
   });
 
   /**
-   * **受け口の解析器を外へ漏らさない。** 漏れると、JSON の API に JSON でない本文が
-   * Buffer のまま届く —— 受け口を出していない配備では 415 なのに、出している配備でだけ通る。
+   * **受け取り先の解析器を外へ漏らさない。** 漏れると、JSON の API に JSON でない本文が
+   * Buffer のまま届く —— 受け取り先を出していない配備では 415 なのに、出している配備でだけ通る。
    */
   it("隣の JSON の API は JSON を読み、JSON でない本文は 415", async () => {
     app.post("/api/json", (request, reply) =>

@@ -7,7 +7,7 @@ import { registerMeRoute, type MeRouteDeps } from "../src/api/me.js";
  * `GET /api/me` の検査。
  *
  * **認可そのものを見ているのではない** —— fga は言われた答えを返しているだけ。見るのは、
- * クロールの口と**同じ問い** (`can_submit`・強い一貫性) を訊いていること、そして
+ * クロールのエンドポイントと**同じ問い** (`can_submit`・強い一貫性) を訊いていること、そして
  * 許可が無くても 404 にせず、`canSubmit: false` として答えること。
  */
 const TOUCHED = "fga に訊いた";
@@ -69,7 +69,7 @@ describe("GET /api/me", () => {
     expect(res.json()).toEqual({ subject: "windmill", organizations: ["acme"], canSubmit: true });
   });
 
-  it("クロールの口と同じ問いを訊く（can_submit・強い一貫性）", async () => {
+  it("クロールのエンドポイントと同じ問いを訊く（can_submit・強い一貫性）", async () => {
     const { fga, calls } = fgaAnswering(true);
     await me({
       fga: fga as unknown as MeRouteDeps["fga"],

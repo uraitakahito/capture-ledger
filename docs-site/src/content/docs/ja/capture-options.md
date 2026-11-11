@@ -121,7 +121,7 @@ ts-compile-service の pin です（`compiledWith.hostTypes` に出る）。フ�
 BrowserHive は受け取った両者を照合し、食い違えば `INVALID_ARGUMENT` で拒みます ——
 生成列にしてあるので、あの照合が capture-ledger の数え間違いに答えていることはありえません。
 
-`phase` は BrowserHive の 2 つの注入口のどちらを使うかです。`behavior` は読み込みの後・主フレーム・1
+`phase` は BrowserHive がスクリプトを差し込む 2 つの時（phase）のどちらを使うかです。`behavior` は読み込みの後・主フレーム・1
 回で、受け皿を通して取り込みのログに行を書け（`__bh.log`）、結果を 1 回述べられます（`__bh.report`。
 capture-scripts v0.7.0 から引数は 1 つ）。`preload` は**遷移の前**・iframe
 を含む全フレーム・遷移のたびに走り、**ログに書く手段も報告する手段も持ちません**。書いた行の読み方は
@@ -173,7 +173,7 @@ source は返しません。走ったバイト列はアーカイブ（`behaviors
 source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。[capture-workbench](https://github.com/uraitakahito/capture-workbench) は走行中の
 クロールを数秒ごとに引き直し、source は 1 MiB まであり得るからです。source は
 `GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。台帳に登録されず、
-アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこの口だけです。台帳のスクリプトには 404 を
+アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこのエンドポイント（HTTP の method と path の組）だけです。台帳のスクリプトには 404 を
 返します。
 
 型の検査で落ちたクロールの誤りは、`GET /api/crawls/:id/diagnostics` で読み直せます。台帳は、そのクロールに
@@ -181,9 +181,9 @@ source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source
 同じ組み合わせを検査するので、同じ誤りが、全部、行と列で返ります ——
 `{ typescript, diagnostics: [{ script, line, col, code, message }] }`（スクリプトの外、型の lib の誤りは、
 `script` の代わりに `file` を持ちます）。通る組み合わせなら `diagnostics` は空で、検査に使った
-`hostTypes` も返します。この口には `CAPTURE_LEDGER_TS_COMPILE_URL` が要り（capture-scheduler の compose が
-ts-compile を host の `127.0.0.1:28080` に出しています）、無ければ口を出しません。何も書き換えず、
-ts-compile-service しか呼ばないので GET で、許可はクロールのほかの口と同じです。サービスに届かなければ
+`hostTypes` も返します。このエンドポイントには `CAPTURE_LEDGER_TS_COMPILE_URL` が要り（capture-scheduler の compose が
+ts-compile を host の `127.0.0.1:28080` に出しています）、無ければエンドポイントを出しません。何も書き換えず、
+ts-compile-service しか呼ばないので GET で、許可はクロールのほかのエンドポイントと同じです。サービスに届かなければ
 503 を返します。
 
 `POST /api/crawls/:id/inline/:name/fix`（本文は `{}`）は、その場の TS の型の誤りの直し方を Claude に訊き、
@@ -208,7 +208,7 @@ ts-compile-service しか呼ばないので GET で、許可はクロールの�
 
 Claude を呼んだ頼みは、1 回ごとに表 `derivations` に 1 行残します（入力の digest・model・prompt の版・
 effort・回数・出力・usage・費用）。WACZ には書きません。組織ごとの月の上限は、その費用を足して数えます
-（`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`、既定 5）。口は `CAPTURE_LEDGER_ANTHROPIC_API_KEY` があるときだけ出し、
+（`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`、既定 5）。エンドポイントは `CAPTURE_LEDGER_ANTHROPIC_API_KEY` があるときだけ出し、
 鍵があって `CAPTURE_LEDGER_TS_COMPILE_URL` が無ければ API は起動で止まります。答えの `usage` に token の数と
 費用（`usd`）が載ります。
 
@@ -224,7 +224,7 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 
 スクリプトの source は、クロールを始められる人が HTTP で読めます。
 
-| 口                                       | 返すもの                                                                                                                                                                                                                                                                                                                                                                              |
+| エンドポイント                           | 返すもの                                                                                                                                                                                                                                                                                                                                                                              |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /api/scripts`                       | 各 id に 1 行（サイト用のスクリプトも、既定に入らない物も）: 既定で走る版（有効な版の中の最新）か、無ければ最新版を `enabled: false` で。`id`・`version`・`phase`・`sha256`・`sites`・`enabled`。`scripts` を書かないクロールが走らせるのは、`enabled` の物のうち対象サイトの無い物と、起点のホストに合う物。行は既定の実行順（カタログの順で、カタログに無い物はその後ろに `id` 順） |
 | `GET /api/scripts/:id/versions`          | 1 つの id の版の並び（新しい順）: `version`・`phase`・`sha256`・`sites`・`enabled`・`bytes`・`createdAt`。source は返さない                                                                                                                                                                                                                                                           |
@@ -232,9 +232,9 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 | `GET /api/host-types`                    | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                                                                                                                                                                                                                                                                                      |
 | `POST /api/scripts/check`                | 書きかけの TS の変数の宣言と誤り: `params`・`diagnostics`（[クロールごとの値](#クロールごとの値)）。ts-compile-service の宛先が無い配備には無い                                                                                                                                                                                                                                       |
 
-どれもクロールの口と同じ問い（呼び出し元の組織のどれかに `can_submit`）を訊きます。名乗りが
+どれもクロールのエンドポイントと同じ問い（呼び出し元の組織のどれかに `can_submit`）を訊きます。名乗りが
 無ければ 401、許可が無ければ 404 で、在らない id や版と同じ答えです。版が 1 以上の整数でなければ、
-何より先に 400 です。`bytes` は UTF-8 の大きさです。`pnpm run scripts show --version` は 1 版の口と
+何より先に 400 です。`bytes` は UTF-8 の大きさです。`pnpm run scripts show --version` は 1 版のエンドポイントと
 同じ関数で読みます。
 
 **版の番号は使い回されます。** `add` は最新の版 + 1 を採るので、最新の版を消して足し直すと、同じ番号が
@@ -319,7 +319,7 @@ Windmill に「在るか・secret か」を訊き、**値は読まずに**（`va
 `{ path, editedAt }` を、宣言の `archive` と一緒に行に固定します。値を読むのは flow の `crawl_host` だけで、取り込みの
 直前に読みます。値は台帳にも webhook の本文にも `GET /api/crawls/:id` にも無く、アーカイブの `settings.secrets` に在るのは
 名前だけです。スクリプトが値を取り込みのログ（`__bh.log`・`__bh.report`・例外の文）に書いても、BrowserHive が
-**長さに依らず** `***` に替えてから行に残すので、`.result.json` と 1 ページのログの口にも在りません。
+**長さに依らず** `***` に替えてから行に残すので、`.result.json` と 1 ページのログのエンドポイントにも在りません。
 隠せるのは記録からだけで、ページの JS からは読めますし、値を受け取ったサイトには届いています。次の段を送る前に台帳は
 `editedAt` を読み直し、変わっていてもクロールは止めず、`rotated`（気づいた段と新しい時刻）に残します。
 

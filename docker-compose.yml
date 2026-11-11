@@ -18,7 +18,7 @@
 # project 名と同じ DNS ドメインがあると、container-compose は real-DNS モードに
 # 入る: コンテナは <service>.capture-ledger という名前になり、プラットフォームの DNS に
 # 登録され、コンテナどうしがこの名前で呼び合える。host で動く capture-ledger は名前を
-# 使わず、下の ports: が 127.0.0.1 に出した口に繋ぐ —— 名前は host からも引けるが、
+# 使わず、下の ports: が 127.0.0.1 に出したポートに繋ぐ —— 名前は host からも引けるが、
 # macOS 26 は node の TCP をコンテナの subnet へ通さない (EHOSTUNREACH)。
 # container_name: を足してはならない —— DNS の命名が抑止され、`container exec` で
 # **各コンテナの中の** /etc/hosts を書き換える方式に落ちる (ホストの /etc/hosts は
@@ -145,9 +145,9 @@ services:
     ports:
       - "127.0.0.1:9223:9222"
 
-  # BrowserHive は **browser 1 台に口 1 つ** —— queue も pool も無く、走行中に
+  # BrowserHive は **browser 1 台にエンドポイント 1 つ** —— queue も pool も無く、走行中に
   # 呼ばれれば 429 Busy で断る。並列に取り込むにはこの対 (browserhive-N と
-  # chromium-N) を増やし、空いている口を選ぶのは呼ぶ側 (Windmill の flow) の仕事。
+  # chromium-N) を増やし、空いているエンドポイントを選ぶのは呼ぶ側 (Windmill の flow) の仕事。
   # 2 つ目以降は anchor との差分 (browser、host 側の port、depends_on) だけを書く。
   browserhive-1: &browserhive
     build:
@@ -167,7 +167,7 @@ services:
         GIT_REV: "${BROWSERHIVE_REV:-dev}"
     ports:
       # HTTP (JSON)。v12 から。v3〜v11 は同じ port で gRPC を喋っていた。TLS の証明書を
-      # 渡していないので平文 —— flow の口の既定 (http://browserhive-N.capture-ledger:50051) と対。
+      # 渡していないので平文 —— flow のエンドポイントの既定 (http://browserhive-N.capture-ledger:50051) と対。
       - "127.0.0.1:50051:50051"
     # プラットフォームの DNS (<service>.capture-ledger) を使った、名前による結線。
     environment: &browserhive-env
@@ -267,7 +267,7 @@ services:
     volumes:
       - ./.upstream/browserhive/dev-stack/signing-ca:/id:ro
     ports:
-      # host で動く台帳 (API と replay-bundle:rebuild) が、終わったクロールの合本に署名を貰う口
+      # host で動く台帳 (API と replay-bundle:rebuild) が、終わったクロールの合本に署名を貰うポート
       # (CAPTURE_LEDGER_SIGNER_URL=http://127.0.0.1:18091/sign)。BrowserHive のコンテナは今までどおり名前で
       # 引く (signing.env)。**18090 ではない** —— BrowserHive のスタックの wacz-signer が 18090 に出ていて、
       # 同じ dev の CA で署名する。番号を分けないと、取り違えても署名が通り、どちらのスタックに頼んだかが
@@ -314,7 +314,7 @@ services:
   # **host 側からは loopback で引く。** macOS 26 では Apple 署名でないバイナリ (node) が
   # コンテナの subnet へ TCP を張れず、DNS 名は引けるのに `EHOSTUNREACH` になる
   # (実測 2026-09-20: 同じ URL に curl は 200、node は EHOSTUNREACH)。browserhive が
-  # v10.6.0 で全部の口を loopback へ寄せたのと同じ理由で、ここも publish する。
+  # v10.6.0 で全部のポートを loopback へ寄せたのと同じ理由で、ここも publish する。
   #
   # **コンテナ側からは今までどおり名前で引く** —— 取り込むのは browserhive なので、
   # 起点の URL は capture-fixtures.capture-ledger:8080 のままでなければならない。
@@ -331,7 +331,7 @@ services:
         GIT_REV: "${CAPTURE_FIXTURES_REV:-dev}"
     profiles: ["capture-fixtures"]
     ports:
-      # e2e と doctor が host の node から叩く口。**browserhive の e2e スタックと
+      # e2e と doctor が host の node から叩くポート。**browserhive の e2e スタックと
       # 番号を分ける** —— あちらは 18080-18082 を publish するので、両方を同時に
       # 起こすと後から起きたほうが bind できずに落ちる (実測 2026-09-20:
       # `Service 'capture-fixtures' failed to start`、しかも 18080 には
@@ -379,7 +379,7 @@ services:
       # 1 ノードなので replica は割り当たらず、health は yellow のまま —— それで検索も索引も効く。
       - cluster.routing.allocation.disk.threshold_enabled=false
     ports:
-      # capture-ledger の API は host で動くので、この口で引く (CAPTURE_LEDGER_OPENSEARCH_URL)。
+      # capture-ledger の API は host で動くので、このポートで引く (CAPTURE_LEDGER_OPENSEARCH_URL)。
       # 索引を直に覗くのもここ (`curl 127.0.0.1:9200/_cat/indices`)。
       - "127.0.0.1:9200:9200"
     # JVM は 512m の heap の外にも要る。2g は実測ではなく安全側の見積り。

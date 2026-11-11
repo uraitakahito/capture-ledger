@@ -327,7 +327,7 @@ API の全体は[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)に�
 
 **ページが台帳に載るのは、そのページの居た段を flow が報告した後**です。picker に
 出てこないなら、段がまだ開いているか、そのページが失敗しています。走行中の取り込みに
-問い合わせる口はありません —— 取り込みは 1 回の HTTP 呼び出し（`POST /captures`）で、
+問い合わせるエンドポイントはありません —— 取り込みは 1 回の HTTP 呼び出し（`POST /captures`）で、
 結果は呼んだ側（Windmill の run）に返り、成果物の隣の `.result.json` manifest にも
 書かれます。BrowserHive が答えるのは「いま busy かどうか」です。
 

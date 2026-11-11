@@ -1,5 +1,5 @@
 /**
- * クロール 1 本の合本を、新しい版として保管庫に書く。口 (`POST /api/crawls/:id/replay-bundle`)・`/failed` で締めた後
+ * クロール 1 本の合本を、新しい版として保管庫に書く。エンドポイント (`POST /api/crawls/:id/replay-bundle`)・`/failed` で締めた後
  * (`api/crawls.ts`)・作り直しの道具 (`pnpm run replay-bundle:rebuild`) が同じこれを呼ぶ。形を決めるのは
  * `replay-bundle/format.ts` で、ここは配管。
  *
@@ -67,7 +67,7 @@ import type { SignedData } from "./verify-signed-data.js";
 
 const log = createChildLogger({ module: "replay-bundle-write" });
 
-/** 合本を書いた (書こうとした) 結末。口の答えの形そのもの。 */
+/** 合本を書いた (書こうとした) 結末。エンドポイントの答えの形そのもの。 */
 export interface ReplayBundleResult {
   /** 書いた (書こうとした) 版。アーカイブが 1 本も入らず書かなかったときは null。 */
   rev: number | null;
@@ -98,9 +98,9 @@ export interface WriteReplayBundleOptions {
   /** 合本を書き、`.result.json` を読む bucket (設定の物。WACZ と同じ bucket)。 */
   bucket: string;
   now?: () => Date;
-  /** 差し替え口。既定は `inspectArchive`。試験は zip を作らずに数え方を見る。 */
+  /** 差し替える引数。既定は `inspectArchive`。試験は zip を作らずに数え方を見る。 */
   inspectOne?: (archive: UninspectedArchive) => Promise<void>;
-  /** 署名の窓口 (`replay-bundle/sign.ts`)。無ければ署名しない (設定の無い配備)。 */
+  /** 署名のクライアント (`replay-bundle/sign.ts`)。無ければ署名しない (設定の無い配備)。 */
   signer?: ReplayBundleSigner;
 }
 
@@ -108,7 +108,7 @@ export interface WriteReplayBundleOptions {
  * 027 より前のアーカイブを、クロールに繋ぐ (`archives.crawl_id` が空で、そのクロールの頁の行が同じ task_id を
  * 持つ物)。繋いだ数を返す。作り直しの道具だけが呼ぶ —— 027 からは受けるときに入る (`archive/admit.ts`)。
  *
- * 繋ぎ方は台帳の他の口 (`waczCount`・索引の口) と同じ `crawl_pages.task_id` で、uuid 側を text に倒す。
+ * 繋ぎ方は台帳の他のエンドポイント (`waczCount`・索引のエンドポイント) と同じ `crawl_pages.task_id` で、uuid 側を text に倒す。
  */
 export const linkArchivesToCrawl = async (
   db: Kysely<Database>,

@@ -58,7 +58,7 @@ const SCOPES: ReadonlySet<string> = new Set<Scope>([
 ]);
 
 /**
- * 当てる物を読む。読めなければ `undefined` (受け口は `invalid rule patterns` で名指す)。
+ * 当てる物を読む。読めなければ `undefined` (`POST /api/crawls` の本文の schema は `invalid rule patterns` で名指す)。
  *
  * 範囲の名前が先で、次にホスト名 (スクリプトの対象サイトと同じ式)、最後に http(s) の URL。大文字の混じった
  * ホスト名・`*.example.com`・ポート付きのホスト名・`ftp://` は、どれにも読めない。
@@ -70,7 +70,7 @@ export const parsePattern = (raw: string): Pattern | undefined => {
   return url === undefined ? undefined : { kind: "prefix", url };
 };
 
-/** 規則 1 本の動きと当てる物。鍵がちょうど 1 つなのは、受け口の schema が守っている。 */
+/** 規則 1 本の動きと当てる物。鍵がちょうど 1 つなのは、`POST /api/crawls` の本文の schema が守っている。 */
 export const ruleParts = (rule: CrawlRule): { action: CrawlRuleAction; raw: string } => {
   const [action, raw] = Object.entries(rule)[0] as [CrawlRuleAction, string];
   return { action, raw };
@@ -182,10 +182,10 @@ export interface RulesCheck {
 }
 
 /**
- * 規則の並びを確かめる。始める口 (`POST /api/crawls`) と確かめの口 (`GET /api/crawl-rules/check`) が
+ * 規則の並びを確かめる。始めるエンドポイント (`POST /api/crawls`) と確かめのエンドポイント (`GET /api/crawl-rules/check`) が
  * 同じ物を使う —— 片方だけが通す並びを作らないため。
  *
- * 読めない規則は、覆いと起点の判定から外す。確かめの口は、読めない行があっても残りを確かめて返す。
+ * 読めない規則は、覆いと起点の判定から外す。確かめのエンドポイントは、読めない行があっても残りを確かめて返す。
  */
 export const checkRules = (
   rules: readonly CrawlRule[],
@@ -217,7 +217,7 @@ export const checkRules = (
 };
 
 /**
- * 行に固定した規則を読み直す。1 本でも読めなければ `undefined` —— 受け口が確かめてから書いているので、
+ * 行に固定した規則を読み直す。1 本でも読めなければ `undefined` —— `POST /api/crawls` が確かめてから書いているので、
  * 読めないなら行が壊れている。
  */
 export const compileRules = (rules: readonly CrawlRule[]): CompiledRule[] | undefined => {

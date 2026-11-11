@@ -109,7 +109,7 @@ export interface FixReply {
   stopReason: string | null;
 }
 
-/** Claude の API に届かなかった・断られた以外の誤りで答えが無かった。窓口 (`src/claude/client.ts`) が SDK の誤りを包む。 */
+/** Claude の API に届かなかった・断られた以外の誤りで答えが無かった。クライアント (`src/claude/client.ts`) が SDK の誤りを包む。 */
 export class ClaudeUnavailable extends Error {
   override name = "ClaudeUnavailable";
 }

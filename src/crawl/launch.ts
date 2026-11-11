@@ -96,7 +96,7 @@ export interface DispatchedCrawl {
 }
 
 /**
- * 合本を 1 本書く (`replay-bundle/write.ts` の `writeReplayBundle` を、配備の db・保管庫・署名の窓口で包んだ物)。
+ * 合本を 1 本書く (`replay-bundle/write.ts` の `writeReplayBundle` を、配備の db・保管庫・署名のクライアントで包んだ物)。
  * クロールを締めた後に、ここから呼ぶ。
  */
 export type ReplayBundleWriter = (
@@ -151,7 +151,7 @@ export interface LevelDeps {
   writeReplayBundle: ReplayBundleWriter;
 }
 
-/** 段を投げる係と、締めた後に合本を書く係。どちらも行の状態を書くので、同じ窓口に置く。 */
+/** 段を投げる係と、締めた後に合本を書く係。どちらも行の状態を書くので、同じ物に置く。 */
 export const levelDispatcher = ({ db, dispatch, writeReplayBundle }: LevelDeps) => {
   /**
    * 締めた後に、合本を 1 本書く (`writeReplayBundle` の注)。**投げない** —— 締めたことが答えで、合本は撮った物から
@@ -269,10 +269,10 @@ export const crawlValues = (
     // 打った字のまま。解いた字は WACZ の settings.userAgent に残る
     userAgent: prepared.userAgent === "" ? null : prepared.userAgent,
     state: "running" as const,
-    // **置く場所を、いま 1 度だけ決めて書き残す。** 以後は置く側 (受け口) がこの列を読む ——
-    // 段ごとに計算し直すと、受け口の設定を切り替えた配備や月をまたぐクロールでずれる。探す側
+    // **置く場所を、いま 1 度だけ決めて書き残す。** 以後は置く側 (受け取り先) がこの列を読む ——
+    // 段ごとに計算し直すと、受け取り先の設定を切り替えた配備や月をまたぐクロールでずれる。探す側
     // (`admitLevel`) はこの列を読まず、報告が運んだ manifest の場所を読む (`014`)。
-    // 受け口を使わない配備では書かない (NULL = 記録が無い)。
+    // 受け取り先を使わない配備では書かない (NULL = 記録が無い)。
     ...(sink && { artifactKeyPrefix: crawlKeyPrefix(orgId, new Date()) }),
     ...(mark && mark),
   };

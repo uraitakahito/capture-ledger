@@ -26,7 +26,7 @@ import type { DerivationStore, NewDerivation } from "../src/derivations/store.js
 import type { FixModel, FixOutput, FixReply } from "../src/scripts/fix.js";
 
 /**
- * クロールを始める口の検査。
+ * クロールを始めるエンドポイントの検査。
  *
  * 2 層で見る。入口の検証は張りぼて deps で、認可と単一実行は
  * 偽の DB で見る。**認可そのものを見ているのではない** —— fga は「false を返せ」と
@@ -86,10 +86,10 @@ describe("クロール route の入力検証", () => {
   const post = (payload: Record<string, unknown>) =>
     app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
 
-  it("本文は 1 MiB まで —— 口が自分で決め、ちょうどは通り、1 バイト超えは 413（capture-workbench の門と同じ数）", async () => {
+  it("本文は 1 MiB まで —— エンドポイントが自分で決め、ちょうどは通り、1 バイト超えは 413（capture-workbench の門と同じ数）", async () => {
     // 数は直に書く。CRAWL_BODY_LIMIT を読むと、定数ごと変えた日に試験も一緒に動いてしまう
     const LIMIT = 1024 * 1024;
-    // サーバ全体の上限をわざと 1 KiB にした app で見る。口が自分の上限を書いていなければ、
+    // サーバ全体の上限をわざと 1 KiB にした app で見る。エンドポイントが自分の上限を書いていなければ、
     // ちょうど 1 MiB も 413 になる（Fastify の既定も 1 MiB なので、既定の app では区別が付かない）
     const small = await buildApp(unreachableDeps, { bodyLimit: 1024 });
     const shell = (source: string) =>
@@ -166,7 +166,7 @@ describe("クロール route の入力検証", () => {
   });
 
   it("scriptIds はもう受けない —— 知らない鍵として 400", async () => {
-    // 受け口は scripts の 1 列になった。古い呼び手を黙って既定で走らせない
+    // 本文の schema は scripts の 1 列になった。古い呼び手を黙って既定で走らせない
     expect((await post({ seeds: [SEED], scriptIds: ["autoscroll"] })).statusCode).toBe(400);
   });
 
@@ -607,17 +607,17 @@ const depsWith = (opts: {
   pages?: FakePage[];
   updates?: Record<string, unknown>[];
   scripts?: FakeScript[];
-  /** Windmill の変数の窓口。省けば無い配備 (シークレットを宣言したクロールは 400) */
+  /** Windmill の変数のクライアント。省けば無い配備 (シークレットを宣言したクロールは 400) */
   windmill?: WindmillVariables;
-  /** 型の検査の窓口。省けば、宣言の無いスクリプトを全部通す偽物 */
+  /** 型の検査のクライアント。省けば、宣言の無いスクリプトを全部通す偽物 */
   tsCompile?: TsCompile;
-  /** 直す係の Claude・派生の層・月の上限。3 つ揃えば直しの口が在る */
+  /** 直す係の Claude・派生の層・月の上限。3 つ揃えば直しのエンドポイントが在る */
   fixModel?: FixModel;
   derivations?: DerivationStore;
   claudeBudgetUsd?: number;
   /** 締めた後に書いた合本 (クロールの id と深さ) を積む。 */
   bundles?: [string, number | null][];
-  /** 締めた後の合本の窓口を、この誤りで落とす。 */
+  /** 締めた後の合本を書く係を、この誤りで落とす。 */
   bundleError?: Error;
   /** `CAPTURE_LEDGER_CAPTURE_FORMATS` の字。省けば `wacz` だけ */
   formats?: string;
@@ -1157,7 +1157,7 @@ describe("起点の一覧", () => {
   });
 
   it("名乗らない {} は 401（本文の検査で 400 にしない）", async () => {
-    // capture-scheduler の doctor は、名乗らずに `{}` を投げて 401 が返ることで、この口が在ることを
+    // capture-scheduler の doctor は、名乗らずに `{}` を投げて 401 が返ることで、このエンドポイントが在ることを
     // 確かめている。`seeds` を schema の `required` に書くと、ここが 400 になる。
     const app = await buildApp({
       ...depsWith({ crawls: [], allowed: true }),
@@ -1236,7 +1236,7 @@ describe("落ちた段を受けて締める", () => {
   };
 
   it("締めたら、終わった状態の合本を 1 本書いてから答える（深さは記録しない）", async () => {
-    // flow は落ちた段の後に合本の口を叩かない。ここで書かないと、最後の合本は走っている時の物のまま残る
+    // flow は落ちた段の後に合本のエンドポイントを叩かない。ここで書かないと、最後の合本は走っている時の物のまま残る
     const bundles: [string, number | null][] = [];
     const crawls = running();
     const res = await post(crawls, { reason: "BrowserHive に届きません" }, bundles);
@@ -1256,7 +1256,7 @@ describe("落ちた段を受けて締める", () => {
     expect(bundles).toEqual([]);
   });
 
-  it("合本が書けなくても（窓口が投げても）、締めたことを答える", async () => {
+  it("合本が書けなくても（書く係が投げても）、締めたことを答える", async () => {
     const crawls = running();
     const res = await post(crawls, {}, [], new Error("connect ECONNREFUSED 127.0.0.1:5432"));
     expect(res.statusCode).toBe(200);
@@ -1583,7 +1583,7 @@ describe("走らせるものの解決", () => {
     }
   });
 
-  it("GET の inline は名前・口・バイト数だけ —— source は運ばない", async () => {
+  it("GET の inline は名前・phase・バイト数だけ —— source は運ばない", async () => {
     // 走行中の行は workbench が 2 秒ごとに引き直す。source を載せると、1 MiB の TS なら 2 秒に 1 MiB
     const { crawls } = await start({
       seeds: [SEED],
@@ -1610,7 +1610,7 @@ describe("走らせるものの解決", () => {
     expect(res.body).not.toContain("/* v2 */");
   });
 
-  /** 始めた行を 1 本持つ台帳に、名前の口を 1 回打つ。 */
+  /** 始めた行を 1 本持つ台帳に、名前で引くエンドポイントを 1 回打つ。 */
   const askInline = async (name: string, opts: { allowed?: boolean; id?: string } = {}) => {
     const { crawls } = await start({
       seeds: [SEED],
@@ -1627,7 +1627,7 @@ describe("走らせるものの解決", () => {
     return res;
   };
 
-  it("その場の TS は、名前の口から source ごと返る（欄に戻すため）", async () => {
+  it("その場の TS は、名前で引くエンドポイントから source ごと返る（欄に戻すため）", async () => {
     const res = await askInline("close-banner");
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
@@ -1639,7 +1639,7 @@ describe("走らせるものの解決", () => {
   });
 
   it("台帳のスクリプト・知らない名前・無いクロールは 404", async () => {
-    // 台帳のスクリプトは台帳と archive に在る。名前の口は、その場の TS だけを返す
+    // 台帳のスクリプトは台帳と archive に在る。名前で引くエンドポイントは、その場の TS だけを返す
     expect((await askInline("autoscroll")).statusCode).toBe(404);
     expect((await askInline("nope")).statusCode).toBe(404);
     expect((await askInline("close-banner", { id: UUID })).statusCode).toBe(404);
@@ -1652,7 +1652,7 @@ describe("走らせるものの解決", () => {
   });
 
   it("名前の綴りが違えば、許可を見る前に 400", async () => {
-    // 受け口と同じ schema。unreachableDeps は触れれば投げるので、400 は deps の手前で断った証拠
+    // `POST /api/crawls` の本文と同じ schema。unreachableDeps は触れれば投げるので、400 は deps の手前で断った証拠
     const app = await buildApp(unreachableDeps);
     const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}/inline/Close_Banner` });
     await app.close();
@@ -1670,7 +1670,7 @@ describe("走らせるものの解決", () => {
  * 並びは**偽物に並べさせて**いる。入力をわざと古い順で渡すので、本物から
  * `orderBy` が消えれば、この試験は赤くなる。
  */
-describe("型の誤りを取り直す口", () => {
+describe("型の誤りを取り直すエンドポイント", () => {
   const INLINE = {
     name: "close-banner",
     phase: "behavior",
@@ -1709,7 +1709,7 @@ describe("型の誤りを取り直す口", () => {
     return { crawls, sent };
   };
 
-  /** 頼まれた列を控えて、決めた答えを返す偽の窓口。 */
+  /** 頼まれた列を控えて、決めた答えを返す偽のクライアント。 */
   const fakeCompile = (answer: CompileAnswer | Error) => {
     const asked: (readonly CrawlScript[])[] = [];
     const tsCompile: TsCompile = {
@@ -1846,7 +1846,7 @@ describe("型の誤りを取り直す口", () => {
   });
 });
 
-describe("直しの口", () => {
+describe("直しのエンドポイント", () => {
   const INLINE = {
     name: "press",
     phase: "behavior",
@@ -2081,7 +2081,7 @@ describe("直しの口", () => {
     expect(f.rows[0]).toMatchObject({ rounds: 2, output: { kind: "failed" } });
   });
 
-  it("鍵が無い配備では口を作らない", async () => {
+  it("鍵が無い配備ではエンドポイントを作らない", async () => {
     const crawls = await startWithInline();
     const res = await askFix(crawls, undefined);
     expect(res.statusCode).toBe(404);
@@ -2966,7 +2966,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
     expect(crawls).toEqual([]);
   });
 
-  it("窓口の無い配備で secret を宣言したスクリプトは 400 secrets need the windmill webhook", async () => {
+  it("Windmill の変数のクライアントの無い配備で secret を宣言したスクリプトは 400 secrets need the windmill webhook", async () => {
     const { res, crawls } = await start({
       seeds: [SEED],
       scripts: [{ catalog: "members-only" }],

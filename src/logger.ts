@@ -18,7 +18,7 @@ export type LoggerBindings = pino.Bindings;
  * `optional()` で読むこと。**この行は module body で走る** ので、起動時の検査が
  * どこに置かれていても間に合わない —— 空文字が来たら pino が
  * `default level: must be included in custom levels` で落ちる。
- * `optional()` は空を「無い」と見るので、読み口の側で塞いでいる。
+ * `optional()` は空を「無い」と見るので、環境変数を読む関数の側で塞いでいる。
  */
 export const logger = pino({
   level: optional("LOG_LEVEL", "info"),

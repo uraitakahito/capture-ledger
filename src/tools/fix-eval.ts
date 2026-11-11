@@ -3,11 +3,11 @@
  * 2 回までに通ったか・回数・断った理由・費用を表で出す。
  *
  * **Claude を本当に呼ぶので、お金が掛かる** (見本ごとと合計の費用を出す)。CI では走らない。DB も台帳の API も
- * 使わない —— 口 (`POST /api/crawls/:id/inline/:name/fix`) と同じ `fixInline` を、組み合わせを直に渡して呼ぶ。
+ * 使わない —— エンドポイント (`POST /api/crawls/:id/inline/:name/fix`) と同じ `fixInline` を、組み合わせを直に渡して呼ぶ。
  * 受け皿の型は、`scripts import` が `host_types` に写すのと同じ file (capture-scripts の submodule) から読む。
  *
  * 読む env: `CAPTURE_LEDGER_ANTHROPIC_API_KEY` (必須)・`CAPTURE_LEDGER_TS_COMPILE_URL` (既定
- * `http://127.0.0.1:28080`。capture-scheduler の compose が出す口)。
+ * `http://127.0.0.1:28080`。capture-scheduler の compose が出すポート)。
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";

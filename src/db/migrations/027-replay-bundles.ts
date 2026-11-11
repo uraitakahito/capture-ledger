@@ -10,7 +10,7 @@
  * - `crawl_id` —— 取り込みを受けたときに入れる (`archive/admit.ts`)。いままでは `crawl_pages.task_id` との
  *   文字列の突き合わせ (uuid を text に倒す) でしか繋がらず、`archives_task_id_idx` も効かなかった。
  *   **在り処と来歴の列で、持ち主の列ではない** (`002`)。クロールの行が消えても証拠の行は残すので
- *   `ON DELETE SET NULL` (クロールを消す口はいまは無い)。
+ *   `ON DELETE SET NULL` (クロールを消すエンドポイントはいまは無い)。
  * - `wacz_sha256`・`wacz_bytes`・`index_empty`・`inspected_at` —— WACZ を 1 度読んで数えた物。sha256 は合本の
  *   `resources[].hash` に載せる。`index_empty` は `indexes/index.cdxj` が空 (または無い)、あるいは BrowserHive の答えの
  *   `waczStats.totalRecorded` が 0 —— **記録が 0 の WACZ** で、合本から外す (replay は長さ 0 の Range を求め、保管庫の

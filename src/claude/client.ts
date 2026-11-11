@@ -1,5 +1,5 @@
 /**
- * 直す係の Claude の窓口 (`FixModel`)。**env を読まない** —— client は呼ぶ側が作って渡す
+ * 直す係の Claude のクライアント (`FixModel`)。**env を読まない** —— client は呼ぶ側が作って渡す
  * (API は `src/config/claude.ts` が env から、評価の道具は `src/tools/fix-eval.ts` が read-env から)。
  *
  * - model は `claude-opus-5-5`、effort は medium。thinking は常に有効 (Opus 5.5 は止められない)

@@ -61,9 +61,9 @@ const ONLY_IN_CI = {
   "Apply migrations": "postgres の service と DATABASE_URL が要る",
   "Migration round-trip (down then up)": "同上。手元の `check` が DB を要求しないため",
   "Scripts CLI against Postgres":
-    "同上。スクリプトの CLI と、スクリプトを読む口の関数を本物の DB に当てる (src/tools/scripts-smoke.ts)",
+    "同上。スクリプトの CLI と、スクリプトを読むエンドポイントの関数を本物の DB に当てる (src/tools/scripts-smoke.ts)",
   "Schedules against Postgres":
-    "同上。予定の窓口と周回を本物の DB に当てる (src/tools/schedules-smoke.ts)",
+    "同上。予定の store と周回を本物の DB に当てる (src/tools/schedules-smoke.ts)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

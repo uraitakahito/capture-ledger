@@ -127,7 +127,7 @@ export const admitLevel = async (
       // 数は台帳に入るかどうかと関わらない。`admitArchive` が WACZ の無い取り込みを弾く前に取る
       const counts = logCountsOf(report);
       if (counts !== undefined) logCounts.set(page.taskId, counts);
-      // **クロールの id は報告を受けた口の物** (`027`)。BrowserHive の correlationId も crawl id だが、あちらは
+      // **クロールの id は報告を受けたエンドポイントの物** (`027`)。BrowserHive の correlationId も crawl id だが、あちらは
       // 申し合わせで、こちらは段の報告そのものが言っている
       const result = await admitArchive(
         options.db,

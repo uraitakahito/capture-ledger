@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 定期実行の窓口と周回を、本物の Postgres に当てる。
+ * 定期実行の store と周回を、本物の Postgres に当てる。
  *
  * 試験は DB を立てない。`test/recording-db.ts` は Kysely が組んだ SQL を記録するが、次のことは見られない。
  * **それを見るのは、ここだけ。**

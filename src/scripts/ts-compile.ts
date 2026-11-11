@@ -1,12 +1,12 @@
 /**
- * ts-compile-service の `POST /compile` を呼ぶ窓口。
+ * ts-compile-service の `POST /compile` を呼ぶクライアント。
  *
  * **flow の compile の段と同じサービスを、同じ形で呼ぶ。** 送るのは webhook に載せたのと同じ
  * `{ id, version, phase, source, sha256, options }` の列 (`toDispatched`) なので、型で落ちた
  * クロールを送り直せば、落ちたときと同じ型の誤りが行と列で返る。クロールの行に残る失敗の文は
  * 台帳の上限の 2,000 字で切られ、最初の数件しか無い —— 全部を行と列で読むのはここだけ。
  *
- * **env を読まない** (設定から窓口を作るのは `src/config/ts-compile.ts`)。評価の道具も同じ窓口を使う。
+ * **env を読まない** (設定からクライアントを作るのは `src/config/ts-compile.ts`)。評価の道具も同じクライアントを使う。
  *
  * 宛先は host の loopback (`127.0.0.1:28080`。capture-scheduler の compose が出す)。macOS 26 では
  * host の node がコンテナの subnet に TCP を張れないので、名前 (`ts-compile.capture-scheduler`) では
@@ -15,7 +15,7 @@
 import type { CrawlScript, ScriptParam } from "../db/database.js";
 import { readParams } from "./store.js";
 
-/** ts-compile-service に届かなかった・答えの形が違った。口はこれを 503 に訳す。 */
+/** ts-compile-service に届かなかった・答えの形が違った。エンドポイントはこれを 503 に訳す。 */
 export class TsCompileUnreachable extends Error {
   override name = "TsCompileUnreachable";
 }
@@ -114,7 +114,7 @@ const readAnswer = (status: number, body: unknown): CompileAnswer => {
   throw new TsCompileUnreachable(`POST /compile → ${String(status)} の答えの形が違う`);
 };
 
-/** 口を直に渡して窓口を作る。`createTsCompile` と試験が使う。 */
+/** 宛先を直に渡してクライアントを作る。`createTsCompile` と試験が使う。 */
 export const tsCompileAt = ({
   base,
   timeoutMs,
