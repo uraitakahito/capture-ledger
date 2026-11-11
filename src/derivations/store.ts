@@ -1,5 +1,5 @@
 /**
- * 派生の層 (`026`) を読み書きする store。エンドポイントは直に SQL を書かず、これを deps で受ける —— capture-ledger には DB の試験が
+ * 派生の層 (`026`・`034`) を読み書きする store。エンドポイントは直に SQL を書かず、これを deps で受ける —— capture-ledger には DB の試験が
  * 無く、route の試験の偽の DB は集計を真似できないので、SQL はここに閉じ込める (形は `test/derivations-store.test.ts`
  * が recording の DB で照らす)。
  */
@@ -10,9 +10,12 @@ import { sql, type Kysely } from "kysely";
 import type { Database } from "../db/database.js";
 
 export interface NewDerivation {
-  kind: "fix";
+  /** `fix` は直す係 (CAPTURE-49)、`change` は前回からの変化の要約 (CAPTURE-167)。`034` の CHECK と同じ。 */
+  kind: "fix" | "change";
   orgId: string;
   crawlId: string;
+  /** 何のアーカイブについての物か (`034`)。 */
+  archiveId?: string;
   target: Record<string, unknown>;
   inputSha256: string;
   model: string;
@@ -50,6 +53,7 @@ export const derivationStoreOf = (db: Kysely<Database>): DerivationStore => ({
         kind: row.kind,
         orgId: row.orgId,
         crawlId: row.crawlId,
+        ...(row.archiveId !== undefined && { archiveId: row.archiveId }),
         target: JSON.stringify(row.target),
         inputSha256: row.inputSha256,
         model: row.model,

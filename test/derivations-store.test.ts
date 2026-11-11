@@ -49,5 +49,32 @@ describe("派生の層の store", () => {
     expect(parameters).toContain('{"kind":"fixed"}');
     expect(parameters).toContain('{"input_tokens":3100}');
     expect(parameters).toContain("0.030400");
+    // 直す係の行は、アーカイブを持たない (034 の列を書かない)
+    expect(sql).not.toContain('"archive_id"');
+  });
+
+  it("変化の要約の行は、種類 change とアーカイブを書く (034)", async () => {
+    const { db, queries } = recordingDb([[]]);
+    const archiveId = "0b3f1c2e-8a4d-4c11-9f3e-2d6a7b8c9d0e";
+    await derivationStoreOf(db).record({
+      kind: "change",
+      orgId: "acme",
+      crawlId: "d272d256-e528-4581-bb4e-8d9477d78196",
+      archiveId,
+      target: { crawlId: "d272d256-e528-4581-bb4e-8d9477d78196" },
+      inputSha256: "b".repeat(64),
+      model: "claude-opus-5-5",
+      promptVersion: "change-v1",
+      effort: "low",
+      rounds: 1,
+      output: { headline: "中身の変化は無い" },
+      usage: { input_tokens: 771 },
+      usd: 0.015,
+      createdBy: "capture-ledger",
+    });
+    const { sql, parameters } = queries[0]!;
+    expect(sql).toContain('"archive_id"');
+    expect(parameters).toContain("change");
+    expect(parameters).toContain(archiveId);
   });
 });

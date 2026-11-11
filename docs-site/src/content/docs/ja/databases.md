@@ -27,19 +27,20 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 
 ### capture-ledger の DB
 
-| テーブル                                                                   | 役割                                                                                                                          |
-| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| [`capture_submissions`](/capture-ledger/ja/databases/capture-submissions/) | 投げた記録。組織を知る唯一の出どころ                                                                                          |
-| [`archives`](/capture-ledger/ja/databases/archives/)                       | WACZ の記録。アーカイブを生んだ取り込みだけ                                                                                   |
-| `archive_pages`                                                            | アーカイブの頁の一覧（`pages/pages.jsonl`）の 1 行が 1 行。クロールの合本のために 1 度だけ読む                                |
-| [`fga_outbox`](/capture-ledger/ja/databases/fga-outbox/)                   | OpenFGA へ送る予定のタプル                                                                                                    |
-| `crawls`                                                                   | クロール 1 本につき 1 行。方針・状態・停止理由と、合本の版・署名（[下記](#crawls-の合本の列)）                                |
-| `crawl_pages`                                                              | クロールが触った URL 1 つにつき 1 行（取る前の pending も）。重複排除の索引でもあり、取り込みのログの数（`log_counts`）も持つ |
-| `crawl_decisions`                                                          | クロールの規則が決めたこと。段 × 規則 × ホスト名で 1 行                                                                       |
-| [`crawl_schedules`](/capture-ledger/ja/databases/crawl-schedules/)         | 定期実行の予定。時計の表で、回は `crawls` の行                                                                                |
-| `scripts`                                                                  | クロールが名指せるスクリプト                                                                                                  |
-| `host_types`                                                               | 受け皿（`__bh`）の型。スクリプトを読む人に見せる写し                                                                          |
-| `kysely_migration` / `_lock`                                               | Kysely が作る帳簿（下記）                                                                                                     |
+| テーブル                                                                   | 役割                                                                                                                                                     |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`capture_submissions`](/capture-ledger/ja/databases/capture-submissions/) | 投げた記録。組織を知る唯一の出どころ                                                                                                                     |
+| [`archives`](/capture-ledger/ja/databases/archives/)                       | WACZ の記録。アーカイブを生んだ取り込みだけ                                                                                                              |
+| `archive_pages`                                                            | アーカイブの頁の一覧（`pages/pages.jsonl`）の 1 行が 1 行。クロールの合本のために 1 度だけ読む                                                           |
+| [`fga_outbox`](/capture-ledger/ja/databases/fga-outbox/)                   | OpenFGA へ送る予定のタプル                                                                                                                               |
+| `crawls`                                                                   | クロール 1 本につき 1 行。方針・状態・停止理由と、合本の版・署名（[下記](#crawls-の合本の列)）                                                           |
+| `crawl_pages`                                                              | クロールが触った URL 1 つにつき 1 行（取る前の pending も）。重複排除の索引でもあり、取り込みのログの数（`log_counts`）も持つ                            |
+| `crawl_decisions`                                                          | クロールの規則が決めたこと。段 × 規則 × ホスト名で 1 行                                                                                                  |
+| [`crawl_schedules`](/capture-ledger/ja/databases/crawl-schedules/)         | 定期実行の予定。時計の表で、回は `crawls` の行                                                                                                           |
+| `scripts`                                                                  | クロールが名指せるスクリプト                                                                                                                             |
+| `host_types`                                                               | 受け皿（`__bh`）の型。スクリプトを読む人に見せる写し                                                                                                     |
+| `derivations`                                                              | 派生の層。Claude が作った物（直す係の案・前回からの変化の要約）を、証拠と分けて model・prompt の版・費用と一緒に残す。組織ごとの月の上限もこの表で数える |
+| `kysely_migration` / `_lock`                                               | Kysely が作る帳簿（下記）                                                                                                                                |
 
 ### OpenFGA の DB
 

@@ -14,13 +14,19 @@
  * 一緒に走るスクリプト・型の誤り・受け皿の型だけ (頁の文字・変数の値・シークレットは送らない)。
  * 確かめられるのは型が通ることだけで、動きが正しいかは人が差分を読み、試し撮りで確かめる。
  *
- * この module は env も SDK も持たない (Claude は `FixModel` で、検査は `TsCompile` で渡す) ので、
+ * この module は env も SDK も持たない (Claude は `Claude` (`src/claude/types.ts`) で、検査は `TsCompile` で渡す) ので、
  * 試験と評価の道具 (`src/tools/fix-eval.ts`) が同じ物を使える。
  */
 import { createHash } from "node:crypto";
 
 import type { CrawlScript } from "../db/database.js";
 import { usdOf, type Usage } from "../claude/prices.js";
+import {
+  ClaudeUnavailable,
+  type Claude,
+  type ClaudeMessage,
+  type ClaudeReply,
+} from "../claude/types.js";
 import { attributeDiagnostics, TsCompileUnreachable, type TsCompile } from "./ts-compile.js";
 
 /** 決まりの文の版。派生の層に残し、文を変えたら上げる。 */
@@ -87,38 +93,10 @@ export const FIX_OUTPUT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-/** 会話の 1 turn。assistant の content は API の答えをそのまま継ぎ足す (thinking の塊を含む)。 */
-export type FixMessage =
-  { role: "user"; content: string } | { role: "assistant"; content: unknown[] };
-
-/** 1 往復の中の試み 1 つ (fallbacks の前に断った試みも 1 つ)。費用は試みごとに、その model の値で数える。 */
-export interface FixAttempt {
-  model: string;
-  usage: Usage;
-}
-
-export interface FixReply {
-  /** structured outputs で読めた答え。読めなければ null。 */
-  output: FixOutput | null;
-  /** 次の往復にそのまま継ぎ足す、assistant の content。 */
-  content: unknown[];
-  /** 答えた model。fallbacks で別の model が答えることがある。 */
-  model: string;
-  /** この往復の試み。答えた試みだけでなく、断った試みも並ぶ (`src/claude/client.ts` の `attemptsOf`)。 */
-  attempts: readonly FixAttempt[];
-  stopReason: string | null;
-}
-
-/** Claude の API に届かなかった・断られた以外の誤りで答えが無かった。クライアント (`src/claude/client.ts`) が SDK の誤りを包む。 */
-export class ClaudeUnavailable extends Error {
-  override name = "ClaudeUnavailable";
-}
-
-export interface FixModel {
-  /** 派生の層に残す effort。 */
-  readonly effort: string;
-  propose(request: { system: string; messages: readonly FixMessage[] }): Promise<FixReply>;
-}
+/** 派生の層に残す effort。型の誤りを直すのは考える量が要るので medium。 */
+export const FIX_EFFORT = "medium";
+/** 1 往復の出力の上限 (thinking を含む)。置き換えと理由だけなので、全文を書き直すより小さい。 */
+const FIX_MAX_TOKENS = 8000;
 
 /** 置き換えた範囲。capture-workbench が差分 (消した行と足した行) を描く。 */
 export interface FixHunk {
@@ -327,7 +305,7 @@ export const fixInline = async ({
   hostTypes,
   tsCompile,
   variableNames,
-  model,
+  claude,
   rounds = FIX_ROUNDS,
 }: {
   scripts: readonly CrawlScript[];
@@ -338,7 +316,7 @@ export const fixInline = async ({
   tsCompile: TsCompile;
   /** クロールに渡された変数の名前。案も同じ名前で検査する。 */
   variableNames: readonly string[];
-  model: FixModel;
+  claude: Claude;
   rounds?: number;
 }): Promise<FixResult> => {
   const inline = scripts.find((s) => s.id === inlineId);
@@ -346,7 +324,7 @@ export const fixInline = async ({
   const others = scripts.filter((s) => s.id !== inlineId);
   const system = systemPrompt({ typescript, hostTypes });
   const first = firstRequest({ inline, others, diagnostics });
-  const messages: FixMessage[] = [{ role: "user", content: first }];
+  const messages: ClaudeMessage[] = [{ role: "user", content: first }];
   const { lines } = linesOf(inline.source);
 
   let usage = ZERO;
@@ -363,9 +341,15 @@ export const fixInline = async ({
   });
 
   for (let round = 1; round <= rounds; round++) {
-    let reply: FixReply;
+    let reply: ClaudeReply<FixOutput>;
     try {
-      reply = await model.propose({ system, messages });
+      reply = await claude.ask<FixOutput>({
+        system,
+        messages,
+        schema: FIX_OUTPUT_SCHEMA,
+        effort: FIX_EFFORT,
+        maxTokens: FIX_MAX_TOKENS,
+      });
     } catch (err) {
       if (!(err instanceof ClaudeUnavailable)) throw err;
       // 前の往復の分の usage は、ここまでに使った額として返す (呼ぶ側が派生の層に残す)

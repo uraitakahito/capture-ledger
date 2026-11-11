@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { attemptsOf, FIX_MODEL } from "../src/claude/client.js";
+import { attemptsOf, CLAUDE_MODEL } from "../src/claude/client.js";
 
 const SERVED = {
   input_tokens: 3000,
@@ -35,6 +35,6 @@ describe("試みごとの usage (attemptsOf)", () => {
       model: "claude-opus-5-5",
       usage: { ...SERVED, iterations: [{ ...SERVED, model: null }] },
     });
-    expect(attempts).toEqual([{ model: FIX_MODEL, usage: { ...SERVED, model: null } }]);
+    expect(attempts).toEqual([{ model: CLAUDE_MODEL, usage: { ...SERVED, model: null } }]);
   });
 });
