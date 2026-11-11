@@ -69,7 +69,7 @@ CAPTURE_LEDGER_CAPTURE_SIGNING=1      # wacz-auth 署名を要求する。wacz �
 無効のままにすれば、判断はサーバの `--signing-policy` に委ねられます。`required` で
 動いている配備なら、capture-ledger が何も言わなくても署名されます。
 
-結果は台帳に残ります。`archives.signed` は署名が付けば `true`、そもそも求めて
+結果は capture-ledger に残ります。`archives.signed` は署名が付けば `true`、そもそも求めて
 いなければ `null` —— 「このクロールは証拠として使える形のアーカイブを作ったか」に、
 zip を 1 つも開かずに答えられます。
 
@@ -151,7 +151,7 @@ capture-scripts のサイト用のスクリプトの見本は `egov-law-search`�
 
 `POST /api/crawls` はスクリプトを**始めるときに 1 度だけ**解決し、その結果 —— id・版・phase・
 source・sha256・options・対象サイト・宣言 —— をクロールの行に書きます。以後の段はそれをそのまま使い、
-台帳のスクリプトを引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
+登録済みのスクリプトを引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
 変わりません。[クロールごとの値](#クロールごとの値)も同じように固定します。`variables` は値ごと、
 `secrets` は名前を結んだ Windmill の変数の path と、値を WARC に残すかを。
 
@@ -159,24 +159,24 @@ source・sha256・options・対象サイト・宣言 —— をクロールの�
 | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | 省く                                                              | **有効な**各 id の最新版のうち、対象サイトの無い物と、対象サイトが起点のホスト名を含む物を、カタログの順で  |
 | `[{"catalog": "b"}, {"catalog": "a"}]`                            | そのとおり、**その並びで** —— 並びは指示の一部                                                              |
-| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた TS を `inline-x`・版 1 で。台帳には登録されない（下記）                                              |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた TS を `inline-x`・版 1 で。登録はされない（下記）                                                    |
 | `[]`                                                              | 何も走らない。「既定でよい」と「何も走らせない」は別の意思                                                  |
-| 台帳に無い id・同じ id の重ね                                     | **400** で名指し（`ids`）。クロールは立たない                                                               |
+| 登録されていない id・同じ id の重ね                               | **400** で名指し（`ids`）。クロールは立たない                                                               |
 | 対象サイトが起点のどのホスト名も含まないサイト用のスクリプト      | **400** `site scripts need a seed on their site` で名指し（`ids`、対象サイトは `hint`）。クロールは立たない |
 | 省いたのに、有効なスクリプトが全部ほかのホスト用                  | **400** `no default scripts for these seeds`（`hint` に並べる）。「スクリプトが無い」とは言わない           |
 
 要素は、鍵が 1 つの object です（`catalog` か `inline` のどちらか）。
 
-`GET /api/crawls/:id` が返すのは、台帳のスクリプトは身元 —— id・版・phase・sha256 —— と対象サイトだけで、
+`GET /api/crawls/:id` が返すのは、登録済みのスクリプトは身元 —— id・版・phase・sha256 —— と対象サイトだけで、
 source は返しません。走ったバイト列はアーカイブ（`behaviors/custom.jsonl` と
-`preload/scripts.jsonl`）と台帳（[版を読む](#版を読む)）に在ります。その場の TS には `inline`（`name`・`phase`・
+`preload/scripts.jsonl`）と登録済みのスクリプトの版（[版を読む](#版を読む)）に在ります。その場の TS には `inline`（`name`・`phase`・
 source の UTF-8 の大きさ `bytes`）も返しますが、ここでも source は返しません。[capture-workbench](https://github.com/uraitakahito/capture-workbench) は走行中の
 クロールを数秒ごとに引き直し、source は 1 MiB まであり得るからです。source は
-`GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。台帳に登録されず、
-アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこのエンドポイント（HTTP の method と path の組）だけです。台帳のスクリプトには 404 を
+`GET /api/crawls/:id/inline/:name` が `{ name, phase, source, sha256 }` で返します。その場の TS は登録されず、
+アーカイブに在るのは変換後の JS なので、書いた物を取り戻せるのはこのエンドポイント（HTTP の method と path の組）だけです。登録済みのスクリプトには 404 を
 返します。
 
-型の検査で落ちたクロールの誤りは、`GET /api/crawls/:id/diagnostics` で読み直せます。台帳は、そのクロールに
+型の検査で落ちたクロールの誤りは、`GET /api/crawls/:id/diagnostics` で読み直せます。capture-ledger は、そのクロールに
 固定したスクリプトの写しを、webhook と同じ形で ts-compile-service に送り直します。flow の compile の段と
 同じ組み合わせを検査するので、同じ誤りが、全部、行と列で返ります ——
 `{ typescript, diagnostics: [{ script, line, col, code, message }] }`（スクリプトの外、型の lib の誤りは、
@@ -187,7 +187,7 @@ ts-compile-service しか呼ばないので GET で、許可はクロールの�
 503 を返します。
 
 `POST /api/crawls/:id/inline/:name/fix`（本文は `{}`）は、その場の TS の型の誤りの直し方を Claude に訊き、
-**同じ検査に通った直ししか返しません**。台帳はまず組み合わせを検査し直してから、行番号つきのその場の TS・
+**同じ検査に通った直ししか返しません**。capture-ledger はまず組み合わせを検査し直してから、行番号つきのその場の TS・
 一緒に走るスクリプト（読むだけで、変えさせない）・誤り・受け皿の型（`host_types`）を Claude に渡し、
 行の範囲の置き換えと、誤りごとの 1 行の理由を返させます。置き換えを当て、`// @ts-nocheck`・`@ts-ignore`・
 `@ts-expect-error`・`as any`・`: any` を足した案、`import` か `export` を足した案（module になり、黙って
@@ -215,8 +215,8 @@ effort・回数・出力・usage・費用）。WACZ には書きません。組�
 最初の段の報告が来ると、各要素に `jsSha256` と `compiledWith`（`{ typescript, hostTypes }`）も
 付きます。その段が走らせた JavaScript の sha256 と、何で・何に向けて変換したか ——
 ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の `compiled`）で
-運んだ物です。台帳のスクリプトの `sha256` は TypeScript に打たれ、アーカイブに残るのは JavaScript。
-その間を継ぐのがこの値で、台帳が報告から写します。段ごとに同じ hash が来なければ 409 ——
+運んだ物です。登録済みのスクリプトの `sha256` は TypeScript に打たれ、アーカイブに残るのは JavaScript。
+その間を継ぐのがこの値で、capture-ledger が報告から写します。段ごとに同じ hash が来なければ 409 ——
 走行中のクロールの下で変換サービスが替わったということです。報告が来る前はどちらも
 `null` です。
 
@@ -243,22 +243,22 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
 
 ### その場の TS
 
-`scripts` の要素には、台帳のスクリプトの名指しのほかに、その場で書いた TS を置けます。
+`scripts` の要素には、登録済みのスクリプトの名指しのほかに、その場で書いた TS を置けます。
 
 ```json
 { "inline": { "name": "close-banner", "phase": "behavior", "source": "(() => {\n  …\n})();\n" } }
 ```
 
-- **台帳には登録されません。** 台帳はクロールの行の写しにだけ、`inline-<name>`・版 1・options 空で
-  固定します。sha256 は台帳が `source` から打ちます（`scripts` の生成列と同じ値）。写しの形は台帳のスクリプトと
+- **登録はされません。** capture-ledger はクロールの行の写しにだけ、`inline-<name>`・版 1・options 空で
+  固定します。sha256 は capture-ledger が `source` から打ちます（`scripts` の生成列と同じ値）。写しの形は登録済みのスクリプトと
   同じなので、flow も変換も BrowserHive も区別しません。
-- **`inline-` は、その場の TS に取ってあります。** 台帳のスクリプトの id には使えません（CLI の `add` と
+- **`inline-` は、その場の TS に取ってあります。** 登録済みのスクリプトの id には使えません（CLI の `add` と
   `import` が断り、DB の CHECK が最後に断ります）。アーカイブに残るのは id と JS だけなので、
-  id の頭で、台帳のスクリプトかその場の物かが分かります。
+  id の頭で、登録済みのスクリプトかその場の物かが分かります。
 - **`name` は `^[a-z][a-z0-9-]*$` で、`inline-` と合わせて 64 字まで。** ts-compile-service の id と
   同じ綴りで、合わなければ `POST` が 400 で断ります。
 - **書けるのは、strict の TypeScript として型が通るスクリプトです。** 段の最初に ts-compile-service が
-  台帳のスクリプトと一緒に型を検査し、1 本でも誤りがあれば段ごと落ちます（`error` に最初の診断が、台帳の上限の 2,000 字まで残ります。
+  登録済みのスクリプトと一緒に型を検査し、1 本でも誤りがあれば段ごと落ちます（`error` に最初の診断が、capture-ledger の上限の 2,000 字まで残ります。
   全部を読み直すのは `GET /api/crawls/:id/diagnostics`）。
   IIFE で包んでください。同じ段のスクリプトは 1 つの program で検査されるので、top-level の名前は
   ほかのスクリプトや DOM の大域（`name` など）とぶつかります。`export` は `BH0006` で段ごと落ちます
@@ -288,14 +288,14 @@ const { query } = defineParams(z.object({ query: z.string().min(1).describe("法
 `POST /api/crawls` の本文の `variables`（名前 → 文字列）で渡し、**記録に残ります**。クロールの行に固定され、段ごとに
 運ばれ、BrowserHive がアーカイブの `settings.variables` に書き、`GET /api/crawls/:id` が返します。
 
-**台帳は行を立てる前に ts-compile-service に訊きます。** スクリプトと、渡した変数の名前（値は送りません）を `/compile` に
+**capture-ledger は行を立てる前に ts-compile-service に訊きます。** スクリプトと、渡した変数の名前（値は送りません）を `/compile` に
 送り、答えの宣言を行に固定します。必須の名前が足りなければ `400 missing variables` で、行も run も残りません。
 判定は ts-compile-service の 1 か所です（`BH0001`）。宣言に無い名前も、宣言の形（`.min`・`.max`・`.length`・`z.enum`）に
 合わない値も 400 です。ふつうの型の誤りはここでは断らず、行を立てて flow の compile の段で落とします（落ちた行から
 「直し方を訊く」へ進むため）。宣言を読めないスクリプト（`BH0002`）が混ざるときも行を立て、同じ段で理由を残します。
 書ける形は capture-scripts の README の「クロールごとの値」にあります。
 
-台帳のスクリプトの変数は `catalog.json` の `params` にも写され（`GET /api/scripts` が `params` で返します）、
+登録済みのスクリプトの変数は `catalog.json` の `params` にも写され（`GET /api/scripts` が `params` で返します）、
 workbench はそれで欄を作ります。
 
 ```json
@@ -314,13 +314,13 @@ workbench はそれで欄を作ります。
 **シークレット**（`kind: "secret"`）は、`catalog.json` の `params` か、その場の TS に添える `params` で宣言します（変数は
 ここには書けません）。本文に欄はありません。宣言が名前を Windmill の secret 変数
 `f/waggle_secrets/<名前>` に結び、そこへは人が前もって置きます（`wmill variable add <値> f/waggle_secrets/<名前> --secret`。
-置き場と手順は capture-scheduler の docs にあります）。クロールを始めるとき、台帳は webhook と同じ URL と token で
+置き場と手順は capture-scheduler の docs にあります）。クロールを始めるとき、capture-ledger は webhook と同じ URL と token で
 Windmill に「在るか・secret か」を訊き、**値は読まずに**（`variables/get` に `decrypt_secret=false`）、
 `{ path, editedAt }` を、宣言の `archive` と一緒に行に固定します。値を読むのは flow の `crawl_host` だけで、取り込みの
-直前に読みます。値は台帳にも webhook の本文にも `GET /api/crawls/:id` にも無く、アーカイブの `settings.secrets` に在るのは
+直前に読みます。値は capture-ledger にも webhook の本文にも `GET /api/crawls/:id` にも無く、アーカイブの `settings.secrets` に在るのは
 名前だけです。スクリプトが値を取り込みのログ（`__bh.log`・`__bh.report`・例外の文）に書いても、BrowserHive が
 **長さに依らず** `***` に替えてから行に残すので、`.result.json` と 1 ページのログのエンドポイントにも在りません。
-隠せるのは記録からだけで、ページの JS からは読めますし、値を受け取ったサイトには届いています。次の段を送る前に台帳は
+隠せるのは記録からだけで、ページの JS からは読めますし、値を受け取ったサイトには届いています。次の段を送る前に capture-ledger は
 `editedAt` を読み直し、変わっていてもクロールは止めず、`rotated`（気づいた段と新しい時刻）に残します。
 
 **WARC の中でも、値は既定で隠れます**（BrowserHive v29.0.0）。スクリプトが値を通信に載せても（URL・見出し・本文）、
@@ -338,7 +338,7 @@ WARC に残したい宣言は、そう書きます。
 }
 ```
 
-`archive` を書けるのはシークレットの宣言だけで、値は `"keep"` だけです。省けば隠します。台帳は行に写し
+`archive` を書けるのはシークレットの宣言だけで、値は `"keep"` だけです。省けば隠します。capture-ledger は行に写し
 （`crawls.secrets[<名前>].archive`）、段ごとに、値を残す名前を `secret_archive`（名前 → `"keep"`。無ければ `{}`）で送り、
 `crawl_host` が BrowserHive の `secretArchive` に渡します。**載るのは、そのクロールが実際に送る名前だけです**。
 `required` でなく Windmill に無いシークレットは送らず、その `keep` も送りません（BrowserHive は `secrets` に無い名前の
@@ -346,9 +346,9 @@ WARC に残したい宣言は、そう書きます。
 残したかはアーカイブに残ります（`settings.secretArchive`）。
 
 隠すシークレットが BrowserHive の決まりに外れれば、BrowserHive は撮る前に断り、文にはシークレットの名前だけを書きます
-（値は書きません）。台帳は値を見ないので、そのうち 2 つはクロールのページで初めて分かります（ページごとに BrowserHive の
+（値は書きません）。capture-ledger は値を見ないので、そのうち 2 つはクロールのページで初めて分かります（ページごとに BrowserHive の
 400 で失敗する）。隠す値は 8 字以上（UTF-16 の code unit で数える）であること、取り込む URL（起点など）に値を書かないこと
-です。短い値は `"keep"` にするか、長くします。3 つ目は台帳が先に見ます。`CAPTURE_LEDGER_CAPTURE_FORMATS` に `png`・`webp`・
+です。短い値は `"keep"` にするか、長くします。3 つ目は capture-ledger が先に見ます。`CAPTURE_LEDGER_CAPTURE_FORMATS` に `png`・`webp`・
 `html`・`mhtml` のある配備では、隠すシークレットを送るクロールは `400 formats that cannot hide secrets` です（`keep` の物は
 通ります）。BrowserHive は web storage の値（`storageValues`）も隠すシークレットと一緒には撮りません。capture-ledger は
 頼まず、BrowserHive の既定も無効ですが、BrowserHive の配備で有効にすると（`BROWSERHIVE_STORAGE_VALUES`）、そうした
@@ -387,7 +387,7 @@ BrowserHive 自身のドキュメントが定義します）。
 ## 呼び出し元がクロールごとに渡せるもの
 
 相手への当たり方と範囲を、`POST /api/crawls` のボディで渡せます
-（[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#リンクを辿る)を参照）。
+（[アーカイブの記録](/capture-ledger/ja/archive-ledger/#リンクを辿る)を参照）。
 
 | フィールド        | 既定                                                               | 意味                                                                      |
 | ----------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
@@ -405,7 +405,7 @@ BrowserHive 自身のドキュメントが定義します）。
 ### クロールごとの User-Agent
 
 `userAgent` は、そのクロールで送る `User-Agent` です。省くか空白だけなら、ブラウザの字（`HeadlessChrome` を含み、断るサイトがあります）のまま送ります。
-`{chrome}` はブラウザの字から Headless を外した物を指すので、`{chrome} BrowserHive` はブラウザを上げても古くなりません。解くのは BrowserHive で、台帳は打った字のまま持ちます。
+`{chrome}` はブラウザの字から Headless を外した物を指すので、`{chrome} BrowserHive` はブラウザを上げても古くなりません。解くのは BrowserHive で、capture-ledger は打った字のまま持ちます。
 `GET /api/crawls/:id` はその字を返し（頼まなければ `null`）、実際に送った字はアーカイブの `settings.userAgent` に残ります。
 
 形は BrowserHive の契約と同じです。合わなければ `400 userAgent must be printable ASCII, at most 512 characters` で断ります。字の中身は頼む人が決めます。

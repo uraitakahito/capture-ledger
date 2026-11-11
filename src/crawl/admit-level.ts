@@ -1,17 +1,17 @@
 /**
- * クロールで取り込めたページを台帳に載せる。**失敗の報告も一度は当たってみる。**
+ * クロールで取り込めたページを capture-ledger に載せる。**失敗の報告も一度は当たってみる。**
  *
  * ## なぜ要るのか
  *
  * クロールの経路は **`archives` に 1 行も書いていなかった**。当時 `admitArchive` を
  * 呼んでいたのは畳んだ CLI 経路 (client/run.ts) と `archive/reconcile.ts` だけで、
  * クロールは `crawl_pages` と `capture_submissions` にしか跡を残さない。実測でも、
- * 10 ページ取り込んだクロールに対して台帳の該当行は 0 件だった。**この file が
+ * 10 ページ取り込んだクロールに対して `archives` の該当行は 0 件だった。**この file が
  * 3 つ目の呼び出し元**になる。
  *
  * 結果として、クロールしたページは **`reconcile` を走らせるまで存在しない**
  * ことになっていた —— picker にも出ず、索引にも載らない。取り込んだ本人が
- * 台帳を書けるのに、掃除役の巡回を待っていた。
+ * `archives` を書けるのに、掃除役の巡回を待っていた。
  *
  * ## 報告からは登録できない
  *
@@ -34,12 +34,12 @@
  * `taskId` も manifest の場所も載らない。`capture_submissions` の行も無く、reconcile も拾えない。
  *
  * 拾えたかどうかは `admittedUrls` が答える。呼ぶ側はそれを見て `crawl_pages` の
- * 状態を上げる —— そこまでやらないと、台帳には在るのにクロールの記録では
+ * 状態を上げる —— そこまでやらないと、`archives` には在るのにクロールの記録では
  * 失敗している、という食い違いが残る。
  *
  * ## 取り込みのログの数も、ここで取る
  *
- * manifest を読むのはここなので、`log` の数 (`025`) も同じ所で取る。**台帳に入るかどうかとは関わらない** ——
+ * manifest を読むのはここなので、`log` の数 (`025`) も同じ所で取る。**`archives` に入るかどうかとは関わらない** ——
  * 時間切れや失敗の取り込みは WACZ を持たず `admitArchive` に弾かれるが、そのページにこそ読みたい行が在る。
  * だから数を取るのは `admitArchive` の前。返した数は、呼ぶ側が `crawl_pages` に書く。
  *
@@ -49,7 +49,7 @@
  * 段が閉じることはありうるし、そのときは `reconcile` が後で拾う ——
  * 畳んだ CLI 経路が "Could not collect this capture; reconcile will retry" と
  * 言っていたのと同じ立場。
- * **ここで投げると、段の報告ごと 500 になって進行が止まる。** 台帳が遅れることより
+ * **ここで投げると、段の報告ごと 500 になって進行が止まる。** 記録が遅れることより
  * クロールが止まることのほうが重い。
  */
 import type { Kysely } from "kysely";
@@ -62,12 +62,12 @@ import { createChildLogger } from "../logger.js";
 
 const log = createChildLogger({ module: "crawl-admit-level" });
 
-/** 段の報告のうち、台帳に載せうるもの。 */
+/** 段の報告のうち、capture-ledger に載せうるもの。 */
 export interface CapturedPage {
   taskId: string;
   url: string;
   /**
-   * 報告が運んだ manifest の鍵 (bucket を除く)。書けなかった、または台帳に読めない場所
+   * 報告が運んだ manifest の鍵 (bucket を除く)。書けなかった、または capture-ledger に読めない場所
    * だった取り込みには無い (`archive/manifest.ts` の `manifestOutcome`)。
    */
   manifestKey: string | null;
@@ -83,7 +83,7 @@ export interface AdmitLevelOptions {
 }
 
 export interface AdmitLevelResult {
-  /** 台帳に入った件数。 */
+  /** capture-ledger に入った件数。 */
   registered: number;
   /**
    * **実際に成功していたと分かった URL。** 報告が `failed` でも、manifest が
@@ -92,7 +92,7 @@ export interface AdmitLevelResult {
   admittedUrls: string[];
   /**
    * 取り込みのログの数 (`025`)。taskId ごとに、manifest を読めて契約に照らせ、`log` を持っていた取り込みだけ。
-   * **台帳に入らなかった取り込みのぶんも在る** —— 数を取るのは `admitArchive` の前なので、WACZ の無い取り込み
+   * **`archives` に入らなかった取り込みのぶんも在る** —— 数を取るのは `admitArchive` の前なので、WACZ の無い取り込み
    * (時間切れ・失敗・WACZ を頼まれていない) も数が残る。行が要るのは、むしろそちらのほう。
    * 呼ぶ側はこれを `crawl_pages.log_counts` に書く。
    */
@@ -100,7 +100,7 @@ export interface AdmitLevelResult {
 }
 
 /**
- * 渡されたページを順に台帳へ。
+ * 渡されたページを順に capture-ledger へ。
  *
  * `admitArchive` は `(bucket, object_key)` の unique で冪等なので、同じ段が
  * 二度報告されても増えない。**逐次で回す** —— 段あたり高々ホスト数ぶんで、
@@ -124,7 +124,7 @@ export const admitLevel = async (
         continue;
       }
       const report = readManifest(raw);
-      // 数は台帳に入るかどうかと関わらない。`admitArchive` が WACZ の無い取り込みを弾く前に取る
+      // 数は `archives` に入るかどうかと関わらない。`admitArchive` が WACZ の無い取り込みを弾く前に取る
       const counts = logCountsOf(report);
       if (counts !== undefined) logCounts.set(page.taskId, counts);
       // **クロールの id は報告を受けたエンドポイントの物** (`027`)。BrowserHive の correlationId も crawl id だが、あちらは

@@ -23,7 +23,7 @@
  *
  * **DB に直接書く開発用の道具で、認可は通らない。** 中身は `store.ts`。
  *
- * ## なぜ台帳がスクリプトを持つのか
+ * ## なぜ capture-ledger がスクリプトを持つのか
  *
  * BrowserHive v11.0.0 で、サーバは走らせるものの顔ぶれを持たなくなった。送らなければ
  * ページでは何も走らない —— そして **それは成功した取り込みと見分けが付かない**。
@@ -222,7 +222,7 @@ program
  * 遷移の前に入れるはずのコードが読み込みの後に 1 回だけ走り、**しかも成功する**。
  *
  * 中身が同じものは版が増えない (`addScript`) ので、**何度流しても構わない**。
- * 置き場所を移したあとの流し直しも、台帳から見れば何も起きない。
+ * 置き場所を移したあとの流し直しも、capture-ledger から見れば何も起きない。
  *
  * **既定に入るか (`enabled`) もカタログが正。** `default: false` の id は全版を無効にする —— 最新版だけを
  * 無効にすると、既定は「有効な版の中の最新」を選ぶので古い版が昇格する (`setScriptEnabled` を見ること)。
@@ -242,7 +242,7 @@ interface CatalogEntry {
   summary: string;
   /** 対象サイト (`021`)。書いていなければ空 (どこでも走る) */
   sites: string[];
-  /** 既定に入るか。書いていなければ真。台帳の `enabled` に写す */
+  /** 既定に入るか。書いていなければ真。capture-ledger の `enabled` に写す */
   default: boolean;
   /** 読む値の宣言 (`024`)。書いていなければ空 (何も読まない) */
   params: ScriptParam[];
@@ -449,7 +449,7 @@ program
           ...(id === undefined ? {} : { id }),
         });
         // 名指しした id が無いのは誤り (show と同じ)。名指ししないときは、スクリプトが無くても 0 行と言う
-        if (id !== undefined && rows.length === 0) return fail(`台帳に無い: ${id}`);
+        if (id !== undefined && rows.length === 0) return fail(`登録されていない: ${id}`);
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
           return;
@@ -477,10 +477,10 @@ program
       // 版を省いたときは、名指しの解決と同じ道で版を決める —— 「クロールが送るのはこれ」と
       // 同じものを見せるため。1 本だけ頼むので、重ね (`duplicate`) は起きない。
       const resolved = await resolveScripts(db, [{ catalog: id }]);
-      if (resolved.kind !== "ok") return fail(`台帳に無い: ${resolved.ids.join(", ")}`);
+      if (resolved.kind !== "ok") return fail(`登録されていない: ${resolved.ids.join(", ")}`);
       const latest = resolved.scripts[0];
-      if (latest === undefined) return fail(`台帳に無い: ${id}`);
-      // 読むのは台帳のエンドポイント (`GET /api/scripts/:id/versions/:version`) と同じ readScript
+      if (latest === undefined) return fail(`登録されていない: ${id}`);
+      // 読むのは capture-ledger のエンドポイント (`GET /api/scripts/:id/versions/:version`) と同じ readScript
       const script = await readScript(db, id, opts.version ?? latest.version);
       if (script === undefined) return fail(`${id} に v${String(opts.version)} は無い`);
       process.stdout.write(script.source.endsWith("\n") ? script.source : `${script.source}\n`);
@@ -527,7 +527,7 @@ const toggle = (name: "enable" | "disable", enabled: boolean): void => {
           ...(opts.version === undefined ? {} : { version: opts.version }),
         });
         if (result.kind === "missing") {
-          return fail(`台帳に無い: ${result.ids.join(", ")}。何も変えていない`);
+          return fail(`登録されていない: ${result.ids.join(", ")}。何も変えていない`);
         }
         for (const row of result.changed) {
           process.stdout.write(
@@ -553,7 +553,7 @@ program
         ...(opts.version === undefined ? {} : { version: opts.version }),
       });
       if (result.kind === "missing") {
-        return fail(`台帳に無い: ${result.ids.join(", ")}。何も消していない`);
+        return fail(`登録されていない: ${result.ids.join(", ")}。何も消していない`);
       }
       for (const row of result.changed) {
         process.stdout.write(

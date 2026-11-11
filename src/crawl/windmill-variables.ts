@@ -2,8 +2,8 @@
  * Windmill の変数に「在るか」「secret か」「いつ変わったか」を訊くクライアント。**値は読まない。**
  *
  * スクリプトが宣言したシークレット (`crawl/values.ts`) は Windmill の secret 変数 `f/waggle_secrets/<名前>` に
- * 結ぶ。台帳が確かめるのは在るか・secret か・更新時刻だけで、値を解くのは flow の `crawl_host`。
- * 値を読まないので、台帳の process にも log にも DB にも値は通らない。
+ * 結ぶ。capture-ledger が確かめるのは在るか・secret か・更新時刻だけで、値を解くのは flow の `crawl_host`。
+ * 値を読まないので、capture-ledger の process にも log にも DB にも値は通らない。
  *
  * ## 宛先と token は webhook の物を使う
  *

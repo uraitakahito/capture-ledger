@@ -30,7 +30,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | テーブル                                                                   | 役割                                                                                                                          |
 | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | [`capture_submissions`](/capture-ledger/ja/databases/capture-submissions/) | 投げた記録。組織を知る唯一の出どころ                                                                                          |
-| [`archives`](/capture-ledger/ja/databases/archives/)                       | 台帳。アーカイブを生んだ取り込みだけ                                                                                          |
+| [`archives`](/capture-ledger/ja/databases/archives/)                       | WACZ の記録。アーカイブを生んだ取り込みだけ                                                                                   |
 | `archive_pages`                                                            | アーカイブの頁の一覧（`pages/pages.jsonl`）の 1 行が 1 行。クロールの合本のために 1 度だけ読む                                |
 | [`fga_outbox`](/capture-ledger/ja/databases/fga-outbox/)                   | OpenFGA へ送る予定のタプル                                                                                                    |
 | `crawls`                                                                   | クロール 1 本につき 1 行。方針・状態・停止理由と、合本の版・署名（[下記](#crawls-の合本の列)）                                |
@@ -54,7 +54,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 
 ## crawls の合本の列
 
-クロールの[合本](/capture-ledger/ja/archive-ledger/#合本)は版ごとに保管庫へ書き、`crawls` の行は、台帳がそれを指す
+クロールの[合本](/capture-ledger/ja/archive-ledger/#合本)は版ごとに保管庫へ書き、`crawls` の行は、capture-ledger がそれを指す
 ための列（`027`）と、署名したかを言う列（`028`）を持ちます。
 
 ```ts file="src/db/migrations/027-replay-bundles.ts#crawls-replay-bundle-columns"
@@ -68,14 +68,14 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | 列                         | 何を持つか                                                                                                 |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | `replay_bundle_next_rev`   | 次に払い出す版（1 から）。行の更新で取るので、行の鍵も掛かる                                               |
-| `replay_bundle_rev`        | 台帳が指す版 —— 書けた版のうち最も大きい物。**前へだけ進む**                                               |
+| `replay_bundle_rev`        | capture-ledger が指す版 —— 書けた版のうち最も大きい物。**前へだけ進む**                                    |
 | `replay_bundle_key`        | その版の `replay.json` の鍵（`org/<orgId>/crawls/<crawlId>/r<版>/replay.json`）                            |
 | `replay_bundle_pages`      | その版の `pages.json` の行の数                                                                             |
-| `replay_bundle_built_at`   | 組んだ時刻（台帳の時計）                                                                                   |
+| `replay_bundle_built_at`   | 組んだ時刻（capture-ledger の時計）                                                                        |
 | `replay_bundle_error`      | 新しい版を書けなかった理由。次に書けたら消える                                                             |
 | `replay_bundle_signed_rev` | **署名した**版のうち最も大きい物。`replay_bundle_rev` とは別に、前へだけ進む                               |
 | `replay_bundle_digest_key` | その版の `replay-digest.json` の鍵。`replay_bundle_signed_rev` と一緒に書く（両方 NULL か両方に値。CHECK） |
-| `replay_bundle_sign_error` | 台帳が指す版に署名しなかった理由。走っているクロールと、署名の設定が無い配備では NULL                      |
+| `replay_bundle_sign_error` | capture-ledger が指す版に署名しなかった理由。走っているクロールと、署名の設定が無い配備では NULL           |
 
 `replay_bundle_sign_error` は `replay_bundle_rev` を動かすのと同じ更新で書くので、いつも指す版のことを言います。
 `replay_bundle_signed_rev = replay_bundle_rev` なら、その版は署名されています。

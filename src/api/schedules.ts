@@ -1,5 +1,5 @@
 /**
- * 定期実行の予定のエンドポイント。**台帳が持つ資源として返す** —— 文を作るのは workbench で、ここは状態の語だけを返す。
+ * 定期実行の予定のエンドポイント。**capture-ledger が持つ資源として返す** —— 文を作るのは workbench で、ここは状態の語だけを返す。
  *
  * 絞りは `/api/crawls` と同じ `maySubmit`。一覧は 200 の空、1 本と操作は 404 で答える。消した予定は無い物と同じ。
  *
@@ -83,7 +83,7 @@ const answerOf = (
   const scripts = row.recipe.scripts.map((script) => ({
     id: script.id,
     version: script.version,
-    // その場の TS は台帳に行が無いので null。新しい版の有無を言えない
+    // その場の TS は登録されていないので null。新しい版の有無を言えない
     latest: versions.get(script.id) ?? null,
   }));
   // 待っている物があるか。状態の語は 1 つだけなので、語からは読まない (直近の回の失敗でも順番を待っていることがある)
@@ -293,7 +293,7 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
     },
   );
 
-  /** 固定し直す。頼みをいまの台帳で解決し直す。スクリプトが消えていれば、同じ理由で断る。 */
+  /** 固定し直す。頼みをいまの capture-ledger で解決し直す。スクリプトが消えていれば、同じ理由で断る。 */
   app.post<{ Params: { id: string } }>(
     "/api/schedules/:id/repin",
     { schema: { params: uuidParams } },

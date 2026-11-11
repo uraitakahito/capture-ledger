@@ -1,7 +1,7 @@
 /**
  * 026-create-derivations
  *
- * **派生の層。** Claude が作った物を、証拠 (WACZ と台帳の行) と分けて残す表。いまの種類は `fix` だけ ——
+ * **派生の層。** Claude が作った物を、証拠 (WACZ と capture-ledger の行) と分けて残す表。いまの種類は `fix` だけ ——
  * 型で落ちたクロールの、その場の TS の直し方 (`POST /api/crawls/:id/inline/:name/fix`)。WACZ には書かない。
  *
  * ## 何を残すか

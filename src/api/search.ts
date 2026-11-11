@@ -67,9 +67,9 @@ export interface SearchRouteDeps {
   index: string;
   resolveIdentity: IdentityResolver;
   /**
-   * 差し替える引数。既定は、台帳からこのクロールのまだ載せていない行を引く問い合わせ
+   * 差し替える引数。既定は、capture-ledger からこのクロールのまだ載せていない行を引く問い合わせ
    * (`pendingArchivesOf`) と `indexArchive`。試験は DB と保管庫を立てずに、答えの形と数え方を見る
-   * (台帳に DB の試験は無い)。
+   * (capture-ledger に DB の試験は無い)。
    */
   pendingOf?: (crawlId: string) => Promise<PendingArchive[]>;
   indexOne?: (archive: PendingArchive) => Promise<number>;
@@ -132,7 +132,7 @@ export const registerSearchRoutes = (app: FastifyInstance, deps: SearchRouteDeps
    * クロール 1 本ぶんを索引に載せる。
    *
    * 認可は段の報告 (`POST /api/crawls/:id/pages`) と同じ (`can_submit`) —— 呼ぶのは同じ flow で、
-   * 段を報告できる者は索引も書けてよい。載せる中身は既に台帳に在るので、
+   * 段を報告できる者は索引も書けてよい。載せる中身は既に capture-ledger に在るので、
    * ここで新しく見えるようになるものは無い。
    */
   app.post<{ Params: { id: string } }>(

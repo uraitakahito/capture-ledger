@@ -1,7 +1,7 @@
 /**
  * 032-create-crawl-schedules
  *
- * 定期実行の予定。時計を Windmill の schedule から台帳へ移す (CAPTURE-170)。
+ * 定期実行の予定。時計を Windmill の schedule から capture-ledger へ移す (CAPTURE-170)。
  *
  * ## 回の表は作らない
  *

@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * 台帳の保守コマンド。
+ * capture-ledger の保守コマンド。
  *
  * `capture-ledger` (取り込みの client) と分けているのは、これらが仕事を投げるのではなく
- * 台帳を操作するものだから。そして両方とも、別のどこかからタイマーで走らせると
+ * 記録を操作するものだから。そして両方とも、別のどこかからタイマーで走らせると
  * 役に立つから。`capture-ledger` は目的が 1 つのコマンドのままにしておく。
  *
  *   capture-ledger drain      積まれた tuple を OpenFGA へ配送する
- *   capture-ledger reconcile  報告が書き留めた manifest の鍵から台帳の穴を埋める
+ *   capture-ledger reconcile  報告が書き留めた manifest の鍵から記録の穴を埋める
  *   capture-ledger grant      組織に対する権限を与える
  *   capture-ledger revoke     それを取り消す
  */

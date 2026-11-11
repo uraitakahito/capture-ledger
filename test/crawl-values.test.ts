@@ -126,7 +126,7 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
     expect(checkValues([script("a", [a]), script("b", [a])], { q: "xx" }).kind).toBe("ok");
   });
 
-  it("宣言の無い台帳のスクリプト（古い写し）は、その場の TS ではないので例外にしない", () => {
+  it("宣言の無い登録済みのスクリプト（古い写し）は、その場の TS ではないので例外にしない", () => {
     expect(checkValues([script("autoscroll")], { k: "v" })).toEqual({
       kind: "refused",
       body: { error: "unknown variables", names: ["k"] },

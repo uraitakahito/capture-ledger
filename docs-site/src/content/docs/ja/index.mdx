@@ -1,9 +1,9 @@
 ---
 title: capture-ledger
-description: どの URL を撮るかを決め、撮れたものの台帳を保つキャプチャオーケストレータ。
+description: どの URL を撮るかを決め、撮れたものの記録を保つキャプチャオーケストレータ。
 template: splash
 hero:
-  tagline: どの URL を撮るかを決め、撮れたものを台帳に残します。投げるのは capture-scheduler、撮るのは BrowserHive です。
+  tagline: どの URL を撮るかを決め、撮れたものを記録に残します。投げるのは capture-scheduler、撮るのは BrowserHive です。
   actions:
     - text: クイックスタート
       link: /capture-ledger/ja/quickstart/
@@ -23,7 +23,7 @@ BrowserHive などのほかの repo と役割を分担しています。
 
 | 役割                 | 受け持つもの                                                                               | すること                                            |
 | -------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------------- |
-| **決める・記録する** | capture-ledger（この repo）                                                                | どの URL を撮るかを決め、撮れたものを台帳に残す     |
+| **決める・記録する** | capture-ledger（この repo）                                                                | どの URL を撮るかを決め、撮れたものを記録に残す     |
 | **投げる・報告する** | [capture-scheduler](https://github.com/uraitakahito/capture-scheduler)（Windmill の flow） | 空いている BrowserHive を選んで頼み、段の結果を返す |
 | **撮る・保存する**   | BrowserHive                                                                                | ブラウザで開いて撮り、成果物を bucket に書く        |
 
@@ -54,7 +54,7 @@ BrowserHive のチェックアウトで `pnpm run docs:local` を実行して読
 [capture-scheduler](https://github.com/uraitakahito/capture-scheduler) の Windmill flow が BrowserHive を
 呼び（`POST /captures`）、capture-ledger の設定に BrowserHive の在り処は 1 つも入って
 いません。flow が報告する 1 段には、ページごとの `taskId` が載っています。capture-ledger は
-そこからアーカイブを生んだものを[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)に
+そこからアーカイブを生んだものを[アーカイブの記録](/capture-ledger/ja/archive-ledger/)に
 記録します。そこで入らなかったものは、後から `pnpm run fga:reconcile` が、段の報告の
 書き留めた manifest の鍵を読んで拾います。
 

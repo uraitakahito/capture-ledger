@@ -53,21 +53,21 @@ capture-ledger は、**報告された場所のとおりに** manifest を読み
 知っておくべき帰結:
 
 - **報告の状態より manifest を採ります。** `failed` と報告されたページの manifest も読み、
-  成功を語っていれば台帳に入れて `crawl_pages` の記録を直します。いまの BrowserHive は manifest
+  成功を語っていれば `archives` に入れて `crawl_pages` の記録を直します。いまの BrowserHive は manifest
   を書き終えてから 1 往復で答え、答えの report と manifest は同じ中身なので、
   食い違うことはまずありません —— 報告と正本がずれたときの備えです。
 - **flow の deadline で切った取り込みは拾えません。** flow は答えを受け取っていないので、
   `taskId` も manifest の場所も報告に載りません。BrowserHive が書いた manifest は bucket に在っても、
-  台帳からは辿れません。
+  capture-ledger からは辿れません。
 - まだ manifest が無い `taskId` は、投げずに飛ばします。ここで投げると、書き込みが
   少し遅れただけで段の報告が 500 になり、クロールが止まります。遅れたぶんは
   reconcile が拾います。
 - `capture_submissions` は `taskId` を持つ**全件**に書きます（成功したものだけでは
   ありません）。後で reconciler が要るのは、まさにこの帰属と manifest の鍵です。
 
-## 台帳と認可
+## 記録と認可
 
-上の図は**投げるところまで**です。取り込みが終わったあと、capture-ledger は結果を台帳に
+上の図は**投げるところまで**です。取り込みが終わったあと、capture-ledger は結果を自分の DB に
 入れ、それを読んでよい相手だけに署名付き URL を配ります。ここが OpenFGA の
 出番です。
 
@@ -106,25 +106,25 @@ flowchart LR
   だから outbox が要ること —— を目に見えるようにするためです。
 - **所属は保存しません。** 「この人はどの組織か」はトークンから来て、Check のたびに
   contextual tuple として渡されます。
-- 台帳へ入る道は 2 本あります。**クロール**が段で取り込んだぶんを載せる経路
+- アーカイブの記録へ入る道は 2 本あります。**クロール**が段で取り込んだぶんを載せる経路
   （速い。`src/crawl/admit-level.ts`）と、`reconcile` が段の報告の書き留めた manifest の鍵を
   読む経路（速い経路で入らなかったものを拾う）。どちらも `admitArchive` を通り、
   `(bucket, object_key)` が unique なので、同じ取り込みに 2 度届いても増えません。
 
-詳しくは[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)を参照してください。
+詳しくは[アーカイブの記録](/capture-ledger/ja/archive-ledger/)を参照してください。
 
 ## モジュール構成
 
-| モジュール                      | 責務                                                                                                                                                              |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/api/server.ts`             | 唯一の入口。取り込みの設定を起動時に 1 度読み、route を登録し、outbox をタイマーで掃き出す。                                                                      |
-| `src/api/crawls.ts`             | クロールを始める / 段を受ける / 次の段を返す。認可・方針・記録。                                                                                                  |
-| `src/crawl/`                    | 範囲、上限、段の台帳登録、Windmill への dispatch。                                                                                                                |
-| `src/config/capture-formats.ts` | `CAPTURE_LEDGER_CAPTURE_FORMATS` / `_SIGNING` を、毎回載せる `captureFormats` にする。                                                                            |
-| `src/schedules/`                | 時計。cron・状態の語と、予定の期限が来るとクロールを始める周回。                                                                                                  |
-| `src/archive/`                  | manifest、台帳への受け入れ、reconciler。                                                                                                                          |
-| `src/rpc/generated/`            | BrowserHive の契約（submodule から写した `openapi.json`）と、そこから作った型。manifest は `CaptureResultReport` で、台帳が読む前にこれに照らす。手で編集しない。 |
-| `src/db/`                       | プール、Kysely の配線、マイグレーション。                                                                                                                         |
+| モジュール                      | 責務                                                                                                                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/api/server.ts`             | 唯一の入口。取り込みの設定を起動時に 1 度読み、route を登録し、outbox をタイマーで掃き出す。                                                                                 |
+| `src/api/crawls.ts`             | クロールを始める / 段を受ける / 次の段を返す。認可・方針・記録。                                                                                                             |
+| `src/crawl/`                    | 範囲、上限、段の取り込みの登録、Windmill への dispatch。                                                                                                                     |
+| `src/config/capture-formats.ts` | `CAPTURE_LEDGER_CAPTURE_FORMATS` / `_SIGNING` を、毎回載せる `captureFormats` にする。                                                                                       |
+| `src/schedules/`                | 時計。cron・状態の語と、予定の期限が来るとクロールを始める周回。                                                                                                             |
+| `src/archive/`                  | manifest、`archives` への受け入れ、reconciler。                                                                                                                              |
+| `src/rpc/generated/`            | BrowserHive の契約（submodule から写した `openapi.json`）と、そこから作った型。manifest は `CaptureResultReport` で、capture-ledger が読む前にこれに照らす。手で編集しない。 |
+| `src/db/`                       | プール、Kysely の配線、マイグレーション。                                                                                                                                    |
 
 ## エラーの扱い
 

@@ -9,7 +9,7 @@
  *
  * - **変数** はクロールの頼み (`variables`) で渡され、記録に値が残る (WACZ の `settings.variables`)。
  * - **シークレット** は頼みに欄が無い。スクリプトが宣言した名前を、Windmill の secret 変数
- *   `f/waggle_secrets/<名前>` に結ぶ。台帳は在るかを訊くだけで、値は flow の `crawl_host` が解く。値を WARC に
+ *   `f/waggle_secrets/<名前>` に結ぶ。capture-ledger は在るかを訊くだけで、値は flow の `crawl_host` が解く。値を WARC に
  *   残すかも宣言が決める (`archive: "keep"`。省けば BrowserHive が隠す)。
  *
  * ## 宣言が決める
@@ -17,7 +17,7 @@
  * 宣言が「どの名前を、どちらの種類で、どの形で」を言う。変数の宣言の正は source の `defineParams` で、
  * ts-compile-service が読み、始めるエンドポイントがこの層へ写す (`pinDeclarations`)。シークレットの宣言は `params`。
  * **宣言の無い名前は渡せない** —— 黙って通すと、綴りを間違えた変数が「渡したのに効かない」として残る。
- * 例外は宣言を読めなかったスクリプト (BH0002) が混ざるときで、何を読むかを台帳が知らないので知らない名前を
+ * 例外は宣言を読めなかったスクリプト (BH0002) が混ざるときで、何を読むかを capture-ledger が知らないので知らない名前を
  * 400 にしない。そのクロールは flow の compile の段が BH0002 で落とすので、理由がそこに残る。
  *
  * **必須の変数が渡されているかは、ここでは見ない。** 判定は ts-compile-service の 1 か所 (BH0001) で、始めるエンドポイントが
@@ -37,7 +37,7 @@ import type { DeclaredScript } from "../scripts/ts-compile.js";
  */
 export const SECRETS_FOLDER = "f/waggle_secrets/";
 
-/** 宣言の名前から、Windmill の変数の path を組む。人は名前だけ書き、path は台帳が決める。 */
+/** 宣言の名前から、Windmill の変数の path を組む。人は名前だけ書き、path は capture-ledger が決める。 */
 export const secretPath = (name: string): string => `${SECRETS_FOLDER}${name}`;
 
 /** 宣言で結ぶシークレット 1 つ。名前順。 */
@@ -193,11 +193,11 @@ export const FORMATS_WITHOUT_REPLACEMENT = ["png", "webp", "html", "mhtml"] as c
 
 /**
  * 実際に送るシークレットのうち隠す物 (`archive` が `keep` でない物) が在り、この配備の形式が値を置き換えられない物を
- * 頼むなら、400 の本文。**台帳が先に断る** —— 通すと、BrowserHive が取り込みのたびに 400 で断り、全ページが失敗した
+ * 頼むなら、400 の本文。**capture-ledger が先に断る** —— 通すと、BrowserHive が取り込みのたびに 400 で断り、全ページが失敗した
  * クロールが残る。
  *
  * 見るのは宣言ではなく、Windmill に訊いた後の行の写し (`resolveSecrets` の答え)。任意で Windmill に無いシークレットは
- * 送られないので、断る理由にならない。web storage の値 (`storageValues`) は見ない: 台帳も flow も頼まず、BrowserHive の
+ * 送られないので、断る理由にならない。web storage の値 (`storageValues`) は見ない: capture-ledger も flow も頼まず、BrowserHive の
  * 既定は無効 (配備の環境変数で有効にすると、BrowserHive の 400 になる)。
  */
 export const formatsRefusal = (

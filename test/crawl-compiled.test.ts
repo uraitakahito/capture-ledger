@@ -50,7 +50,7 @@ describe("報告の JS の hash を、固定したスクリプトに写す", () 
     expect(merged).toMatchObject({ status: 400, scriptId: "autofetch@1" });
   });
 
-  it("固定したスクリプトに無い id が報告に在れば 400 —— 台帳では確かめようが無い主張", () => {
+  it("固定したスクリプトに無い id が報告に在れば 400 —— capture-ledger では確かめようが無い主張", () => {
     const merged = mergeCompiled([ts("autoscroll")], report([{ id: "autoscroll" }, { id: "x" }]));
     expect(merged).toMatchObject({ status: 400, scriptId: "x@1" });
   });

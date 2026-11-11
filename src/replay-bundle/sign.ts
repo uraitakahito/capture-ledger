@@ -8,7 +8,7 @@
  * 合格に数えず、応答の `hash` の欄も見る。
  *
  * 署名が付かなくても合本は書く (呼ぶ側が決める)。ここが返すのは「署名と、それが確かなこと」か「付かなかった
- * 理由」で、理由は台帳の `crawls.replay_bundle_sign_error` に残る。理由にはいつも宛先を入れる —— 署名の付かない
+ * 理由」で、理由は capture-ledger の `crawls.replay_bundle_sign_error` に残る。理由にはいつも宛先を入れる —— 署名の付かない
  * 合本ができる最も多い原因は、宛先が何も指していないこと。
  */
 import { verifySignedData, type SignedData } from "./verify-signed-data.js";

@@ -4,13 +4,13 @@
  *   pnpm run search:reindex                 # 全部のアーカイブ
  *   pnpm run search:reindex --crawl <id>    # 1 本のクロールぶん
  *
- * **打つのは、索引が台帳と合わなくなったとき。** compose の OpenSearch は volume を持たないので、
- * 作り直すと索引は空になる。台帳の `indexed_at` は立ったままなので、flow の索引の段
+ * **打つのは、索引が capture-ledger と合わなくなったとき。** compose の OpenSearch は volume を持たないので、
+ * 作り直すと索引は空になる。capture-ledger の `indexed_at` は立ったままなので、flow の索引の段
  * (`POST /api/crawls/:id/index`) は何も拾い直さない —— 周回する係も無い。索引の mapping を変えた
  * (索引を消した) ときも同じ。
  *
- * API を通らずに台帳 (Postgres)・保管庫 (S3)・OpenSearch を直に読み書きする。アクセストークンは
- * 使わず、認可も通らない —— 書くのは、台帳が既に持っている物の写しだけ。
+ * API を通らずに capture-ledger (Postgres)・保管庫 (S3)・OpenSearch を直に読み書きする。アクセストークンは
+ * 使わず、認可も通らない —— 書くのは、capture-ledger が既に持っている物の写しだけ。
  *
  * 1 本でも入らなければ終了コード 1。入らなかった行の `indexed_at` は空のまま残るので、打ち直せば拾う。
  */
@@ -106,7 +106,7 @@ const reindex = async (opts: { databaseUrl: string; crawl?: string }): Promise<v
 const program = new Command()
   .name("search:reindex")
   .description(
-    "索引を作り直す。アーカイブの indexed_at を空にして、OpenSearch に入れ直す (台帳・保管庫・OpenSearch を直に読み書きする)",
+    "索引を作り直す。アーカイブの indexed_at を空にして、OpenSearch に入れ直す (capture-ledger の DB・保管庫・OpenSearch を直に読み書きする)",
   )
   .addOption(new Option("--crawl <id>", "このクロールのアーカイブだけ").argParser(crawlId))
   .addOption(databaseUrlOption)

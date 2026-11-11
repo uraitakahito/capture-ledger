@@ -58,7 +58,7 @@ sh .upstream/seaweedfs/scripts/stack.sh up
 値を調べて `.env` を作るものはありません —— 一覧が 2 つあれば必ずずれるからです。
 OpenFGA の 2 つの ID は、走らせてみないと決まらないので雛形には名前しかありません
 （`pnpm run fga:deploy` が `.env.local` に書きます。
-[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#セットアップ)を参照）。
+[アーカイブの記録](/capture-ledger/ja/archive-ledger/#セットアップ)を参照）。
 
 `src/tools/check-env.ts`（`pnpm run check` に含まれ、CI では独立したステップ）が、
 コードの読み取りと `.env.example` の宣言を両方向で突き合わせます。古い雛形は
@@ -152,7 +152,7 @@ NAME=value     # 値を渡す
 daemon (7180)・[capture-workbench](https://github.com/uraitakahito/capture-workbench) の
 `pnpm run dev` (7080) はホストのプロセス**で、コンテナではありません。
 
-検証の daemon には **store の鍵を渡していません**。読むのは台帳が署名した URL
+検証の daemon には **store の鍵を渡していません**。読むのは capture-ledger が署名した URL
 だけなので要らず、渡せば「鍵を持つ相手を増やさない」という選択の意味が消えます。
 daemon の既定の port は `0`（OS 任せ）なので、`--port 7180` で固定してあります ——
 固定しないと下の 2 つが見つけられません（どちらも port から持ち主を引くため）。
@@ -218,7 +218,7 @@ BrowserHive の在り処はもうここにありません。スタックが公�
 エンドポイント `localhost:50051` と `localhost:50052`（Chromium 1 台に BrowserHive 1 つ）は、
 curl と flow のためのもので、capture-ledger のためではありません。
 
-台帳は **ts-compile-service** を呼びます。このスタックには無く、capture-scheduler の compose が
+capture-ledger は **ts-compile-service** を呼びます。このスタックには無く、capture-scheduler の compose が
 動かして、host の `127.0.0.1:28080` に出しています（capture-scheduler v0.28.0 から）。宛先は、
 capture-scheduler の `windmill:bootstrap` がほかの行と一緒に渡し（capture-scheduler v0.30.0 から）、
 `dev:up` の段の `pnpm run connect` が `.env.local` に `CAPTURE_LEDGER_TS_COMPILE_URL=http://127.0.0.1:28080` を
@@ -481,11 +481,11 @@ curl -s http://127.0.0.1:18085/__request-counts
 ```
 
 `crawl_pages` が言うのは capture-ledger が**記録した**こと、ログが言うのはフィクスチャが
-**実際に要求された**こと。「robots を尊重した」は後者でしか決着しない —— 台帳に無い
-ページは、取りに行かなかったのか、取りに行って捨てたのか、台帳からは区別できない。
+**実際に要求された**こと。「robots を尊重した」は後者でしか決着しない —— 記録に無い
+ページは、取りに行かなかったのか、取りに行って捨てたのか、記録からは区別できない。
 
 capture-fixtures は `.upstream/browserhive` 経由ではなく `.upstream/capture-fixtures` に**直接** vendor して
-いる。2 つの pin は別々の都合で動く —— 台帳の試験が要る頁（`/links/*` など）が BrowserHive の pin に入るとは
+いる。2 つの pin は別々の都合で動く —— capture-ledger の試験が要る頁（`/links/*` など）が BrowserHive の pin に入るとは
 限らず、経由すると BrowserHive の版上げを待つことになる。どちらももう一方を待つ理由が無い。
 
 ### 署名を試す
@@ -519,11 +519,11 @@ BrowserHive は `no signing service is configured on this server` と言いま�
 署名は fail-closed です —— 署名を求めて得られなかった取り込みは、署名なしのアーカイブを
 出すのではなく失敗します。
 
-**同じ行は、台帳に合本の署名も求めます**（[合本の署名](/capture-ledger/ja/archive-ledger/#合本の署名)）。
+**同じ行は、capture-ledger に合本の署名も求めます**（[合本の署名](/capture-ledger/ja/archive-ledger/#合本の署名)）。
 `CAPTURE_LEDGER_CAPTURE_SIGNING=1` のとき、API と `pnpm run replay-bundle:rebuild` は、署名の 4 つ組
 （`CAPTURE_LEDGER_SIGNER_URL`・`CAPTURE_LEDGER_SIGNER_TOKEN`・`CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR`・
 `CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR`）が無ければ起動しません。dev の値は `.env.example` にあります（`.env` に
-写すか、シェルから渡す）。host で動く台帳は、wacz-signer に `127.0.0.1:18091` で届きます —— BrowserHive の
+写すか、シェルから渡す）。host で動く capture-ledger は、wacz-signer に `127.0.0.1:18091` で届きます —— BrowserHive の
 スタックの wacz-signer は 18090 に出ていて、同じ dev の CA で署名します。番号を分けないと、取り違えても署名が
 通ってしまいます。
 

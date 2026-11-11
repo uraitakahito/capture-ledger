@@ -21,7 +21,7 @@ export interface Identity {
  * 組織のクレームの綴り。Cognito（と代役の Floci）は、利用者が属する群を
  * `cognito:groups`（文字列の配列）で人の access token に載せる。群の名前が組織の名前。
  *
- * **M2M（client credentials）のトークンには載らない。** 機械の組織は、台帳が OpenFGA に
+ * **M2M（client credentials）のトークンには載らない。** 機械の組織は、capture-ledger が OpenFGA に
  * 保存した許可から引く（`api/identity.ts` の `machineOrganizations`）。
  *
  * 定数にしてあるのは、試験が同じものを参照できるようにするため —— 名前を変えた日に

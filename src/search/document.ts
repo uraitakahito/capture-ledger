@@ -52,7 +52,7 @@ export interface PageLine {
 
 /** 索引に載せる 1 件。 */
 export interface SearchDocument {
-  /** 台帳の archive id。**認可の単位はこれ** —— 検索の結果はこの id で `can_view` を訊く。 */
+  /** capture-ledger の archive id。**認可の単位はこれ** —— 検索の結果はこの id で `can_view` を訊く。 */
   archiveId: string;
   /** 行の時点。文書の行（写しの無い取り込みで載せる 1 件）は `null`。 */
   stage: string | null;
@@ -63,14 +63,14 @@ export interface SearchDocument {
   textTruncated: boolean;
   /** 方針が本文を落とした理由。落としていなければ `null`。 */
   textWithheld: string | null;
-  /** 台帳が持つ来歴。ヒットから replayweb-server へ渡すのに要る。 */
+  /** capture-ledger が持つ来歴。ヒットから replayweb-server へ渡すのに要る。 */
   objectKey: string;
   sourceUrl: string;
   labels: string[];
   capturedAt: string;
 }
 
-/** 索引の元になる台帳の行。 */
+/** 索引の元になる capture-ledger の行。 */
 export interface ArchiveRow {
   id: string;
   objectKey: string;
@@ -123,7 +123,7 @@ export const pagesToIndex = (pages: readonly PageLine[]): PageLine[] => {
 };
 
 /**
- * ページ 1 つと台帳の行から、索引の 1 件を組む。
+ * ページ 1 つと capture-ledger の行から、索引の 1 件を組む。
  *
  * `text` と `title` は無ければ空文字にする —— `undefined` を送ると OpenSearch 側で
  * 「その field が無い」になり、`exists` の問い合わせが「まだ索引していない」と

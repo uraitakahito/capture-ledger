@@ -21,8 +21,8 @@
  *
  * ## 本文は `{depth}` だけ
  *
- * flow の段の深さで、`replay.json` に記録するだけ。**版ではない** —— 版は作るたびに台帳が払い出す (作り直しで同じ
- * 深さを 2 度書くため)。どの WACZ を入れるかも呼ぶ側に言わせない —— 台帳の `archives.crawl_id` が知っている
+ * flow の段の深さで、`replay.json` に記録するだけ。**版ではない** —— 版は作るたびに capture-ledger が払い出す (作り直しで同じ
+ * 深さを 2 度書くため)。どの WACZ を入れるかも呼ぶ側に言わせない —— capture-ledger の `archives.crawl_id` が知っている
  * (索引のエンドポイントと同じ線引き)。
  */
 import type { FastifyInstance } from "fastify";
@@ -43,7 +43,7 @@ export interface ReplayBundleRouteDeps {
   /** 合本を書く bucket (設定の物。WACZ と同じ bucket)。 */
   bucket: string;
   resolveIdentity: IdentityResolver;
-  /** 差し替える引数。試験は zip を作らずに、数え方と答えの形を見る (台帳に DB の試験は無い)。 */
+  /** 差し替える引数。試験は zip を作らずに、数え方と答えの形を見る (capture-ledger に DB の試験は無い)。 */
   inspectOne?: (archive: UninspectedArchive) => Promise<void>;
   now?: () => Date;
   /** 署名のクライアント (`replay-bundle/sign.ts`)。無ければ署名しない (設定の無い配備)。 */
@@ -58,7 +58,7 @@ export const registerReplayBundleRoutes = (
 
   /**
    * クロール 1 本の合本を書く。認可は段の報告・索引と同じ (`can_submit`) —— 呼ぶのは同じ flow で、書く中身は
-   * 既に台帳と保管庫に在る。
+   * 既に capture-ledger と保管庫に在る。
    */
   app.post<{ Params: { id: string }; Body: { depth: number } }>(
     "/api/crawls/:id/replay-bundle",

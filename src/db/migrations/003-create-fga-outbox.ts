@@ -1,7 +1,7 @@
 /**
  * 003-create-fga-outbox
  *
- * 台帳と OpenFGA がずれないようにするための、トランザクショナル outbox。
+ * capture-ledger と OpenFGA がずれないようにするための、トランザクショナル outbox。
  *
  * `archives` に行を入れることと、対応する関係の tuple を書くことは別々のシステム:
  * tuple の書き込みは OpenFGA の HTTP API を通り、Postgres のトランザクションは
@@ -26,7 +26,7 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     .addColumn("payload", "jsonb", (col) => col.notNull())
     .addColumn("created_at", "timestamptz", (col) => col.notNull().defaultTo(sql`now()`))
     // 配送されるまで NULL。worker は行を消さない: 処理済みの行は tuple が書かれた
-    // という証拠で、台帳と OpenFGA を突き合わせるときに残っている価値がある。
+    // という証拠で、capture-ledger と OpenFGA を突き合わせるときに残っている価値がある。
     .addColumn("processed_at", "timestamptz")
     .addColumn("attempts", "integer", (col) => col.notNull().defaultTo(0))
     .addColumn("last_error", "text")

@@ -16,12 +16,12 @@
  * 既定から外したという意思とは別の話になる。消さずに無効にできる形にしてあるのは、版の履歴を
  * 残したまま既定から外せるようにするため。
  *
- * ## その場の TS は台帳に登録しない
+ * ## その場の TS は登録しない
  *
- * `scripts` の要素には、台帳のスクリプトの名指しのほかに、その場で書いた TS（`inline`）を置ける。
- * 台帳はそれを登録せず、クロールの行の写しにだけ固定する（`inlineScript`）。id は
- * `inline-<name>` で、台帳のスクリプトの id には `inline-` を使わせない（`019` の CHECK と CLI）——
- * アーカイブの id だけで、台帳のスクリプトか、その場の物かが分かるようにするため。
+ * `scripts` の要素には、登録済みのスクリプトの名指しのほかに、その場で書いた TS（`inline`）を置ける。
+ * capture-ledger はそれを登録せず、クロールの行の写しにだけ固定する（`inlineScript`）。id は
+ * `inline-<name>` で、登録済みのスクリプトの id には `inline-` を使わせない（`019` の CHECK と CLI）——
+ * アーカイブの id だけで、登録済みのスクリプトか、その場の物かが分かるようにするため。
  *
  * ## 対象サイト（`sites`）は起点で効く
  *
@@ -102,7 +102,7 @@ export const sitesRefusal = (sites: readonly string[]): string | undefined => {
 
 /**
  * クロールごとの値の名前の形。BrowserHive の契約 (`ValueName`) と同じ —— 英小文字で始め、英小文字・数字・`_`。
- * 台帳が断るので、Windmill がハイフンを通しても path に入らない。
+ * capture-ledger が断るので、Windmill がハイフンを通しても path に入らない。
  */
 export const VALUE_NAME = /^[a-z][a-z0-9_]*$/;
 export const VALUE_NAME_MAX = 64;
@@ -117,7 +117,7 @@ const isLength = (value: unknown): boolean =>
 
 /**
  * 変数の値の形 (`schema`) を読む。読めれば返し、読めなければその文を返す。鍵は 4 つだけで、値は文字列だけ ——
- * 正規表現は読まない (利用者の式を台帳で走らせることになる)。
+ * 正規表現は読まない (利用者の式を capture-ledger で走らせることになる)。
  */
 const readSchema = (name: string, raw: unknown): ParamSchema | string => {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
@@ -226,12 +226,12 @@ export const offsiteScripts = (
     onSeed(script.sites ?? [], seedHosts) ? [] : [{ id: script.id, sites: script.sites ?? [] }],
   );
 
-/** その場の TS の id の頭。台帳が付け、台帳のスクリプトの id には使わせない。 */
+/** その場の TS の id の頭。capture-ledger が付け、登録済みのスクリプトの id には使わせない。 */
 export const INLINE_PREFIX = "inline-";
 
 export const isInlineId = (id: string): boolean => id.startsWith(INLINE_PREFIX);
 
-/** 台帳のスクリプトの id として断るなら、その文。DB の CHECK (`019`) より先に、読める文で言う。 */
+/** 登録済みのスクリプトの id として断るなら、その文。DB の CHECK (`019`) より先に、読める文で言う。 */
 export const catalogIdRefusal = (id: string): string | undefined =>
   isInlineId(id) ? `${id}: ${INLINE_PREFIX} で始まる id は、その場の TS に取ってある` : undefined;
 
@@ -244,10 +244,10 @@ export interface InlineScript {
   params?: ScriptParam[];
 }
 
-/** 要求の 1 要素。台帳のスクリプトの名指しか、その場の TS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
+/** 要求の 1 要素。登録済みのスクリプトの名指しか、その場の TS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
 export type RequestedScript = { catalog: string } | { inline: InlineScript };
 
-/** 台帳に無い id と、同じ id の重ねが在れば、名指しで返す。**黙って落とさない。** */
+/** 登録されていない id と、同じ id の重ねが在れば、名指しで返す。**黙って落とさない。** */
 export type ResolveResult =
   | { kind: "missing"; ids: string[] }
   | { kind: "duplicate"; ids: string[] }
@@ -281,7 +281,7 @@ const stableStringify = (value: unknown): string =>
  * ページで起きることは違うので、`options` を明示した呼び出しは版を分ける。一方
  * `options` を省いた呼び出しは「渡す値について意見が無い」であって「`{}` にしろ」では
  * ない —— 区別しないと、`import` が運用側で付けた設定を**黙って捨てた新しい版**を作り、
- * それが既定になる (台帳は id ごとに最新版を選ぶため)。
+ * それが既定になる (capture-ledger は id ごとに最新版を選ぶため)。
  *
  * **対象サイト (`sites`) も同じ扱い。** 渡したときだけ最新版と比べ、違えば版を足す。`import` は catalog の対象サイトを
  * 必ず渡す (書いていなければ空) —— catalog が対象サイトの正なので、意見として渡す。
@@ -464,7 +464,7 @@ export const readHostTypes = async (db: Kysely<Database>): Promise<HostTypesRow 
  * 版を指定したときだけ、その 1 つに効く —— 「v3 が悪かったので v2 に戻す」はこちら。
  *
  * **消さずに外せること**が要点。消すと、過去のクロールが何を走らせたのかを
- * 台帳の側から辿れなくなる。
+ * capture-ledger の側から辿れなくなる。
  */
 export const setScriptEnabled = async (
   db: Kysely<Database>,
@@ -587,15 +587,15 @@ export const pickable = async (
 /**
  * クロールが走らせるものを決める。
  *
- * - `requested` を渡したら**その並びのまま**写しを返す。台帳のスクリプトの名指しは各 id の最新版
- *   (無効な版でも名指しは通る)、その場の TS は台帳のスクリプトを引かずに写す (`inlineScript`)。
+ * - `requested` を渡したら**その並びのまま**写しを返す。登録済みのスクリプトの名指しは各 id の最新版
+ *   (無効な版でも名指しは通る)、その場の TS は登録済みのスクリプトを引かずに写す (`inlineScript`)。
  * - 渡さなければ **有効な各 id の最新版**のうち、対象サイトの無い物と、対象サイトのどれかが起点のホストにある物を
  *   既定の実行順 (`inRunOrder`) で返す。**最新版を選んでから対象サイトで絞る** —— SQL で対象サイトを絞ってから `distinct on` すると、
  *   対象サイトの合わない最新版の代わりに、対象サイトの無い古い版が出てくる。絞るのは引いた後で、JS で。
  *
  * 名指しの対象サイトが起点に合うかは、ここでは見ない (`offsiteScripts`)。
  *
- * 台帳に無い id が 1 つでも在れば、名指しで返して何も返さない —— 黙って落とすと、頼んだ側は
+ * 登録されていない id が 1 つでも在れば、名指しで返して何も返さない —— 黙って落とすと、頼んだ側は
  * 全部走ったつもりで結果を読むことになる (読めない起点の URL を 400 で断るのと同じ判断)。
  * 同じ id を 2 度頼んだときも名指しで返す —— 報告 (`id@版`) でも変換 (`/src/<id>.ts`) でも、
  * 2 本目が 1 本目に黙って畳まれる。
@@ -637,7 +637,7 @@ export const resolveScripts = async (
   const twice = ids.filter((id, i) => ids.indexOf(id) !== i);
   if (twice.length > 0) return { kind: "duplicate", ids: [...new Set(twice)] };
 
-  // **台帳のスクリプトを引くのは名指しがあるときだけ。** 空の配列は Kysely が `in ()` に組み、Postgres は
+  // **登録済みのスクリプトを引くのは名指しがあるときだけ。** 空の配列は Kysely が `in ()` に組み、Postgres は
   // 構文エラーで断る —— その場の TS だけのクロールが 500 になる。
   const named = requested.flatMap((r) => ("catalog" in r ? [r.catalog] : []));
   const rows =
@@ -669,8 +669,8 @@ const idOf = (r: RequestedScript): string =>
   "catalog" in r ? r.catalog : INLINE_PREFIX + r.inline.name;
 
 /**
- * その場の TS の写し。**形は台帳のスクリプトの写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
- * 台帳のスクリプトと区別しない。版は 1、options は空。sha256 は台帳が source から打つ (`scripts` の生成列
+ * その場の TS の写し。**形は登録済みのスクリプトの写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
+ * 登録済みのスクリプトと区別しない。版は 1、options は空。sha256 は capture-ledger が source から打つ (`scripts` の生成列
  * `encode(digest(source, 'sha256'), 'hex')` と同じ値)。宣言 (`params`) は添えられたときだけ写す ——
  * 添えなかった物と空の宣言は別 (`crawl/values.ts`)。
  */

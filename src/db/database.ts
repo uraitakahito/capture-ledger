@@ -85,7 +85,7 @@ export interface CaptureSubmissionsTable {
   submittedAt: ColumnType<Date, string | undefined, never>;
   /** 結果 manifest の鍵 (bucket を除く)。段の報告が運んだもの。`014`。 */
   manifestKey: string | null;
-  /** manifest を書けなかった、または台帳に読めない場所だった理由。`014`。 */
+  /** manifest を書けなかった、または capture-ledger に読めない場所だった理由。`014`。 */
   manifestError: string | null;
 }
 
@@ -111,7 +111,7 @@ export interface CrawlsTable {
   requestedBy: string;
   /**
    * このクロールがページの中で走らせるもの。**解決済み・並びが実行順**で、
-   * 台帳のスクリプト (`scripts`) を引き直すことはしない —— 途中で版が足されても、同じクロールの
+   * 登録済みのスクリプト (`scripts`) を引き直すことはしない —— 途中で版が足されても、同じクロールの
    * 前半と後半で違うコードが走ることは無い (`018` を見ること)。
    *
    * 書くときは JSON の文字列 (`fgaOutbox.payload` と同じ扱い)。
@@ -131,7 +131,7 @@ export interface CrawlsTable {
   userAgent: ColumnType<string | null, string | null, never>;
   /**
    * 宣言で結んだシークレット (名前 → path と `edited_at`。`024`)。**値は持たない** —— 解くのは flow の
-   * `crawl_host` で、台帳が持つのは Windmill の変数の path と、始めたときの更新時刻と、値を WARC に残すか
+   * `crawl_host` で、capture-ledger が持つのは Windmill の変数の path と、始めたときの更新時刻と、値を WARC に残すか
    * (宣言の `archive`) だけ。段を送るたびに読み直し、変わっていれば `rotated` を書き足す (`CrawlSecret`)。
    *
    * 書くときは JSON の文字列。
@@ -173,7 +173,7 @@ export interface CrawlsTable {
    */
   replayBundleNextRev: ColumnType<number, never, number>;
   /**
-   * 台帳が指す合本 (書き終えた版のうち最も大きい物) の版・`replay.json` の鍵・頁の数・書いた時刻 (`027`)。
+   * capture-ledger が指す合本 (書き終えた版のうち最も大きい物) の版・`replay.json` の鍵・頁の数・書いた時刻 (`027`)。
    * **前へだけ進める** —— 書き終えた版がいまより大きいときだけ差し替える (`replay-bundle/write.ts`)。
    */
   replayBundleRev: ColumnType<number | null, never, number>;
@@ -183,13 +183,13 @@ export interface CrawlsTable {
   /** 合本を書けなかった理由。次に書けたら消す。クロールは止めない (`027`)。 */
   replayBundleError: ColumnType<string | null, never, string | null>;
   /**
-   * 署名した合本の版のうち最も大きい物と、その `replay-digest.json` の鍵 (`028`)。**台帳が指す版とは別に持ち、
+   * 署名した合本の版のうち最も大きい物と、その `replay-digest.json` の鍵 (`028`)。**capture-ledger が指す版とは別に持ち、
    * 前へだけ進める**。2 つは一緒に書く (両方 NULL か両方に値。CHECK)。
    */
   replayBundleSignedRev: ColumnType<number | null, never, number>;
   replayBundleDigestKey: ColumnType<string | null, never, string>;
   /**
-   * 台帳が指す版に署名しなかった (できなかった) 理由 (`028`)。指す版と同じ UPDATE で書く。走っているクロールの版と、
+   * capture-ledger が指す版に署名しなかった (できなかった) 理由 (`028`)。指す版と同じ UPDATE で書く。走っているクロールの版と、
    * 署名の設定が無い配備では NULL。
    */
   replayBundleSignError: ColumnType<string | null, never, string | null>;
@@ -242,7 +242,7 @@ export interface CrawlScript {
   sha256: string;
   options: Record<string, unknown>;
   /**
-   * 対象サイト（どのサイト用か。`021`）。台帳のスクリプトだけが持つ写しで、その場の TS には無い。古いクロールの行にも
+   * 対象サイト（どのサイト用か。`021`）。登録済みのスクリプトだけが持つ写しで、その場の TS には無い。古いクロールの行にも
    * 無い（無ければ空と読む）。flow へは渡さない（`toDispatched`）—— 選ぶための物で、走らせる側には要らない。
    */
   sites?: string[];
@@ -288,12 +288,12 @@ export interface ScriptParam {
   required: boolean;
   /** 人に見せる 1 行。catalog では空にできない。その場の TS では省ける。 */
   summary?: string;
-  /** 値の形。`variable` だけが持つ (シークレットの値を台帳は見ない)。 */
+  /** 値の形。`variable` だけが持つ (シークレットの値を capture-ledger は見ない)。 */
   schema?: ParamSchema;
   /**
    * 値を WARC に残すか。`secret` だけが持ち、書けるのは `"keep"` だけ (capture-scripts の `/6`)。**省けば隠す**:
    * BrowserHive (v29.0.0 から) が、スクリプトが通信に載せた値もサイトが返した値も `***` に置き換える。`keep` なら
-   * 通信の記録に値のまま残る。台帳は行に写し (`CrawlSecret.archive`)、段ごとに BrowserHive の `secretArchive` へ運ぶ。
+   * 通信の記録に値のまま残る。capture-ledger は行に写し (`CrawlSecret.archive`)、段ごとに BrowserHive の `secretArchive` へ運ぶ。
    */
   archive?: "keep";
 }

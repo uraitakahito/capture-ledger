@@ -1,13 +1,13 @@
 ---
 title: 定期実行
-description: 予定の表と、台帳の中で 30 秒ごとに回る時計。エンドポイントと状態の語。
+description: 予定の表と、capture-ledger の中で 30 秒ごとに回る時計。エンドポイントと状態の語。
 ---
 
-**定期実行の時計は台帳の中に在ります。** API のプロセスが 30 秒ごとに予定の表（`crawl_schedules`）を見て、
+**定期実行の時計は capture-ledger の中に在ります。** API のプロセスが 30 秒ごとに予定の表（`crawl_schedules`）を見て、
 期限の来た予定からクロールを 1 本始めます。Windmill は頼まれた段を撮るだけで、いつ撮るかを知りません。
 
 画面は capture-workbench のタブ「定期実行」です。
-ここでは台帳の側の決まりを書きます。
+ここでは capture-ledger の側の決まりを書きます。
 
 ## 周回の 1 回
 
@@ -24,7 +24,7 @@ description: 予定の表と、台帳の中で 30 秒ごとに回る時計。エ
 | 走行中の行とぶつかった                                    | rollback します。期限は動かず、順番待ちのまま残ります。「見送り」という結末はありません |
 | シークレットが足りない・Windmill に訊けない・行を足せない | `failed` の行を足し、次の回へ進みます                                                   |
 | webhook を投げられなかった                                | 行を `failed` で閉じます（手で始めたクロールと同じです）                                |
-| 台帳が止まっていた                                        | 戻ったときに 1 回だけ撮ります。過ぎた回の数は `crawls.schedule_missed` に残ります       |
+| capture-ledger が止まっていた                             | 戻ったときに 1 回だけ撮ります。過ぎた回の数は `crawls.schedule_missed` に残ります       |
 
 走ったまま止まった行は、周回が勝手に閉じません。本当に走っている回を閉じないためです。その予定自身の直近の回が
 1 時間以上 `running` のとき、状態が `stuck` になり、画面の「締める」か `POST /api/crawls/:id/failed` で閉じます。
@@ -50,7 +50,7 @@ description: 予定の表と、台帳の中で 30 秒ごとに回る時計。エ
 | `POST /api/schedules/:id/pause`  | 止めます。待っている「いま撮る」の頼みも消します。走っている回はそのままです                                                                                                           |
 | `POST /api/schedules/:id/resume` | 再開します。次の期限は今から計算し直し、止めていた間は欠けに数えません。止めていない予定には何もしません                                                                               |
 | `POST /api/schedules/:id/run`    | いま撮ります。202 を返し、周回が始めます。止めた予定でも撮れます                                                                                                                       |
-| `POST /api/schedules/:id/repin`  | 頼みをいまの台帳で解決し直します。スクリプトが消えていれば同じ理由で断ります                                                                                                           |
+| `POST /api/schedules/:id/repin`  | 頼みをいまの capture-ledger で解決し直します。スクリプトが消えていれば同じ理由で断ります                                                                                               |
 | `POST /api/schedules/:id/delete` | 消します。行は残ります（クロールの行に名前を出すためです）                                                                                                                             |
 
 `GET /api/crawls` と `GET /api/crawls/:id` は、`schedule`（`{id, name}` か `null`）・`scheduledFor`・
@@ -58,7 +58,7 @@ description: 予定の表と、台帳の中で 30 秒ごとに回る時計。エ
 
 ## 状態の語
 
-`health` は上から順に見ます。文は capture-workbench が作り、台帳は語だけを返します。
+`health` は上から順に見ます。文は capture-workbench が作り、capture-ledger は語だけを返します。
 
 | `health`  | 条件                                                              |
 | --------- | ----------------------------------------------------------------- |

@@ -339,7 +339,7 @@ describe("合本を書く", () => {
     expect(queries[3]?.parameters).toEqual([1, CRAWL, 1]);
   });
 
-  it("台帳が指す版は前へだけ —— 書き終えた版がいまより大きいときだけ差し替え、理由を消す", async () => {
+  it("capture-ledger が指す版は前へだけ —— 書き終えた版がいまより大きいときだけ差し替え、理由を消す", async () => {
     const { queries } = await post({ results: results({ rev: 7 }) });
     const pointer = queries.find((query) =>
       query.sql.startsWith('update "crawls" set "replay_bundle_rev"'),
@@ -728,7 +728,7 @@ describe("署名が付かなければ、署名なしで書いて理由を残す�
 
 /**
  * 作り直しの道具 (`pnpm run replay-bundle:rebuild`) が、合本を書く前に打つ。027 より前の行は `crawl_id` が空なので、
- * 台帳の他のエンドポイントと同じ `crawl_pages.task_id` でクロールに繋ぐ。
+ * capture-ledger の他のエンドポイントと同じ `crawl_pages.task_id` でクロールに繋ぐ。
  */
 describe("027 より前のアーカイブをクロールに繋ぐ（作り直しの道具）", () => {
   it("crawl_id が空で、そのクロールの頁の行が同じ task_id を持つ物だけに入れる", async () => {

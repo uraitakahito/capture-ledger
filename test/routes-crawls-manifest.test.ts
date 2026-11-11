@@ -3,7 +3,7 @@
  *
  * これは配線の試験。場所を鍵に直す判断は `manifest-outcome.test.ts` が、鍵で読む段取りは
  * `admit-level.test.ts` が見ている。ここで見るのは **その判断が、書き留める値と読みに行く
- * 鍵の両方に届いているか**。片方だけ届いていると、台帳には鍵が在るのに段の登録は別の
+ * 鍵の両方に届いているか**。片方だけ届いていると、capture-ledger には鍵が在るのに段の登録は別の
  * 鍵を読む (あるいはその逆) という食い違いが、どの単体試験にも映らない。
  *
  * `admitLevel` は偽物にして呼ばれ方だけを記録する。
@@ -28,7 +28,7 @@ const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organiz
 let inserted: unknown[];
 /** クロールが固定したスクリプト。報告の `compiled` と突き合わされる (`crawl/compiled.ts`)。 */
 let fakeScripts: CrawlScript[] = [];
-/** 走った JS の hash と変換の記録。台帳側で必須なので、どの報告にも載せる。 */
+/** 走った JS の hash と変換の記録。capture-ledger 側で必須なので、どの報告にも載せる。 */
 const COMPILED = { typescript: "6.0.3", hostTypes: "v0.2.0", scripts: [] };
 
 const fakeDb = {
@@ -118,7 +118,7 @@ const report = async (results: Record<string, unknown>[]): Promise<number> => {
   }
 };
 
-/** 本文を丸ごと指定して投げる。status と、台帳の言い分。 */
+/** 本文を丸ごと指定して投げる。status と、capture-ledger の言い分。 */
 const post = async (
   payload: Record<string, unknown>,
 ): Promise<{ status: number; body: Record<string, unknown> }> => {

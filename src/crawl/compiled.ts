@@ -4,7 +4,7 @@ import type { CrawlScript } from "../db/database.js";
  * 段の報告が運ぶ「何が走ったか」の後半 —— 変換サービスが返した JS の sha256 と、
  * 何で (typescript の版)・何に向けて (受け皿の型の tag) 変換したか。
  *
- * 台帳の `crawls.scripts` が持つ `sha256` は TS のバイト列に打った物で、archive に残るのは JS。
+ * capture-ledger の `crawls.scripts` が持つ `sha256` は TS のバイト列に打った物で、archive に残るのは JS。
  * その間を継ぐ JS の sha256 は、これが来るまで Windmill の job の結果にしか無かった。
  */
 export interface CompiledReport {
@@ -26,9 +26,9 @@ const keyOf = (s: { id: string; version: number }): string => `${s.id}@${String(
  * (`test/crawl-compiled.test.ts`)。route はこの答えをそのまま status にする。
  *
  * - スクリプト 1 本ごとに、同じ id と版の報告が要る。無ければ 400 —— 載せ忘れた flow を黙って通さない
- * - 報告にだけ在る id も 400。固定したスクリプトに無い物が走ったという主張は、台帳では確かめようが無い
+ * - 報告にだけ在る id も 400。固定したスクリプトに無い物が走ったという主張は、capture-ledger では確かめようが無い
  * - 前の段で写した値と違えば 409。同じクロールの中で JS が変わるのは、変換サービスが途中で
- *   替わったということ。黙って上書きすると「どの JS が走ったか」を台帳が言えなくなる
+ *   替わったということ。黙って上書きすると「どの JS が走ったか」を capture-ledger が言えなくなる
  * - 全部が前の段と同じなら `changed: false` (書き直す物が無い)
  */
 export const mergeCompiled = (

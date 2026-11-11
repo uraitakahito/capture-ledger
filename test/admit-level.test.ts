@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * 段の報告から台帳へ載せる経路。
+ * 段の報告から capture-ledger へ載せる経路。
  *
  * いちばん見たいのは **失敗の報告も一度は当たってみること**。報告は flow が BrowserHive の
  * 答えをどう受け取ったかで、正本は BrowserHive が成果物の隣に書く manifest —— 食い違えば
- * manifest を採る。もう 1 つは **取り込みのログの数を、台帳に入るかどうかと関わらずに返す
- * こと**。時間切れや失敗の取り込みは WACZ を持たずに台帳から弾かれるが、行を読みたいのは
+ * manifest を採る。もう 1 つは **取り込みのログの数を、`archives` に入るかどうかと関わらずに返す
+ * こと**。時間切れや失敗の取り込みは WACZ を持たずに `archives` から弾かれるが、行を読みたいのは
  * そちらのほう。
  *
  * `getJsonObject` と `admitArchive` を偽物にしてある。この関数の仕事は「報告された鍵で
@@ -60,7 +60,7 @@ beforeEach(() => {
   vi.mocked(readManifest).mockClear();
 });
 
-describe("台帳に載せる", () => {
+describe("capture-ledger に載せる", () => {
   it("manifest が在れば載せ、その URL を返す", async () => {
     vi.mocked(getJsonObject).mockResolvedValue(manifest("t1"));
     vi.mocked(admitArchive).mockResolvedValue({ archiveId: 7 } as never);
@@ -104,7 +104,7 @@ describe("台帳に載せる", () => {
     expect(admitArchive).not.toHaveBeenCalled();
   });
 
-  it("台帳が受け付けなかったものは返さない", async () => {
+  it("capture-ledger が受け付けなかったものは返さない", async () => {
     // `admitArchive` は成功かつ wacz が在るときだけ行を作る。失敗した取り込みの
     // manifest は在るので、**manifest が在ること自体は成功の証拠にならない**。
     vi.mocked(getJsonObject).mockResolvedValue(manifest("t4"));
@@ -117,7 +117,7 @@ describe("台帳に載せる", () => {
   });
 
   it("1 件が落ちても残りを進める", async () => {
-    // 遅れて拾えるものは遅れてよい。台帳が遅れることよりクロールが止まるほうが重い。
+    // 遅れて拾えるものは遅れてよい。記録が遅れることよりクロールが止まるほうが重い。
     vi.mocked(getJsonObject)
       .mockRejectedValueOnce(new Error("S3 に届かない"))
       .mockResolvedValueOnce(manifest("t6"));
@@ -150,7 +150,7 @@ describe("台帳に載せる", () => {
    * どのクロールの取り込みか (`027`) は、報告を受けたクロールの id。manifest の correlationId は申し合わせなので
    * 読まない —— 見本の manifest はわざと別の correlationId を持つ。
    */
-  it("台帳に入れるとき、報告を受けたクロールの id を渡す（manifest の correlationId ではない）", async () => {
+  it("登録するとき、報告を受けたクロールの id を渡す（manifest の correlationId ではない）", async () => {
     vi.mocked(getJsonObject).mockResolvedValue({ ...manifest("t9"), correlationId: "other" });
     vi.mocked(admitArchive).mockResolvedValue({ archiveId: 10 } as never);
 
@@ -173,7 +173,7 @@ describe("台帳に載せる", () => {
 });
 
 /**
- * 取り込みのログの数 (`025`)。数を取るのは `readManifest` の後・`admitArchive` の前で、台帳に入るかどうかとは
+ * 取り込みのログの数 (`025`)。数を取るのは `readManifest` の後・`admitArchive` の前で、`archives` に入るかどうかとは
  * 関わらない。返した数を `crawl_pages` に書くのは呼ぶ側 (`api/crawls.ts`)。
  */
 describe("取り込みのログの数を返す", () => {
@@ -191,7 +191,7 @@ describe("取り込みのログの数を返す", () => {
     log,
   });
 
-  it("WACZ が無く台帳に入らなくても、数は返る（数を取るのは admitArchive の前）", async () => {
+  it("WACZ が無く `archives` に入らなくても、数は返る（数を取るのは admitArchive の前）", async () => {
     vi.mocked(getJsonObject).mockResolvedValue(timedOut("t9"));
     vi.mocked(admitArchive).mockResolvedValue({ reason: "no-archive" });
 

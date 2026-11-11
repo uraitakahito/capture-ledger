@@ -15,7 +15,7 @@
  *   `resources[].hash` に載せる。`index_empty` は `indexes/index.cdxj` が空 (または無い)、あるいは BrowserHive の答えの
  *   `waczStats.totalRecorded` が 0 —— **記録が 0 の WACZ** で、合本から外す (replay は長さ 0 の Range を求め、保管庫の
  *   416 で JSON を読み直し続ける)。`inspected_at` が NULL の行が「まだ検めていない」。
- * - `replay_bundle_rev` —— その WACZ が最初に入った合本の版。頁が、台帳の指す合本に入っているかを言うため
+ * - `replay_bundle_rev` —— その WACZ が最初に入った合本の版。頁が、capture-ledger の指す合本に入っているかを言うため
  *   (`版 ≤ crawls.replay_bundle_rev`)。
  *
  * 検めた行は 3 つの値を必ず持つ (CHECK)。検めるのは 1 つの UPDATE で 4 つを一緒に書く (`replay-bundle/inspect.ts`)。
@@ -33,10 +33,10 @@
  *
  * `ts` を text で持つのは、行のまま写すため (合本の約束)。timestamptz に通すと `…57Z` が `…57.000Z` に変わる。
  *
- * ## crawls: 版の払い出しと、台帳が指す版
+ * ## crawls: 版の払い出しと、capture-ledger が指す版
  *
  * - `replay_bundle_next_rev` —— 次に払い出す版 (1 から)。合本を作るたびに行の更新で原子的に払い出す。
- * - `replay_bundle_rev`・`_key`・`_pages`・`_built_at` —— 台帳が指す合本 (書き終えた版のうち最も大きい物)。
+ * - `replay_bundle_rev`・`_key`・`_pages`・`_built_at` —— capture-ledger が指す合本 (書き終えた版のうち最も大きい物)。
  *   **前へだけ進める**: 書き終えた版がいまより大きいときだけ差し替える。段 N+1 の報告は段 N の合本より先に来うる
  *   ので、遅れて書き終えた古い版が新しい版を戻さないように。`_key` は `replay.json` の鍵
  *   (`org/<orgId>/crawls/<crawlId>/r<版>/replay.json`)。

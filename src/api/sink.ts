@@ -195,7 +195,7 @@ export const registerSinkRoutes = (app: FastifyInstance, deps: SinkDeps): void =
 
         // **クロールを作ったときに決めた場所へ置く。** ここで組み直さない —— いまの時刻から
         // 導くと、月をまたいだクロールの成果物が 2 つの接頭辞に分かれる。記録の無い行だけ
-        // 従来の綴りに落ちる。置いた場所は応答の `location` で返り、台帳はそれしか読まない。
+        // 従来の綴りに落ちる。置いた場所は応答の `location` で返り、capture-ledger はそれしか読まない。
         const key = (crawl.artifactKeyPrefix ?? sinkObjectKey(crawl.orgId, "")) + filename;
         await putObject(
           s3,
@@ -209,7 +209,7 @@ export const registerSinkRoutes = (app: FastifyInstance, deps: SinkDeps): void =
         log.debug({ crawlId, filename, location, bytes: body.length }, "Stored artifact from sink");
 
         // **location を返すことが契約の要。** BrowserHive はこれをそのまま報告に載せるので、
-        // 台帳の `parseS3Uri` は今までどおり動く。
+        // capture-ledger の `parseS3Uri` は今までどおり動く。
         return reply.code(200).send({ location });
       },
     );

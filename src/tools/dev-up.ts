@@ -124,7 +124,7 @@ const STEPS: Step[] = [
     skipIf: { label: "seaweedfs", port: 8333 },
   },
   { id: "stack", run: "pnpm run stack:up" },
-  // 全文検索 (CAPTURE-53。台帳の API は検索が無いと起動しない)。**サービス名を付けて** profile search の
+  // 全文検索 (CAPTURE-53。capture-ledger の API は検索が無いと起動しない)。**サービス名を付けて** profile search の
   // opensearch だけを起こす —— 名前を付け忘れると stack の全部のコンテナが作り直される (2026-11-01 に
   // host の API が DB の切断で落ちた)。答えているなら作り直さない: volume を持たないので、作り直すと
   // 索引が空になる (戻すのは pnpm run search:reindex)。

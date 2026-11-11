@@ -3,7 +3,7 @@
  *
  * ## なぜ Floci か
  *
- * 本番の IdP は Amazon Cognito。台帳はトークンを Cognito の形で確かめる
+ * 本番の IdP は Amazon Cognito。capture-ledger はトークンを Cognito の形で確かめる
  * (`src/api/identity.ts`: 署名・`iss`・`exp`・`token_use`・`client_id`)。手元でも同じ形の
  * トークンを出す物が要るので、Cognito を真似る Floci を compose のサービス `idp` に置く
  * (CAPTURE-185)。プールや利用者を作るのは Cognito の管理の API で、本番では AWS の側で作る。
@@ -110,7 +110,7 @@ export const readEnvFile = (path: string): Record<string, string> => {
   return values;
 };
 
-/** 引き渡しファイルを読む。`root` は台帳の根（既定はこの repo）。 */
+/** 引き渡しファイルを読む。`root` は capture-ledger の根（既定はこの repo）。 */
 export const readHandoff = (root: string = ROOT) => readEnvFile(resolve(root, IDP_HANDOFF));
 
 /** 引き渡しファイルを書く（全部を置き換える）。値は印字しない —— secret が混じる。 */

@@ -10,7 +10,7 @@
  *   4. 通らなければ、検査の答えを足してもう 1 度。**会話は継ぎ足すだけ** —— Claude Opus 5.5 は
  *      thinking の塊をその会話に結び付けるので、前の turn を書き換えない
  *
- * 直してよいのはその場の TS だけで、台帳のスクリプトは読ませるが変えさせない。送るのは書いた source・
+ * 直してよいのはその場の TS だけで、登録済みのスクリプトは読ませるが変えさせない。送るのは書いた source・
  * 一緒に走るスクリプト・型の誤り・受け皿の型だけ (頁の文字・変数の値・シークレットは送らない)。
  * 確かめられるのは型が通ることだけで、動きが正しいかは人が差分を読み、試し撮りで確かめる。
  *
@@ -241,7 +241,7 @@ export const refusalOf = (hunks: readonly FixHunk[], lineCount: number): string 
 const describe = (d: Attributed): string =>
   `- ${d.script ?? d.file ?? "?"}:${String(d.line ?? "?")}:${String(d.col ?? "?")} ${d.code} ${d.message}`;
 
-/** 決まりの文。受け皿の型は台帳の写し (`host_types` のいちばん新しい版)。 */
+/** 決まりの文。受け皿の型は capture-ledger の写し (`host_types` のいちばん新しい版)。 */
 export const systemPrompt = ({
   typescript,
   hostTypes,

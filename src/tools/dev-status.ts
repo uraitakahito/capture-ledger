@@ -235,7 +235,7 @@ if (store === undefined) {
 }
 
 // ── 定期実行 ────────────────────────────────────────────────────────
-// 周回は台帳の API の中で動く。予定の数と次の回を DB から言う。詳しいことは workbench のタブ「定期実行」。
+// 周回は capture-ledger の API の中で動く。予定の数と次の回を DB から言う。詳しいことは workbench のタブ「定期実行」。
 const databaseUrl = settingOf("DATABASE_URL");
 if (databaseUrl === undefined) {
   console.log(row("定期実行", "読めない (DATABASE_URL が無い)"));

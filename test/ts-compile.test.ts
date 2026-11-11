@@ -95,7 +95,7 @@ describe("ts-compile-service のクライアント", () => {
     });
   });
 
-  it("答えの宣言は台帳の決まりに通す —— 形の悪い名前は、通ったとも誤りが無いとも読まない", async () => {
+  it("答えの宣言は capture-ledger の決まりに通す —— 形の悪い名前は、通ったとも誤りが無いとも読まない", async () => {
     // 名前は Windmill の変数の path に繋がる。サービスの答えでも `../` を通さない
     answering(200, {
       typescript: "6.0.3",

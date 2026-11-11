@@ -274,7 +274,7 @@ describe("readManifest", () => {
     );
   });
 
-  /** BrowserHive が項目を足す版上げで、台帳が止まらないため。 */
+  /** BrowserHive が項目を足す版上げで、capture-ledger が止まらないため。 */
   it("契約に無い項目は通す", () => {
     expect(readManifest({ ...v12Manifest, addedInV13: 1 }).taskId).toBe("01J8Z0");
   });

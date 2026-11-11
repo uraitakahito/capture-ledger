@@ -78,7 +78,7 @@ export interface DispatchedCrawl {
   variables: Record<string, string>;
   /**
    * 宣言で結んだシークレット (名前 → Windmill の変数の path)。**必ず載せる** (空なら `{}`)。値は無い ——
-   * 解くのは flow の `crawl_host` で、BrowserHive に送る直前に読む。台帳・webhook・WACZ が持つのは名前と path だけ。
+   * 解くのは flow の `crawl_host` で、BrowserHive に送る直前に読む。capture-ledger・webhook・WACZ が持つのは名前と path だけ。
    */
   secrets: Record<string, string>;
   /**
@@ -105,7 +105,7 @@ export type ReplayBundleWriter = (
 ) => Promise<ReplayBundleResult | undefined>;
 
 /**
- * flow へ渡す形は変えない。報告で写した JS の hash と変換の記録は台帳の物で、
+ * flow へ渡す形は変えない。報告で写した JS の hash と変換の記録は capture-ledger の物で、
  * 変換サービスと BrowserHive には見せない (見せても読まないが、契約を 1 つに保つ)。
  */
 export const toDispatched = ({
@@ -263,7 +263,7 @@ export const crawlValues = (
     requestedBy: who.subject,
     // 解決済みの写し。並びが実行順。
     scripts: JSON.stringify(prepared.scripts),
-    // クロールごとの値。変数は値ごと、シークレットは path と更新時刻だけ (値は台帳を通らない)
+    // クロールごとの値。変数は値ごと、シークレットは path と更新時刻だけ (値は capture-ledger を通らない)
     variables: JSON.stringify(prepared.variables),
     secrets: JSON.stringify(prepared.secrets),
     // 打った字のまま。解いた字は WACZ の settings.userAgent に残る

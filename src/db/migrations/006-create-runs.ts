@@ -39,7 +39,7 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     // `running` / `succeeded` / `failed`。CHECK は置かない —— 値を増やすときに
     // migration が要るのは、この段階では窮屈すぎる。
     .addColumn("status", "text", (col) => col.notNull())
-    // 何が起こしたか。API 経由か、CLI か。台帳の `submitted_by` は実行の身元であって
+    // 何が起こしたか。API 経由か、CLI か。capture-ledger の `submitted_by` は実行の身元であって
     // 起動した者ではないので、それはここで別に覚える。
     .addColumn("trigger", "text", (col) => col.notNull())
     .addColumn("started_at", "timestamptz", (col) => col.notNull().defaultTo(sql`now()`))

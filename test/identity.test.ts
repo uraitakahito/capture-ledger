@@ -282,7 +282,7 @@ describe("jwtIdentityResolver", () => {
 });
 
 /**
- * 機械 (M2M) の組織。トークンに群が無いので、台帳が OpenFGA に保存した許可から引く。
+ * 機械 (M2M) の組織。トークンに群が無いので、capture-ledger が OpenFGA に保存した許可から引く。
  * 引く関数は server.ts が `submitterOrganizations` を渡す。ここでは呼ばれ方を見る。
  */
 describe("jwtIdentityResolver の機械の組織", () => {

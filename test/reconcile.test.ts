@@ -9,7 +9,7 @@ import { recordingDb } from "./recording-db.js";
  *
  * **何を問うたか**を正面から見る。この repo には DB を立てる試験の土台が無いので、
  * Kysely の問い合わせは形だけを真似て、`where` に渡した条件を記録する。答えは偽物の行。
- * S3 と台帳への書き込みも偽物で、見るのは「どの鍵を読み、結果をどう数えたか」。
+ * S3 と capture-ledger への書き込みも偽物で、見るのは「どの鍵を読み、結果をどう数えたか」。
  */
 vi.mock("../src/archive/s3.js", () => ({ getJsonObject: vi.fn() }));
 vi.mock("../src/archive/admit.js", () => ({ admitArchive: vi.fn() }));
@@ -97,7 +97,7 @@ describe("reconcile は記録された鍵だけを読む", () => {
    * **鍵は組み直さない。** 見本は BrowserHive の命名規則では作れず、一覧を URL 符号化から
    * 戻す読み方でも化ける綴り (空白と `+`) にしてある。
    */
-  it("報告された鍵を、そのまま読んで台帳に入れる", async () => {
+  it("報告された鍵を、そのまま読んで capture-ledger に入れる", async () => {
     const { db } = fakeDb([row("elsewhere/x y+z.result.json")]);
     vi.mocked(getJsonObject).mockResolvedValue({ taskId: TASK });
     vi.mocked(admitArchive).mockResolvedValue({ archiveId: "a1" });
@@ -110,7 +110,7 @@ describe("reconcile は記録された鍵だけを読む", () => {
   });
 
   // 一覧を挟まないので「消えた」とは言えない。報告された場所に無い、と数える。
-  it("場所に無ければ missing に数え、台帳には触らない", async () => {
+  it("場所に無ければ missing に数え、capture-ledger には触らない", async () => {
     const { db } = fakeDb([row("nothing-here.result.json")]);
     vi.mocked(getJsonObject).mockResolvedValue(undefined);
 
@@ -124,7 +124,7 @@ describe("reconcile は記録された鍵だけを読む", () => {
    * 契約の形でない manifest (v11 以前の protobuf JSON など)。`readManifest` が投げるが、
    * 1 件で回し全体を止めない —— 次の行は読めるので、飛ばして数え、残りを続ける。
    */
-  it("読めない manifest は skipped に数え、台帳には触らず、次の行へ進む", async () => {
+  it("読めない manifest は skipped に数え、capture-ledger には触らず、次の行へ進む", async () => {
     const { db } = fakeDb([row("v11.result.json"), row("v12.result.json")]);
     vi.mocked(getJsonObject).mockResolvedValue({ taskId: TASK });
     vi.mocked(readManifest)
@@ -141,7 +141,7 @@ describe("reconcile は記録された鍵だけを読む", () => {
   });
 
   // 成果物の無い manifest (時間切れ・失敗など)。manifest は在るので missing ではない。
-  it("台帳が受け付けなかったものは skipped", async () => {
+  it("capture-ledger が受け付けなかったものは skipped", async () => {
     const { db } = fakeDb([row("timeout.result.json")]);
     vi.mocked(getJsonObject).mockResolvedValue({ taskId: TASK });
     vi.mocked(admitArchive).mockResolvedValue({ reason: "no-archive" });
@@ -159,7 +159,7 @@ describe("reconcile は記録された鍵だけを読む", () => {
    * manifest を書けなかった取り込みには鍵が無い。**問い合わせの段階で外す** ——
    * `$narrowType` は型を言い張るだけなので、この条件を消しても typecheck は緑のまま。
    */
-  it("鍵の無い行と、台帳に在る行は問わない", async () => {
+  it("鍵の無い行と、`archives` に在る行は問わない", async () => {
     const { db, wheres } = fakeDb([]);
 
     await reconcile(db, S3, "b");
@@ -206,7 +206,7 @@ describe("reconcile は記録された鍵だけを読む", () => {
 });
 
 /**
- * 取り込みのログの数 (`025`)。段の登録が manifest を読めなかったページの穴を埋める。WACZ の無い取り込みは台帳に
+ * 取り込みのログの数 (`025`)。段の登録が manifest を読めなかったページの穴を埋める。WACZ の無い取り込みは `archives` に
  * 入らないので回すたびに来る —— 埋めるのは NULL の行だけ (書いた数を書き直さない)。
  */
 describe("reconcile は取り込みのログの数を、まだ読んでいないページの行に埋める", () => {
@@ -229,7 +229,7 @@ describe("reconcile は取り込みのログの数を、まだ読んでいない
         ],
       },
     ]);
-    // 台帳に入らなくても (WACZ の無い取り込み) 数は埋まる
+    // `archives` に入らなくても (WACZ の無い取り込み) 数は埋まる
     expect(result).toEqual({ pending: 1, registered: 0, skipped: 1, missing: 0, counted: 1 });
   });
 

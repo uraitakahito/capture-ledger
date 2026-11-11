@@ -264,7 +264,7 @@ describe("索引のエンドポイント", () => {
     const app = await build({
       search: fakeSearch([]) as never,
       fga: { check: () => Promise.resolve({ allowed: false }) } as never,
-      pendingOf: () => Promise.reject(new Error("台帳を引いた")),
+      pendingOf: () => Promise.reject(new Error("capture-ledger を引いた")),
     });
     expect((await post(app)).statusCode).toBe(404);
     await app.close();

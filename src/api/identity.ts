@@ -80,7 +80,7 @@ export interface JwtCheck {
   clientIds: readonly string[];
   /**
    * 機械（M2M）の組織を引く。M2M のトークンには `cognito:groups` が載らないので、
-   * 台帳が OpenFGA に保存した許可から決める。渡さなければ、機械の組織は空のまま。
+   * capture-ledger が OpenFGA に保存した許可から決める。渡さなければ、機械の組織は空のまま。
    */
   machineOrganizations?: (subject: string) => Promise<string[]>;
 }

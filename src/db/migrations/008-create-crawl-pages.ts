@@ -53,7 +53,7 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     // `skipped` は範囲外・robots・上限で落としたもので、**取らなかった理由が残る**。
     .addColumn("state", "text", (col) => col.notNull())
     .addColumn("skip_reason", "text")
-    // BrowserHive が返した id。台帳の行と繋がる。
+    // BrowserHive が返した id。capture-ledger の行と繋がる。
     .addColumn("task_id", "text")
     .addColumn("correlation_id", "text")
     // どのページから見つけたか。木の形はこれで復元できる。起点は NULL。

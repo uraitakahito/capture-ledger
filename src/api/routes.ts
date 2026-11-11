@@ -72,7 +72,7 @@ export const registerRoutes = (app: FastifyInstance, deps: RouteDeps): void => {
         .where("id", "=", id)
         .executeTakeFirst();
 
-      // モデル上は許されているが台帳に無い: tuple がアーカイブより長生きした場合。
+      // モデル上は許されているが capture-ledger に無い: tuple がアーカイブより長生きした場合。
       // 同じ 404 —— 署名する相手が無い。
       if (!location) {
         log.warn({ archiveId: id }, "Check allowed an archive that is not in the ledger");

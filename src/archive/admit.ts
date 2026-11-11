@@ -1,12 +1,12 @@
 /**
- * 終わった取り込みを台帳に **受け入れる** —— 行を入れ、それを到達可能にする tuple を
+ * 終わった取り込みを capture-ledger に **受け入れる** —— 行を入れ、それを到達可能にする tuple を
  * queue に積む。1 つのトランザクションで。
  *
  * ## なぜ `register` ではないのか
  *
  * 以前は `registerArchive` という名前だった。「登録する」は前半しか言っておらず、
  * **後半は「誰がそのアーカイブを読めるか」を決める部分**なのに、呼び出し箇所だけを
- * 読むと台帳に行を足しているようにしか見えなかった。
+ * 読むと capture-ledger に行を足しているようにしか見えなかった。
  *
  * 名前が短いことは引数に出ていた —— `orgId` と `submittedBy` は tuple のためだけに
  * 使われる。行を書くだけの操作が、なぜ誰が投げたかを知る必要があるのか、
@@ -39,7 +39,7 @@ export interface AdmitResult {
 }
 
 /**
- * 取り込みの報告から、台帳の 1 行を組む。
+ * 取り込みの報告から、capture-ledger の 1 行を組む。
  *
  * 挿入から切り出してあるのは、ここが**どの field を読むか**を決めている唯一の
  * 場所だから。トランザクションと `onConflict` は配管で、Postgres を立てないと
@@ -132,7 +132,7 @@ export const admitArchive = async (
       .returning("id")
       .executeTakeFirst();
 
-    // 既に台帳に在るということは、tuple も最初のときに queue へ積まれている。
+    // 既に capture-ledger に在るということは、tuple も最初のときに queue へ積まれている。
     // もう一度書いても害は無いが、意味も無い。
     if (!inserted) return { reason: "already-known" as const };
 
