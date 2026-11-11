@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 
 import Anthropic from "@anthropic-ai/sdk";
 
-import { fixModelOf } from "../claude/client.js";
+import { claudeOf } from "../claude/client.js";
 import { optional, required } from "../config/read-env.js";
 import type { CrawlScript } from "../db/database.js";
 import { fixInline } from "../scripts/fix.js";
@@ -86,7 +86,7 @@ const main = async (): Promise<void> => {
     base: optional("CAPTURE_LEDGER_TS_COMPILE_URL", "http://127.0.0.1:28080").replace(/\/+$/, ""),
     timeoutMs: 10_000,
   });
-  const model = fixModelOf(new Anthropic({ apiKey: required("CAPTURE_LEDGER_ANTHROPIC_API_KEY") }));
+  const claude = claudeOf(new Anthropic({ apiKey: required("CAPTURE_LEDGER_ANTHROPIC_API_KEY") }));
   let hostTypes: string;
   try {
     hostTypes = readFileSync(HOST_TYPES, "utf8");
@@ -117,7 +117,7 @@ const main = async (): Promise<void> => {
       hostTypes,
       tsCompile,
       variableNames,
-      model,
+      claude,
     });
     total += result.usd;
     if (result.kind === "fixed") fixed += 1;

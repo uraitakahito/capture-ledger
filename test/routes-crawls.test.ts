@@ -23,7 +23,10 @@ import {
   type TsCompile,
 } from "../src/scripts/ts-compile.js";
 import type { DerivationStore, NewDerivation } from "../src/derivations/store.js";
-import type { FixModel, FixOutput, FixReply } from "../src/scripts/fix.js";
+import type { Claude, ClaudeReply } from "../src/claude/types.js";
+import type { FixOutput } from "../src/scripts/fix.js";
+
+type FixReply = ClaudeReply<FixOutput>;
 
 /**
  * クロールを始めるエンドポイントの検査。
@@ -611,8 +614,8 @@ const depsWith = (opts: {
   windmill?: WindmillVariables;
   /** 型の検査のクライアント。省けば、宣言の無いスクリプトを全部通す偽物 */
   tsCompile?: TsCompile;
-  /** 直す係の Claude・派生の層・月の上限。3 つ揃えば直しのエンドポイントが在る */
-  fixModel?: FixModel;
+  /** Claude のクライアント・派生の層・月の上限。3 つ揃えば直しのエンドポイントが在る */
+  claude?: Claude;
   derivations?: DerivationStore;
   claudeBudgetUsd?: number;
   /** 締めた後に書いた合本 (クロールの id と深さ) を積む。 */
@@ -632,7 +635,7 @@ const depsWith = (opts: {
     capture: parseCaptureFormats(opts.formats ?? "wacz", false),
     ...(opts.windmill && { windmill: opts.windmill }),
     tsCompile: opts.tsCompile ?? compilesAll,
-    ...(opts.fixModel && { fixModel: opts.fixModel }),
+    ...(opts.claude && { claude: opts.claude }),
     ...(opts.derivations && { derivations: opts.derivations }),
     ...(opts.claudeBudgetUsd !== undefined && { claudeBudgetUsd: opts.claudeBudgetUsd }),
     writeReplayBundle: (crawlId: string, depth: number | null) => {
@@ -1909,14 +1912,13 @@ describe("直しのエンドポイント", () => {
       },
     };
     const proposed: unknown[] = [];
-    const fixModel: FixModel = {
-      effort: "medium",
-      propose(request) {
+    const claude: Claude = {
+      ask<T>(request: Parameters<Claude["ask"]>[0]) {
         proposed.push(request);
         const next = opts.replies?.shift();
         return next === undefined
           ? Promise.reject(new Error("頼みが多すぎる"))
-          : Promise.resolve(next);
+          : Promise.resolve(next as unknown as ClaudeReply<T>);
       },
     };
     const rows: NewDerivation[] = [];
@@ -1927,7 +1929,7 @@ describe("直しのエンドポイント", () => {
         return Promise.resolve();
       },
     };
-    return { compiled, proposed, rows, tsCompile, fixModel, derivations };
+    return { compiled, proposed, rows, tsCompile, claude, derivations };
   };
 
   const startWithInline = async () => {
@@ -1955,7 +1957,7 @@ describe("直しのエンドポイント", () => {
         allowed: opts.allowed ?? true,
         ...(f && {
           tsCompile: f.tsCompile,
-          fixModel: f.fixModel,
+          claude: f.claude,
           derivations: f.derivations,
           claudeBudgetUsd: opts.budget ?? 5,
         }),
@@ -2102,7 +2104,7 @@ describe("直しのエンドポイント", () => {
     const app = await buildApp({
       ...unreachableDeps,
       tsCompile: f.tsCompile,
-      fixModel: f.fixModel,
+      claude: f.claude,
       derivations: f.derivations,
     });
     const res = await app.inject({

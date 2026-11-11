@@ -36,7 +36,7 @@ import { signerFromEnv } from "../config/signer.js";
 import { createReplayBundleSigner } from "../replay-bundle/sign.js";
 import { writeReplayBundle } from "../replay-bundle/write.js";
 import { createTsCompile } from "../config/ts-compile.js";
-import { claudeBudgetUsd, createFixModel } from "../config/claude.js";
+import { claudeBudgetUsd, createClaude } from "../config/claude.js";
 import { derivationStoreOf } from "../derivations/store.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerSinkRoutes, type SinkConfig } from "./sink.js";
@@ -213,8 +213,8 @@ const start = async (options: ServerOptions): Promise<void> => {
           "(POST /api/crawls asks ts-compile-service whether the required variables are given)",
       );
     }
-    const fixModel = createFixModel();
-    if (fixModel === undefined) {
+    const claude = createClaude();
+    if (claude === undefined) {
       logger.info(
         "CAPTURE_LEDGER_ANTHROPIC_API_KEY is not set — /api/crawls/:id/inline/:name/fix is not served",
       );
@@ -237,8 +237,8 @@ const start = async (options: ServerOptions): Promise<void> => {
       ...(sink && { sink }),
       ...(windmill && { windmill }),
       tsCompile,
-      ...(fixModel && {
-        fixModel,
+      ...(claude && {
+        claude,
         derivations: derivationStoreOf(db),
         claudeBudgetUsd: claudeBudgetUsd(),
       }),

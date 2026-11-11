@@ -449,9 +449,11 @@ export interface CrawlDecisionsTable {
  */
 export interface DerivationsTable {
   id: string;
-  kind: "fix";
+  kind: "fix" | "change";
   orgId: string;
   crawlId: string | null;
+  /** `034`。何のアーカイブについての物か (無ければ NULL)。 */
+  archiveId: ColumnType<string | null, string | null | undefined, string | null>;
   target: ColumnType<Record<string, unknown>, string, string>;
   inputSha256: string;
   model: string;

@@ -2,17 +2,19 @@ import { createHash } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
+import {
+  ClaudeUnavailable,
+  type Claude,
+  type ClaudeMessage,
+  type ClaudeReply,
+} from "../src/claude/types.js";
 import type { CrawlScript } from "../src/db/database.js";
 import {
   applyEdits,
-  ClaudeUnavailable,
   fixInline,
   numbered,
   refusalOf,
-  type FixMessage,
-  type FixModel,
   type FixOutput,
-  type FixReply,
   systemPrompt,
 } from "../src/scripts/fix.js";
 import type { CompileAnswer, TsCompile } from "../src/scripts/ts-compile.js";
@@ -56,6 +58,8 @@ const USAGE = {
   cache_creation_input_tokens: 0,
 };
 
+type FixReply = ClaudeReply<FixOutput>;
+
 const reply = (output: FixOutput | null, extra: Partial<FixReply> = {}): FixReply => ({
   output,
   content: [
@@ -70,14 +74,19 @@ const reply = (output: FixOutput | null, extra: Partial<FixReply> = {}): FixRepl
 
 /** 決めた答えを順に返す偽の Claude。頼まれた会話を写して控える。 */
 const fakeModel = (replies: (FixReply | Error)[]) => {
-  const asked: { system: string; messages: FixMessage[] }[] = [];
-  const model: FixModel = {
-    effort: "medium",
-    propose(request) {
-      asked.push({ system: request.system, messages: structuredClone([...request.messages]) });
+  const asked: { system: string; messages: ClaudeMessage[]; effort: string }[] = [];
+  const model: Claude = {
+    ask<T>(request: Parameters<Claude["ask"]>[0]) {
+      asked.push({
+        system: request.system,
+        messages: structuredClone([...request.messages]),
+        effort: request.effort,
+      });
       const next = replies.shift();
       if (next === undefined) throw new Error("頼みが多すぎる");
-      return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
+      return next instanceof Error
+        ? Promise.reject(next)
+        : Promise.resolve(next as unknown as ClaudeReply<T>);
     },
   };
   return { asked, model };
@@ -120,7 +129,7 @@ const STILL_BROKEN: CompileAnswer = {
   ],
 };
 
-const run = (model: FixModel, tsCompile: TsCompile) =>
+const run = (model: Claude, tsCompile: TsCompile) =>
   fixInline({
     scripts: SCRIPTS,
     inlineId: INLINE.id,
@@ -129,7 +138,7 @@ const run = (model: FixModel, tsCompile: TsCompile) =>
     hostTypes: "declare var __bh: unknown;",
     tsCompile,
     variableNames: ["query"],
-    model,
+    claude: model,
   });
 
 describe("置き換えを当てる", () => {

@@ -72,7 +72,8 @@ import {
   TsCompileUnreachable,
   type TsCompile,
 } from "../scripts/ts-compile.js";
-import { FIX_PROMPT_VERSION, fixInline, type FixModel, type FixResult } from "../scripts/fix.js";
+import type { Claude } from "../claude/types.js";
+import { FIX_EFFORT, FIX_PROMPT_VERSION, fixInline, type FixResult } from "../scripts/fix.js";
 import type { DerivationStore } from "../derivations/store.js";
 import {
   HOSTNAME,
@@ -188,10 +189,10 @@ export interface CrawlRouteDeps {
    */
   tsCompile: TsCompile;
   /**
-   * 直す係の Claude (`scripts/fix.ts`)。鍵が無ければ無い。`tsCompile` と `derivations` も揃ったときだけ
+   * Claude のクライアント (`claude/client.ts`。直す係 `scripts/fix.ts` が使う)。鍵が無ければ無い。`tsCompile` と `derivations` も揃ったときだけ
    * `POST /api/crawls/:id/inline/:name/fix` を出す (案は型の検査に通してから返し、費用は派生の層に残すため)。
    */
-  fixModel?: FixModel;
+  claude?: Claude;
   /** 派生の層 (`026`) の store。月の上限を数え、Claude を呼んだ回を残す。 */
   derivations?: DerivationStore;
   /** 組織ごとの月の上限 (USD)。 */
@@ -371,7 +372,7 @@ type LogUnreadable =
   "not-captured" | "no-manifest" | "manifest-missing" | "manifest-invalid" | "no-log";
 
 export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps): void => {
-  const { db, fga, resolveIdentity, dispatch, capture, sink, tsCompile, fixModel, derivations } =
+  const { db, fga, resolveIdentity, dispatch, capture, sink, tsCompile, claude, derivations } =
     deps;
   const { bundleAfterClose, dispatchLevel } = levelDispatcher({
     db,
@@ -958,7 +959,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 誤りが登録済みのスクリプトにだけ在る (422)・組織の月の上限に届いた (429) ときは、Claude を呼ばない。
    * Claude を呼んだ回は、答えがどれでも派生の層 (`026`) に残す。本文は `{}` (何も選ばせない)。
    */
-  if (fixModel !== undefined && derivations !== undefined) {
+  if (claude !== undefined && derivations !== undefined) {
     const budgetUsd = deps.claudeBudgetUsd ?? 0;
     const money = (usd: number) => Number(usd.toFixed(4));
     const usageOf = (r: FixResult) => ({
@@ -1064,7 +1065,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           hostTypes: host?.source ?? "(受け皿の型が登録されていない。scripts import を流すと入る)",
           tsCompile,
           variableNames,
-          model: fixModel,
+          claude,
         });
         if (result.rounds > 0) {
           await derivations.record({
@@ -1075,7 +1076,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             inputSha256: result.inputSha256,
             model: result.models.join(","),
             promptVersion: FIX_PROMPT_VERSION,
-            effort: fixModel.effort,
+            effort: FIX_EFFORT,
             rounds: result.rounds,
             output: outputOf(result),
             usage: { ...result.usage },
