@@ -1,0 +1,34 @@
+# CAPTURE-185 段 0 の試し。merge しない（draft の PR で 1 回走らせて消す）。
+# Floci（Cognito の代役）を service に立て、人と機械のトークンを台帳がこれから使う式で確かめる。
+name: floci-spike
+on:
+  pull_request:
+    paths: [".github/workflows/floci-spike.yaml", ".github/floci-spike/**"]
+permissions:
+  contents: read
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      floci:
+        image: docker.io/floci/floci:2.4.0@sha256:5ee85db604c4aa74ac76e07ea5cc83086f37bb472bf3dbb97e34019e48efae9c
+        ports:
+          - 4566:4566
+        env:
+          FLOCI_BASE_URL: http://localhost:4566
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - run: npm install --no-audit --no-fund
+        working-directory: .github/floci-spike
+      - name: Floci が答えるまで待つ
+        run: |
+          for i in $(seq 1 120); do curl -s -o /dev/null http://localhost:4566/ && exit 0; sleep 1; done; exit 1
+      - run: node spike.mjs http://localhost:4566
+        working-directory: .github/floci-spike
+        env:
+          AWS_CONFIG_FILE: /dev/null
+          AWS_SHARED_CREDENTIALS_FILE: /dev/null
