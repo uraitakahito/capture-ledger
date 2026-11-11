@@ -302,7 +302,9 @@ open http://127.0.0.1:7080/
 ```
 
 [capture-workbench](https://github.com/uraitakahito/capture-workbench) is **one row per crawl**: state, pages
-captured, how many WACZ, and links out to the run (Windmill) and to replayweb-server. On the archives
+captured, how many WACZ, and links out to the run (Windmill) and to two viewers (“ReplayWeb.page ↗” on
+[replayweb-server](https://github.com/uraitakahito/replayweb-server) and “Web Capture ↗” on
+[capture-player](https://github.com/uraitakahito/capture-player)). On the archives
 face, each row's 検証 (Validate) button reports **whether what was captured matches the WACZ
 spec** — answered by [wacz-validator](https://github.com/uraitakahito/wacz-validator), which is
 handed a URL the ledger signed, so **no store credentials are added anywhere**. The row's

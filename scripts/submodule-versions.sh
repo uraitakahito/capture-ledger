@@ -31,7 +31,7 @@
 #
 #   BROWSERHIVE_TAG=v8.12.0-wip pnpm run stack:up
 
-# 版を渡せるのはこの 3 つだけ。wacz-signer / tsa / chromium-server-docker の Dockerfile は
+# 版を渡せるのはこの 4 つだけ。wacz-signer / tsa / chromium-server-docker の Dockerfile は
 # 版の ARG を持たない (上流の compose も渡していない)。
 _versions_for() {
   local prefix="$1" path="$2"
@@ -73,5 +73,6 @@ export_submodule_versions() {
   _versions_for BROWSERHIVE .upstream/browserhive || return 1
   _versions_for CAPTURE_FIXTURES .upstream/capture-fixtures || return 1
   _versions_for REPLAYWEB_SERVER .upstream/replayweb-server || return 1
+  _versions_for CAPTURE_PLAYER .upstream/capture-player || return 1
   echo
 }

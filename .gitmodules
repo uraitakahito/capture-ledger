@@ -13,3 +13,6 @@
 [submodule ".upstream/capture-scripts"]
 	path = .upstream/capture-scripts
 	url = https://github.com/uraitakahito/capture-scripts.git
+[submodule ".upstream/capture-player"]
+	path = .upstream/capture-player
+	url = https://github.com/uraitakahito/capture-player.git

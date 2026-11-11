@@ -13,8 +13,9 @@ That comes from the `.upstream/browserhive` submodule — read at build time wit
 the `chromium-server-docker` BrowserHive was tested against, the signing services
 (`wacz-signer`, `timestamp-authority`), and the OpenAPI document
 (`generated/openapi.json`) the manifest is checked against. It is not the only upstream
-pin: the object store's startup config comes from `.upstream/seaweedfs`, the WACZ viewer
-from `.upstream/replayweb-server`, the capture fixtures from `.upstream/capture-fixtures` and the
+pin: the object store's startup config comes from `.upstream/seaweedfs`, the WACZ viewers
+from `.upstream/replayweb-server` (unmodified ReplayWeb.page) and `.upstream/capture-player`
+(the modified Web Capture viewer), the capture fixtures from `.upstream/capture-fixtures` and the
 scripts from `.upstream/capture-scripts`. Each is pinned to its own tag and none moves
 with this one (the head of `docker-compose.yml` says why the ones the stack builds from are separate).
 
