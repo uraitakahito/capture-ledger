@@ -7,8 +7,7 @@
  *
  * picker（7070 の画面）に貼るトークンと、curl で台帳を叩くときに使う。利用者が無ければ作り、
  * `--org` の群に入れる（群の名前が組織の名前）。人の名乗りなので `sub` は Floci が付けた ID
- * になる —— クロールを始めるには、その `sub` に `pnpm run fga:grant submitter <sub> <組織>` が要る
- * （出力の 2 行目が言う）。
+ * になる —— クロールを始めるには `pnpm run idp:grant --user <名前>` が要る（その `sub` に許可を与える）。
  *
  * 機械（Windmill）のトークンは client credentials で取る物で、これとは別（capture-scheduler）。
  */

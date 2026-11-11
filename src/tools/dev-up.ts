@@ -166,7 +166,7 @@ const STEPS: Step[] = [
   },
   { id: "connect", run: `pnpm run connect ${relative(ROOT, SCHEDULER)}` },
   { id: "flow", run: "pnpm run windmill:push", cwd: SCHEDULER },
-  // 手元の Cognito の代役 (compose のサービス floci) にプール・client・利用者を用意し、
+  // 手元の Cognito の代役 (compose のサービス idp の Floci) にプール・client・利用者を用意し、
   // iss と client の ID を .env.local に書く。**connect の後に置く** —— 向こうの引き渡しが
   // 古い CAPTURE_LEDGER_OIDC_ISSUER を持っていても、こちらが後に書くので勝つ。api より前
   // (API は起動のときに .env.local を読む)。

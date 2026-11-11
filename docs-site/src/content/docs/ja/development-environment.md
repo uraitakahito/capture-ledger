@@ -76,7 +76,8 @@ OpenFGA の 2 つの ID は、走らせてみないと決まらないので雛�
 | `.env.local` | 道具   | 走らせてみないと決まらない値。git は無視する（生成物） |
 
 `.env.local` に書く道具は、`pnpm run fga:deploy`（OpenFGA の store id と model id）、
-`pnpm run connect`（capture-scheduler が渡す 4 行 —— クイックスタート §7）、
+`pnpm run connect`（capture-scheduler が渡す行 —— クイックスタート §7）、
+`pnpm run idp:bootstrap`（手元の IdP —— Identity Provider、身元を証明するサービス —— の issuer と client の ID。クイックスタート §7）、
 `pnpm run search:connect`（OpenSearch が答えた後の宛先 —— クイックスタート §3）です。
 分けてあるのは持ち主が違うからで、道具が人の書いた行を並べ替えたり消したりすると、
 次に何が起きたのか追えなくなります。
@@ -147,8 +148,7 @@ NAME=value     # 値を渡す
 
 ### ホストで動くもの
 
-スタックに入っていないものがあります。**`pnpm run oidc:issuer` (9099)・
-`pnpm run api` (7070)・[wacz-validator](https://github.com/uraitakahito/wacz-validator) の
+スタックに入っていないものがあります。**`pnpm run api` (7070)・[wacz-validator](https://github.com/uraitakahito/wacz-validator) の
 daemon (7180)・[capture-workbench](https://github.com/uraitakahito/capture-workbench) の
 `pnpm run dev` (7080) はホストのプロセス**で、コンテナではありません。
 
@@ -171,7 +171,7 @@ workbench が 7000 ではなく **7080** なのは、macOS の ControlCenter (Ai
 
 だから **`container-compose down` では消えません**。2026-09-20 に
 `EADDRINUSE: address already in use 127.0.0.1:9099` で止まったのはこれで、前の日に
-別のターミナルで起こした issuer が残っていました。スタックを落としたのに港が
+別のターミナルで起こした開発用の issuer（当時はホストで動いていました）が残っていました。スタックを落としたのに港が
 塞がっている、という形で出ます。
 
 ```sh
@@ -334,45 +334,84 @@ Kysely が `corrupted migrations` で止まります。表を消すなら、落�
 picker は、API がどちらで起きたかに合わせて欄を変えます —— 開発用ヘッダなら名乗りの 2 欄、
 JWT ならトークンの欄です（[アーカイブを見る](/capture-ledger/ja/picker/)）。
 
-### 開発用の issuer
+### 開発用の IdP（Floci）
 
 `CAPTURE_LEDGER_OIDC_ISSUER` を設定すると、API は **本番と同じ検証コード** を通ります
-—— 署名、`iss` / `aud` の照合、有効期限、JWKS の取得。本物の IdP が決まるまでは
-同梱の issuer を使います。
+—— 署名、`iss` の照合、有効期限、JWKS（JSON Web Key Set。`<iss>/.well-known/jwks.json` に在る公開鍵）の取得。
+そのうえで 2 つを確かめます。`token_use` が `access` であること（ID token は断ります）と、
+`client_id` が `CAPTURE_LEDGER_OIDC_CLIENT_IDS` に在ることです。`aud` は照らしません。
+Cognito の access token は `aud` を持たず、M2M（machine-to-machine。client credentials で取る機械の
+トークン）は持てないからです。ISSUER が在って CLIENT_IDS が空なら、API は起動しません。
+
+本番の IdP は Amazon Cognito です。
+手元では Cognito を真似る [Floci](https://github.com/floci-io/floci) が代わりを務めます。
+compose のサービス `idp` で、`127.0.0.1:4566` に出ています（コンテナからは `http://idp.capture-ledger:4566`）。
+`pnpm run dev:up` は段 `idp` と `grant` でこれを用意します。手で打つなら次のとおりです。
 
 ```bash
-pnpm run oidc:issuer                                   # :9099 に立つ
-export CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099
-TOKEN=$(pnpm run oidc:token --subject alice --org acme)
+pnpm run idp:bootstrap                 # プール・app client・自分の利用者を作り、.env.local に書く
+pnpm run idp:grant                     # windmill の client と自分の利用者に acme の submitter
+pnpm run api                           # 起こし直す。.env.local は起動のときに 1 度だけ読む
+TOKEN=$(pnpm run --silent idp:token)
 curl -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls
 ```
+
+`idp:bootstrap` が作るのは、プール `capture-ledger-dev`、resource server `capture-ledger` と
+scope `crawl`、群 `acme` と、その群に入れた `$(whoami)` の名前の利用者（群の名前が組織の名前です）、
+それに次の app client です。
+
+| app client  | 種類   | 使うもの                                                                                                                |
+| ----------- | ------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `workbench` | public | capture-workbench。authorization code と PKCE（Proof Key for Code Exchange）。戻り先は `http://127.0.0.1:7080/callback` |
+| `cli`       | public | `pnpm run idp:token`（パスワードの流れ）。picker や `curl` に貼るトークン                                               |
+| `windmill`  | secret | capture-scheduler のクロールの flow（client credentials）                                                               |
+
+書くのは、`.env.local` の `CAPTURE_LEDGER_OIDC_ISSUER`（`http://127.0.0.1:4566/<プールの ID>`）と
+`CAPTURE_LEDGER_OIDC_CLIENT_IDS`（**手で書きません**。プールの ID が `iss` に入るためです）、
+それに引き渡しファイル `.dev/idp.env`（client の ID・windmill の secret・利用者のパスワードと `sub`）です。
+引き渡しファイルは capture-scheduler の `windmill:capture-ledger-token` が読みます。
+打ち直すと、在るものを使い回します。
 
 トークンは `.env` に置きません —— 読むのは受け取る側の API で、投げる側が
 `Authorization` ヘッダに載せるものだからです。
 
-`--subject` を変えると **「人が投げた場合」と「サービスが投げた場合」の両方を
-作れます**。後者は OpenFGA の owner tuple が `user:<サービス名>` になり、
-そのアーカイブを人が消せなくなる状態です —— 認証を入れるより前に、認可の設計を
-ここで踏めます。
+**主体は名前ではなく `sub` です。** 人の `sub` は Floci が付けた ID で（Cognito も同じです）、
+機械の `sub` はその app client の ID です。OpenFGA の許可も `owner` tuple もこの値で書くので、
+`idp:grant` は名前に許可を与えず、引き渡しファイル（と Floci）から `sub` を読みます。`idp:token` は利用者・`sub`・群を
+標準エラーに出します。別の利用者のトークンは `pnpm run --silent idp:token --user 名前 --org 群` で取ります
+（無ければ作ります。`--org` は繰り返せます）。その利用者がクロールを始めるには、
+`pnpm run idp:grant --user 名前` を打ちます（無ければ作り、`acme` に入れ、その `sub` に許可を与えます）。
+
+組織は `cognito:groups` のクレームから来ます。**機械のトークンには群が載りません**。
+そこで `sub` が `client_id` と同じトークンには、OpenFGA でその主体に `can_submit` がある組織を
+API が引きます（`src/api/authorization.ts` の `submitterOrganizations`）。windmill の client のトークンで始めたクロールの
+owner は `user:<windmill の client の ID>` になり、そのアーカイブを人が消せなくなる状態です ——
+認可の設計の穴を、ここで踏めます。
 
 :::caution[開発用です]
-`POST /token` は誰にでもトークンを刷ります。起動時に警告を出すのはそのためです。
-鍵は issuer のプロセスの中だけに在り、**起動のたびに作り直されます**。鍵の名前（`kid`）も
-一緒に替わるので、API は新しいトークンを見た時点で鍵を取り直し、前のトークンは通らなく
-なります。それが鍵の更新の再現になります —— API を起こし直す必要はありません。
+Floci の管理の API は、既定の鍵（`test`/`test`）を条件なしに通します。Floci に届くものは、
+誰でも利用者を作り、そのトークンを取れます。手元のスタックの中の心配として受け入れています。
+ホストへは `127.0.0.1` にだけ出しています。
+
+Floci はプールを**メモリに**持ちます。コンテナが作り直されると（`stack:up` など）プールが消え、
+`iss` が替わり、前のトークンはどれも通らなくなります。`stack:up` だけを打ったときは
+`pnpm run dev:up --from idp` を打ちます。`pnpm run dev:status` の IdP の行が、Floci が答えるかと、
+`.env.local` のプールがまだ在るかを言います。
 :::
 
-### 本物の IdP へ移るとき
+### 本番の Cognito へ移るとき
 
-変わるのは `CAPTURE_LEDGER_OIDC_ISSUER` と `CAPTURE_LEDGER_OIDC_AUDIENCE` の値だけです。
-`jwtIdentityResolver` は 1 行も変わりません。
+変わるのは `CAPTURE_LEDGER_OIDC_ISSUER`（`https://cognito-idp.<region>.amazonaws.com/<プールの ID>`）と
+`CAPTURE_LEDGER_OIDC_CLIENT_IDS` の値だけです。`jwtIdentityResolver` は 1 行も変わりません。
+プール・app client・群は AWS の側で作ります。`idp:bootstrap`・`idp:token`・`idp:grant` は Floci 専用です。
 
 ただし **JWKS を HTTP で取ってくる経路は単体試験では守れません**。
-`createRemoteJWKSet` をローカルの鍵に差し替えても試験は緑のままなので、
-この節の手順を実際に通すことがその代わりになります。
+`createRemoteJWKSet` をローカルの鍵に差し替えても試験は緑のままです。そこで CI の job `idp` が
+Floci を立て、Floci が実際に出したトークンを、本番と同じ取り方の鍵で確かめます（`test/idp-floci.test.ts`）。
+本物の Cognito での往復は、本番の前に 1 度通します。
 
-組織のクレームの綴りは IdP ごとに違います (`groups` / `roles` / 独自)。
-差し替えるのは `src/config/identity.ts` の `ORGANIZATIONS_CLAIM` 1 か所だけです ——
+組織のクレームの綴りは `cognito:groups` で、Cognito も Floci も同じです。
+綴りを持つのは `src/config/identity.ts` の `ORGANIZATIONS_CLAIM` 1 か所だけです ——
 API は `identityFromClaims` を通してそこを読みます。
 
 ### 起動ログで確かめる
@@ -381,7 +420,7 @@ API は起動したときに、**最後の 1 行**で待ち受けのアドレス
 受けられるかを言います（`src/api/startup-notes.ts`）。
 
 ```text
-Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:9099); crawl level reports: ready
+Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:4566/us-east-1_example); crawl level reports: ready
 ```
 
 | `crawl level reports` | 意味                                                                                                                                                         |

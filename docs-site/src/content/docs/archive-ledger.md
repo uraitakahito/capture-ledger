@@ -348,13 +348,17 @@ after the write — not inferred from what was written. Revoking `submitter` fro
 holds `admin` still says 始められます, and adds ほかの関係で許されています ("another relation allows it")
 in the parentheses, which otherwise say what was written (書いた) or deleted (消した).
 
+The user is whatever the caller's identity says: under the dev header, the name it claims; under
+JWT, the token's `sub` — not a user name. Locally, `pnpm run idp:grant` grants `submitter` on
+`acme` to your [Floci](https://github.com/floci-io/floci) user's `sub` and to the app client ID the Windmill flow uses.
+
 To check from the caller's side, ask `GET /api/me`. It answers only about the caller: the name and
 organizations as resolved from the token (or headers), and `canSubmit`, the answer to the same
 question the crawl routes ask:
 
 ```sh
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/me
-# → {"subject":"alice","organizations":["acme"],"canSubmit":true}
+# → {"subject":"<sub>","organizations":["acme"],"canSubmit":true}
 ```
 
 A crawl route's 404 cannot tell "not allowed" from "no such route". This one answers
@@ -1029,9 +1033,10 @@ The screen is built for the way the API identifies callers at startup (`selectId
 fields under the dev header, a token field under JWT, and only a notice when neither is configured.
 The browser cannot tell "no name given" from "this API wants a JWT" — both are a `401` with
 `{"error":"unauthenticated"}` — so the API, which knows, decides when it renders the HTML
-(`pickerView` in `src/api/picker.ts`). The picker mints no tokens. The issuer mints a token in
-anyone's name on request, so it lives only on `127.0.0.1`; a screen reachable on `0.0.0.0` that
-could mint would let anyone on the network do it.
+(`pickerView` in `src/api/picker.ts`). The picker gets no tokens. Locally they come from
+Floci, whose admin API lets anyone who reaches it create users,
+so it is published only on `127.0.0.1`; a screen reachable on `0.0.0.0` that got tokens on its own
+would let anyone on the network be anyone.
 
 The picker hands replayweb-server the `objectKey` and nothing else:
 
@@ -1060,9 +1065,11 @@ the bucket, which is a separate change.
 
 ## Identity
 
-Authenticating the caller is a separate problem from authorizing them, and the
-identity provider has not been chosen. What the authorization layer needs is
-small — a subject and the organizations they belong to — so that shape is fixed
+Authenticating the caller is a separate problem from authorizing them. The production identity
+provider (IdP) is Amazon Cognito (decided 2026-11-11); local development uses
+Floci, a Cognito emulator — see
+[The dev IdP](/capture-ledger/development-environment/#the-dev-idp-floci). What the authorization
+layer needs is small — a subject and the organizations they belong to — so that shape is fixed
 and the verification behind it is swappable.
 
 **By default nobody is authenticated and every request is 401.** For local
@@ -1089,15 +1096,17 @@ and while those are empty **not even the person who asked for the archive can
 delete it** (`can_delete` reads `owner from parent` and nothing else).
 
 Every route ends at one place — `src/api/identity.ts` picking a resolver, and
-`src/config/identity.ts` turning verified claims into an `Identity`. That is the
-only thing an identity provider replaces; callers see nothing but the `Identity`
-type.
+`src/config/identity.ts` turning verified claims into an `Identity`. Under JWT the subject is the
+token's `sub` (for a person, the ID the IdP gave them; for a machine, its app client ID) and the
+organizations are its `cognito:groups`. Callers see nothing but the `Identity` type.
 
 Membership is **not** stored in OpenFGA. It is passed per request as a
 contextual tuple built from the caller's identity, so joining or leaving an
 organization never has to be synchronised into the authorization store. The
 cost is that revocation waits for the token to expire — which is why tokens
-should be short-lived.
+should be short-lived. The exception is a machine token (client credentials, where `sub` equals
+`client_id`): it carries no groups, so the API takes the organizations where that subject has
+`can_submit` in OpenFGA (`submitterOrganizations` in `src/api/authorization.ts`).
 
 ## The authorization model
 

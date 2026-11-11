@@ -102,7 +102,9 @@ What fills this column is whatever the API request claimed as its subject
 (see [Identity](/capture-ledger/archive-ledger/#identity)). **The development header
 route verifies nothing** — with `CAPTURE_LEDGER_DEV_IDENTITY=1`, `X-Capture-ledger-Subject` is
 taken at face value, so any name can land here. The JWT route does check the
-signature and expiry.
+signature, expiry, token type and app client, and what lands here is then the token's `sub` — for a
+person the ID the IdP (identity provider) gave them, not their user name; for a machine its app
+client ID.
 
 It is still worth filling, because this value becomes the `owner` tuple on the
 `capture_job`. An archive without one **cannot be deleted by anyone**:

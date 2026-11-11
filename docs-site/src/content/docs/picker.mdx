@@ -41,7 +41,7 @@ fields to match.
 
 With both set it is JWT. The API never accepts both at once, so a setup with both cannot fall to
 the weaker one. If you are following the [Quickstart](/capture-ledger/quickstart/), it is the dev
-headers at §6 and JWT once you paste the four lines in §7. The last line of the API's startup log
+headers at §6 and JWT once §7 has written its lines into `.env.local`. The last line of the API's startup log
 says which one is in effect (`identity: …`) — see
 [Check the startup log](/capture-ledger/development-environment/#check-the-startup-log).
 
@@ -57,12 +57,13 @@ says which one is in effect (`identity: …`) — see
 
 ## Three steps (JWT)
 
-1. **Get a token.** In the capture-ledger directory, run the line below. The development issuer
-   (`pnpm run oidc:issuer`) mints a token valid for one hour and it lands on your clipboard. The
-   same command is shown inside the box on the screen.
+1. **Get a token.** In the capture-ledger directory, run the line below. It gets an access token,
+   valid for one hour, for the user `pnpm run idp:bootstrap` made (named after `whoami`, in `acme`)
+   from [Floci](https://github.com/floci-io/floci) — the local stand-in for Amazon Cognito — and it
+   lands on your clipboard. The same command is shown inside the box on the screen.
 
    ```sh
-   pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy
+   pnpm run --silent idp:token | pbcopy
    ```
 
 2. **Paste it into the トークン (Token) field and press 読み込む (Load).**
@@ -70,15 +71,17 @@ says which one is in effect (`identity: …`) — see
 
 <Image
   src={jwt}
-  alt="The picker under a JWT setup: a blue notice at the top saying the API identifies callers with JWTs from http://127.0.0.1:9099, the token field with the command that gets one, the line saying it is viewing as alice (acme), and a list of three rows"
+  alt="The picker under a JWT setup: a blue notice at the top saying the API identifies callers with JWTs from its issuer (a URL of the form http://127.0.0.1:4566/<pool ID>) and asking for an access token from that pool, the token field with the command that gets one, the line saying who it is viewing as and in which organization, and a list of three rows"
 />
 
 Once loaded, the line above the list says 名前（組織）として見ている ("viewing as name
 (organization)"). That is the API's verdict on the token (`GET /api/me`); the browser never reads
-what is inside the token. The `--subject` and `--org` you mint the token with play the part of the
-two fields under the dev headers — see [What your identity lets you see](#what-your-identity-lets-you-see).
-In a deployment with a real IdP (Identity Provider — the outside service that vouches for who you
-are), paste the access token that IdP issued.
+what is inside the token. Under JWT the name is the token's `sub` — the ID Floci gave the user, not
+the user name (`idp:token` prints it) — and the organizations are the user's groups. The user and
+groups play the part of the two fields under the dev headers (`idp:token --user NAME --org GROUP`
+gets a token for another user) — see [What your identity lets you see](#what-your-identity-lets-you-see).
+In production the IdP (Identity Provider — the outside service that vouches for who you are) is
+Amazon Cognito: paste an access token from its pool.
 
 :::note[Empty is normal before the first crawl]
 Until a crawl has run, the picker says 見えるアーカイブが無い ("no archives visible to you").
@@ -120,7 +123,7 @@ works on the list.
 Your identity is a **claim about who you are**. It is not a password, and it is not a search term.
 Under the dev headers, whatever you type into the two fields is sent as two request headers,
 `X-Capture-ledger-Subject` and `X-Capture-ledger-Organizations`. Under a JWT setup, the picker sends
-the pasted token as `Authorization: Bearer`, and the name and organizations inside it are the claim —
+the pasted token as `Authorization: Bearer`, and the `sub` and groups inside it are the claim —
 the same shape as the curl that starts a crawl.
 
 What you claim decides which rows you see. An archive is visible when either of these holds:
@@ -130,8 +133,8 @@ What you claim decides which rows you see. An archive is visible when either of 
 | You started the crawl            | The `subject` that started the crawl is the `subject` you typed                                                                 |
 | You are in the same organization | A crawl belongs to the **first** organization its starter claimed. You see it when `organizations` names that same organization |
 
-The Quickstart's §7, for example, starts its crawl as the output of `whoami`, in `acme`. What it
-produces is visible to that same name, or to anyone claiming membership of `acme`. Any other name on
+The Quickstart's §7, for example, starts its crawl as your user's `sub`, in `acme`. What it
+produces is visible to that same `sub`, or to anyone claiming membership of `acme`. Any other name on
 its own gives 見えるアーカイブが無い.
 
 The decision is OpenFGA's `can_view`. The whole model is in
@@ -143,8 +146,8 @@ screen means by "whoever can reach this port can be anyone". If the API listens 
 `127.0.0.1`, a red notice appears at the top of the screen (pictured in "What the messages mean"
 below). Listen on `127.0.0.1` (`CAPTURE_LEDGER_API_HOST=127.0.0.1`) or go back to the JWT setup.
 
-Under a JWT setup the API accepts only a JWT. The development issuer that mints tokens listens only
-on `127.0.0.1`, so nobody else on the network can claim to be anyone — see
+Under a JWT setup the API accepts only a JWT. Floci, which hands out the tokens locally, is published
+only on `127.0.0.1`, so nobody else on the network can claim to be anyone — see
 [Identity](/capture-ledger/archive-ledger/#identity).
 :::
 
@@ -184,23 +187,23 @@ An API under the dev headers that listens on `0.0.0.0` shows a red notice at the
   alt="The picker of a dev-header API listening on 0.0.0.0: a red notice at the top saying that anyone on the same network can be anyone"
 />
 
-| Message                                                                                               | Identity    | Meaning                                                                                         | What to do                                                                                                                                                                                  |
-| ----------------------------------------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| subject を入れて「読み込む」                                                                          | Dev headers | The page has just opened and has not asked for the list yet                                     | Fill in the two fields and press 読み込む                                                                                                                                                   |
-| トークンを貼って「読み込む」                                                                          | JWT         | The page has just opened, or the token field is empty                                           | Get a token, paste it and press 読み込む                                                                                                                                                    |
-| 見えるアーカイブが無い                                                                                | Either      | The API answered normally, with no rows visible under this identity                             | Go through "When the list is empty" below                                                                                                                                                   |
-| 401 — subject が空（この API は開発用ヘッダで名乗る設定）                                             | Dev headers | `subject` was left empty                                                                        | Type a `subject`                                                                                                                                                                            |
-| 401 — このトークンは通らない（期限切れ・issuer を起こし直した後・別の issuer のもの）。取り直して貼る | JWT         | The API refused the token (expired, minted before the issuer restarted, or from another issuer) | Get a new token and paste it. If the issuer is down, start it with `pnpm run oidc:issuer` first. The check that failed (`exp`, for example) is in the API's log, on the `JWT rejected` line |
-| この API には名乗りの設定が無く、誰の一覧も出せない（全員 401）                                       | None        | `.env` configures no identity                                                                   | Put `CAPTURE_LEDGER_OIDC_ISSUER` or `CAPTURE_LEDGER_DEV_IDENTITY=1` in `.env` and restart the API                                                                                           |
-| この API は 0.0.0.0:7070 で待ちながら、名乗りをそのまま信じる                                         | Dev headers | Anyone on the same network can be anyone                                                        | Restart with `CAPTURE_LEDGER_API_HOST=127.0.0.1`, or go back to the JWT setup                                                                                                               |
-| A number such as 500 — 一覧を取れなかった                                                             | Either      | The API failed inside (it could not reach the database or OpenFGA, for example)                 | Read the log in the terminal running `pnpm run api`                                                                                                                                         |
+| Message                                                                                                       | Identity    | Meaning                                                                                                                                                                             | What to do                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| subject を入れて「読み込む」                                                                                  | Dev headers | The page has just opened and has not asked for the list yet                                                                                                                         | Fill in the two fields and press 読み込む                                                                                                                                                                                                                          |
+| トークンを貼って「読み込む」                                                                                  | JWT         | The page has just opened, or the token field is empty                                                                                                                               | Get a token, paste it and press 読み込む                                                                                                                                                                                                                           |
+| 見えるアーカイブが無い                                                                                        | Either      | The API answered normally, with no rows visible under this identity                                                                                                                 | Go through "When the list is empty" below                                                                                                                                                                                                                          |
+| 401 — subject が空（この API は開発用ヘッダで名乗る設定）                                                     | Dev headers | `subject` was left empty                                                                                                                                                            | Type a `subject`                                                                                                                                                                                                                                                   |
+| 401 — このトークンは通らない（期限切れ・ID token・受けない client・プールを作り直す前のもの）。取り直して貼る | JWT         | The API refused the token (expired, an ID token rather than an access token, from an app client not in `CAPTURE_LEDGER_OIDC_CLIENT_IDS`, or from before Floci's pool was recreated) | Get a new token with `pnpm run --silent idp:token` and paste it. If `pnpm run dev:status` says the pool is gone, run `pnpm run dev:up --from idp` first. The check that failed (`exp` or `token_use`, for example) is in the API's log, on the `JWT rejected` line |
+| この API には名乗りの設定が無く、誰の一覧も出せない（全員 401）                                               | None        | `.env` configures no identity                                                                                                                                                       | Put `CAPTURE_LEDGER_OIDC_ISSUER` or `CAPTURE_LEDGER_DEV_IDENTITY=1` in `.env` and restart the API                                                                                                                                                                  |
+| この API は 0.0.0.0:7070 で待ちながら、名乗りをそのまま信じる                                                 | Dev headers | Anyone on the same network can be anyone                                                                                                                                            | Restart with `CAPTURE_LEDGER_API_HOST=127.0.0.1`, or go back to the JWT setup                                                                                                                                                                                      |
+| A number such as 500 — 一覧を取れなかった                                                                     | Either      | The API failed inside (it could not reach the database or OpenFGA, for example)                                                                                                     | Read the log in the terminal running `pnpm run api`                                                                                                                                                                                                                |
 
 ### When the list is empty
 
 - **Nothing has been captured yet.** At §6 of the Quickstart this is the normal state.
 - **The identity differs from the one that started the crawl.** Check the spelling of the
   organization. When in doubt, claim the same name and organization that started the crawl (under a
-  JWT setup, the `--subject` and `--org` you mint the token with).
+  JWT setup, get the token for the same user — `--user` and `--org` of `idp:token`).
 - **The crawl is still running.** A page enters the ledger once the level it belonged to has been
   reported — see [While it is still running](/capture-ledger/quickstart/#while-it-is-still-running).
   From there it takes at most about five seconds to become visible: the API delivers authorization
@@ -241,7 +244,9 @@ container is started along with the rest by `pnpm run stack:up`.
   identity on its own. After trying another identity, remember to change it back.
 - **A token is gone when you close the tab.** A token is itself a key, so the picker keeps it only for
   the tab (`sessionStorage`). Paste it again after reopening — and after it expires in an hour.
-- **The picker mints no tokens.** The development issuer does, and it listens only on `127.0.0.1`.
+- **The picker gets no tokens.** `idp:token` gets them from Floci, which is published only on
+  `127.0.0.1`. Floci's admin API lets anyone who reaches it create users, so a screen reachable on
+  `0.0.0.0` that got tokens on its own would let anyone on the network be anyone.
 - **Under the dev headers the screen authenticates nobody.** It is a development screen. Do not expose
   it anywhere reachable from outside.
 - **Only the list is filtered.** Anyone who knows the key of a WACZ can read it through replayweb-server — see

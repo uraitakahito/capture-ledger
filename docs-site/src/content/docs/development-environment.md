@@ -80,7 +80,8 @@ takes its value from `.env.local`.
 | `.env.local` | the tools | values that only exist once something has run; git ignores it |
 
 The tools that write it are `pnpm run fga:deploy` (the OpenFGA store and model ids),
-`pnpm run connect` (the four lines capture-scheduler hands over — quickstart §7) and
+`pnpm run connect` (the lines capture-scheduler hands over — quickstart §7),
+`pnpm run idp:bootstrap` (the issuer and client IDs of the local IdP, identity provider — quickstart §7) and
 `pnpm run search:connect` (the OpenSearch URL, once OpenSearch answers — quickstart §3).
 They are split because they have different owners: when a tool reorders or drops
 a line a person wrote, nobody can tell afterwards what happened.
@@ -155,7 +156,7 @@ that rule too.
 
 ### What runs on the host, not in the stack
 
-**`pnpm run oidc:issuer` (9099), `pnpm run api` (7070),
+**`pnpm run api` (7070),
 [wacz-validator](https://github.com/uraitakahito/wacz-validator)'s daemon (7180) and
 [capture-workbench](https://github.com/uraitakahito/capture-workbench)'s `pnpm run dev` (7080) are host
 processes**, not containers.
@@ -178,9 +179,9 @@ easy to miss — but the tools below, which look up an owner by port, would then
 else holds it" on every run.
 
 Which means **`container-compose down` does not stop them**. That is what caused
-`EADDRINUSE: address already in use 127.0.0.1:9099` on 2026-09-20: an issuer started the day
-before, in another terminal, was still holding the port. It shows up as "I took the stack down
-and the port is still busy".
+`EADDRINUSE: address already in use 127.0.0.1:9099` on 2026-09-20: the development issuer, which
+ran on the host back then, had been started the day before in another terminal and was still
+holding the port. It shows up as "I took the stack down and the port is still busy".
 
 ```sh
 pnpm run dev:status   # pid, start time, port; for the validator, the build it runs. Changes nothing
@@ -346,47 +347,87 @@ fall back to the weaker one, where anyone who reaches the port can be anyone. Th
 changes its fields to match whichever one the API started with — two name fields under the dev
 header, a token field under JWT ([Browsing archives](/capture-ledger/picker/)).
 
-### The dev issuer
+### The dev IdP (Floci)
 
 Setting `CAPTURE_LEDGER_OIDC_ISSUER` makes the API run **the same verification code
-production will run** — signature, `iss` / `aud`, expiry, and the JWKS fetch. Until a
-real IdP is chosen, the bundled issuer stands in for one.
+production will run** — signature, `iss`, expiry and the JWKS (JSON Web Key Set, the issuer's
+public keys at `<iss>/.well-known/jwks.json`) fetch, then two checks of its own: `token_use` must
+be `access` (ID tokens are refused), and `client_id` must be one of
+`CAPTURE_LEDGER_OIDC_CLIENT_IDS`. There is no `aud` check: Cognito's access tokens carry no `aud`,
+and M2M (machine-to-machine, client credentials) tokens cannot have one. With the issuer set and
+the client IDs empty, the API refuses to start.
+
+The production IdP is Amazon Cognito. Locally,
+[Floci](https://github.com/floci-io/floci), a Cognito emulator, stands in for it: the compose
+service `idp`, published on `127.0.0.1:4566` (`http://idp.capture-ledger:4566` from containers).
+`pnpm run dev:up` sets it up in its `idp` and `grant` steps; by hand it is:
 
 ```bash
-pnpm run oidc:issuer                                   # listens on :9099
-export CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099
-TOKEN=$(pnpm run oidc:token --subject alice --org acme)
+pnpm run idp:bootstrap                 # pool, app clients and your user; writes .env.local
+pnpm run idp:grant                     # submitter on acme for the windmill client and your user
+pnpm run api                           # restart it: it reads .env.local once, at startup
+TOKEN=$(pnpm run --silent idp:token)
 curl -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls
 ```
+
+`idp:bootstrap` creates the pool `capture-ledger-dev`, the resource server `capture-ledger` with
+the scope `crawl`, the group `acme` and a user named after `$(whoami)` in that group (the group's
+name is the organization's name), and these app clients:
+
+| App client  | Kind   | Used by                                                                                                                  |
+| ----------- | ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `workbench` | public | capture-workbench: authorization code with PKCE (Proof Key for Code Exchange), callback `http://127.0.0.1:7080/callback` |
+| `cli`       | public | `pnpm run idp:token` (password flow) — the token you paste into the picker or `curl`                                     |
+| `windmill`  | secret | The crawl flow in capture-scheduler (client credentials)                                                                 |
+
+It writes `CAPTURE_LEDGER_OIDC_ISSUER` (`http://127.0.0.1:4566/<poolId>`) and
+`CAPTURE_LEDGER_OIDC_CLIENT_IDS` to `.env.local` — **do not write them by hand**; the pool ID is
+part of `iss` — and a handoff file, `.dev/idp.env` (the client IDs, the windmill secret, your
+user's password and `sub`), which capture-scheduler's `windmill:capture-ledger-token` reads.
+Running it again reuses what is already there.
 
 The token does not belong in `.env` — the API is what reads it, and the caller
 is what puts it in the `Authorization` header.
 
-Changing `--subject` lets you produce **both "a person submitted this" and "a service
-submitted this"**. In the second case the OpenFGA owner tuple becomes
-`user:<service>`, and no person can delete the archive — you can walk into that
-authorization gap here, before real authentication exists.
+**Subjects are `sub` values, not names.** A person's `sub` is an ID Floci generates (Cognito does
+the same); a machine's `sub` is its app client ID. OpenFGA grants and the `owner` tuple use that
+value, which is why `idp:grant` reads the handoff file (and asks Floci) instead of granting a name.
+`idp:token` prints the user, `sub` and groups on stderr. `pnpm run --silent idp:token --user NAME --org GROUP`
+gets a token for another user (created if missing; `--org` repeats). For that user to start crawls,
+run `pnpm run idp:grant --user NAME` (it creates the user if missing, puts it in `acme`, and grants its `sub`).
+
+Organizations come from the `cognito:groups` claim. **Machine tokens carry no groups**, so for a
+token whose `sub` is its `client_id` the API takes the organizations where that subject has
+`can_submit` in OpenFGA (`submitterOrganizations` in `src/api/authorization.ts`). A crawl started
+with the windmill client's token is owned by `user:<windmill client ID>`, and no person can delete the archive — you can
+walk into that authorization gap here.
 
 :::caution[Development only]
-`POST /token` mints a token for anyone who asks, which is why it warns on startup. The
-key lives only inside the issuer process and **is regenerated on every start**, and its name
-(`kid`) changes with it, so the API refetches the keys as soon as it sees a new token and
-previously minted tokens stop verifying. That is key rotation, reproduced — no need to restart
-the API.
+Floci's admin API accepts its default key (`test`/`test`) unconditionally, so anything that can
+reach it can create users and get tokens for them. That is accepted for the local stack only; the
+host publish is on `127.0.0.1` alone.
+
+Floci keeps its pools **in memory**. When the container is recreated (by `stack:up`, for
+example), the pool is gone, `iss` changes, and every token from before stops verifying. If you
+ran only `stack:up`, run `pnpm run dev:up --from idp`. `pnpm run dev:status` says on its
+IdP row whether Floci answers and whether the pool in `.env.local` still exists.
 :::
 
-### Moving to a real IdP
+### Moving to production Cognito
 
-Only the values of `CAPTURE_LEDGER_OIDC_ISSUER` and `CAPTURE_LEDGER_OIDC_AUDIENCE` change.
-`jwtIdentityResolver` does not change at all.
+Only the values of `CAPTURE_LEDGER_OIDC_ISSUER`
+(`https://cognito-idp.<region>.amazonaws.com/<poolId>`) and `CAPTURE_LEDGER_OIDC_CLIENT_IDS`
+change. `jwtIdentityResolver` does not change at all. The pool, app clients and groups are made on
+the AWS side; `idp:bootstrap`, `idp:token` and `idp:grant` are for Floci only.
 
 Note that **the JWKS-over-HTTP path cannot be covered by unit tests**. Swapping
-`createRemoteJWKSet` for a local key leaves the suite green, so walking through this
-section is what guards it instead.
+`createRemoteJWKSet` for a local key leaves the suite green. So the CI job `idp` starts Floci and
+checks tokens Floci actually issued, with keys fetched the way production fetches them
+(`test/idp-floci.test.ts`). A round trip against real Cognito happens once before production.
 
-The spelling of the organizations claim differs per IdP (`groups` / `roles` / something
-custom). There is one place to change: `ORGANIZATIONS_CLAIM` in `src/config/identity.ts`,
-which the API reads through `identityFromClaims`.
+The organizations claim is spelled `cognito:groups`, by Cognito and Floci alike. It lives in one
+place: `ORGANIZATIONS_CLAIM` in `src/config/identity.ts`, which the API reads through
+`identityFromClaims`.
 
 ### Check the startup log
 
@@ -394,7 +435,7 @@ When the API starts, its **last line** says where it listens, how callers identi
 whether crawl level reports can get through (`src/api/startup-notes.ts`).
 
 ```text
-Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:9099); crawl level reports: ready
+Archive API listening on 0.0.0.0:7070 — identity: JWT (http://127.0.0.1:4566/us-east-1_example); crawl level reports: ready
 ```
 
 | `crawl level reports` | Meaning                                                                                                                                                     |

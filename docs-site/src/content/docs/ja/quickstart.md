@@ -77,7 +77,7 @@ build context はどれもここを指すので、空のままでは何もビル
 
 `.env` は `.env.example` の写しです。何も調べず、値も変えません。開発用の値は雛形に
 最初から入っています。**手で書き足すものはありません** —— OpenFGA の 2 つの ID（§5）も
-クロールの 4 行（§7）も、走らせてみないと決まらない値なので、**道具が `.env.local` に
+クロールの行（§7）も、走らせてみないと決まらない値なので、**道具が `.env.local` に
 書きます**（node は `.env` の後にそれを読むので、重なればそちらが効きます）。
 `-n` は既にある `.env` を上書きしないための印で、手で直した値を守ります。
 
@@ -178,13 +178,13 @@ open http://127.0.0.1:7070/
 ```
 
 :::note[この API は §7 で一度止めて、起こし直します]
-**設定を読むのは起動のときの 1 度だけ**です。§7 の `pnpm run connect` が `.env.local` に
-4 行書くので、いま走らせているプロセスはそれを知らないまま終わります —— `Ctrl-C` で止めて、
+**設定を読むのは起動のときの 1 度だけ**です。§7 の `pnpm run connect` と `pnpm run idp:bootstrap` が
+`.env.local` に行を書くので、いま走らせているプロセスはそれを知らないまま終わります —— `Ctrl-C` で止めて、
 同じ `pnpm run api` をもう一度打ちます。**2 本目を並べて立てることはできません**
 （`EADDRINUSE: address already in use 0.0.0.0:7070` で落ちます）。
 **どこに残っているか分からなくなったら** `pnpm run dev:status` が pid と起動時刻を出し、
 `pnpm run dev:down` が止めます（`container-compose down` はコンテナしか知らないので、
-ホストで動く issuer と API は残ります）。
+ホストで動く API は残ります）。
 
 いまの 1 本は「API が動くこと」と「picker が開くこと」を見るためのものです。
 :::
@@ -209,26 +209,38 @@ open http://127.0.0.1:7070/
 
 つなぐ手順は [capture-scheduler のクイックスタート](https://uraitakahito.github.io/capture-scheduler/ja/quickstart/)に
 まとめてあります（Windmill を立て、flow を入れ、トークンを渡す）。その途中で、
-capture-scheduler の `pnpm run windmill:bootstrap` が、この repo に渡す **4 行を自分の repo の中に
+capture-scheduler の `pnpm run windmill:bootstrap` が、この repo に渡す **行を自分の repo の中に
 置きます**。**取りに行くのはこちらの仕事**です:
 
 ```sh
-pnpm run connect   # ../capture-scheduler の 4 行を読み、この repo の .env.local に書く
+pnpm run connect   # ../capture-scheduler の行を読み、この repo の .env.local に書く
 ```
 
 向こうのコマンドがこの repo の `.env` を書き換えることはありません —— 打った repo の外が
-変わるのは、打った人の予想に反するからです。渡るのは次の 4 行で、**どれが欠けても、
-クロールは最後まで走りません。**
+変わるのは、打った人の予想に反するからです。API に要るのは次の行で、**どれが欠けても、
+クロールは最後まで走りません。** 最後の行は capture-scheduler からは来ません。
+下の `pnpm run idp:bootstrap` が書きます。
 
-| 行                                                                         | なぜ要るか                                                                                                                                                                         |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | クロールを投げる先。無いと `/api/crawls` そのものが無く、`404` になります                                                                                                          |
-| `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | flow は段ごとの結果を API に報告し、その報告は**コンテナから**来ます。`127.0.0.1` のままでは届きません                                                                             |
-| `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | flow は JWT で名乗ります。API が受けるのは JWT か開発用ヘッダの**どちらか一方**で、この行を書くと JWT になります —— picker も、名乗りの 2 欄の代わりにトークンの欄を出します（§8） |
+| 行                                                                         | なぜ要るか                                                                                                                                                                       |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | クロールを投げる先。無いと `/api/crawls` そのものが無く、`404` になります                                                                                                        |
+| `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | flow は段ごとの結果を API に報告し、その報告は**コンテナから**来ます。`127.0.0.1` のままでは届きません                                                                           |
+| `CAPTURE_LEDGER_OIDC_ISSUER`<br>`CAPTURE_LEDGER_OIDC_CLIENT_IDS`           | flow は JWT で名乗ります。API が受けるのは JWT か開発用ヘッダの**どちらか一方**で、これを書くと JWT になります —— picker も、名乗りの 2 欄の代わりにトークンの欄を出します（§8） |
 
-`connect` を打ったら、issuer（`pnpm run oidc:issuer`）を起こし、API を起こし直します。設定は
-起動のときに 1 度だけ読みます（`windmill:bootstrap` を打ち直したときは、`connect` も打ち直します ——
-token が変わっています）。API の起動ログの最後の行が `crawl level reports: ready` なら、4 行は効いています。
+`connect` を打ったら、手元の IdP（Identity Provider —— 身元を証明するサービス）を用意し、API を起こし直します。
+設定は起動のときに 1 度だけ読みます。IdP は [Floci](https://github.com/floci-io/floci) で、
+Amazon Cognito の手元の代役です。§3 のスタックがサービス `idp` として動かしています
+（[開発用の IdP](/capture-ledger/ja/development-environment/#開発用の-idpfloci)）。
+
+```sh
+pnpm run idp:bootstrap   # プール・app client・自分の利用者を作り、表の最後の行を .env.local に書く
+pnpm run idp:grant       # flow の app client と自分の利用者に、acme のクロールを許す
+```
+
+`idp:bootstrap` は引き渡しファイル `.dev/idp.env` も書きます。capture-scheduler の
+`windmill:capture-ledger-token` がそれを読むので、その段はこの後です（`dev:up` もその順に打ちます）。
+`windmill:bootstrap` を打ち直したときは、`connect` も打ち直します（token が変わっています）。
+API の起動ログの最後の行が `crawl level reports: ready` なら、行は効いています。
 `blocked` なら、その上の warn が足りない行を名指しします
 （[起動ログで確かめる](/capture-ledger/ja/development-environment/#起動ログで確かめる)）。
 capture-scheduler のクイックスタートの最後にある `pnpm run doctor` が全部 ✓ なら、つながっています。
@@ -242,8 +254,7 @@ capture-scheduler のクイックスタートの最後にある `pnpm run doctor
 JWT で名乗ります。§6 のヘッダは、JWT の設定の API には効きません。
 
 ```sh
-pnpm run fga:grant submitter "$(whoami)" acme   # 1 度だけ。無いと 404
-TOKEN=$(pnpm run --silent oidc:token --subject "$(whoami)" --org acme)
+TOKEN=$(pnpm run --silent idp:token)   # idp:bootstrap が作った自分の利用者（acme）
 curl -X POST http://127.0.0.1:7070/api/crawls \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"seeds":["https://example.com/"],"maxDepth":0}'
@@ -271,7 +282,7 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<craw
 
 :::caution[404 は 2 通りあります]
 本文が `Route POST:/api/crawls not found` なら route が無い（webhook の 2 行が無い）、
-`{"error":"not found"}` なら呼び出し元に `can_submit` が無い（`fga:grant submitter` が無い）です。
+`{"error":"not found"}` なら呼び出し元に `can_submit` が無い（`pnpm run idp:grant` を打っていない）です。
 同じトークンで `GET /api/me` を訊くと、`canSubmit` がその答えです。
 [アーカイブ台帳](/capture-ledger/ja/archive-ledger/#誰が始めてよいか)を参照。
 :::
@@ -291,8 +302,8 @@ open http://127.0.0.1:7080/
 台帳が署名した URL を渡すので、**store の鍵はどこにも増えません**）。
 行の「開く」で **WACZ の中身**も見られます —— ファイルの木、行、field に割った 1 行、
 WARC のレコードと画像。撮らなかった・撮れなかった記録（`WARC-Type: metadata`）も、そこに出ます。
-**トークンを貼る必要はありません** —— あちらが開発用 issuer から自分で取ります
-（そのぶん境界ではありません。issuer は頼まれれば誰の名前でも出します）。
+**トークンを貼る必要はありません** —— あちらが自分の app client `workbench` で手元の IdP にサインインします
+（手元では境界ではありません。Floci の管理の API は、届くものなら誰にでも利用者を作らせ、トークンを出します）。
 
 以下は、その workbench が叩いているものを手で確かめる道です。
 
@@ -306,12 +317,13 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/archives | j
 picker で見るなら、§7 と同じ名前のトークンを画面に貼ります。API の設定は変えません。
 
 ```sh
-pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy
+pnpm run --silent idp:token | pbcopy
 open http://127.0.0.1:7070/
 ```
 
-§7 で 4 行を受け取った API は JWT の設定なので、picker は §6 の 2 つの欄の代わりに「トークン」の欄を出します。
-貼って「読み込む」を押すと、一覧の上に「（`whoami` の出力）（acme）として見ている」と出て、
+§7 で行を受け取った API は JWT の設定なので、picker は §6 の 2 つの欄の代わりに「トークン」の欄を出します。
+貼って「読み込む」を押すと、一覧の上に「（自分の `sub`）（acme）として見ている」と出て
+（`sub` は Floci が利用者に付けた ID で、`idp:token` が出します）、
 §7 のクロールが撮ったページが並びます。トークンは 1 時間で切れます。
 「401 — このトークンは通らない…」と出たら、同じコマンドで取り直して貼ります
 （[アーカイブを見る](/capture-ledger/ja/picker/#3-手で使うjwt-の設定)）。
