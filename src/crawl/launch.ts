@@ -13,6 +13,7 @@ import type { CrawlScript, CrawlSecret, CrawlsTable, Database } from "../db/data
 import { createChildLogger } from "../logger.js";
 import type { ReplayBundleResult } from "../replay-bundle/write.js";
 import type { CrawlRequester, PreparedCrawl } from "./prepare.js";
+import { recipeDigestOf } from "./recipe-digest.js";
 
 const log = createChildLogger({ module: "api" });
 
@@ -268,6 +269,13 @@ export const crawlValues = (
     secrets: JSON.stringify(prepared.secrets),
     // 打った字のまま。解いた字は WACZ の settings.userAgent に残る
     userAgent: prepared.userAgent === "" ? null : prepared.userAgent,
+    // 撮り方の digest (`035`)。前回からの変化が「同じ撮り方の前の回」を引く鍵。行の列から埋め直す道具と同じ関数
+    recipeSha256: recipeDigestOf({
+      scripts: prepared.scripts,
+      variables: prepared.variables,
+      userAgent: prepared.userAgent,
+      secretNames: Object.keys(prepared.secrets),
+    }),
     state: "running" as const,
     // **置く場所を、いま 1 度だけ決めて書き残す。** 以後は置く側 (受け取り先) がこの列を読む ——
     // 段ごとに計算し直すと、受け取り先の設定を切り替えた配備や月をまたぐクロールでずれる。探す側

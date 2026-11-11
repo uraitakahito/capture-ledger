@@ -109,6 +109,7 @@
     "connect": "pnpm run build:tools && node dist/tools/connect.js",
     "search:connect": "pnpm run build:tools && node --env-file-if-exists=.env --env-file-if-exists=.env.local dist/tools/search-connect.js",
     "search:reindex": "pnpm run build && node --env-file-if-exists=.env --env-file-if-exists=.env.local dist/search/reindex-cli.js",
+    "changes:backfill": "pnpm run build && node --env-file-if-exists=.env --env-file-if-exists=.env.local dist/changes/backfill-cli.js",
     "replay-bundle:rebuild": "pnpm run build && node --env-file-if-exists=.env --env-file-if-exists=.env.local dist/replay-bundle/rebuild-cli.js",
     "replay-bundle:verify": "pnpm run build && node --env-file-if-exists=.env --env-file-if-exists=.env.local dist/replay-bundle/verify-cli.js",
     "dev:up": "pnpm run build:tools && node dist/tools/dev-up.js",

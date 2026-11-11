@@ -786,6 +786,12 @@ read the WACZ again. A document line also gets `keys` — the requested URL and 
 `document.url` (after redirects, from the capture's `.result.json`), normalized the way
 `parseHttpUrl` does — which is what replayweb-server looks a page up by. Snapshot lines have none.
 
+Each line also gets the sha256 and length of its `text` and the reason it was withheld
+(`textWithheld`), and the archive gets the BrowserHive and Chrome versions from `datapackage.json`
+(`035`). Changes since last time ([scheduled crawls](/capture-ledger/schedules/)) can then call a page
+unchanged without opening its WACZ. The text itself is not kept in capture-ledger's database.
+`pnpm run changes:backfill` fills rows older than `035`.
+
 A WACZ that recorded nothing — an empty index, or `waczStats.totalRecorded` of 0 — is left out
 (`skipped`; its name and sha256 stay in `replayBundle.skippedResources`): replay would ask for a zero-length range and keep re-reading the JSON on the store's
 answer, a 416. `resources` starts with the seeds' WACZs, then goes by depth and capture time — a

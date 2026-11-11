@@ -40,6 +40,13 @@ Creating a schedule runs the same checks as `POST /api/crawls`, and keeps what t
 does: `outdated` in the answer becomes `true`, and a person runs `repin`. Only secrets stay as
 declarations and are asked of Windmill on every run.
 
+A run's row also carries a digest of how it captured (`crawls.recipe_sha256`, `035`): the scripts' id,
+version, phase, sha256 and options, the variables' values, the User-Agent and the names of the
+declared secrets — only what can change a page's content. Seeds, rules, `maxDepth`, `maxPages` and
+pacing are left out. Changes since last time compare only runs of one schedule whose digest is the
+same (a run repinned with other variables is not compared with the runs before it).
+`pnpm run changes:backfill` fills rows older than `035` (`--schedule <id>` for one schedule's runs).
+
 ## Routes
 
 Every route is gated by `maySubmit`. The list answers an empty 200 and the rest answer 404. Every

@@ -283,6 +283,8 @@ interface FakeCrawl {
   secrets: Record<string, CrawlSecret>;
   /** 頼まれた User-Agent (`031`)。本物の行は必ず持つ (nullable なだけ)。 */
   userAgent: string | null;
+  /** 撮り方の digest (`035`)。始めた行は必ず持つ。古い行は NULL。 */
+  recipeSha256?: string | null;
   /** 定期の回の欄 (`032`)。本物の行は必ず持つ。手で始めたクロールは null と 0 */
   scheduleId?: string | null;
   scheduleName?: string | null;
@@ -2680,6 +2682,17 @@ describe("クロールごとの値（変数とシークレット）", () => {
     expect(crawls[0]?.variables).toEqual({ query: "個人情報" });
     expect(sent[0]).toMatchObject({ variables: { query: "個人情報" }, secrets: {} });
     expect(await read(crawls)).toMatchObject({ variables: { query: "個人情報" }, secrets: [] });
+  });
+
+  it("行に撮り方の digest を入れる。同じ起点でも変数が違えば違う値 (035・CAPTURE-167)", async () => {
+    const egov = (query: string) =>
+      start({ seeds: [SEED], scripts: [{ catalog: "egov-law-search" }], variables: { query } });
+    const a = await egov("個人情報");
+    const b = await egov("民法");
+    const again = await egov("個人情報");
+    expect(a.crawls[0]?.recipeSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(b.crawls[0]?.recipeSha256).not.toBe(a.crawls[0]?.recipeSha256);
+    expect(again.crawls[0]?.recipeSha256).toBe(a.crawls[0]?.recipeSha256);
   });
 
   it("頼まれた User-Agent は、解かずに行と段の本文に載り、GET が返す", async () => {

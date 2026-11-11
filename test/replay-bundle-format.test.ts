@@ -88,6 +88,9 @@ describe("頁の行の keys", () => {
         title: "hub",
         stage: null,
         keys: ["http://site.test/", "http://site.test/after"],
+        textSha256: null,
+        textChars: null,
+        textWithheld: null,
       },
       {
         ordinal: 1,
@@ -97,6 +100,9 @@ describe("頁の行の keys", () => {
         title: null,
         stage: "after-load",
         keys: [],
+        textSha256: null,
+        textChars: null,
+        textWithheld: null,
       },
       {
         ordinal: 2,
@@ -106,8 +112,31 @@ describe("頁の行の keys", () => {
         title: null,
         stage: null,
         keys: ["http://site.test/no-id", "http://site.test/after"],
+        textSha256: null,
+        textChars: null,
+        textWithheld: null,
       },
     ]);
+  });
+
+  it("文字の sha256 と長さを入れ、伏せた行は理由だけを持つ (035)", () => {
+    const [shown, withheld] = archivePageRows(
+      [
+        { url: "http://site.test/a", text: "本文" },
+        { url: "http://site.test/b", textWithheld: "no-archive" },
+      ],
+      undefined,
+    );
+    expect(shown).toMatchObject({
+      textSha256: createHash("sha256").update("本文").digest("hex"),
+      textChars: 2,
+      textWithheld: null,
+    });
+    expect(withheld).toMatchObject({
+      textSha256: null,
+      textChars: null,
+      textWithheld: "no-archive",
+    });
   });
 });
 

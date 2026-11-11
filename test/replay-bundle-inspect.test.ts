@@ -17,6 +17,16 @@ const WACZ_KEY = `${TASK}_crawl.wacz`;
 /** 報告が運んだ鍵。BrowserHive の命名規則では作れない綴り (組み直す実装なら別の鍵を読みに行く)。 */
 const MANIFEST_KEY = "elsewhere/x y+z.result.json";
 
+/** 文書の行の文字。digest と長さを `archive_pages` に入れる (`035`)。 */
+const TEXT = "お知らせ\n2026-11-12 本文";
+/** 撮った BrowserHive と Chrome の版 (`datapackage.json`)。 */
+const DATAPACKAGE = JSON.stringify({
+  "browserhive:capture": {
+    build: { version: "29.0.1" },
+    browser: { product: "Chrome/156.0.8078.73" },
+  },
+});
+
 const HEADER = JSON.stringify({ format: "json-pages-1.0", id: "pages", title: "All Pages" });
 const pagesJsonl = [
   HEADER,
@@ -25,6 +35,7 @@ const pagesJsonl = [
     url: "http://site.test/a",
     ts: "2026-11-05T01:03:57.957Z",
     title: "a",
+    text: TEXT,
   }),
   JSON.stringify({
     id: `${TASK}-after-load`,
@@ -38,7 +49,7 @@ const pagesJsonl = [
 /** 索引 (`indexes/index.cdxj`) の中身。null なら entry ごと無い。 */
 const wacz = (index: string | null = "com,site)/a 20261105010357 {}\n") =>
   storedZip({
-    "datapackage.json": "{}",
+    "datapackage.json": DATAPACKAGE,
     ...(index !== null && { "indexes/index.cdxj": index }),
     "pages/pages.jsonl": `${pagesJsonl}\n`,
   });
@@ -142,7 +153,7 @@ describe("WACZ のバイト列を検める", () => {
 });
 
 describe("アーカイブ 1 本を検めて書く", () => {
-  it("4 つの列と頁の行を 1 つのトランザクションで書き、文書の行の keys に document.url を足す", async () => {
+  it("6 つの列と頁の行を 1 つのトランザクションで書き、文書の行の keys に document.url を足す", async () => {
     const zip = wacz();
     const { queries, read } = await inspect({
       [`browserhive/${WACZ_KEY}`]: zip,
@@ -151,10 +162,11 @@ describe("アーカイブ 1 本を検めて書く", () => {
     expect(read).toEqual([`browserhive/${WACZ_KEY}`, `browserhive/${MANIFEST_KEY}`]);
     expect(queries.map((query) => query.sql)).toEqual([
       "begin",
-      'update "archives" set "wacz_sha256" = $1, "wacz_bytes" = $2, "index_empty" = $3, "inspected_at" = $4 ' +
-        'where "id" = $5 and "inspected_at" is null returning "id"',
-      'insert into "archive_pages" ("archive_id", "ordinal", "page_id", "url", "ts", "title", "stage", "keys") ' +
-        "values ($1, $2, $3, $4, $5, $6, $7, $8), ($9, $10, $11, $12, $13, $14, $15, $16)",
+      'update "archives" set "wacz_sha256" = $1, "wacz_bytes" = $2, "index_empty" = $3, "inspected_at" = $4, ' +
+        '"browserhive_version" = $5, "browser_version" = $6 where "id" = $7 and "inspected_at" is null returning "id"',
+      'insert into "archive_pages" ("archive_id", "ordinal", "page_id", "url", "ts", "title", "stage", "keys", ' +
+        '"text_sha256", "text_chars", "text_withheld") ' +
+        "values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11), ($12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)",
       "commit",
     ]);
     expect(queries[1]?.parameters).toEqual([
@@ -162,6 +174,8 @@ describe("アーカイブ 1 本を検めて書く", () => {
       zip.length,
       false,
       NOW.toISOString(),
+      "29.0.1",
+      "Chrome/156.0.8078.73",
       ARCHIVE,
     ]);
     expect(queries[2]?.parameters).toEqual([
@@ -173,6 +187,9 @@ describe("アーカイブ 1 本を検めて書く", () => {
       "a",
       null,
       ["http://site.test/a", "http://site.test/landed"],
+      createHash("sha256").update(TEXT).digest("hex"),
+      TEXT.length,
+      null,
       ARCHIVE,
       1,
       `${TASK}-after-load`,
@@ -181,6 +198,10 @@ describe("アーカイブ 1 本を検めて書く", () => {
       "a",
       "after-load",
       [],
+      // 文字の無い写しの行は digest も長さも null
+      null,
+      null,
+      null,
     ]);
   });
 

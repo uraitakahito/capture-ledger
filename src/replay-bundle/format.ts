@@ -84,6 +84,15 @@ export interface ArchivePageRow {
   keys: string[];
 }
 
+/** 検めるときに `archive_pages` へ入れる行。合本には要らない文字の欄 (`035`。前回からの変化が読む) を足した物。 */
+export interface InspectedPageRow extends ArchivePageRow {
+  /** 文字の sha256 と長さ。文字の無い行は null。 */
+  textSha256: string | null;
+  textChars: number | null;
+  /** 伏せた理由 (`textWithheld`)。 */
+  textWithheld: string | null;
+}
+
 const textOrNull = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
 /**
@@ -93,9 +102,10 @@ const textOrNull = (value: unknown): string | null => (typeof value === "string"
 export const archivePageRows = (
   lines: readonly PageLine[],
   documentUrl: string | undefined,
-): ArchivePageRow[] =>
+): InspectedPageRow[] =>
   lines.map((line, ordinal) => {
     const stage = typeof line.stage === "string" && line.stage !== "" ? line.stage : null;
+    const text = textOrNull(line.text);
     return {
       ordinal,
       pageId: textOrNull(line.id),
@@ -104,6 +114,9 @@ export const archivePageRows = (
       title: textOrNull(line.title),
       stage,
       keys: stage === null ? pageKeys(line.url, documentUrl) : [],
+      textSha256: text === null ? null : createHash("sha256").update(text).digest("hex"),
+      textChars: text === null ? null : text.length,
+      textWithheld: textOrNull(line.textWithheld),
     };
   });
 
