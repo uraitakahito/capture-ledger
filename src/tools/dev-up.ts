@@ -394,6 +394,6 @@ process.stdout.write(
     "\n撮ってみるなら:\n" +
     "  cd ../capture-scheduler && pnpm run smoke\n" +
     "\nいま何が立っているか: pnpm run dev:status   ／   片付け: pnpm run dev:down\n" +
-    "\n名乗る名前を変えているなら (capture-scheduler の CAPTURE_LEDGER_SUBJECT)、\n" +
-    "その名前にも許可が要ります —— doctor の can_submit が名指しします。\n",
+    "\nworkbench のサインインの利用者とパスワードは .dev/idp.env (IDP_USER・IDP_USER_PASSWORD)。\n" +
+    "ほかの利用者にクロールを始めさせるなら: pnpm run idp:grant --user <名前>\n",
 );
