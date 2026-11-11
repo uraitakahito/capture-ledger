@@ -100,7 +100,9 @@ manifest_key を持ち、archives に行の無い capture_submissions の行
 この列を埋めているのは、API のリクエストが名乗った主体です
 （[身元](/capture-ledger/ja/archive-ledger/#身元)）。**開発用のヘッダ経路では検証されません**
 —— `CAPTURE_LEDGER_DEV_IDENTITY=1` のとき `X-Capture-ledger-Subject` はそのまま信じられ、誰の名前でも
-入ります。JWT の経路では署名と期限が検証されます。
+入ります。JWT の経路では署名・期限・トークンの種類・app client が検証され、入るのはトークンの `sub` です。
+人なら IdP（Identity Provider —— 身元を証明する外部のサービス）が付けた ID で、利用者の名前ではありません。
+機械ならその app client の ID です。
 
 それでも `null` のままにしないのは、この値がそのまま `capture_job` の
 `owner` tuple になるからです。埋まっていないアーカイブは、

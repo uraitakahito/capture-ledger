@@ -129,10 +129,10 @@ export const pickerView = (
       form: "token",
       notice: {
         level: "info",
-        text: `この API は JWT で名乗る設定（${identity.issuer}）。その issuer が刷ったトークンを貼る`,
+        text: `この API は JWT で名乗る設定（${identity.issuer}）。そのプールの access token を貼る`,
       },
       unauthorized:
-        "401 — このトークンは通らない（期限切れ・issuer を起こし直した後・別の issuer のもの）。取り直して貼る",
+        "401 — このトークンは通らない（期限切れ・ID token・受けない client・プールを作り直す前のもの）。取り直して貼る",
     };
   }
   return {
@@ -166,9 +166,9 @@ const noticeHtml = (notice: PickerView["notice"]): string =>
  * 名乗りの欄。開発用ヘッダの設定は 2 欄 (そのまま信じられる名前)、JWT の設定はトークン 1 欄。
  *
  * トークンの取り方を画面に出すのは、ここで止まる人が docs を開いていないから。コマンドは
- * 開発用の issuer (`pnpm run oidc:issuer`) のもの —— 本物の IdP なら、そのアクセストークンを貼る。
- * **picker 自身はトークンを刷らない。** issuer は頼まれれば誰の名前でも刷るので 127.0.0.1 に
- * しか居ない。0.0.0.0 で開ける画面が刷れば、同じネットワークの誰もが刷れてしまう。
+ * 手元の Floci (Cognito の代役) のもの —— 本番の Cognito なら、そのアクセストークンを貼る。
+ * **picker 自身はトークンを取らない。** Floci の管理の API は既定の鍵で誰でも利用者を作れるので、
+ * 0.0.0.0 で開ける画面が代わりに取れば、同じネットワークの誰もが誰にでもなれてしまう。
  */
 const WHO: Record<Exclude<PickerView["form"], "none">, string> = {
   names: `<div class="who">
@@ -184,8 +184,8 @@ const WHO: Record<Exclude<PickerView["form"], "none">, string> = {
   token: `<div class="who">
     <label>トークン <input id="token" size="44" placeholder="eyJhbGciOi…" autocomplete="off" spellcheck="false"></label>
     <button id="reload" type="button">読み込む</button>
-    <p class="how">取り方（capture-ledger で。開発用の issuer のとき）:</p>
-    <pre class="cmd">pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy</pre>
+    <p class="how">取り方（capture-ledger で。手元の Floci のとき）:</p>
+    <pre class="cmd">pnpm run --silent idp:token | pbcopy</pre>
     <p class="how">1 時間で切れる。貼ったトークンは、このタブを閉じると消える。</p>
   </div>
   <p class="whoami" id="whoami" hidden></p>`,

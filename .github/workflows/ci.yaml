@@ -229,6 +229,43 @@ jobs:
       - name: Authorization model tests
         run: pnpm run fga:test
 
+  # 手元の Cognito の代役 (Floci) が実際に出すトークンを、台帳の resolver が確かめる往復
+  # (test/idp-floci.test.ts。CAPTURE-185)。単体の試験はトークンの形をその場で組むので、
+  # Floci (と、その先の Cognito) が形を変えても緑のまま —— それを見るのはここだけ。
+  # image は docker-compose.yml の idp と同じ digest にする (amd64 も同じ index に在る)。
+  idp:
+    name: Floci のトークンを確かめる
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      idp:
+        image: docker.io/floci/floci:2.4.0@sha256:5ee85db604c4aa74ac76e07ea5cc83086f37bb472bf3dbb97e34019e48efae9c
+        ports:
+          - 4566:4566
+        env:
+          # トークンの iss の頭。試験が渡す CAPTURE_LEDGER_TEST_IDP_ENDPOINT と同じでなければならない。
+          FLOCI_BASE_URL: http://localhost:4566
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: "pnpm"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Floci が答えるまで待つ
+        run: |
+          for i in $(seq 1 120); do
+            curl -sf http://localhost:4566/_floci/init | grep -q '"ready":true' && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Floci のトークンの往復
+        run: pnpm exec vitest run test/idp-floci.test.ts
+        env:
+          CAPTURE_LEDGER_TEST_IDP_ENDPOINT: http://localhost:4566
+
   # 本番の image が建ち、起動することを見る。ほかに建てる物が無い —— `dev:up` は API を host で動かす。
   # 起動は、必須の環境変数の文で止まることで見る。本物の依存 (OpenFGA・OpenSearch) は要らない。
   # 手本は wacz-validator の image.yml。建てる物が無いと、腐っても誰も気づかない

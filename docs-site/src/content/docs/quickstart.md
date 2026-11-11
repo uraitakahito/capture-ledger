@@ -76,7 +76,7 @@ Every build context points into them, so nothing builds while they are empty.
 
 `.env` is a copy of `.env.example`: nothing is detected and no value is
 changed. The template already carries the development values, and **there is
-nothing for you to add by hand** — the two OpenFGA ids (§5) and the four crawl
+nothing for you to add by hand** — the two OpenFGA ids (§5) and the crawl
 lines (§7) only exist once something has run, so **the tools write them into
 `.env.local`** (node reads that after `.env`, so it wins where they overlap).
 `-n` refuses to overwrite an existing `.env`, so your own edits survive a second run.
@@ -180,13 +180,13 @@ open http://127.0.0.1:7070/
 ```
 
 :::note[§7 stops this API and starts it again]
-**Settings are read once, at startup.** §7's `pnpm run connect` writes four lines into
-`.env.local`, and the process you are running now will never see them — you stop it with `Ctrl-C` and run the same
+**Settings are read once, at startup.** §7's `pnpm run connect` and `pnpm run idp:bootstrap` write
+lines into `.env.local`, and the process you are running now will never see them — you stop it with `Ctrl-C` and run the same
 `pnpm run api` again. **A second one cannot run alongside it** (it exits with
 `EADDRINUSE: address already in use 0.0.0.0:7070`).
 **When you cannot tell what is still running**, `pnpm run dev:status` prints the pid and start
 time, and `pnpm run dev:down` stops it — `container-compose down` only knows about containers,
-so the issuer and the API, which run on the host, survive it.
+so the API, which runs on the host, survives it.
 
 This first run is here to show that the API works and the picker opens.
 :::
@@ -212,26 +212,38 @@ capturing does not.
 
 The steps live in one place, [capture-scheduler's quickstart](https://uraitakahito.github.io/capture-scheduler/quickstart/)
 (bring up Windmill, load the flow, hand over a token). Along the way,
-capture-scheduler's `pnpm run windmill:bootstrap` writes **four lines for this repo inside its
+capture-scheduler's `pnpm run windmill:bootstrap` writes **lines for this repo inside its
 own repo**. **Fetching them is our job:**
 
 ```sh
-pnpm run connect   # read the four lines from ../capture-scheduler into this repo's .env.local
+pnpm run connect   # read the lines from ../capture-scheduler into this repo's .env.local
 ```
 
 A command run over there never rewrites this repo's `.env` — a repo changing because of a command
-typed somewhere else is not what the person typing it expects. These are the four lines, and
-**miss any one and no crawl runs to the end.**
+typed somewhere else is not what the person typing it expects. These are the lines the API needs,
+and **miss any one and no crawl runs to the end.** The last row does not come from
+capture-scheduler: `pnpm run idp:bootstrap` (below) writes it.
 
-| Line                                                                       | Why                                                                                                                                                                                                           |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | Where crawls are dispatched. Without them `/api/crawls` does not exist at all and answers `404`                                                                                                               |
-| `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | The flow reports each level back to the API, and the report comes **from a container**. A `127.0.0.1` bind never receives it                                                                                  |
-| `CAPTURE_LEDGER_OIDC_ISSUER=http://127.0.0.1:9099`                         | The flow identifies itself with a JWT. The API accepts **either** a JWT **or** the development headers, and this line makes it JWT — the picker then shows a token field in place of the two name fields (§8) |
+| Line                                                                       | Why                                                                                                                                                                                                            |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`<br>`CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN` | Where crawls are dispatched. Without them `/api/crawls` does not exist at all and answers `404`                                                                                                                |
+| `CAPTURE_LEDGER_API_HOST=0.0.0.0`                                          | The flow reports each level back to the API, and the report comes **from a container**. A `127.0.0.1` bind never receives it                                                                                   |
+| `CAPTURE_LEDGER_OIDC_ISSUER`<br>`CAPTURE_LEDGER_OIDC_CLIENT_IDS`           | The flow identifies itself with a JWT. The API accepts **either** a JWT **or** the development headers, and these lines make it JWT — the picker then shows a token field in place of the two name fields (§8) |
 
-Once `connect` has run, start the issuer (`pnpm run oidc:issuer`) and restart the API — it reads its
-settings once, at startup. (Run `connect` again whenever you run `windmill:bootstrap` again: the
-token has changed.) When the last line of its startup log says `crawl level reports: ready`, the four lines
+Once `connect` has run, set up the local IdP (identity provider) and restart the API — it reads its
+settings once, at startup. The IdP is [Floci](https://github.com/floci-io/floci), a local stand-in for
+Amazon Cognito that §3's stack runs as the service `idp`
+([The dev IdP](/capture-ledger/development-environment/#the-dev-idp-floci)):
+
+```sh
+pnpm run idp:bootstrap   # pool, app clients and your user; writes the last row into .env.local
+pnpm run idp:grant       # lets the flow's app client and your user start crawls in acme
+```
+
+`idp:bootstrap` also writes a handoff file, `.dev/idp.env`, which capture-scheduler's
+`windmill:capture-ledger-token` reads, so that step comes after this one (`dev:up` runs them in
+that order). (Run `connect` again whenever you run `windmill:bootstrap` again: the
+token has changed.) When the last line of its startup log says `crawl level reports: ready`, the lines
 are in effect; `blocked` means the warnings above it name the missing lines
 ([Check the startup log](/capture-ledger/development-environment/#check-the-startup-log)). When
 `pnpm run doctor`, near the end of capture-scheduler's quickstart, shows ✓ on every line, the two
@@ -246,8 +258,7 @@ someone makes one, in capture-workbench's Schedules tab —
 Identify with a JWT. The headers from §6 do nothing on an API set up for JWTs.
 
 ```sh
-pnpm run fga:grant submitter "$(whoami)" acme   # once; without it you get 404
-TOKEN=$(pnpm run --silent oidc:token --subject "$(whoami)" --org acme)
+TOKEN=$(pnpm run --silent idp:token)   # your user from idp:bootstrap, in acme
 curl -X POST http://127.0.0.1:7070/api/crawls \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"seeds":["https://example.com/"],"maxDepth":0}'
@@ -277,7 +288,7 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<craw
 
 :::caution[There are two 404s]
 A body of `Route POST:/api/crawls not found` means the route does not exist (the two webhook lines
-are missing); `{"error":"not found"}` means the caller lacks `can_submit` (no `fga:grant submitter`).
+are missing); `{"error":"not found"}` means the caller lacks `can_submit` (`pnpm run idp:grant` has not run).
 Ask `GET /api/me` with the same token: its `canSubmit` is that answer.
 See [Archive ledger](/capture-ledger/archive-ledger/#who-may-start-one).
 :::
@@ -298,8 +309,8 @@ handed a URL the ledger signed, so **no store credentials are added anywhere**. 
 **開く** (open) shows the archive's contents too — the file tree, lines, one line split into
 fields, the WARC records and images; the records BrowserHive wrote for what it did not or could
 not fetch (`WARC-Type: metadata`) appear there as well. **There is no token
-to paste** — it asks the dev issuer for one itself. (Which also means it is not a boundary: that
-issuer hands out a token for any name it is asked for.)
+to paste** — it signs in to the local IdP through its own app client, `workbench`. (Locally that is
+not a boundary: Floci's admin API lets anything that reaches it create users and get tokens.)
 
 What follows is the same thing by hand, which is what that screen calls.
 
@@ -314,13 +325,13 @@ To use the picker, paste a token for the same identity as §7 into the screen. T
 stay as they are.
 
 ```sh
-pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy
+pnpm run --silent idp:token | pbcopy
 open http://127.0.0.1:7070/
 ```
 
-The API you gave the four lines in §7 is set up for JWTs, so the picker shows a トークン (Token) field
+The API you gave the lines in §7 is set up for JWTs, so the picker shows a トークン (Token) field
 in place of the two fields from §6. Paste the token and press 読み込む (Load): the line above the list
-says you are viewing as the output of `whoami` in `acme`, and the pages from the §7 crawl are listed.
+says you are viewing as your `sub` (the ID Floci gave your user — `idp:token` prints it) in `acme`, and the pages from the §7 crawl are listed.
 The token lasts one hour. When the picker says 401 — このトークンは通らない… ("this token does not get
 through"), get a new one with the same command and paste it — see
 [Browsing archives](/capture-ledger/picker/#three-steps-jwt).

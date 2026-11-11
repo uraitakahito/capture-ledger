@@ -317,12 +317,16 @@ pnpm run fga:revoke submitter alice acme
 推した答えではない —— `submitter` を消しても `admin` が残っていれば「始められます」と言い、括弧の中に
 「ほかの関係で許されています」と添える。
 
+利用者は呼び出し元の身元が言うもの。開発用ヘッダなら名乗った名前、JWT ならトークンの `sub` で、
+利用者の名前ではない。手元では `pnpm run idp:grant` が、[Floci](https://github.com/floci-io/floci) の自分の利用者の `sub` と、
+Windmill の flow が使う app client の ID に、`acme` の `submitter` を与える。
+
 呼び出し元の側から確かめるには `GET /api/me` を訊く。答えるのは呼び出し元自身のことだけで、名前と
 組織はトークン（かヘッダ）から解いたもの、`canSubmit` はクロールのエンドポイントが訊くのと同じ問いの答え:
 
 ```sh
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/me
-# → {"subject":"alice","organizations":["acme"],"canSubmit":true}
+# → {"subject":"<sub>","organizations":["acme"],"canSubmit":true}
 ```
 
 クロールのエンドポイントの 404 からは「許可が無い」のか「エンドポイントが無い」のかが読めない。こちらは許可が無くても
@@ -333,7 +337,7 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/me
 なり、必ず true になる。最初そう書いて、往復がそれを捕まえた —— 何の関係も無い組織を名乗った
 subject に 202 が出た。
 
-分かれ目は権威の在処。**誰であるか**（どの組織に属するか）を言うのは IdP なので保存しない。
+分かれ目は権威の在処。**誰であるか**（どの組織に属するか）を言うのは IdP（Identity Provider —— 身元を証明する外部のサービス）なので保存しない。
 **何をしてよいか**を言うのは OpenFGA なので保存する。`grant` が `member` を書くことを拒む
 のは、まさにこのため —— 1 つの事実に住処が 2 つあると、食い違ったとき答えが無くなる。
 
@@ -943,8 +947,9 @@ epoch の秒にして `-attime` に渡します。`-attime` は LibreSSL（macOS
 名乗りの 2 欄、JWT ならトークンの欄、どちらも無ければ注意だけ。ブラウザの側では「名乗りが空」と
 「JWT の設定」を見分けられない（どちらも `401` の `{"error":"unauthenticated"}`）ので、
 名乗り方を知っている API が HTML を出す時点で決める（`src/api/picker.ts` の `pickerView`）。
-picker はトークンを刷らない。刷る issuer は頼まれれば誰の名前でも刷るので `127.0.0.1` にしか
-居らず、`0.0.0.0` で開ける画面が刷れば、同じネットワークの誰もが刷れてしまう。
+picker はトークンを取らない。手元でトークンを出すのは Floci で、
+その管理の API は届けば誰でも利用者を作れるので、`127.0.0.1` にしか出していない。`0.0.0.0` で開ける
+画面が代わりに取れば、同じネットワークの誰もが誰にでもなれてしまう。
 
 picker が replayweb-server に渡すのは `objectKey` だけ:
 
@@ -971,7 +976,9 @@ replayweb-server の `/q/<置き場>/pages`（クロールの[合本](#合本)�
 
 ## 身元
 
-呼び出し元の**認証**は認可とは別の問題で、まだ IdP が決まっていません。
+呼び出し元の**認証**は認可とは別の問題です。本番の IdP は
+Amazon Cognito に決まりました（2026-11-11）。手元の開発では、Cognito を真似る Floci を使います
+（[開発用の IdP](/capture-ledger/ja/development-environment/#開発用の-idpfloci)）。
 認可層が必要とするものは小さく安定している（subject と所属組織）ので、
 その形だけ固定し、裏の検証は差し替え可能にしてあります。
 
@@ -998,13 +1005,16 @@ curl -X POST http://localhost:7070/api/archives/<id>/url \
 アーカイブを削除できません**（`can_delete` は `owner from parent` だけを見ます）。
 
 どの経路も最後は 1 か所に行き着きます —— `src/api/identity.ts` が resolver を選び、
-`src/config/identity.ts` が検証済みのクレームを `Identity` にする。IdP が決まったとき
-差し替えるのはそこだけで、呼ぶ側は `Identity` 型しか見ていません。
+`src/config/identity.ts` が検証済みのクレームを `Identity` にする。JWT の主体はトークンの `sub`
+（人なら IdP が付けた ID、機械ならその app client の ID）、組織は `cognito:groups` です。
+呼ぶ側は `Identity` 型しか見ていません。
 
 所属は OpenFGA に**保存していません**。リクエストごとに呼び出し元の身元から
 contextual tuple として渡すので、入退社や組織変更を認可ストアへ同期する
 必要がそもそも生じません。代償は**剥奪がトークンの失効待ちになる**ことで、
-だからトークンは短命であるべきです。
+だからトークンは短命であるべきです。例外は機械のトークン（client credentials で取り、`sub` が
+`client_id` と同じもの）です。群が載らないので、OpenFGA でその主体に `can_submit` がある組織を
+API が引きます（`src/api/authorization.ts` の `submitterOrganizations`）。
 
 ## 認可モデル
 

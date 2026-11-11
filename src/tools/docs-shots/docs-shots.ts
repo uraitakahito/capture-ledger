@@ -12,14 +12,14 @@
  * ## スタックは要らない
  *
  * 立てるのは **本物の画面** (`src/api/picker.ts` の registerPicker) と、**見本データを返す代役の
- * `/api/archives` と `/api/me`** だけ。DB も OpenFGA も replayweb-server も issuer も要らない。見本データ
+ * `/api/archives` と `/api/me`** だけ。DB も OpenFGA も replayweb-server も IdP も要らない。見本データ
  * なので、実データにはなかなか現れない状態 (「欠けあり」) も写せる。
  *
  * 画面は API の名乗り方で変わるので、名乗り方ごとに 1 組ずつ立てる (開発用ヘッダ・127.0.0.1／
  * JWT／名乗りの設定なし／開発用ヘッダ・0.0.0.0)。画面に渡す待ち受けは画面に出す値で、代役が
  * 実際に待つのは 127.0.0.1 の空きポート。
  *
- * 代役が真似るのは「誰か」と「始めた本人か、同じ組織の一員か」だけ。本物は issuer の署名を
+ * 代役が真似るのは「誰か」と「始めた本人か、同じ組織の一員か」だけ。本物は IdP の署名を
  * 検め、OpenFGA の can_view に訊く。ヘッダの設定はヘッダだけ、JWT の設定は Bearer だけを見る
  * ところは本物と同じ (トークンは見本の 1 本だけが alice・acme として通る)。応答の形は本物
  * (`src/api/routes.ts` の GET /api/archives、`src/api/me.ts`) に合わせてある。形が変われば、それを
@@ -100,7 +100,7 @@ const REPLAYWEB_SERVER_ORIGIN = "http://127.0.0.1:8899";
 /** 見本のトークン。代役だけが知っていて、alice・acme として通す。 */
 const SAMPLE_TOKEN = "sample-token-alice-acme";
 /** 画面に出すだけ。取りには行かない。 */
-const ISSUER = "http://127.0.0.1:9099";
+const ISSUER = "http://127.0.0.1:4566/us-east-1_example";
 const LOOPBACK = { host: "127.0.0.1", port: 7070 };
 const LAN = { host: "0.0.0.0", port: 7070 };
 

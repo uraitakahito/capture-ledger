@@ -17,7 +17,10 @@ import {
 const LOOPBACK = { host: "127.0.0.1", port: 7070 };
 const LAN = { host: "0.0.0.0", port: 7070 };
 const HEADER: PickerOptions["identity"] = { mode: "header" };
-const JWT: PickerOptions["identity"] = { mode: "jwt", issuer: "http://127.0.0.1:9099" };
+const JWT: PickerOptions["identity"] = {
+  mode: "jwt",
+  issuer: "http://127.0.0.1:4566/us-east-1_example",
+};
 const DENY: PickerOptions["identity"] = { mode: "deny" };
 
 const open = async (options: Partial<PickerOptions> = {}): Promise<string> => {
@@ -149,7 +152,9 @@ describe("名乗り方ごとの picker", () => {
     const body = await open({ identity: JWT, listen: LAN });
     expect(body).not.toContain('id="subject"');
     expect(body).not.toContain('id="orgs"');
-    expect(body).toContain("この API は JWT で名乗る設定（http://127.0.0.1:9099）");
+    expect(body).toContain(
+      "この API は JWT で名乗る設定（http://127.0.0.1:4566/us-east-1_example）",
+    );
     // JWT の設定で 0.0.0.0 は正しい形 (クロールの 4 行)。ヘッダの注意は出さない。
     expect(body).not.toContain("誰にでもなれる");
   });
@@ -157,9 +162,7 @@ describe("名乗り方ごとの picker", () => {
   it("JWT の設定ではトークンの欄と、その取り方のコマンドを出し、トークンで名乗る", async () => {
     const body = await open({ identity: JWT, listen: LAN });
     expect(body).toContain('id="token"');
-    expect(body).toContain(
-      'pnpm run --silent oidc:token --subject "$(whoami)" --org acme | pbcopy',
-    );
+    expect(body).toContain("pnpm run --silent idp:token | pbcopy");
     // script が送るのは Bearer だけ。名乗りの 2 欄は無いので、ヘッダの経路に落ちてはいけない。
     expect(body).toContain('const MODE = "token";');
   });
@@ -167,7 +170,7 @@ describe("名乗り方ごとの picker", () => {
   it("JWT の設定の 401 は「このトークンは通らない」と言い、「subject が空」とは言わない", async () => {
     const body = await open({ identity: JWT, listen: LAN });
     expect(body).toContain(
-      'const UNAUTHORIZED = "401 — このトークンは通らない（期限切れ・issuer を起こし直した後・別の issuer のもの）。取り直して貼る";',
+      'const UNAUTHORIZED = "401 — このトークンは通らない（期限切れ・ID token・受けない client・プールを作り直す前のもの）。取り直して貼る";',
     );
     expect(body).not.toContain("subject が空");
   });

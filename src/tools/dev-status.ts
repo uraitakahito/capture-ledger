@@ -16,6 +16,7 @@ import { resolve } from "node:path";
 
 import pg from "pg";
 
+import { IDP_HANDOFF, IDP_READY_URL } from "./idp.js";
 import { ROOT } from "./root.js";
 import type { HostProcess } from "./daemons.js";
 import {
@@ -83,8 +84,8 @@ const buildLine = async (spec: HostProcess) => {
   }
 };
 
-// **compose では消えない 4 本。** どれもコンテナではないので、スタックを
-// 落としても残る。2026-09-20 に 9099 を塞いでいたのは issuer だった。
+// **compose では消えない 3 本。** どれもコンテナではないので、スタックを
+// 落としても残る。2026-09-20 に 9099 を塞いでいたのは、当時ホストで動いていた開発用の issuer だった。
 for (const [index, spec] of HOST_PROCESSES.entries()) {
   const found = inspect(spec);
   const label = index === 0 ? "ホスト" : "";
@@ -127,6 +128,7 @@ console.log(
     `fga:deploy ${mark(declares(".env.local", "CAPTURE_LEDGER_FGA_MODEL_ID"))}   ` +
       `connect ${mark(declares(".env.local", "CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN"))}   ` +
       `search:connect ${mark(declares(".env.local", "CAPTURE_LEDGER_OPENSEARCH_URL"))}   ` +
+      `idp:bootstrap ${mark(declares(".env.local", "CAPTURE_LEDGER_OIDC_CLIENT_IDS"))}   ` +
       "(どれも .env.local に書く。打ち直せば作り直せる)",
   ),
 );
@@ -176,6 +178,29 @@ if (searchUrl === undefined) {
         : `${String(counted["count"])} 件`;
     console.log(
       row("検索", `${searchUrl}  health ${String(health["status"])}  索引 ${searchIndex}: ${docs}`),
+    );
+  }
+}
+
+// ── IdP（手元の Cognito の代役 Floci）──────────────────────────────────
+// Floci はプールをメモリに持つ。`stack:up` だけで作り直されるとプールが消え、.env.local の
+// iss と合わなくなる (API は全員を 401 にする)。だから「答えるか」と「iss のプールが在るか」を分けて言う。
+{
+  const issuer = settingOf("CAPTURE_LEDGER_OIDC_ISSUER");
+  const ready = await answerOf(IDP_READY_URL);
+  if (ready === undefined) {
+    console.log(row("IdP", `Floci が答えない (${IDP_READY_URL}。起こすのは pnpm run stack:up)`));
+  } else if (issuer === undefined) {
+    console.log(row("IdP", "Floci は答える。iss が無い (pnpm run dev:up --from idp)"));
+  } else {
+    const keys = await answerOf(`${issuer}/.well-known/jwks.json`);
+    console.log(
+      row(
+        "IdP",
+        keys === undefined
+          ? `${issuer} のプールが無い (Floci が作り直された。pnpm run dev:up --from idp)`
+          : `${issuer}  プール在り。手元の利用者とパスワードは ${IDP_HANDOFF}`,
+      ),
     );
   }
 }

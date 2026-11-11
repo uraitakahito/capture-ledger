@@ -4,6 +4,7 @@ import type { JWTPayload } from "jose";
 import {
   ORGANIZATIONS_CLAIM,
   identityFromClaims,
+  isMachineToken,
   organizationsFromList,
 } from "../src/config/identity.js";
 
@@ -11,13 +12,35 @@ import {
 const claims = (payload: Record<string, unknown>): JWTPayload => payload;
 
 /**
- * クレームから主体を組む規則。**API と CLI が共有する。**
+ * クレームから主体を組む規則。組織のクレームの綴りは `ORGANIZATIONS_CLAIM` の 1 か所
+ * (Cognito の `cognito:groups`)。
  *
- * 分けて持っていた頃、片方のクレーム名だけを変えると片方の試験しか赤くならず、
- * 「API は組織を読めるのに CLI は読めない」という状態が作れた。しかもその症状は
- * 「なぜか全部の取り込みが拒まれる」としか見えない —— CLI の組織が空になり、
- * 「自分が属さない組織の URL は投げない」検査に全部引っかかるため。
+ * 以前は API と CLI が別々に読んでいて、片方のクレーム名だけを変えると片方の試験しか
+ * 赤くならなかった。読む所を 1 つにしたので、綴りを変えた日にはここが赤くなる。
  */
+describe("ORGANIZATIONS_CLAIM", () => {
+  // Cognito (と代役の Floci) が人の access token に群を載せる綴り。手元の Floci で確かめた
+  // (CAPTURE-185 の段 0)。ここが変わるなら、本番の IdP の形が変わったということ。
+  it("Cognito の群のクレーム", () => {
+    expect(ORGANIZATIONS_CLAIM).toBe("cognito:groups");
+  });
+});
+
+describe("isMachineToken", () => {
+  it("sub と client_id が同じなら機械 (client credentials)", () => {
+    expect(isMachineToken(claims({ sub: "abc", client_id: "abc" }))).toBe(true);
+  });
+  it("違えば人", () => {
+    expect(isMachineToken(claims({ sub: "user-sub", client_id: "abc" }))).toBe(false);
+  });
+  it("client_id が無ければ人", () => {
+    expect(isMachineToken(claims({ sub: "abc" }))).toBe(false);
+  });
+  it("sub が空なら機械ではない", () => {
+    expect(isMachineToken(claims({ sub: "", client_id: "" }))).toBe(false);
+  });
+});
+
 describe("identityFromClaims", () => {
   it("sub と組織のクレームから Identity を組む", () => {
     expect(identityFromClaims(claims({ sub: "alice", [ORGANIZATIONS_CLAIM]: ["acme"] }))).toEqual({

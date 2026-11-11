@@ -28,6 +28,7 @@ export const SCRIPT_ENV = [
   "CAPTURE_LEDGER_FGA_STORE_NAME",
   "CAPTURE_LEDGER_FGA_IMAGE",
   "CAPTURE_LEDGER_FGA_DATASTORE_URI",
+  "CAPTURE_LEDGER_IDP_ENDPOINT",
 ] as const;
 
 /**
@@ -64,7 +65,7 @@ export const ENV_LOCAL = ".env.local";
 const ENV_LOCAL_HEADER = `# capture-ledger の道具が書くファイル。**手で書かない**（手で書くのは .env）。
 #
 # node は --env-file-if-exists=.env の後にこれを読むので、名前が重なればこちらが勝つ。
-# 書くのは pnpm run fga:deploy・connect・search:connect。消してよい —— どれも作り直せる。
+# 書くのは pnpm run fga:deploy・connect・search:connect・idp:bootstrap。消してよい —— どれも作り直せる。
 `;
 
 /**
