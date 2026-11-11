@@ -415,7 +415,7 @@
         "schemas": {
             "ArtifactSink": {
                 "type": "object",
-                "description": "成果物の送り先。**呼ぶ側が 1 回きりの口を渡し、こちらはそこへ押し出す。**\n\n省略すればサーバ自身の保管庫へ書く。保管庫を持たない配備では必須で、無ければ受理の時点で断る。",
+                "description": "成果物の送り先。**呼ぶ側が 1 回きりの受け取り先を渡し、こちらはそこへ押し出す。**\n\n省略すればサーバ自身の保管庫へ書く。保管庫を持たない配備では必須で、無ければ受理の時点で断る。",
                 "properties": {
                     "url": {
                         "type": "string",
@@ -493,7 +493,7 @@
             },
             "CaptureArtifacts": {
                 "type": "object",
-                "description": "成果物の置き場所。`status` が `success` のときだけ埋まり、それ以外は空 (`{}`)。\n値は書き込み先が答えたものをそのまま入れる —— 自前の bucket なら `s3://<bucket>/<key>`、\n`artifactSink` を持つリクエストなら受け口が返した値 (BrowserHive は解析も整形もしない)。\n求めなかった形式の欄は無い。\n主文書が方針に当たって伏せた取り込みでは、`status` は `success` のまま、\nページから作る形式 (`png`・`webp`・`html`・`links`・`mhtml`) の欄が無い —— 在るのは `wacz` だけ。\n最初の読み込みの文書を `deny` が止めたなら、`wacz` も無い (`{}`)。\nファイル名は `{taskId}_{correlationId}[_{labels}]` に拡張子\n(correlationId が無くても枠は残るので `<taskId>_.png` になる)。",
+                "description": "成果物の置き場所。`status` が `success` のときだけ埋まり、それ以外は空 (`{}`)。\n値は書き込み先が答えたものをそのまま入れる —— 自前の bucket なら `s3://<bucket>/<key>`、\n`artifactSink` を持つリクエストなら受け取り先が返した値 (BrowserHive は解析も整形もしない)。\n求めなかった形式の欄は無い。\n主文書が方針に当たって伏せた取り込みでは、`status` は `success` のまま、\nページから作る形式 (`png`・`webp`・`html`・`links`・`mhtml`) の欄が無い —— 在るのは `wacz` だけ。\n最初の読み込みの文書を `deny` が止めたなら、`wacz` も無い (`{}`)。\nファイル名は `{taskId}_{correlationId}[_{labels}]` に拡張子\n(correlationId が無くても枠は残るので `<taskId>_.png` になる)。",
                 "properties": {
                     "png": {
                         "type": "string",
@@ -1121,7 +1121,7 @@
             },
             "ErrorType": {
                 "type": "string",
-                "description": "失敗の分類 (`errorDetails.type`)。直し方の種類ごとに分けてある。\n\n- `\"http\"`: 主文書の HTTP の status が 2xx でなかった (status は `http_error`)。\n- `\"timeout\"`: 時間切れ —— 操作ごとの予算か、取り込み全体の予算。署名サービスや書き込み先の\n  時間切れはここではなく `\"signing\"` / `\"artifact_sink\"`。\n- `\"connection\"`: browser に繋がらなかった (取り込みに入れず、所要時間は 0)、または取り込みの\n  途中で browser との接続が切れた。\n- `\"signing\"`: 署名が必須だったのに得られなかった (サービスが無い・届かない・拒まれた・検査に\n  落ちた)。WACZ は書かない。\n- `\"internal\"`: 上のどれにも当たらない失敗。取り込み先へ繋がらない (`net::ERR_…`) もここ。\n  内部アドレスへの取り込みの拒否 (`url is not allowed`) も。\n- `\"artifact_sink\"`: 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け口) へ置けなかった。\n  書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。\n- `\"cancelled\"`: 呼ぶ側が途中で接続を切った。取り込みは打ち切られる (応答は誰にも届かないが、\n  manifest には残る)。\n- `\"policy\"`: 方針を守れなかった —— `deny` の要求を、止め損ねたかもしれない。\n  要求の関所を掛けられなかった target があったか、止めたはずの要求に応答が届いたか、\n  `deny` に当たる WebSocket を開いた (handshake は止められない)。WACZ は書かない。\n- `\"renderer_crashed\"`: 主の頁の renderer (頁を描く Chromium のプロセス) が、取り込みの途中で落ちた。\n  メモリ切れが多いが、それに限らない。落ち方は `rendererStatus` が言う。撮り直しても同じ所で落ちるので、\n  時間切れと分ける。WACZ は書かない。別サイトの iframe だけが落ちたときは失敗にせず、\n  `completeness.crashedTargets` に載る。",
+                "description": "失敗の分類 (`errorDetails.type`)。直し方の種類ごとに分けてある。\n\n- `\"http\"`: 主文書の HTTP の status が 2xx でなかった (status は `http_error`)。\n- `\"timeout\"`: 時間切れ —— 操作ごとの予算か、取り込み全体の予算。署名サービスや書き込み先の\n  時間切れはここではなく `\"signing\"` / `\"artifact_sink\"`。\n- `\"connection\"`: browser に繋がらなかった (取り込みに入れず、所要時間は 0)、または取り込みの\n  途中で browser との接続が切れた。\n- `\"signing\"`: 署名が必須だったのに得られなかった (サービスが無い・届かない・拒まれた・検査に\n  落ちた)。WACZ は書かない。\n- `\"internal\"`: 上のどれにも当たらない失敗。取り込み先へ繋がらない (`net::ERR_…`) もここ。\n  内部アドレスへの取り込みの拒否 (`url is not allowed`) も。\n- `\"artifact_sink\"`: 成果物を書き込み先 (自前の bucket、または呼ぶ側の受け取り先) へ置けなかった。\n  書けなかった成果物はどこにも残らないので、取り込みは丸ごと失われている。\n- `\"cancelled\"`: 呼ぶ側が途中で接続を切った。取り込みは打ち切られる (応答は誰にも届かないが、\n  manifest には残る)。\n- `\"policy\"`: 方針を守れなかった —— `deny` の要求を、止め損ねたかもしれない。\n  要求の関所を掛けられなかった target があったか、止めたはずの要求に応答が届いたか、\n  `deny` に当たる WebSocket を開いた (handshake は止められない)。WACZ は書かない。\n- `\"renderer_crashed\"`: 主の頁の renderer (頁を描く Chromium のプロセス) が、取り込みの途中で落ちた。\n  メモリ切れが多いが、それに限らない。落ち方は `rendererStatus` が言う。撮り直しても同じ所で落ちるので、\n  時間切れと分ける。WACZ は書かない。別サイトの iframe だけが落ちたときは失敗にせず、\n  `completeness.crashedTargets` に載る。",
                 "enum": [
                     "http",
                     "timeout",
@@ -1213,7 +1213,7 @@
                         "properties": {
                             "location": {
                                 "type": "string",
-                                "description": "書けた場所 (`s3://…`、または受け口が返した場所)。"
+                                "description": "書けた場所 (`s3://…`、または受け取り先が返した場所)。"
                             }
                         },
                         "required": [
@@ -1237,7 +1237,7 @@
             },
             "Script": {
                 "type": "object",
-                "description": "走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは注入の口だけ。",
+                "description": "走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは差し込む時（phase）だけ。",
                 "properties": {
                     "id": {
                         "type": "string",
