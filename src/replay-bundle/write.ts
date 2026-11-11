@@ -9,15 +9,15 @@
  * 3. 組む。終わったクロールで、未検めのアーカイブが 0 本なら、`replay.json` のバイト列の sha256 に署名を貰い、
  *    自分で検める (`replay-bundle/sign.ts`)。**トランザクションの外で** —— TSA を待つ間、クロールの行の鍵を持たない
  * 4. `pages.json`・(署名したなら) `replay-digest.json`・`replay.json` の順に保管庫へ書く (`application/json`)
- * 5. **1 つのトランザクションで**、台帳が指す版と署名した版を、それぞれ **前へだけ** 進め、その版で初めて入った
+ * 5. **1 つのトランザクションで**、capture-ledger が指す版と署名した版を、それぞれ **前へだけ** 進め、その版で初めて入った
  *    アーカイブに版を書く
  *
  * ## 版の払い出しと読みを 1 つのトランザクションに置く理由
  *
  * 払い出しの UPDATE はクロールの行に鍵を掛け、commit まで持つ。2 本が同時に来ても、後の版の読みは前の版の読みより
- * 後になる —— **大きい版ほど、入っているアーカイブが多いか同じ**。これが崩れると、台帳が指す (いちばん大きい) 版に、
+ * 後になる —— **大きい版ほど、入っているアーカイブが多いか同じ**。これが崩れると、capture-ledger が指す (いちばん大きい) 版に、
  * 小さい版にはあった WACZ が無い、が起こりうる。capture-workbench は「頁の WACZ が入った最初の版 (`archives.replay_bundle_rev`)
- * ≤ 台帳の指す版」で頁を合本の中で開くので、それが嘘になる。保管庫に書くのは鍵を放した後。
+ * ≤ capture-ledger の指す版」で頁を合本の中で開くので、それが嘘になる。保管庫に書くのは鍵を放した後。
  *
  * **クロールの状態も、同じ行の鍵の下で取る** (払い出しの returning)。合本に書く `crawlState` は、その版の中身を
  * 読んだ時のクロールの状態 —— 先に読んで後で払い出すと、間に締められた版が「走行中」と書かれるか、その逆になる。
@@ -39,19 +39,19 @@
  *
  * ## 書く順
  *
- * `pages.json` → `replay-digest.json` → `replay.json`。入口 (replay が開く物・台帳が指す物) の `replay.json` が
+ * `pages.json` → `replay-digest.json` → `replay.json`。入口 (replay が開く物・capture-ledger が指す物) の `replay.json` が
  * 現れた時点で、それが指す `pages.json` も、それを覆う digest も、もう在る。
  *
  * ## 前へだけ
  *
  * 段 N+1 の報告は段 N の合本より先に来うる (次の段は段の報告の中で出る)。遅れて書き終えた古い版が、新しい版を
- * 指していた台帳を戻さないように、指す版は「書き終えた版がいまより大きいときだけ」差し替える。署名した版も同じ。
+ * 指していた行を戻さないように、指す版は「書き終えた版がいまより大きいときだけ」差し替える。署名した版も同じ。
  * 版ごとの置き場は書いたら変えない (払い出した版は 1 度しか書かれない)。
  *
  * ## 失敗してもクロールを止めない
  *
  * 保管庫に書けなければ、理由を `crawls.replay_bundle_error` に残して返す (投げない)。合本は撮った物から作る派生物で、
- * 失敗でクロールを failed にすると、次の段が既に出ているときに状態が食い違う。理由も前へだけ —— 台帳がいま指す版より
+ * 失敗でクロールを failed にすると、次の段が既に出ているときに状態が食い違う。理由も前へだけ —— capture-ledger がいま指す版より
  * 古い版の失敗は書かない。次に書けたら消える。
  */
 import type { Kysely } from "kysely";
@@ -108,7 +108,7 @@ export interface WriteReplayBundleOptions {
  * 027 より前のアーカイブを、クロールに繋ぐ (`archives.crawl_id` が空で、そのクロールの頁の行が同じ task_id を
  * 持つ物)。繋いだ数を返す。作り直しの道具だけが呼ぶ —— 027 からは受けるときに入る (`archive/admit.ts`)。
  *
- * 繋ぎ方は台帳の他のエンドポイント (`waczCount`・索引のエンドポイント) と同じ `crawl_pages.task_id` で、uuid 側を text に倒す。
+ * 繋ぎ方は capture-ledger の他のエンドポイント (`waczCount`・索引のエンドポイント) と同じ `crawl_pages.task_id` で、uuid 側を text に倒す。
  */
 export const linkArchivesToCrawl = async (
   db: Kysely<Database>,
@@ -334,7 +334,7 @@ export const writeReplayBundle = async (
         replayBundleSignError: signError,
       })
       .where("id", "=", crawlId)
-      // 前へだけ: 台帳の指す版が無いか、この版より小さいときだけ差し替える
+      // 前へだけ: capture-ledger の指す版が無いか、この版より小さいときだけ差し替える
       .where((eb) => eb.or([eb("replayBundleRev", "is", null), eb("replayBundleRev", "<", rev)]))
       .execute();
     if (signature !== undefined) {

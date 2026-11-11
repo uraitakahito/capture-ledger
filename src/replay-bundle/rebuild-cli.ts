@@ -4,16 +4,16 @@
  *   pnpm run replay-bundle:rebuild --crawl <id>
  *
  * **打つのは、段の合本に入っていない物があるとき。** flow は段の報告の後に合本のエンドポイント
- * (`POST /api/crawls/:id/replay-bundle`) を叩くが、それより後に台帳に入った物は、次の段が無ければどの合本にも入らない:
+ * (`POST /api/crawls/:id/replay-bundle`) を叩くが、それより後に capture-ledger に入った物は、次の段が無ければどの合本にも入らない:
  *
  * - 後から reconcile が受けた取り込み (段の登録で manifest を読めなかった物)
  * - 保管庫に書けなかった段 (`crawls.replay_bundle_error`)・flow が落ちた段の後
  * - 027 より前のクロール。先にそのクロールのアーカイブに `crawl_id` を入れる (`crawl_pages.task_id` から。
- *   台帳の他のエンドポイントと同じ繋ぎ方)
+ *   capture-ledger の他のエンドポイントと同じ繋ぎ方)
  *
- * エンドポイントと同じ関数 (`replay-bundle/write.ts`) を、API を通らずに台帳 (Postgres) と保管庫 (S3) に直に当てる。アクセス
- * トークンは使わず、認可も通らない —— 書くのは、台帳と保管庫が既に持っている物から組んだ合本だけ。版はエンドポイントと同じく
- * 払い出すので、flow の段と重なっても版は食い違わない (台帳が指すのは大きいほう)。
+ * エンドポイントと同じ関数 (`replay-bundle/write.ts`) を、API を通らずに capture-ledger (Postgres) と保管庫 (S3) に直に当てる。アクセス
+ * トークンは使わず、認可も通らない —— 書くのは、capture-ledger と保管庫が既に持っている物から組んだ合本だけ。版はエンドポイントと同じく
+ * 払い出すので、flow の段と重なっても版は食い違わない (capture-ledger が指すのは大きいほう)。
  *
  * **署名も API と同じに判定する** (`config/signer.ts`)。署名の 4 つ組が揃い、クロールが終わっていて、未検めの WACZ が
  * 残っていなければ、新しい版に署名する —— 署名の付かなかった合本を署名し直すのは、これを打つこと (前の置き場に
@@ -59,7 +59,7 @@ const rebuild = async (opts: { databaseUrl: string; crawl: string }): Promise<vo
       ...(signer && { signer }),
     });
     if (result === undefined) {
-      process.stderr.write(`クロール ${opts.crawl} は台帳に無い\n`);
+      process.stderr.write(`クロール ${opts.crawl} は capture-ledger に無い\n`);
       process.exitCode = 1;
       return;
     }
@@ -97,7 +97,7 @@ const rebuild = async (opts: { databaseUrl: string; crawl: string }): Promise<vo
 const program = new Command()
   .name("replay-bundle:rebuild")
   .description(
-    "クロールの合本 (replay.json と pages.json) を、新しい版として保管庫に書く (台帳と保管庫を直に読み書きする)",
+    "クロールの合本 (replay.json と pages.json) を、新しい版として保管庫に書く (capture-ledger の DB と保管庫を直に読み書きする)",
   )
   .addOption(
     new Option("--crawl <id>", "このクロールの合本").argParser(crawlId).makeOptionMandatory(true),

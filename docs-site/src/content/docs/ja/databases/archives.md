@@ -1,9 +1,9 @@
 ---
 title: archives
-description: 台帳。成功した取り込みが 1 本につき 1 行。所有者の列が無いことに意味がある。
+description: WACZ の記録。成功した取り込みが 1 本につき 1 行。所有者の列が無いことに意味がある。
 ---
 
-**台帳。成功した取り込みが 1 本につき 1 行**です。「どの WACZ がどこに在るか」の
+**WACZ の記録。成功した取り込みが 1 本につき 1 行**です。「どの WACZ がどこに在るか」の
 記録で、署名付き URL を発行するときの参照先になります。
 
 ```ts file="src/db/migrations/002-create-archives.ts#archives-columns"
@@ -41,10 +41,10 @@ if (report.status !== CaptureStatus.CAPTURE_STATUS_SUCCESS ||
 
 ## 二重登録が起きない仕組み
 
-台帳を埋める道は 2 本あります。
+この表を埋める道は 2 本あります。
 
 - **クロール** — flow が段を報告した時点で、取り込めたぶんを登録する（速い）
-- **reconciler** — `capture_submissions` に書き留めた manifest の鍵を読み、台帳に無いものを登録する（穴を埋める）
+- **reconciler** — `capture_submissions` に書き留めた manifest の鍵を読み、この表に無いものを登録する（穴を埋める）
 
 **両方が同じ取り込みに辿り着けますし、どちらも再実行されえます。**
 
@@ -53,7 +53,7 @@ if (report.status !== CaptureStatus.CAPTURE_STATUS_SUCCESS ||
 ```
 
 `(bucket, object_key)` が UNIQUE なので、それは重複ではなく**無操作**になります。
-そして挿入されなかった場合は tuple も積みません —— 既に台帳に在るなら、tuple は
+そして挿入されなかった場合は tuple も積みません —— 既にこの表に在るなら、tuple は
 最初のときに積まれているからです。
 
 ## 列の要点

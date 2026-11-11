@@ -82,7 +82,7 @@ describe("在るかを訊く", () => {
   });
 
   it("meta は decrypt_secret=false を付けて GET し、is_secret と edited_at だけを読む", async () => {
-    // 付けなければ secret でも value に平文が返る（実測）。この query が、台帳が値を読まないことの要
+    // 付けなければ secret でも value に平文が返る（実測）。この query が、capture-ledger が値を読まないことの要
     const calls = answering(
       200,
       JSON.stringify({

@@ -9,20 +9,20 @@
 2 か所から、中身を変えずに写した（`cmp` で同じ）。CI の `check` の job は submodule を取らないので、試験は
 `.upstream/` を読めない。だから写して置く。
 
-| ファイル                                | 元                       | 何か                                                                                   |
-| --------------------------------------- | ------------------------ | -------------------------------------------------------------------------------------- |
-| `signed-data.json`                      | `test/fixtures/signing/` | wacz-signer が dev の CA で作った `signedData`。下の `HASH` に対する物。通る形         |
-| `other-ca.pem`                          | `test/fixtures/signing/` | 関係の無い根。どれもこれには繋がらない                                                 |
-| `other-time-signature.txt`              | `test/fixtures/signing/` | 本物の時刻印で、**別の**署名に押した物                                                 |
-| `expired-tsa-ca.crt`                    | `test/fixtures/signing/` | 有効期間の閉じた時刻印の局の根                                                         |
-| `expired-time-signature.txt`            | `test/fixtures/signing/` | その局が、まだ有効だった間に押した時刻印                                               |
-| `expired-signer-ca.crt`                 | `test/fixtures/signing/` | 2020 年に閉じた署名の根                                                                |
-| `expired-signer-signed-data.json`       | `test/fixtures/signing/` | 葉も発行者も、時刻印の時点で失効していた物                                             |
-| `expired-issuer-signed-data.json`       | `test/fixtures/signing/` | 葉は有効、発行者 (＝錨) が失効していた物                                               |
-| `expired-intermediate-root.crt`         | `test/fixtures/signing/` | 上の中間を発行した、有効な根                                                           |
-| `expired-intermediate-signed-data.json` | `test/fixtures/signing/` | 葉も根も有効で、**中間だけ**が失効していた物                                           |
-| `insecure-dev-ca.crt`                   | `dev-stack/signing-ca/`  | dev の署名の根（台帳の錨 `CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR` の dev の値と同じ中身）  |
-| `insecure-dev-tsa-ca.crt`               | `dev-stack/signing-ca/`  | dev の時刻印の局の根（`CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR` の dev の値と同じ中身） |
+| ファイル                                | 元                       | 何か                                                                                             |
+| --------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
+| `signed-data.json`                      | `test/fixtures/signing/` | wacz-signer が dev の CA で作った `signedData`。下の `HASH` に対する物。通る形                   |
+| `other-ca.pem`                          | `test/fixtures/signing/` | 関係の無い根。どれもこれには繋がらない                                                           |
+| `other-time-signature.txt`              | `test/fixtures/signing/` | 本物の時刻印で、**別の**署名に押した物                                                           |
+| `expired-tsa-ca.crt`                    | `test/fixtures/signing/` | 有効期間の閉じた時刻印の局の根                                                                   |
+| `expired-time-signature.txt`            | `test/fixtures/signing/` | その局が、まだ有効だった間に押した時刻印                                                         |
+| `expired-signer-ca.crt`                 | `test/fixtures/signing/` | 2020 年に閉じた署名の根                                                                          |
+| `expired-signer-signed-data.json`       | `test/fixtures/signing/` | 葉も発行者も、時刻印の時点で失効していた物                                                       |
+| `expired-issuer-signed-data.json`       | `test/fixtures/signing/` | 葉は有効、発行者 (＝錨) が失効していた物                                                         |
+| `expired-intermediate-root.crt`         | `test/fixtures/signing/` | 上の中間を発行した、有効な根                                                                     |
+| `expired-intermediate-signed-data.json` | `test/fixtures/signing/` | 葉も根も有効で、**中間だけ**が失効していた物                                                     |
+| `insecure-dev-ca.crt`                   | `dev-stack/signing-ca/`  | dev の署名の根（capture-ledger の錨 `CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR` の dev の値と同じ中身） |
+| `insecure-dev-tsa-ca.crt`               | `dev-stack/signing-ca/`  | dev の時刻印の局の根（`CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR` の dev の値と同じ中身）           |
 
 `signed-data.json` が覆う hash:
 

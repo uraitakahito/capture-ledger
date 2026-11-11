@@ -174,7 +174,7 @@ describe("GET /api/scripts/:id/versions", () => {
     expect(queries[0]?.parameters).toEqual(["autoscroll"]);
   });
 
-  it("台帳に無い id は 404", async () => {
+  it("登録されていない id は 404", async () => {
     const { res } = await get("/api/scripts/nothing/versions", { rows: [[]] });
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: "not found" });

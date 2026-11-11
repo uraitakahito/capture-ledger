@@ -2,7 +2,7 @@
  * 直す係の Claude を、env から作る。**API の起動時に読む** (`src/api/server.ts`)。クライアントそのものは
  * `src/claude/client.ts` で、env を読まない。
  *
- * **鍵は台帳の名前 (`CAPTURE_LEDGER_ANTHROPIC_API_KEY`) で読んで渡す。** SDK は、渡さなければ自分で
+ * **鍵は capture-ledger の名前 (`CAPTURE_LEDGER_ANTHROPIC_API_KEY`) で読んで渡す。** SDK は、渡さなければ自分で
  * `ANTHROPIC_API_KEY` を読むが、それでは `src/tools/check-env.ts` にも起動の 1 行目の名前の一覧にも
  * 載らない。
  */

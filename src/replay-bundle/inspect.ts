@@ -7,7 +7,7 @@
  * - WACZ は丸ごと (`archive/s3.ts` の `getObjectBytes`)。sha256 と大きさは、そのバイト列から数える (保管庫の
  *   ETag は MD5 で、大きさだけでは中身を言えない)。zip の中は `archive/wacz.ts` (全文検索の索引と共有)
  * - BrowserHive の答え (`.result.json`)。鍵は段の報告が書き留めた `capture_submissions.manifest_key` で、
- *   台帳は組まない (`014`)。読むのは `document.url` (リダイレクトの後の文書。文書の行の `keys` に足す) と
+ *   capture-ledger は組まない (`014`)。読むのは `document.url` (リダイレクトの後の文書。文書の行の `keys` に足す) と
  *   `waczStats.totalRecorded` (0 なら記録が 0)。**無くても検める** —— 鍵が無い・保管庫に無い・契約に合わない
  *   答えは、頼んだ URL だけを `keys` にする。保管庫に届かないときだけ投げる (次に拾い直す)
  *

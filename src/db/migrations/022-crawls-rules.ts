@@ -18,7 +18,7 @@
  * ## 戻すとき
  *
  * `scope` に戻せるのは、範囲を辿る規則 1 本だけの行 (same-origin か same-host)。それ以外は
- * `same-origin` に倒す —— 戻した先の台帳には、規則を表す手が無い。
+ * `same-origin` に倒す —— 戻した先のスキーマには、規則を表す手が無い。
  */
 import type { Kysely } from "kysely";
 import { sql } from "kysely";

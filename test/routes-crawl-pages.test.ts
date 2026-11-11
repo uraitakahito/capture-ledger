@@ -429,7 +429,7 @@ describe("1 ページの取り込みのログを読む", () => {
 
 /**
  * 段の報告 (`POST /api/crawls/:id/pages`) で、取り込みのログの数をページの行に写す (`025`)。数は本物の
- * `admitLevel` が偽の保管庫の manifest から取る。**WACZ の無い取り込みこそ見たい** —— 時間切れは台帳に入らないが、
+ * `admitLevel` が偽の保管庫の manifest から取る。**WACZ の無い取り込みこそ見たい** —— 時間切れは `archives` に入らないが、
  * 行と数は在る (`admitArchive` の後で数えると、ここが NULL のまま)。
  */
 describe("段の報告で、取り込みのログの数をページの行に写す", () => {
@@ -501,7 +501,7 @@ describe("段の報告で、取り込みのログの数をページの行に写�
     const { res, queries, read } = await report(timedOut, true);
     expect(res.statusCode).toBe(200);
     expect(read).toEqual([`b/${KEY}`]);
-    // 台帳には入らない (WACZ が無い)
+    // `archives` には入らない (WACZ が無い)
     expect(queries.some((q) => q.sql.startsWith('insert into "archives"'))).toBe(false);
     const written = countsWrite(queries);
     expect(written).toHaveLength(1);

@@ -170,7 +170,7 @@ describe("1 枚でも撮れたクロール", () => {
     );
   });
 
-  // 報告は flow の言い分で、正本は manifest。数えた結果と台帳の中身が食い違わないように
+  // 報告は flow の言い分で、正本は manifest。数えた結果と capture-ledger の中身が食い違わないように
   it("failed と報告されても manifest から拾い直せたら撮れたと数え、succeeded で締める", async () => {
     const closed = await close(
       [

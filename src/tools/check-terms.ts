@@ -1,5 +1,5 @@
 /**
- * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 10 個。
+ * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 11 個。
  *
  * ## なぜ要るのか
  *
@@ -9,10 +9,11 @@
  *   「…のクロールを始められます」・docs・コメント・試験の名前で 96 か所）。目的語の無い「起こす」は
  *   「目を覚まさせる」に読める。プロセスの「起こす」（dev:up が起こす・API を起こし直す・webhook で
  *   起こす）は別の意味で、見ない
- * - **ページで走らせる物は「スクリプト」、置き場は「台帳」と書く。** 2026-10 に「目録」「台本」から
- *   そろえた（CLI の答え「台帳に無い」・docs・コメント・試験の名前で 194 か所）。「目録」は browserhive と
+ * - **ページで走らせる物は「スクリプト」と書く。** 2026-10 に「目録」「台本」から
+ *   そろえた（docs・コメント・試験の名前で 194 か所）。「目録」は browserhive と
  *   wacz-validator では WACZ の中の storage の目録を、「台本」は capture-workbench では代役の台本を指す。
- *   台帳はどちらも持たないので、両方とも全部見る（capture-workbench と capture-scheduler も見張っている）
+ *   capture-ledger はどちらも持たないので、両方とも全部見る（capture-workbench と capture-scheduler も見張っている）。
+ *   置き場の呼び名は 2026-11 に「台帳」から「登録済みのスクリプト」へ替えた（下の「台帳」の項）
  * - **network は「通信」と書く。** 2026-11 に「網」から「通信」へそろえた（browserhive の docs・
  *   コメント・試験の名前・契約の説明で 100 か所あまり、この repo では注記 7 か所と browserhive の
  *   契約の写し）。「網」は network を 1 字で写した書き手の癖で、読み手に通じにくい。通信そのもの
@@ -59,9 +60,17 @@
  * - 「replay」: 旧い名前の形の並びだけ（OLD_REPLAY_NAMES）。語の replay は合本の形式（replay.json）と、画面の字と、ReplayWeb.page の
  *   振る舞いの文に残るので見ない
  *
+ * - **「台帳」は使わない。** 2026-11 に（Jira CAPTURE-186）、意味ごとに書き分けた。capture-ledger というシステムは
+ *   capture-ledger、スクリプトの置き場は「登録済みのスクリプト」（CLI の答えは「登録されていない: <id>」）、
+ *   DB に入ったことは「capture-ledger に載る」、docs のページの題は「アーカイブの記録」。2 字がシステム・DB の行・
+ *   置き場を兼ね、帳簿の語なのに「台帳が 400 で断る」と動く主語になっていた。許す語は無い。BrowserHive の契約の
+ *   写しの 1 文だけを、BrowserHive の次の版を取り込むまで許す（DAICHO_ALLOWED）。capture-workbench・
+ *   capture-scheduler・browserhive も見張っている
+ *
  * ## 見ないもの
  *
  *   - submodule（.upstream/）と lockfile。この repo の言葉ではない
+ *   - tasks/。判断と教訓の記録で、やめた語を名指すのが仕事（browserhive の lint:terms と同じ）
  *   - この file 自身。説明と、探す字そのものを書くため
  *   - 「起点」を seed の意味で使っているか、「起こす」がクロールの意味か。語の意味は機械には
  *     見えないので、「起こす」は形の並びで見る（並びに無い言い回しは止まらない）
@@ -110,6 +119,14 @@ interface Rule {
 const OLD_REPLAY_NAMES =
   /uraitakahito[/:]replay(?![\w-])|\.upstream\/(?:browserhive\/)?replay(?![\w-])|\bREPLAY_(?:ORIGIN|TAG|REV)\b|\breplayOrigin(?:FromEnv)?\b|\breplayHref\b|\breplay\.(?:capture-ledger|browserhive|test)\b/u;
 
+/**
+ * 「台帳」を許す文（ファイルと文の組）。BrowserHive の契約の写し（`openapi:generate` が submodule から作る）の説明で、
+ * 手では直さない。BrowserHive の次の版で写しが替わったら、この表ごと消す（CAPTURE-186 の段 7）。
+ */
+const DAICHO_ALLOWED: ReadonlyMap<string, readonly string[]> = new Map([
+  ["src/rpc/generated/browserhive/openapi.json", ["呼ぶ側 (台帳) が catalog の宣言と"]],
+]);
+
 const RULES: Rule[] = [
   {
     find: (line) => line.replace(ALLOWED, "").includes("種"),
@@ -122,7 +139,7 @@ const RULES: Rule[] = [
   {
     find: (line) => line.includes("目録") || line.includes("台本"),
     say:
-      "「目録」か「台本」が残っています。ページで走らせる物は「スクリプト」、置き場は「台帳」（台帳に無い）、" +
+      "「目録」か「台本」が残っています。ページで走らせる物は「スクリプト」、置き場は「登録済みのスクリプト」（登録されていない）、" +
       "対象サイトのある物は「サイト用のスクリプト」と書きます。",
   },
   {
@@ -168,11 +185,19 @@ const RULES: Rule[] = [
       "スクリプトを差し込む時（behavior・preload）は「phase」、成果物を PUT する先は「受け取り先」と書きます" +
       "（切り口・入口・出口・口座はそのまま）。",
   },
+  {
+    find: (line, file) =>
+      line.includes("台帳") && !(DAICHO_ALLOWED.get(file) ?? []).some((s) => line.includes(s)),
+    say:
+      "「台帳」が残っています。システムは capture-ledger、置き場は「登録済みのスクリプト」（登録する・登録されていない）、" +
+      "DB に入ったことは「capture-ledger に載る」と書きます（CAPTURE-186）。",
+  },
 ];
 
 // 追跡している物と、まだ add していない新しい物（`repo-files.ts`）。
 const files = repoFiles(ROOT).filter(
-  (f) => f !== SELF && f !== "pnpm-lock.yaml" && !f.startsWith(".upstream/"),
+  (f) =>
+    f !== SELF && f !== "pnpm-lock.yaml" && !f.startsWith(".upstream/") && !f.startsWith("tasks/"),
 );
 
 const found = RULES.map((rule) => ({ ...rule, hits: [] as string[] }));

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 手元の Floci（Cognito の代役）に、台帳が受けるプール一式を用意する。**本番には無い**
+ * 手元の Floci（Cognito の代役）に、capture-ledger が受けるプール一式を用意する。**本番には無い**
  * （本番の Cognito のプールは AWS の側で作る）。
  *
  *   pnpm run idp:bootstrap

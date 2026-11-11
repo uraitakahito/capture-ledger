@@ -20,7 +20,7 @@ description: 投げた瞬間に「誰のために投げたか」を残すテー�
 **BrowserHive に「組織」という概念はありません。** 取り込みを投げるとき capture-ledger は
 URL と設定だけを渡し、返ってくるのは `taskId` です。
 
-後から bucket の `.result.json` を拾って台帳を埋めるとき、その manifest には
+後から bucket の `.result.json` を拾って `archives` を埋めるとき、その manifest には
 **組織を特定するものが何も入っていません**。だから投げた瞬間にここへ記録して
 おくのが唯一の出どころになります。
 
@@ -94,7 +94,7 @@ manifest_key を持ち、archives に行の無い capture_submissions の行
 | `submitted_by`   | それを求めた利用者。**人ではなく組織に属する定期実行では NULL**                                                               |
 | `submitted_at`   | `now()` 既定                                                                                                                  |
 | `manifest_key`   | その取り込みの `.result.json` の在り処（bucket を除く）。報告のまま。`manifest_error` が在るときと、`014` より前の行では NULL |
-| `manifest_error` | 台帳が読める manifest が無い理由。書けなかったか、報告された場所が設定の bucket の外                                          |
+| `manifest_error` | capture-ledger が読める manifest が無い理由。書けなかったか、報告された場所が設定の bucket の外                               |
 
 :::caution[`submitted_by` は認証の結果ではありません]
 この列を埋めているのは、API のリクエストが名乗った主体です
@@ -110,7 +110,7 @@ manifest_key を持ち、archives に行の無い capture_submissions の行
 だけを見るので、**誰にも削除できません**。
 :::
 
-:::note[台帳と件数が一致しません]
+:::note[WACZ の記録と件数が一致しません]
 この表に入るのは、段の報告が `taskId` を運んだ取り込みすべて（失敗も含む）ですが、
 [`archives`](/capture-ledger/ja/databases/archives/) に入るのは**アーカイブを生んだものだけ**です。
 失敗した取り込みは何もアップロードしていないので、差が出るのが正常です。flow の deadline で切った取り込みと、

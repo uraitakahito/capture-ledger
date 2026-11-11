@@ -229,7 +229,7 @@ jobs:
       - name: Authorization model tests
         run: pnpm run fga:test
 
-  # 手元の Cognito の代役 (Floci) が実際に出すトークンを、台帳の resolver が確かめる往復
+  # 手元の Cognito の代役 (Floci) が実際に出すトークンを、capture-ledger の resolver が確かめる往復
   # (test/idp-floci.test.ts。CAPTURE-185)。単体の試験はトークンの形をその場で組むので、
   # Floci (と、その先の Cognito) が形を変えても緑のまま —— それを見るのはここだけ。
   # image は docker-compose.yml の idp と同じ digest にする (amd64 も同じ index に在る)。

@@ -114,7 +114,7 @@ curl -fsS http://localhost:50051/status | jq '{busy, browser: .browser.url}'
 
 `/status` は BrowserHive の HTTP API です (JSON。v12 から。このスタックでは平文)。
 契約は、この repo に vendor した OpenAPI 文書
-(`src/rpc/generated/browserhive/openapi.json`、submodule からの写し) —— 台帳が
+(`src/rpc/generated/browserhive/openapi.json`、submodule からの写し) —— capture-ledger が
 `.result.json` manifest を照らすのと同じファイルです。
 
 Chromium は 2 台とも headless です。描画を見たい場合は、ローカルの Chrome で
@@ -139,7 +139,7 @@ pnpm run scripts import .upstream/capture-scripts  # ページの中で走らせ
 ```
 
 :::caution[スクリプトを入れ忘れない]
-BrowserHive は**走らせるものの顔ぶれを持ちません**。台帳にスクリプトが無いと、クロールはページの中で
+BrowserHive は**走らせるものの顔ぶれを持ちません**。登録済みのスクリプトが無いと、クロールはページの中で
 何も走らせず —— スクロールも遅延読み込みも起きないまま、**成功したアーカイブが出ます**。
 入っているかは `pnpm run scripts list` が言います。
 :::
@@ -284,7 +284,7 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls/<craw
 本文が `Route POST:/api/crawls not found` なら route が無い（webhook の 2 行が無い）、
 `{"error":"not found"}` なら呼び出し元に `can_submit` が無い（`pnpm run idp:grant` を打っていない）です。
 同じトークンで `GET /api/me` を訊くと、`canSubmit` がその答えです。
-[アーカイブ台帳](/capture-ledger/ja/archive-ledger/#誰が始めてよいか)を参照。
+[アーカイブの記録](/capture-ledger/ja/archive-ledger/#誰が始めてよいか)を参照。
 :::
 
 ## 8. 結果を見る
@@ -299,7 +299,7 @@ open http://127.0.0.1:7080/
 状態・撮れた数・WACZ の数と、run（Windmill）と replayweb-server への行き先が並びます。
 アーカイブの画面では、行の「検証」から **撮れたものが WACZ の仕様どおりか**を見られます
 （[wacz-validator](https://github.com/uraitakahito/wacz-validator) が答えます。
-台帳が署名した URL を渡すので、**store の鍵はどこにも増えません**）。
+capture-ledger が署名した URL を渡すので、**store の鍵はどこにも増えません**）。
 行の「開く」で **WACZ の中身**も見られます —— ファイルの木、行、field に割った 1 行、
 WARC のレコードと画像。撮らなかった・撮れなかった記録（`WARC-Type: metadata`）も、そこに出ます。
 **トークンを貼る必要はありません** —— あちらが自分の app client `workbench` で手元の IdP にサインインします
@@ -307,7 +307,7 @@ WARC のレコードと画像。撮らなかった・撮れなかった記録（
 
 以下は、その workbench が叩いているものを手で確かめる道です。
 
-一覧は台帳（`archives` テーブル）から来ていて、**OpenFGA の `can_view` で
+一覧は capture-ledger（`archives` テーブル）から来ていて、**OpenFGA の `can_view` で
 絞ってあります**。§7 と同じトークンで API を直に叩けます。
 
 ```sh
@@ -333,11 +333,11 @@ replay はまず、その WACZ に入っているページの一覧を出しま�
 （WACZ は Web Archive Collection Zipped —— 取り込んだ 1 ページをまとめたファイルです）。
 **題名をクリックすると、再生が始まります。**
 
-API の全体は[アーカイブ台帳](/capture-ledger/ja/archive-ledger/)にあります。
+API の全体は[アーカイブの記録](/capture-ledger/ja/archive-ledger/)にあります。
 
 ### まだ終わっていないとき
 
-**ページが台帳に載るのは、そのページの居た段を flow が報告した後**です。picker に
+**ページが capture-ledger に載るのは、そのページの居た段を flow が報告した後**です。picker に
 出てこないなら、段がまだ開いているか、そのページが失敗しています。走行中の取り込みに
 問い合わせるエンドポイントはありません —— 取り込みは 1 回の HTTP 呼び出し（`POST /captures`）で、
 結果は呼んだ側（Windmill の run）に返り、成果物の隣の `.result.json` manifest にも
@@ -373,7 +373,7 @@ curl -X POST http://127.0.0.1:7070/api/crawls/<crawlId>/failed \
 
 ## 次に読むもの
 
-- アーカイブを配る・共有する、クロール API の全体 → [アーカイブ台帳](/capture-ledger/ja/archive-ledger/)
+- アーカイブを配る・共有する、クロール API の全体 → [アーカイブの記録](/capture-ledger/ja/archive-ledger/)
 - 定期的に撮る → [定期実行](/capture-ledger/ja/schedules/)
 - 何を撮るかを変える → [キャプチャオプション](/capture-ledger/ja/capture-options/)
 - Compose を使わずに動かす → [開発環境](/capture-ledger/ja/development-environment/)

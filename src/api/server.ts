@@ -133,7 +133,7 @@ const start = async (options: ServerOptions): Promise<void> => {
   // 型の検査のクライアント (ts-compile-service を host の loopback で)。クロールとスクリプトのエンドポイントの両方が使う
   const tsCompile = createTsCompile();
   // 何が走るかを、**頼む前に**訊けるエンドポイント。webhook の設定が無い配備でも出す ——
-  // 台帳にスクリプトが無いことは、クロールを始められるかどうかとは別の問いなので。
+  // 登録済みのスクリプトが無いことは、クロールを始められるかどうかとは別の問いなので。
   registerScriptsRoute(app, { db, fga, resolveIdentity, ...(tsCompile && { tsCompile }) });
 
   // 成果物の受け取り先。**BrowserHive が保管庫を持たずに済むためのエンドポイント。**

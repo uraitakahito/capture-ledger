@@ -12,7 +12,7 @@
  * ## 報告の `results` だけで組む
  *
  * flow は撮れたページのリンクしか報告しない (capture-scheduler の crawl_host) ので、1 枚も撮れていなければ
- * 次の段は生まれない。だから締める報告の `results` が起点の全部で、数えるために台帳を引き直さなくていい。
+ * 次の段は生まれない。だから締める報告の `results` が起点の全部で、数えるために DB を引き直さなくていい。
  */
 import type { CrawlPageState } from "../db/database.js";
 

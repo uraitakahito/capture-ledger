@@ -26,7 +26,7 @@ pages.jsonl の行は id を持つが、契約の外の WACZ では欠けうる 
  *
  * `indexes/index.cdxj` が空、または BrowserHive の答えの `waczStats.totalRecorded` が 0 の WACZ (`index_empty`)。
  * replay は長さ 0 の Range を求め、保管庫の 416 で JSON を読み直し続ける。`resources` にも `pages.json` にも入れず、
- * 数を `replayBundle.skipped` に、名前と sha256 を `replayBundle.skippedResources` に残す。台帳の頁の表
+ * 数を `replayBundle.skipped` に、名前と sha256 を `replayBundle.skippedResources` に残す。capture-ledger の頁の表
  * (`crawl_pages`) には残る。
  *
  * ## 署名が覆うのは replay.json のバイト列 (CAPTURE-61)
@@ -55,7 +55,7 @@ export const INITIAL_PAGES = 25;
 
 /**
  * 正規化。WHATWG の URL として読み、http(s) でなければ null、fragment を外して直列化した物。
- * **台帳の `parseHttpUrl` (`crawl/scope.ts`) そのもの** —— クロールが重複を落とす形と、合本が頁を引く形を
+ * **capture-ledger の `parseHttpUrl` (`crawl/scope.ts`) そのもの** —— クロールが重複を落とす形と、合本が頁を引く形を
  * 1 つにする。replayweb-server も同じ例で試す (`test/vectors/canonical-url.json`)。
  */
 export const canonicalUrl = (raw: string): string | null => parseHttpUrl(raw)?.normalized ?? null;
@@ -146,13 +146,13 @@ export interface ReplayJson {
   pagesQueryUrl: string;
   initialPages: InitialPage[];
   totalPages: number;
-  /** 台帳の記録。replay は読まない (ほかの欄の名前とぶつけない)。署名の中に入る。 */
+  /** capture-ledger の記録。replay は読まない (ほかの欄の名前とぶつけない)。署名の中に入る。 */
   replayBundle: {
     version: number;
     crawlId: string;
     rev: number;
     depth: number | null;
-    /** 台帳の時計で組んだ時刻。**主張にすぎない** —— 時刻として確かなのは署名の時刻印 (genTime) だけ。 */
+    /** capture-ledger の時計で組んだ時刻。**主張にすぎない** —— 時刻として確かなのは署名の時刻印 (genTime) だけ。 */
     builtAt: string;
     /** 版を払い出した時のクロールの状態。`running` の版には署名しない。 */
     crawlState: CrawlState;

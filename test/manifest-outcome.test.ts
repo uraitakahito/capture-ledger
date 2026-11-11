@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { manifestOutcome } from "../src/archive/manifest.js";
 
 /**
- * 段の報告が運んだ manifest の結末を、台帳に書く形にする。
+ * 段の報告が運んだ manifest の結末を、capture-ledger に書く形にする。
  *
  * **鍵を組まない**ことを見る。見本の鍵は BrowserHive の命名規則では作れない綴り
  * (知らない接頭辞、空白、`+`、日本語) にしてある —— 規則どおりの名前だと、taskId から
@@ -28,7 +28,7 @@ describe("manifestOutcome", () => {
 
   /**
    * 報告の bucket を信じると、報告する側が読み先を選べる。**読まずに理由を残す** ——
-   * 段の報告は落とさない (台帳が遅れるより、クロールが止まるほうが重い)。
+   * 段の報告は落とさない (記録が遅れるより、クロールが止まるほうが重い)。
    */
   it("別の bucket は読まない", () => {
     const got = manifestOutcome(

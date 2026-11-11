@@ -34,7 +34,7 @@
 #   .upstream/capture-fixtures        取り込み対象のフィクスチャ (profile: capture-fixtures)
 #
 # capture-fixtures を browserhive 越しではなく **直接** vendor しているのは、あちらの pin が
-# 別の都合で動くため。台帳の試験が要る頁 (`/links/*` など) が browserhive の pin に入るとは
+# 別の都合で動くため。capture-ledger の試験が要る頁 (`/links/*` など) が browserhive の pin に入るとは
 # 限らない —— 経由すると browserhive の版上げを待つことになる。版はそれぞれの submodule が持つ。
 #
 # 分けてあるのは、S3 が欲しいだけのときに browserhive 全体を要求しないため。
@@ -128,7 +128,7 @@ services:
     depends_on:
       - openfga-db
 
-  # 手元の Cognito の代役 (Floci)。本番の IdP は Amazon Cognito で、台帳はトークンを Cognito の形で
+  # 手元の Cognito の代役 (Floci)。本番の IdP は Amazon Cognito で、capture-ledger はトークンを Cognito の形で
   # 確かめる (src/api/identity.ts)。プール・client・利用者は pnpm run idp:bootstrap (dev:up の段 idp)
   # が作り、iss と client の ID を .env.local に書く (CAPTURE-185)。
   #
@@ -148,7 +148,7 @@ services:
     image: docker.io/floci/floci:2.4.0@sha256:5ee85db604c4aa74ac76e07ea5cc83086f37bb472bf3dbb97e34019e48efae9c
     environment:
       # トークンの iss の頭。コンテナから idp.capture-ledger の名前で取っても、iss はこの形のまま
-      # (Host の見出しに依らない。実測)。台帳はホストの 127.0.0.1 から鍵を取る。
+      # (Host の見出しに依らない。実測)。capture-ledger はホストの 127.0.0.1 から鍵を取る。
       - FLOCI_BASE_URL=http://127.0.0.1:4566
     ports:
       - "127.0.0.1:4566:4566"
@@ -292,7 +292,7 @@ services:
     volumes:
       - ./.upstream/browserhive/dev-stack/signing-ca:/id:ro
     ports:
-      # host で動く台帳 (API と replay-bundle:rebuild) が、終わったクロールの合本に署名を貰うポート
+      # host で動く capture-ledger (API と replay-bundle:rebuild) が、終わったクロールの合本に署名を貰うポート
       # (CAPTURE_LEDGER_SIGNER_URL=http://127.0.0.1:18091/sign)。BrowserHive のコンテナは今までどおり名前で
       # 引く (signing.env)。**18090 ではない** —— BrowserHive のスタックの wacz-signer が 18090 に出ていて、
       # 同じ dev の CA で署名する。番号を分けないと、取り違えても署名が通り、どちらのスタックに頼んだかが
@@ -380,7 +380,7 @@ services:
       # アーカイブが永久に開かない**。公開範囲の話ではない。
       - "127.0.0.1:8899:8080"
 
-  # 全文検索の索引。台帳の API は検索が無いと起動しない (CAPTURE-53)。dev では dev:up の段 search が
+  # 全文検索の索引。capture-ledger の API は検索が無いと起動しない (CAPTURE-53)。dev では dev:up の段 search が
   # **サービス名を付けて**起こす (名前を付け忘れると、全部のコンテナが作り直される):
   #
   #   pnpm run stack:up --profile search opensearch
@@ -414,7 +414,7 @@ services:
     # `AccessDeniedException` で起動に失敗する (実測)。
     #
     # 所有者を直して持たせることもできるが、**持たせる利得が小さい**: 索引は
-    # pnpm run search:reindex で作り直せる (台帳の indexed_at を空にして入れ直す)。
+    # pnpm run search:reindex で作り直せる (capture-ledger の indexed_at を空にして入れ直す)。
     # 落とせば消えるが、消えても困らないように作ってある。
     profiles: ["search"]
 

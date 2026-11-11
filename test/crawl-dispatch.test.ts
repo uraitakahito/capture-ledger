@@ -85,7 +85,7 @@ describe("webhook の本文", () => {
   /**
    * 走らせるものは **空でも送る**。受け取り先と違い、鍵ごと落とすと flow は「省かれた」と
    * 読み、BrowserHive へも何も渡らない —— それは「何も走らせない」と同じ結果になるが、
-   * 台帳が何を頼んだのかを本文から読めなくなる。
+   * capture-ledger が何を頼んだのかを本文から読めなくなる。
    */
   it("走らせるものが空でも、scripts の鍵は送る", () => {
     expect(flowArgs({ ...CRAWL, scripts: [] })).toMatchObject({ scripts: [] });

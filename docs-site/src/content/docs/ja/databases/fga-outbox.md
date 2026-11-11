@@ -88,7 +88,7 @@ processed_at IS NOT NULL → 配送済み。行は残る
 ```
 
 **worker は行を消しません。** 処理済みの行は「tuple が書かれた」という証拠で、
-台帳と OpenFGA を突き合わせるときに残っている価値があります。
+capture-ledger と OpenFGA を突き合わせるときに残っている価値があります。
 
 ## 索引
 

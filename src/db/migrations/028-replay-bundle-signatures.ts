@@ -8,10 +8,10 @@
  * ## crawls: 署名した版と、署名しなかった理由
  *
  * - `replay_bundle_signed_rev`・`replay_bundle_digest_key` —— 署名した版のうち最も大きい物と、その
- *   `replay-digest.json` の鍵。**台帳が指す版 (`replay_bundle_rev`) とは別に持つ** —— 署名に失敗した版を後から
+ *   `replay-digest.json` の鍵。**capture-ledger が指す版 (`replay_bundle_rev`) とは別に持つ** —— 署名に失敗した版を後から
  *   書いても、前に署名した版は署名されたまま在る。**前へだけ進める** (指す版と同じ理由: 遅れて書き終えた小さい
  *   版が戻さない)。2 つは一緒に書くので、両方 NULL か両方に値 (CHECK)。
- * - `replay_bundle_sign_error` —— 台帳が指す版に署名しなかった (できなかった) 理由。指す版と同じ UPDATE で書くので、
+ * - `replay_bundle_sign_error` —— capture-ledger が指す版に署名しなかった (できなかった) 理由。指す版と同じ UPDATE で書くので、
  *   いつも指す版のことを言う。走っているクロールの版と、署名の設定が無い配備では NULL (署名する時でない)。
  *   wacz-signer が答えない・TSA に届かない・返ってきた署名が検めを通らない・まだ検めていない WACZ が残っている、
  *   のどれか。

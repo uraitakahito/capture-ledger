@@ -25,7 +25,7 @@
  * 投げるのが ledger でなくなっても、`capture_submissions` はここで書く。段ごとの
  * 報告に taskId と manifest の置き場所が載っているので、そのときに書けばよい。
  * reconciler (`archive/reconcile.ts`) はこの行だけを読む —— **報告の届かなかった
- * 取り込みは、ここに行が無いので台帳に入らない**。
+ * 取り込みは、ここに行が無いので capture-ledger に入らない**。
  */
 import type { FastifyInstance } from "fastify";
 import type { OpenFgaClient } from "@openfga/sdk";
@@ -217,7 +217,7 @@ interface PageReport {
   linksLocation?: string;
   /**
    * `.result.json` を書けた場所 (`s3://bucket/key`)。BrowserHive (または受け取り先) の答えのまま。
-   * **台帳はこれを組み直さない。**
+   * **capture-ledger はこれを組み直さない。**
    */
   manifestLocation?: string;
   /** 書けなかった理由。`taskId` を持つ報告は、この 2 つのどちらか一方を必ず持つ。 */
@@ -306,7 +306,7 @@ interface PageRow {
  * 数を読んでいない」(`025`)。
  *
  * `capturedAt` と `bundledRev` は WACZ の物 (無ければ null)。`bundledRev` はその WACZ が最初に入った合本の版で、
- * `bundledRev ≤ replayBundle.rev` なら、そのページは台帳が指す合本の中で開ける (workbench が replay の
+ * `bundledRev ≤ replayBundle.rev` なら、そのページは capture-ledger が指す合本の中で開ける (workbench が replay の
  * `#view=replay&url=…&ts=…` を組むのに使う)。
  */
 const pageOf = (row: PageRow) => ({
@@ -326,10 +326,10 @@ const pageOf = (row: PageRow) => ({
  * クロールの行の合本の欄 (`027`・`028`)。**書けた合本も、書けなかった記録も無ければ null。**
  *
  * 1 度も書けずに失敗だけがあるときは、`error` だけが値を持つ (`key`・`rev`・`pages`・`builtAt` は null)。
- * 書けた後に失敗したときは、台帳が指す (前に書けた) 合本と、その後の失敗の理由が両方出る。
+ * 書けた後に失敗したときは、capture-ledger が指す (前に書けた) 合本と、その後の失敗の理由が両方出る。
  *
  * 署名 (`028`): `signedRev`・`digestKey` は署名した版のうち最も大きい物と、その `replay-digest.json` の鍵で、
- * **指す版 (`rev`) とは別に動く** —— `signedRev === rev` なら、台帳が指す合本は署名されている。`signError` は
+ * **指す版 (`rev`) とは別に動く** —— `signedRev === rev` なら、capture-ledger が指す合本は署名されている。`signError` は
  * 指す版に署名しなかった (できなかった) 理由 (走っているクロールの版と、署名の設定が無い配備では null)。
  */
 const replayBundleOf = (
@@ -362,7 +362,7 @@ const replayBundleOf = (
  * 1 ページのログを読めなかった理由。どれも 200 で答える —— ページは在り、読めないことが答え。
  *
  * - `not-captured` 取り込みの答えが無い (`task_id` が無い: pending・skipped・flow が切った・断られた)
- * - `no-manifest` 答えはあるが、`.result.json` の場所が記録されていない (書けなかった・台帳に読めない場所)
+ * - `no-manifest` 答えはあるが、`.result.json` の場所が記録されていない (書けなかった・capture-ledger に読めない場所)
  * - `manifest-missing` 保管庫の、記録した場所に `.result.json` が無い
  * - `manifest-invalid` `.result.json` が契約に合わない (JSON でない・`readManifest` が断った)
  * - `no-log` `.result.json` に `log` が無い (BrowserHive v24.0.0 より前の取り込み)
@@ -479,10 +479,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           subject: identity.subject,
           crawlId: launched.crawlId,
           // **何を走らせるかは、始めたときにしか見えない。** 版まで出す ——
-          // id だけだと、後から台帳のスクリプトを書き換えたときに「何が走ったのか」を
+          // id だけだと、後から登録済みのスクリプトを書き換えたときに「何が走ったのか」を
           // このログから言えなくなる。
           scripts: prepared.scripts.map((script) => `${script.id}@${String(script.version)}`),
-          // 値は出さない。変数は行と WACZ に在り、シークレットの値は台帳を通らない
+          // 値は出さない。変数は行と WACZ に在り、シークレットの値は capture-ledger を通らない
           variables: Object.keys(prepared.variables),
           secrets: Object.keys(prepared.secrets),
         },
@@ -662,7 +662,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         pagesCaptured: crawl.pagesCaptured,
         pagesFailed: failures[0]?.total ?? 0,
         error: crawl.error,
-        // **台帳のスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
+        // **登録済みのスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
         // 中身はスクリプトの 1 版のエンドポイント (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
         // archive に在る。**その場の TS には頼まれた
         // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は workbench が 2 秒ごとに引き直すので、
@@ -688,7 +688,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         })),
         lastJob:
           crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
-        // 台帳が指す合本と、書けなかった理由 (`027`)。一覧と同じ形
+        // capture-ledger が指す合本と、書けなかった理由 (`027`)。一覧と同じ形
         replayBundle: replayBundleOf(crawl),
         ...scheduleOf(crawl),
         failures: failures.map((page) => ({
@@ -709,7 +709,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
   /**
    * その場の TS 1 本の source。**「欄に戻す」のためのエンドポイント** ——直して撮り直すときに、書いた物を
-   * 取り戻せるのはここだけ（archive に在るのは変換後の JS）。台帳のスクリプトは台帳と archive に在るので
+   * 取り戻せるのはここだけ（archive に在るのは変換後の JS）。登録済みのスクリプトは capture-ledger と archive に在るので
    * 返さない（404）。名前の綴りは`POST /api/crawls` の本文と同じ schema で、合わなければ許可を見る前に 400。
    */
   app.get<{ Params: { id: string; name: string } }>(
@@ -754,7 +754,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
   /**
    * クロール 1 本の組み合わせを、ts-compile-service に送り直した型の誤り。**落ちたクロールの誤りを
-   * 行と列で読み直すエンドポイント** —— 行の失敗の文は台帳の上限の 2,000 字で切られ、最初の数件しか無い。
+   * 行と列で読み直すエンドポイント** —— 行の失敗の文は capture-ledger の上限の 2,000 字で切られ、最初の数件しか無い。
    *
    * 送るのは、始めたときに行へ固定した写しを webhook と同じ形 (`toDispatched`) にした物で、flow の
    * compile の段が送ったのと同じ組み合わせ。だから同じ版のサービスなら、同じ誤りが返る。通る
@@ -869,7 +869,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
-   * ページ 1 つの取り込みのログ。**台帳はログを持たない** —— BrowserHive が答えと一緒に `.result.json` に
+   * ページ 1 つの取り込みのログ。**capture-ledger はログを持たない** —— BrowserHive が答えと一緒に `.result.json` に
    * 書いた `log` を、そのたびに保管庫から読んで返す。行は届いた順のままで、並べ替えも言い換えもしない。
    *
    * 引く順: ページの行 (id とクロールの組 —— 他のクロールのページは 404) → その行の `task_id` →
@@ -955,7 +955,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   /**
    * 型で落ちたクロールの、その場の TS の直し方。**Claude の案は、クロールと同じ検査に通った物だけを返す**
    * (`scripts/fix.ts`)。お金の掛かる Claude の前に、ただの検査と上限を済ませる —— 組み合わせが通る (409)・
-   * 誤りが台帳のスクリプトにだけ在る (422)・組織の月の上限に届いた (429) ときは、Claude を呼ばない。
+   * 誤りが登録済みのスクリプトにだけ在る (422)・組織の月の上限に届いた (429) ときは、Claude を呼ばない。
    * Claude を呼んだ回は、答えがどれでも派生の層 (`026`) に残す。本文は `{}` (何も選ばせない)。
    */
   if (fixModel !== undefined && derivations !== undefined) {
@@ -1061,7 +1061,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           inlineId,
           diagnostics,
           typescript: checked.typescript,
-          hostTypes: host?.source ?? "(台帳に受け皿の型が無い。scripts import を流すと入る)",
+          hostTypes: host?.source ?? "(受け皿の型が登録されていない。scripts import を流すと入る)",
           tsCompile,
           variableNames,
           model: fixModel,
@@ -1385,7 +1385,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           properties: {
             depth: { type: "integer", minimum: 0 },
             // 走った JS の hash と、何で・何に向けて変換したか。省略可にしない —— 載せ忘れた flow が
-            // 黙って通ると、台帳は「どの JS が走ったか」を二度と言えない (`capture_formats` と同じ理由)。
+            // 黙って通ると、capture-ledger は「どの JS が走ったか」を二度と言えない (`capture_formats` と同じ理由)。
             compiled: {
               type: "object",
               additionalProperties: false,
@@ -1428,7 +1428,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                 },
                 // taskId を持つ報告は manifest の結末をちょうど 1 つ持ち、結末は taskId 無しでは
                 // 来ない。**運び忘れた flow をここで断る** —— 黙って受けると、その取り込みは
-                // 読みに行く鍵を持たないまま台帳に残り、誰も拾わない。
+                // 読みに行く鍵を持たないまま capture-ledger に残り、誰も拾わない。
                 dependencies: {
                   taskId: {
                     oneOf: [{ required: ["manifestLocation"] }, { required: ["manifestError"] }],
@@ -1460,8 +1460,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       const { depth, results, compiled } = request.body;
 
       // ── 0. 走った JS の hash を、固定したスクリプトに写す ────────────
-      // 台帳の `sha256` は TS の物で、archive に残るのは JS。その間を継ぐ JS の hash は
-      // 報告にしか無い。揃っていなければ断る (400/409) —— **台帳と flow の片方だけを新しく
+      // capture-ledger の `sha256` は TS の物で、archive に残るのは JS。その間を継ぐ JS の hash は
+      // 報告にしか無い。揃っていなければ断る (400/409) —— **capture-ledger と flow の片方だけを新しく
       // すると 1 段目でここに当たる。** 黙って通すより、報告の形が違うことを最初に言う。
       const merge = mergeCompiled(crawl.scripts, compiled);
       if ("status" in merge) {
@@ -1519,13 +1519,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       //
       // **状態は問わない。`taskId` を持つ全件に書く。** 以前は `captured` だけに
       // 書いていたが、それだと失敗と報告された取り込みの帰属が残らない ——
-      // 実体が S3 に在っても組織が言えず、台帳に入れようがない。
+      // 実体が S3 に在っても組織が言えず、capture-ledger に入れようがない。
       // 投入が通っている限り id は在るので、書かない理由が無い。
       const submitted = results.filter(
         (r): r is PageReport & { taskId: string } =>
           typeof r.taskId === "string" && r.taskId !== "",
       );
-      // 報告の場所を台帳の形に。**1 度だけ計算し、書き留める値と読みに行く鍵に同じものを使う。**
+      // 報告の場所を capture-ledger の形に。**1 度だけ計算し、書き留める値と読みに行く鍵に同じものを使う。**
       const manifests = new Map(submitted.map((r) => [r.taskId, manifestOutcome(r, deps.bucket)]));
       let recovered: string[] = [];
       if (submitted.length > 0) {
@@ -1550,7 +1550,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           .onConflict((oc) => oc.column("taskId").doNothing())
           .execute();
 
-        // ── 2b. 台帳に載せる ──────────────────────────────────────────
+        // ── 2b. capture-ledger に載せる ──────────────────────────────────────────
         // ここが無いと、クロールしたページは `reconcile` を走らせるまで存在しない。
         // 詳しくは `crawl/admit-level.ts`。
         //
@@ -1577,7 +1577,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         );
 
         // ── 2c. 拾えたものは記録を直す ──────────────────────────────────
-        // **台帳には在るのにクロールの記録では失敗している、を残さない。**
+        // **`archives` には在るのにクロールの記録では失敗している、を残さない。**
         // どちらが正しいかを後から言えなくなる。manifest が成功を語っているなら
         // そちらが正 —— 報告のほうは、flow が答えをどう受け取ったかでしかない。
         const reportedFailed = new Set(
@@ -1598,7 +1598,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         }
 
         // ── 2d. 取り込みのログの数を、ページの行に写す (`025`) ────────────────
-        // WACZ が無く台帳に入らなかった取り込み (時間切れ・失敗) の数も在る (`crawl/admit-level.ts`)。
+        // WACZ が無く `archives` に入らなかった取り込み (時間切れ・失敗) の数も在る (`crawl/admit-level.ts`)。
         // 引くのはクロールと taskId の組で、上書きなので、同じ段の報告がやり直されても値は変わらない。
         for (const [taskId, counts] of admitted.logCounts) {
           await db
@@ -1716,7 +1716,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               .execute();
 
       // ── 6. 集計と、終わったなら締める ────────────────────────────────
-      // **拾い直したぶんも数える。** 報告だけを数えると、台帳に入った件数と
+      // **拾い直したぶんも数える。** 報告だけを数えると、`archives` に入った件数と
       // `pages_captured` が食い違う。
       const capturedCount =
         results.filter((r) => r.status === "captured").length + recovered.length;
@@ -1735,7 +1735,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // **締めるのは走行中の行だけ** (CAPTURE-61)。`/failed` や投げられなかった段で締めた後に段の報告が届いても、
       // succeeded に戻さない —— 戻すと、failed で締めて署名した合本と、行の状態が食い違う。条件は行の更新の中で
       // 見る (読んだ時の `crawl.state` で決めると、読んだ後・書く前に締められた行を戻す)。数と理由はこれまでどおり
-      // 足す (報告された取り込みは、締めた後でも台帳に入っている)。
+      // 足す (報告された取り込みは、締めた後でも capture-ledger に入っている)。
       const reason = stopReason ?? (done ? ("completed" as const) : null);
       // **`succeeded` は 1 枚以上撮れたクロールだけ** (`crawl/close.ts`)
       const nothingCaptured = done && crawl.pagesCaptured + capturedCount === 0;
@@ -1821,7 +1821,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           hostParallelism: crawl.hostParallelism,
           captureFormats: capture.formats,
           signing: capture.signing,
-          // 台帳のスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
+          // 登録済みのスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
           scripts: crawl.scripts.map(toDispatched),
           // 値も行に固定した物をそのまま。変数は値ごと、シークレットは名前 → path と、残す名前 (読み直した写しから)
           variables: crawl.variables,
@@ -1864,13 +1864,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 後に合本のエンドポイントを叩かないので、ここで書かないと、クロールの最後の合本は走っている時の物のまま残る。書き終えてから
    * 答える。書けなくても `{closed: true}` は変わらない。
    *
-   * ## 落ちた段の取り込みは台帳に入らない
+   * ## 落ちた段の取り込みは capture-ledger に入らない
    *
    * 落ちた段でも、そこまでに成功した取り込みの成果物は S3 に在る。けれど報告が来ないので
    * `crawl_pages` は `pending` のまま、`capture_submissions` も書かれない —— 帰属も
-   * manifest の鍵も分からないので、`reconcile` もそれを台帳に入れられない。bucket を
+   * manifest の鍵も分からないので、`reconcile` もそれを capture-ledger に入れられない。bucket を
    * 一覧していた頃も同じで、見つけても帰属が無く `unattributed` と数えるだけだった。
-   * **成果物は残るが、台帳とクロールの記録からは欠ける。**
+   * **成果物は残るが、`archives` とクロールの記録からは欠ける。**
    */
   app.post<{ Params: { id: string }; Body: { reason?: string } }>(
     "/api/crawls/:id/failed",

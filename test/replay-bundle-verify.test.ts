@@ -4,7 +4,7 @@
  * r3 の中身を r5 の置き場に)。
  *
  * 署名は本物 —— 試験の CA (`test/signing-ca.ts`) が、組んだ `replay.json` の hash に署名する。置き換えの文字列では、
- * 検めを消しても通ってしまう。合本は台帳と同じ関数 (`composeReplayBundle`・`replayDigestBytes`) で組み、手元の
+ * 検めを消しても通ってしまう。合本は capture-ledger と同じ関数 (`composeReplayBundle`・`replayDigestBytes`) で組み、手元の
  * フォルダに置く (保管庫の置き場と同じ 3 つと、WACZ を `resources[].name` で)。
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -437,11 +437,11 @@ describe("合本を確かめる（保管庫）", () => {
 });
 
 /**
- * 台帳が書いた物を、道具がそのまま通す。合本のエンドポイント (`POST /api/crawls/:id/replay-bundle`) に終わったクロールの
+ * capture-ledger が書いた物を、道具がそのまま通す。合本のエンドポイント (`POST /api/crawls/:id/replay-bundle`) に終わったクロールの
  * 合本を書かせ (本物の署名のクライアントに、fetch を差し替えて試験の CA の署名を返させる)、保管庫に置いた物を手元に写して
  * 確かめる。書く側と確かめる側が、同じバイト列と同じ hash の作り方を共有していることの確かめ。
  */
-describe("台帳が書いた合本を、道具が通す", () => {
+describe("capture-ledger が書いた合本を、道具が通す", () => {
   let ca: TestCa;
   let root: string;
 

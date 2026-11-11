@@ -4,7 +4,7 @@
  * **flow の compile の段と同じサービスを、同じ形で呼ぶ。** 送るのは webhook に載せたのと同じ
  * `{ id, version, phase, source, sha256, options }` の列 (`toDispatched`) なので、型で落ちた
  * クロールを送り直せば、落ちたときと同じ型の誤りが行と列で返る。クロールの行に残る失敗の文は
- * 台帳の上限の 2,000 字で切られ、最初の数件しか無い —— 全部を行と列で読むのはここだけ。
+ * capture-ledger の上限の 2,000 字で切られ、最初の数件しか無い —— 全部を行と列で読むのはここだけ。
  *
  * **env を読まない** (設定からクライアントを作るのは `src/config/ts-compile.ts`)。評価の道具も同じクライアントを使う。
  *
@@ -67,7 +67,7 @@ const isDiagnostic = (v: unknown): v is Diagnostic =>
   (v["col"] === undefined || typeof v["col"] === "number");
 
 /**
- * 宣言を読む。**台帳の決まりに通す** (`readParams`)。読めた名前は Windmill の変数の path (`secretPath`) や
+ * 宣言を読む。**capture-ledger の決まりに通す** (`readParams`)。読めた名前は Windmill の変数の path (`secretPath`) や
  * 行に写るので、サービスの答えでも形の悪い名前を通さない。変数のほかは宣言できない。読めなければ undefined。
  */
 const readDeclarations = (raw: unknown): DeclaredScript[] | undefined => {
@@ -138,8 +138,8 @@ export const tsCompileAt = ({
       );
     }
     if (res.status !== 200 && res.status !== 422) {
-      // 409 (source と sha256 が合わない) も 400 もここ。台帳が写した行を送り直しているだけなので、
-      // どれも台帳とサービスの食い違いで、人が直す誤りではない
+      // 409 (source と sha256 が合わない) も 400 もここ。capture-ledger が写した行を送り直しているだけなので、
+      // どれも capture-ledger とサービスの食い違いで、人が直す誤りではない
       throw new TsCompileUnreachable(
         `POST ${url} → ${String(res.status)} ${(await res.text()).slice(0, 200)}`,
       );

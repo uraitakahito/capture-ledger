@@ -75,7 +75,7 @@ describe("行のリンク", () => {
     );
   });
 
-  it("url は台帳の sourceUrl のまま —— 末尾の / が無くても足さない（replay が文書に当てる）", () => {
+  it("url は capture-ledger の sourceUrl のまま —— 末尾の / が無くても足さない（replay が文書に当てる）", () => {
     const href = replaywebHref(ORIGIN, {
       objectKey: KEY,
       sourceUrl: "http://site.test",

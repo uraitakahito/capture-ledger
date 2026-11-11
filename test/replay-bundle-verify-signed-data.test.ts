@@ -1,6 +1,6 @@
 /**
  * 合本の署名を検める所 (`src/replay-bundle/verify-signed-data.ts`)。BrowserHive の試験
- * (test/storage/wacz/verify-signed-data.test.ts、v25.1.0) を写し、台帳で厳しくした 3 つ (錨は 2 つとも要る・
+ * (test/storage/wacz/verify-signed-data.test.ts、v25.1.0) を写し、capture-ledger で厳しくした 3 つ (錨は 2 つとも要る・
  * 時刻印が無ければ落とす・`signedData.hash` の欄も見る) と、自作の時刻印の局の対を足した。
  *
  * fixture は本物 (`test/fixtures/signing/`。wacz-signer が dev の CA で作った `signedData`)。置き換えの文字列に
@@ -213,7 +213,7 @@ describe("検め —— 時刻印", () => {
 
   /**
    * 自作の局の時刻印。局の鎖を時刻印の中に持つので、時刻印の中の証明書を根に使う検め (`wacz-signer verify`) は
-   * これを通す。台帳は設定の錨で検めるので落とす。自作の根を錨に渡せば通る —— 落ちたのは錨のせいで、
+   * これを通す。capture-ledger は設定の錨で検めるので落とす。自作の根を錨に渡せば通る —— 落ちたのは錨のせいで、
    * 時刻印が壊れているからではない。
    *
    * fixture ではなく試験の CA で作る: 自作の局の時刻印の genTime は「いま」で、fixture の葉 (2026-10-30 に失効)
@@ -301,7 +301,7 @@ describe("検め —— 時刻印", () => {
   });
 
   it("時刻印が無ければ鎖の期間は見ないが、時刻印が無いこと自体で落ちる", async () => {
-    // 元では「時刻を裏づける物が無ければ期間を見ない」で通っていた形。台帳は時刻印を必ず求めるので落ちる
+    // 元では「時刻を裏づける物が無ければ期間を見ない」で通っていた形。capture-ledger は時刻印を必ず求めるので落ちる
     const expired = JSON.parse(read("expired-signer-signed-data.json")) as SignedData;
     delete expired.timeSignature;
     const result = await verify(expired, {

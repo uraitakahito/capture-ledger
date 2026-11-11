@@ -1,9 +1,9 @@
 ---
-title: アーカイブ台帳
+title: アーカイブの記録
 description: どの WACZ が存在し誰が読んでよいかを capture-ledger がどう記録し、バケットの資格情報を渡さずに署名付き URL を発行するか
 ---
 
-capture-ledger は BrowserHive が作った WACZ の**台帳**を持ち、読んでよい相手にだけ
+capture-ledger は BrowserHive が作った WACZ の**記録**を持ち、読んでよい相手にだけ
 短命な署名付き URL を発行します。
 
 構成要素:
@@ -37,7 +37,7 @@ Outbox 行として記録します。両方入るか、どちらも入らない�
 送り直します。そうしないと新しいタプルが黙って失われます。
 :::
 
-## 台帳を埋める 2 つの経路
+## 記録を埋める 2 つの経路
 
 かつては 3 つでした。CLI が自分の投げた capture を `GetCapture` でポーリングする
 経路がありましたが、**CLI も capture-ledger の gRPC クライアントも消えました**。いま投げるのは
@@ -47,9 +47,9 @@ Windmill の flow です。
 登録します（`src/crawl/admit-level.ts`）。段の報告が運ぶのは各 capture の
 `.result.json` の置き場所で、結果そのものは載っていないので、報告された鍵のとおりに
 manifest を読み直してから登録します。こちらが速い経路で、
-取り込んだページは 1 往復のうちに台帳へ入ります。
+取り込んだページは 1 往復のうちに記録へ入ります。
 
-**Reconcile** ― `pnpm run fga:reconcile` は、報告は届いたのに台帳に入らなかった
+**Reconcile** ― `pnpm run fga:reconcile` は、報告は届いたのに記録に入らなかった
 取り込み（manifest の読み取りか、行の書き込みが落ちたもの）を登録します。
 `capture_submissions` のうち `manifest_key` を持ち、まだアーカイブの無い行を読み、
 **その鍵だけ**を取りに行きます。**bucket は歩きません。** 鍵を組み直すこともありません ——
@@ -62,7 +62,7 @@ flow がそれを運び、段の報告が書き留めています。
 pnpm run fga:reconcile --since-days 30
 ```
 
-結果は `pending`・`registered`・`skipped`（台帳が受け付けない manifest。成果物の無い
+結果は `pending`・`registered`・`skipped`（capture-ledger が受け付けない manifest。成果物の無い
 時間切れ・失敗など）・`missing`（報告された鍵に何も無い）・`counted`（取り込みのログの数を、
 まだ読んでいなかったページの行に埋めた数。[ページと取り込みのログ](#ページと取り込みのログ)）で報告します。
 
@@ -77,13 +77,13 @@ pnpm run fga:reconcile --since-days 30
 
 :::note[クロールの経路は、以前は抜けていました]
 クロールの経路は `crawl_pages` と `capture_submissions` にしか書いておらず、
-**台帳には 1 行も入っていませんでした**。クロールしたページは reconcile を
+**`archives` には 1 行も入っていませんでした**。クロールしたページは reconcile を
 走らせるまで存在せず、picker にも検索にも出ませんでした。取り込んだ本人が
-台帳を書けるのに、掃除役の巡回を待っていたことになります。
+記録を書けるのに、掃除役の巡回を待っていたことになります。
 :::
 
 クロールは遅延のため、reconcile は正しさのためです。
-**誰も気づかない穴のある台帳は、台帳が無いより悪い**
+**誰も気づかない穴のある記録は、記録が無いより悪い**
 ― 穴はずっと後で「なぜこのアーカイブが見えないのか」として現れます。
 
 ```sh
@@ -91,7 +91,7 @@ pnpm run fga:reconcile   # 書き留めた manifest の鍵から抜けを埋め�
 pnpm run fga:drain       # 溜まったタプルを配送（API も定期的に行う）
 ```
 
-台帳に入るのは成功した capture だけです。失敗したものは何もアップロード
+記録に入るのは成功した capture だけです。失敗したものは何もアップロード
 していないので、記録すると存在しないオブジェクトへの URL を発行できて
 しまいます ― 認可は完璧に効いているのに 404、という一番わかりにくい壊れ方です。
 
@@ -189,7 +189,7 @@ S3 は署名しか見ないので、URL を署名した瞬間に判断は確定�
 ## クロールを始める
 
 クロールの起点は頼みと一緒に来るので、何を撮るかは頼む側が決める。頼むのは [capture-workbench](https://github.com/uraitakahito/capture-workbench) の画面の人か、
-頼みを持っている予定（`crawl_schedules`）で、予定の期限は台帳の時計が見る（[定期実行](/capture-ledger/ja/schedules/)）。
+頼みを持っている予定（`crawl_schedules`）で、予定の期限は capture-ledger の時計が見る（[定期実行](/capture-ledger/ja/schedules/)）。
 境界は、クロールを始めるエンドポイント（HTTP の method と path の組）と、その様子を返すエンドポイントの 2 つ。
 
 ```sh
@@ -241,19 +241,19 @@ CREATE UNIQUE INDEX crawls_single_active_idx ON crawls ((true)) WHERE state = 'r
 - **段の報告が「次の段は無い」と言ったとき。** 次の段が 0 本になる報告で行を締めます。1 枚も撮れていなければ
   `failed` で締めます。
 - **`POST /api/crawls/:id/failed`。** 段が落ちたとき flow の締める段が叩きます。人も同じエンドポイントを叩けます。
-- **台帳が段を投げられなかったとき。** webhook の答えが 2xx 以外・10 秒（既定）以内に答えが無い・繋がらない、のいずれかで、
+- **capture-ledger が段を投げられなかったとき。** webhook の答えが 2xx 以外・10 秒（既定）以内に答えが無い・繋がらない、のいずれかで、
   行をメッセージ付きの `failed` で締めます。
 
 時間で締める仕組みは **ありません**。締める段は段の報告と同じトークン・同じ宛先を使うので、**古いトークン（401）**・
 `can_submit` が無い呼び出し元（**404**）・API に届かない、のどれでも両方が落ち、行は `running` のまま残ります。
-Windmill で run を取り消すと、締める段は走りません。行を足してから webhook を投げ終えるまでに台帳が落ちたときも、
+Windmill で run を取り消すと、締める段は走りません。行を足してから webhook を投げ終えるまでに capture-ledger が落ちたときも、
 行は残ります。
 
 塞いでいる行は **409** の本文が名指しし（`crawlId`・`startedAt`）、`lastJobId` から Windmill の run に辿れます。
 閉じるのは `POST /api/crawls/:id/failed` です。予定の状態が `stuck` か `overdue` なら、capture-workbench の
 定期実行タブの「締める」でも閉じられます。
 
-締めても、生きている flow は止まりません。段の報告は行の状態を見ないので、flow は撮り続け、台帳は次の段も投げます。
+締めても、生きている flow は止まりません。段の報告は行の状態を見ないので、flow は撮り続け、capture-ledger は次の段も投げます。
 締めた行が `succeeded` に戻ることはありませんが、後から届く報告は、そのページと数を足します。
 
 ### 呼び出し元が渡せるもの
@@ -279,11 +279,11 @@ CAPTURE_LEDGER_CAPTURE_SIGNING=1      # wacz-auth 署名を要求する。wacz �
 
 ### 誰がこのエンドポイントを叩くか
 
-capture-workbench の画面と、トークンを持つほかの道具。予定はこのエンドポイントを叩かない —— 回を始めるのは台帳の時計で、
+capture-workbench の画面と、トークンを持つほかの道具。予定はこのエンドポイントを叩かない —— 回を始めるのは capture-ledger の時計で、
 作ったときに同じ確かめを通して固定した撮り方で始める（[定期実行](/capture-ledger/ja/schedules/)）。
 
 分けてあるのは意図的で、**何を撮るかは予定（`crawl_schedules`）か、画面から始めるクロールが持ち、
-予定の期限が来たかは台帳が決める**。[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) の
+予定の期限が来たかは capture-ledger が決める**。[capture-scheduler](https://github.com/uraitakahito/capture-scheduler) の
 Windmill は撮るだけで、capture-ledger は `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL` でその flow へ 1 段ずつ渡す。
 
 呼ぶ側が外してはならないことが 2 つある:
@@ -538,8 +538,8 @@ console、BrowserHive の出来事 —— で、BrowserHive（v24.0.0 から）�
 `.result.json` に載せます。シークレットの値は、長さに依らず `***` に替えてあります。
 ログのエンドポイントはそのたびに保管庫からこの file を読み、`log` を書かれたまま、届いた順で返します。
 capture-ledger が写すのは数だけで、段の登録が（読めなかったときは reconcile
-が）`crawl_pages.log_counts` に書くので、一覧は file を読みません。数を写すのは台帳に入れる前です ——
-時間切れや失敗の取り込みは WACZ が無く台帳に入りませんが、行と数は在り、
+が）`crawl_pages.log_counts` に書くので、一覧は file を読みません。数を写すのは `archives` に入れる前です ——
+時間切れや失敗の取り込みは WACZ が無く `archives` に入りませんが、行と数は在り、
 行を読みたいのはむしろそのページです。`logCounts` が `null` なのは、その取り込みの `.result.json`
 から数を読んでいないときだけです。鍵の順は決まっていない（`jsonb` が並べ替える）ので、
 名前で引いてください。
@@ -558,7 +558,7 @@ capture-ledger が写すのは数だけで、段の登録が（読めなかっ�
 id（`page`）を持つので、取れなかったページからそのまま行へ辿れます。
 
 穴が 2 つ残っています。`timeout`・`connection`・`internal` で落ちた取り込みは 1 度だけ撮り直され、
-台帳が持つのは 2 回目の `taskId` だけなので、1 回目のログは保管庫に在っても、ここからは辿れません。
+capture-ledger が持つのは 2 回目の `taskId` だけなので、1 回目のログは保管庫に在っても、ここからは辿れません。
 またエンドポイントの認可は組織を見ない `maySubmit` で、クロールを始められる者は、どのクロールの行も ——
 スクリプトが報告した値も、取り込みのページが出した文も —— 読めます。`GET /api/crawls/:id`
 と同じ性質です。
@@ -647,9 +647,9 @@ pnpm run search:reindex                # 全部のアーカイブ
 pnpm run search:reindex --crawl <id>   # 1 本のクロールぶん
 ```
 
-`archives.indexed_at` を空にして、アーカイブを入れ直します。台帳・保管庫・OpenSearch を直に
+`archives.indexed_at` を空にして、アーカイブを入れ直します。capture-ledger の DB・保管庫・OpenSearch を直に
 読み書きし、アクセストークンは使いません。打つのは、OpenSearch を作り直したとき（compose の
-サービスは volume を持たないので、台帳は「載せた」と言ったまま索引だけが空になります）と、
+サービスは volume を持たないので、capture-ledger は「載せた」と言ったまま索引だけが空になります）と、
 索引を消したときです。
 
 ```sh
@@ -658,7 +658,7 @@ curl -X DELETE http://127.0.0.1:9200/capture-pages
 ```
 
 索引の状態は `archives.indexed_at` の列 1 つで、本文は保存していません
-（必要なものは台帳の行と S3 から全部導けます）。そのため解析器や mapping を
+（必要なものは capture-ledger の行と S3 から全部導けます）。そのため解析器や mapping を
 変える判断が安く済みます。
 
 capture-ledger は mapping を**索引を作るときにしか置きません**。mapping か解析器を
@@ -673,7 +673,7 @@ OpenSearch が推測します（エラーは出ません）。
 
 クロールは、撮った頁ごとに WACZ を 1 本残します。**合本は、それを 1 つに綴じ直した物です**:
 段の後に、そのクロールの WACZ を全部並べた `replay.json` と、それらの頁の一覧の行を全部持つ
-`pages.json` を、台帳が保管庫に書きます。[replay](https://github.com/uraitakahito/replayweb-server) は
+`pages.json` を、capture-ledger が保管庫に書きます。[replay](https://github.com/uraitakahito/replayweb-server) は
 それを 1 つのアーカイブとして開き、ある WACZ の頁から別の WACZ の頁へリンクで行けます。
 形（v1）は replayweb-server の `docs/replay-bundle.md` にあります。
 
@@ -750,7 +750,7 @@ http://127.0.0.1:8899/?source=/wacz/<replayBundle.key>
 pnpm run replay-bundle:rebuild --crawl <id>
 ```
 
-同じ形で新しい版を書きます。台帳と保管庫を直に読み書きし、アクセストークンは使いません。打つのは、
+同じ形で新しい版を書きます。capture-ledger の DB と保管庫を直に読み書きし、アクセストークンは使いません。打つのは、
 合本に入らなかった物があるときです: 最後の段の後に reconcile が受けた取り込み、合本を書けなかった段、
 migration `027` より前のクロール（先に、そのクロールのアーカイブを `crawl_pages.task_id` で
 クロールに繋ぎます）。署名も API と同じに判定するので、**署名の付かなかった終わったクロールに署名し直すのも
@@ -765,10 +765,10 @@ bucket は replayweb-server の `/wacz/` を通して匿名で読めるので、
 
 ### 合本の署名
 
-終わったクロールの合本には、署名を付けます（CAPTURE-61）。台帳は `replay.json` のバイト列の sha256 を
+終わったクロールの合本には、署名を付けます（CAPTURE-61）。capture-ledger は `replay.json` のバイト列の sha256 を
 [wacz-signer](https://github.com/uraitakahito/wacz-signer) の `/sign` に送って署名を貰い、**置く前に自分で検め**、
 同じ置き場に `replay-digest.json` を書きます。形は WACZ の `datapackage-digest.json` と同じ
-`{ "path": "replay.json", "hash": "sha256:…", "signedData": { … } }` で、`hash` は台帳が計った値、`signedData` は
+`{ "path": "replay.json", "hash": "sha256:…", "signedData": { … } }` で、`hash` は capture-ledger が計った値、`signedData` は
 wacz-signer の答えの 9 つの欄（`hash`・`created`・`software`・`version`・`signature`・`domain`・`domainCert`・
 `timeSignature`・`timestampCert`）そのものです。
 
@@ -781,7 +781,7 @@ wacz-signer の答えの 9 つの欄（`hash`・`created`・`software`・`versio
   これで全部」と言ってしまいます
 
 走っているクロールの段の合本には署名しません。`POST /api/crawls/:id/failed` で締めたときと、次の段を投げられずに
-締めたときは、**台帳が締めた後に合本を 1 本書きます**（締めても段の報告は増えないので、ほかに書く者が居ません。
+締めたときは、**capture-ledger が締めた後に合本を 1 本書きます**（締めても段の報告は増えないので、ほかに書く者が居ません。
 生きている flow が報告を送ってくることはあります: [クロールの行の終わり方](#クロールの行の終わり方)）。
 段の報告は、締めたクロールを `succeeded` に戻しません（条件は行の更新の中で見ます）。
 
@@ -798,22 +798,22 @@ digest も在ります。署名を頼むのは版の払い出しのトランザ�
 
 署名が覆うのは `replay.json` のバイト列です。クロールについて証したい事は、どれもその中に書きます:
 
-| 欄                                                    | 何か                                                    |
-| ----------------------------------------------------- | ------------------------------------------------------- |
-| `resources[].hash`                                    | WACZ ごとの sha256（台帳が WACZ を 1 度読んで計った物） |
-| `replayBundle.pagesHash`                              | `pages.json` のバイト列の sha256                        |
-| `replayBundle.skippedResources`                       | 記録が 0 で外した WACZ の名前と sha256                  |
-| `replayBundle.crawlState`・`stopReason`・`finishedAt` | 版を払い出した時のクロールの状態                        |
-| `replayBundle.crawlId`・`rev`・`pagesQueryUrl`        | どのクロールの何版で、どこに置いたか                    |
+| 欄                                                    | 何か                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------------------ |
+| `resources[].hash`                                    | WACZ ごとの sha256（capture-ledger が WACZ を 1 度読んで計った物） |
+| `replayBundle.pagesHash`                              | `pages.json` のバイト列の sha256                                   |
+| `replayBundle.skippedResources`                       | 記録が 0 で外した WACZ の名前と sha256                             |
+| `replayBundle.crawlState`・`stopReason`・`finishedAt` | 版を払い出した時のクロールの状態                                   |
+| `replayBundle.crawlId`・`rev`・`pagesQueryUrl`        | どのクロールの何版で、どこに置いたか                               |
 
 だから署名 1 つで、このクロールに**どの WACZ がどの中身で属すか**と、クロールが**どの状態で終わったか**を、
 第三者が確かめられます。形の `version` は 1 のままです（欄を足しただけで、replay は `replayBundle` を読みません）。
 
 #### 何を証さないか
 
-- **`builtAt` は台帳の時計の主張にすぎません。** 時刻として確かなのは、時刻印の genTime（TSA が押した時刻）だけ
-  です。`finishedAt` も台帳の時計です
-- 「このクロールの WACZ はこれで全部」は、台帳がその時に知っていた範囲です。報告の届かなかった取り込み（落ちた段の
+- **`builtAt` は capture-ledger の時計の主張にすぎません。** 時刻として確かなのは、時刻印の genTime（TSA が押した時刻）だけ
+  です。`finishedAt` も capture-ledger の時計です
+- 「このクロールの WACZ はこれで全部」は、capture-ledger がその時に知っていた範囲です。報告の届かなかった取り込み（落ちた段の
   途中までに撮れた物）は入りません。後から reconcile が受けた物は、作り直せば次の版に入ります
 - WACZ の中の署名（各 WACZ の `datapackage-digest.json`）は照らしません。合本の署名が言うのは、WACZ のバイト列が
   合本の言う物と同じことまでです
@@ -841,7 +841,7 @@ openssl が `ts -attime` を持つかを確かめます（macOS の `/usr/bin/op
 
 置く前の検めは BrowserHive の検めを写した物（`src/replay-bundle/verify-signed-data.ts`）で、4 つの段（署名・鎖・
 domain・時刻印）が**全部 ok のときだけ**署名ありと記録します。元と違い、錨の無い段や時刻印の無い署名を `skipped`
-として通しません。答えの `signedData.hash` が台帳の計った hash と同じかも見ます。時刻印は設定の TSA の根で検め、
+として通しません。答えの `signedData.hash` が capture-ledger の計った hash と同じかも見ます。時刻印は設定の TSA の根で検め、
 **時刻印の中に入っている証明書を根に使いません**。鎖の有効期間は「いま」ではなく時刻印の genTime で見ます
 （署名用の証明書は短命で、検める頃には切れているのが普通です）。
 
@@ -853,7 +853,7 @@ pnpm run replay-bundle:verify --crawl <id> --rev 5
 pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5
 ```
 
-上から、台帳が指す版（保管庫から）・版を名指す・手元の写し。
+上から、capture-ledger が指す版（保管庫から）・版を名指す・手元の写し。
 
 | 名前        | 照らす物                                                                                             |
 | ----------- | ---------------------------------------------------------------------------------------------------- |
@@ -864,7 +864,7 @@ pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5
 | `wacz`      | 各 WACZ を流して計った sha256 = `resources[].hash`（1 本に 1 行）                                    |
 
 **全部 ok のときだけ終了コード 0 です。** 1 つが落ちても残りを照らし、落ちた物を全部名指します。保管庫から読む
-ときは台帳でクロールの組織と版を引き（`--rev` を省けば台帳が指す版。署名した版が別なら、それも言います）、
+ときは capture-ledger の DB でクロールの組織と版を引き（`--rev` を省けば capture-ledger が指す版。署名した版が別なら、それも言います）、
 設定の bucket から読みます。手元の写し（`--dir`）は、置き場の 3 つと、`resources[].name` の名前の WACZ が並ぶ
 フォルダで、どの置き場の写しかを `--crawl` と `--rev` で言います（r3 の中身を r5 と言えば `place` が落ちます）。
 錨は `CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR`・`CAPTURE_LEDGER_SIGNER_TIMESTAMP_ANCHOR` を読み、`--trust-anchor`・
@@ -872,7 +872,7 @@ pnpm run replay-bundle:verify --crawl <id> --rev 5 --dir ./r5
 
 #### 第三者の手順
 
-台帳を使わずに確かめる手です。読むのは replayweb-server の `/wacz/`（bucket の匿名の read）からで、錨は検める人が選びます
+capture-ledger を使わずに確かめる手です。読むのは replayweb-server の `/wacz/`（bucket の匿名の read）からで、錨は検める人が選びます
 （dev なら BrowserHive の `dev-stack/signing-ca/` の `insecure-dev-ca.crt` と `insecure-dev-tsa-ca.crt`）。
 
 塊は手順ごとに分け、塊の中に `#` の注を書いていません。そのまま bash にも zsh にも貼れます —— zsh は既定で、

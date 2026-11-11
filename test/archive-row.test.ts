@@ -3,9 +3,9 @@ import { archiveRow } from "../src/archive/admit.js";
 import type { CaptureResultReport } from "../src/archive/manifest.js";
 
 /**
- * 取り込みの報告から台帳の 1 行を組む写像。
+ * 取り込みの報告から capture-ledger の 1 行を組む写像。
  *
- * ここが答えるのは 1 つ —— **署名の有無が台帳から読めるか**。読めないと、
+ * ここが答えるのは 1 つ —— **署名の有無が capture-ledger から読めるか**。読めないと、
  * 10,000 件の中から「証拠として使える形のもの」を探すのに 10,000 回 zip を
  * 開くことになる。
  *
@@ -29,7 +29,7 @@ const report = (over: Partial<CaptureResultReport> = {}): CaptureResultReport =>
 });
 
 describe("archiveRow", () => {
-  it("署名された取り込みは signed: true で台帳に載る", () => {
+  it("署名された取り込みは signed: true で capture-ledger に載る", () => {
     expect(archiveRow(report({ signature: { signed: true } }), LOCATION, CRAWL).signed).toBe(true);
   });
 

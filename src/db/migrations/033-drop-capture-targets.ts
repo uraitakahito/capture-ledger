@@ -4,7 +4,7 @@
  * `capture_targets` と、seed の記録の表 (`kysely_seed`・`kysely_seed_lock`) を落とす。
  *
  * 何を撮るかは、予定 (`crawl_schedules`・`032`) か、画面から始めるクロールが持つようになった。この表を
- * 読んでいたのは Windmill の `trigger_crawl` (`fromTargets`) だけで、時計が台帳へ移ったので
+ * 読んでいたのは Windmill の `trigger_crawl` (`fromTargets`) だけで、時計が capture-ledger へ移ったので
  * 読む者が居なくなる。
  *
  * seed も一緒に畳んだ。入れていたのはこの表のサンプルの行だけだった。

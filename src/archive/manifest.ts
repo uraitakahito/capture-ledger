@@ -10,11 +10,11 @@
  * 読む前に契約の `CaptureResultReport` に照らす。protobuf の頃は生成された `fromJSON` が
  * 知らない値を黙って UNRECOGNIZED に落としていたが、JSON の写しに逆関数は無い ——
  * 照らさずに型だけ名乗ると、v11 の manifest や壊れた物が `status` の比較を素通りして
- * 台帳に入りうる。通らなければ、どの項目が駄目かを添えて投げる。呼ぶ側 (段の登録・
+ * capture-ledger に入りうる。通らなければ、どの項目が駄目かを添えて投げる。呼ぶ側 (段の登録・
  * reconcile) は 1 件の失敗で止まらず、飛ばしてそう言う。1 ページのログのエンドポイント
  * (`GET /api/crawls/:id/pages/:page/log`) は、投げたら `manifest-invalid` と答える。
  *
- * 契約に無い項目は通す。BrowserHive が項目を足す版上げで台帳が止まらないため。
+ * 契約に無い項目は通す。BrowserHive が項目を足す版上げで capture-ledger が止まらないため。
  *
  * **契約に `format` が入ると、この file の import で落ちる。** Ajv は `date-time` や `double` を知らず
  * (ajv-formats は依存に無い)、strict のまま compile すると投げる —— API は起動しない。compile するのは
@@ -68,11 +68,11 @@ export const logCountsOf = (report: CaptureResultReport): LogCounts | undefined 
   return { debug, info, warn, error, dropped: report.log.dropped };
 };
 
-/** 台帳に書く manifest の結末。どちらか一方だけが値を持つ。 */
+/** capture-ledger に書く manifest の結末。どちらか一方だけが値を持つ。 */
 export type ManifestOutcome = { key: string; error: null } | { key: null; error: string };
 
 /**
- * 段の報告が運んだ manifest の結末を、台帳に書く形にする。
+ * 段の報告が運んだ manifest の結末を、capture-ledger に書く形にする。
  *
  * **鍵は組まない。** 書いた本人 (BrowserHive か受け取り先) が「ここに書いた」と答えた場所から
  * bucket を外し、残りをそのまま鍵にする。以前はここで BrowserHive の命名規則を写して綴りを
@@ -81,7 +81,7 @@ export type ManifestOutcome = { key: string; error: null } | { key: null; error:
  *
  * **読むのは設定の bucket だけ。** 報告に入っていた bucket を信じると、報告する側が
  * 読み先を選べる (`.links.json` を読むときと同じ理由)。違う bucket や `s3://` でない
- * 場所は、読めない理由として残す —— **段の報告は落とさない。** 台帳が遅れることより、
+ * 場所は、読めない理由として残す —— **段の報告は落とさない。** 記録が遅れることより、
  * クロールが止まることのほうが重い。
  */
 export const manifestOutcome = (

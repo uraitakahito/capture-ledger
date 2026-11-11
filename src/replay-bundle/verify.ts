@@ -20,7 +20,7 @@
  * ## 何を証さないか
  *
  * 署名が覆うのは `replay.json` のバイト列で、その中に WACZ ごとの sha256・`pages.json` の sha256・クロールの状態が
- * ある。**`builtAt` は台帳の時計の主張にすぎない** —— 時刻として確かなのは時刻印の genTime だけ。WACZ の中の
+ * ある。**`builtAt` は capture-ledger の時計の主張にすぎない** —— 時刻として確かなのは時刻印の genTime だけ。WACZ の中の
  * 署名 (各 WACZ の `datapackage-digest.json`) は、ここでは照らさない (WACZ のバイト列が合本の言う物と同じことだけを
  * 見る)。記録が 0 で外した WACZ (`skippedResources`) は名前と sha256 だけで在り処を持たないので、照らさない。
  */

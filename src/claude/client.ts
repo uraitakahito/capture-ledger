@@ -58,7 +58,7 @@ export const fixModelOf = (client: Anthropic): FixModel => ({
         messages: messages as Anthropic.Beta.Messages.BetaMessageParam[],
       });
     } catch (err) {
-      // API の誤り (4xx・5xx・届かない・時間切れ) だけを包む。それ以外は台帳の誤りなので、そのまま投げる
+      // API の誤り (4xx・5xx・届かない・時間切れ) だけを包む。それ以外は capture-ledger の誤りなので、そのまま投げる
       if (err instanceof Anthropic.APIError) {
         throw new ClaudeUnavailable(`${String(err.status ?? "-")} ${err.message}`.slice(0, 300));
       }

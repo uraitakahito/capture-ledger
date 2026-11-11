@@ -2,7 +2,7 @@
  * 直す係の評価 (CAPTURE-49)。よく落ちる型の誤りの見本を、本物の ts-compile-service と Claude で直させ、
  * 2 回までに通ったか・回数・断った理由・費用を表で出す。
  *
- * **Claude を本当に呼ぶので、お金が掛かる** (見本ごとと合計の費用を出す)。CI では走らない。DB も台帳の API も
+ * **Claude を本当に呼ぶので、お金が掛かる** (見本ごとと合計の費用を出す)。CI では走らない。DB も capture-ledger の API も
  * 使わない —— エンドポイント (`POST /api/crawls/:id/inline/:name/fix`) と同じ `fixInline` を、組み合わせを直に渡して呼ぶ。
  * 受け皿の型は、`scripts import` が `host_types` に写すのと同じ file (capture-scripts の submodule) から読む。
  *
@@ -20,7 +20,7 @@ import type { CrawlScript } from "../db/database.js";
 import { fixInline } from "../scripts/fix.js";
 import { attributeDiagnostics, tsCompileAt } from "../scripts/ts-compile.js";
 
-/** 受け皿の型 (`__bh`)。台帳の `host_types` の元と同じ file。 */
+/** 受け皿の型 (`__bh`)。capture-ledger の `host_types` の元と同じ file。 */
 const HOST_TYPES = ".upstream/capture-scripts/types/host.d.ts";
 
 interface Sample {
@@ -49,7 +49,7 @@ const SAMPLES: readonly Sample[] = [
     inline: "await new Promise((resolve) => setTimeout(resolve, 100));\n",
   },
   {
-    name: "台帳のスクリプトとの const step の重なり (TS2451)",
+    name: "登録済みのスクリプトとの const step の重なり (TS2451)",
     inline: "const step = 1;\nvoid step;\n",
     others: [["step-catalog", "const step = 2;\nvoid step;\n"]],
   },

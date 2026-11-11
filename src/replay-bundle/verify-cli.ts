@@ -1,15 +1,15 @@
 /**
  * 合本を確かめる: 1 版の `replay.json`・`pages.json`・`replay-digest.json` と WACZ が、署名と合っているか (CAPTURE-61)。
  *
- *   pnpm run replay-bundle:verify --crawl <id> [--rev <n>]                 # 保管庫の版 (既定は台帳が指す版)
+ *   pnpm run replay-bundle:verify --crawl <id> [--rev <n>]                 # 保管庫の版 (既定は capture-ledger が指す版)
  *   pnpm run replay-bundle:verify --crawl <id> --rev <n> --dir <path>      # 手元の写し
  *
  * 照らす物は `replay-bundle/verify.ts` (置き場・digest・署名の 4 段・pages.json・各 WACZ)。**全部 ok のときだけ
  * 終了コード 0。**
  *
- * - 保管庫から読むときは、台帳 (Postgres) でクロールの組織と版を引き、設定の bucket から読む。`--rev` を省けば
- *   台帳が指す版 (`crawls.replay_bundle_rev`) —— capture-workbench と replay が開く版。署名した版が別なら、それも言う
- * - 手元の写し (`--dir`) は、置き場の 3 つと、`resources[].name` の名前の WACZ が並ぶフォルダ。台帳にも保管庫にも
+ * - 保管庫から読むときは、capture-ledger (Postgres) でクロールの組織と版を引き、設定の bucket から読む。`--rev` を省けば
+ *   capture-ledger が指す版 (`crawls.replay_bundle_rev`) —— capture-workbench と replay が開く版。署名した版が別なら、それも言う
+ * - 手元の写し (`--dir`) は、置き場の 3 つと、`resources[].name` の名前の WACZ が並ぶフォルダ。capture-ledger にも保管庫にも
  *   繋がない。どの置き場の写しかは `--crawl` と `--rev` で言う (r3 の中身を r5 と言えば、`place` が落ちる)
  *
  * 錨は署名の設定と同じ 2 つ (`CAPTURE_LEDGER_SIGNER_TRUST_ANCHOR`・`_TIMESTAMP_ANCHOR`) を既定に読み、旗で
@@ -113,7 +113,7 @@ const verify = async (opts: VerifyOptions): Promise<void> => {
       .where("id", "=", opts.crawl)
       .executeTakeFirst();
     if (crawl === undefined) {
-      process.stderr.write(`クロール ${opts.crawl} は台帳に無い\n`);
+      process.stderr.write(`クロール ${opts.crawl} は capture-ledger に無い\n`);
       process.exitCode = 1;
       return;
     }
@@ -126,8 +126,8 @@ const verify = async (opts: VerifyOptions): Promise<void> => {
     if (opts.rev === undefined && crawl.replayBundleSignedRev !== rev) {
       process.stdout.write(
         crawl.replayBundleSignedRev === null
-          ? `台帳が指す r${String(rev)} を確かめる (署名した版は無い)\n`
-          : `台帳が指す r${String(rev)} を確かめる (署名した版は r${String(crawl.replayBundleSignedRev)}。` +
+          ? `capture-ledger が指す r${String(rev)} を確かめる (署名した版は無い)\n`
+          : `capture-ledger が指す r${String(rev)} を確かめる (署名した版は r${String(crawl.replayBundleSignedRev)}。` +
               `そちらは --rev ${String(crawl.replayBundleSignedRev)})\n`,
       );
     }
@@ -154,7 +154,10 @@ const program = new Command()
     new Option("--crawl <id>", "このクロールの合本").argParser(crawlId).makeOptionMandatory(true),
   )
   .addOption(
-    new Option("--rev <n>", "確かめる版 (省けば台帳が指す版。--dir では要る)").argParser(revision),
+    new Option(
+      "--rev <n>",
+      "確かめる版 (省けば capture-ledger が指す版。--dir では要る)",
+    ).argParser(revision),
   )
   .addOption(
     new Option(

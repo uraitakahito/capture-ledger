@@ -1,17 +1,17 @@
 /**
- * 台帳の穴を、報告が書き留めた manifest の鍵から埋める。
+ * 記録の穴を、報告が書き留めた manifest の鍵から埋める。
  *
  * 段の報告は、取り込みごとに `capture_submissions` へ帰属 (組織・依頼者) と、BrowserHive
  * (または受け取り先) が `.result.json` を書いた場所の鍵を残す。段の登録 (`crawl/admit-level.ts`)
- * はその場で manifest を読んで台帳に入れるが、そこで入らなかったもの —— manifest の
- * 読み取りが一時的に落ちた、台帳への書き込みが落ちた —— が穴になる。これはその行を拾い直す。
+ * はその場で manifest を読んで capture-ledger に入れるが、そこで入らなかったもの —— manifest の
+ * 読み取りが一時的に落ちた、capture-ledger への書き込みが落ちた —— が穴になる。これはその行を拾い直す。
  *
  * ## bucket は歩かない
  *
  * 以前は bucket を一覧して `.result.json` を探し、鍵の綴りから taskId を読んでいた。
  * 一覧は鍵を URL 符号化で返し、それを戻す読み方を実装ごとに合わせる必要があった
  * (SeaweedFS は鍵の最後の部分の空白を `+` で返し、`decodeURIComponent` はそれを戻さない)。
- * **鍵は書いた本人が答えている。** それを台帳に書き留めてあるので、読むのはその鍵だけ。
+ * **鍵は書いた本人が答えている。** それを capture-ledger に書き留めてあるので、読むのはその鍵だけ。
  * 一覧の符号化も、鍵から taskId を読む工夫も、絞るための接頭辞も要らない。
  *
  * ## 拾えないもの
@@ -25,14 +25,14 @@
  * ## 取り込みのログの数も埋める
  *
  * 読んだ manifest が `log` を持っていれば、その数をページの行 (`crawl_pages.log_counts`・`025`) の NULL に埋める。
- * 段の登録が manifest を読めなかったページの穴で、台帳に入らない取り込み (WACZ の無い時間切れ・失敗) も含む。
- * 拾えないのは上の 2 つと同じ取り込みと、台帳に既に入っている取り込み (この問い合わせが外す) の数。
+ * 段の登録が manifest を読めなかったページの穴で、`archives` に入らない取り込み (WACZ の無い時間切れ・失敗) も含む。
+ * 拾えないのは上の 2 つと同じ取り込みと、`archives` に既に入っている取り込み (この問い合わせが外す) の数。
  *
  * ## 規模
  *
  * 問うのは DB の未登録の行だけで、S3 には鍵を指定した GetObject しか投げない。手間は
  * bucket の大きさではなく、未登録の取り込みの数で決まる。成果物の無い manifest
- * (時間切れ・失敗など) は台帳が受け付けないので、回すたびに読み直す —— 以前と同じ。
+ * (時間切れ・失敗など) は capture-ledger が受け付けないので、回すたびに読み直す —— 以前と同じ。
  */
 import { sql, type Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
@@ -45,11 +45,11 @@ import { createChildLogger } from "../logger.js";
 const log = createChildLogger({ module: "archive-reconcile" });
 
 export interface ReconcileResult {
-  /** 報告は届いたのに台帳に入っていない、鍵の在る取り込み。 */
+  /** 報告は届いたのに capture-ledger に入っていない、鍵の在る取り込み。 */
   pending: number;
   registered: number;
   /**
-   * manifest は在ったが台帳が受け付けなかった (成果物の無い時間切れ・失敗など)、または
+   * manifest は在ったが capture-ledger が受け付けなかった (成果物の無い時間切れ・失敗など)、または
    * 契約の形でなかった (v11 以前の protobuf JSON など。理由は warn に出る)。
    */
   skipped: number;
@@ -122,7 +122,7 @@ export const reconcile = async (
       continue;
     }
 
-    // 取り込みのログの数を、段の登録が読めなかったページの行に埋める (`025`)。WACZ の無い取り込みは台帳に
+    // 取り込みのログの数を、段の登録が読めなかったページの行に埋める (`025`)。WACZ の無い取り込みは `archives` に
     // 入らないので、回すたびにここへ来る —— 埋めるのは NULL の行だけにして、数を書き直さない (終わった取り込みの
     // 事実なので、段の登録が書いた数と同じはず)。行の task_id は text なので、uuid を文字列のまま比べる
     const counts = logCountsOf(report);

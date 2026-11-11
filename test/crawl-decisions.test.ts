@@ -5,7 +5,7 @@ import type { DecidedLink } from "../src/crawl/rules.js";
 /**
  * 1 段の判断を `crawl_decisions` の行にまとめる。
  *
- * 数え方を誤っても、クロールは普通に終わる。台帳の数を信じて「この規則は 3 本落とした」と
+ * 数え方を誤っても、クロールは普通に終わる。capture-ledger の数を信じて「この規則は 3 本落とした」と
  * 読む人のために、数え方を固定しておく。
  */
 const link = (url: string, rule: number, action: DecidedLink["action"] = "skip"): DecidedLink => {

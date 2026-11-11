@@ -6,7 +6,7 @@
  *   aws s3 ls s3://browserhive/ | grep wacz
  *   open "http://127.0.0.1:8899/?source=/wacz/<key>"
  *
- * 台帳 (archives) には既に必要なものが揃っている —— source_url / labels /
+ * capture-ledger (archives) には既に必要なものが揃っている —— source_url / labels /
  * captured_at / wacz_complete、そして replayweb-server へ渡す object_key。`GET /api/archives`
  * は OpenFGA で 1 件ずつ絞り込んだ結果を返すので、ここは **それを並べるだけ**。
  *
@@ -49,7 +49,7 @@ export const replaywebServerOriginFromEnv = (): string =>
  * ts は UTC の 14 桁）。replay（ReplayWeb.page）は mainPageURL を読まず、`?source=` だけではページ一覧を
  * 新しい順に出す —— 取り込んだ文書の行（WACZ Profile 1.18.0 の 1 行目）は、いちばん下になる。
  *
- * url は台帳の sourceUrl のまま渡す。replay は、path が空の URL（末尾の `/` が無い）も断片の付いた URL も、
+ * url は capture-ledger の sourceUrl のまま渡す。replay は、path が空の URL（末尾の `/` が無い）も断片の付いた URL も、
  * 記録した文書に当てる（2026-11-04 に replaywebpage 2.5.0 で確かめた）。URL か時刻が無ければ、一覧を開く形のまま。
  *
  * `source` の値は、`/wacz/` ＋ 鍵を区切り（`/`）ごとに符号にした path を、もう 1 度 query の値として符号にした物。
@@ -379,7 +379,7 @@ const html = (replaywebServerOrigin: string, view: PickerView): string => `<!doc
 </main>
 
 <footer>
-  一覧は台帳 (<code>archives</code>) から来ていて、OpenFGA の <code>can_view</code> で
+  一覧は capture-ledger (<code>archives</code>) から来ていて、OpenFGA の <code>can_view</code> で
   絞り込まれている。ただし<b>絞っているのは一覧に出すかどうかだけ</b>で、
   <code>/wacz/&lt;key&gt;</code> を読む経路に認可は無い。
 </footer>

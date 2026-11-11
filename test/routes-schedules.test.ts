@@ -387,7 +387,7 @@ describe("定期実行のエンドポイント", () => {
       });
     });
 
-    it("台帳に無いスクリプト（その場の TS）は latest が null で、outdated にしない", async () => {
+    it("登録されていないスクリプト（その場の TS）は latest が null で、outdated にしない", async () => {
       fake.rows.set(
         ID,
         rowOf({

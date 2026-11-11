@@ -313,7 +313,7 @@ interface FakePage {
   skipReason: string | null;
 }
 
-/** 台帳の受け皿の型 (`host_types`) の代役。直す係の決まりの文に載る。 */
+/** capture-ledger の受け皿の型 (`host_types`) の代役。直す係の決まりの文に載る。 */
 const FAKE_HOST_TYPES = {
   version: 1,
   sha256: "1".repeat(64),
@@ -476,7 +476,7 @@ const fakeDb = (
           execute: async (): Promise<FakeScript[]> => {
             // **本物の Postgres は空の `in ()` を構文エラーで断る** (Kysely は空の配列を
             // そのまま `in ()` に組む。2026-10-14 に開発の DB で確かめた)。偽物も断らないと、
-            // 「名指しが無ければ台帳のスクリプトを引かない」分岐を外しても、試験は緑のままになる。
+            // 「名指しが無ければ登録済みのスクリプトを引かない」分岐を外しても、試験は緑のままになる。
             if (where.some(([, op, value]) => op === "in" && (value as unknown[]).length === 0)) {
               throw new Error('syntax error at or near ")"');
             }
@@ -566,7 +566,7 @@ const fakeDb = (
 });
 
 /**
- * 既定のスクリプト。**空にしない** —— 台帳にスクリプトが無い配備は `POST /api/crawls` が 400 で止めるので、
+ * 既定のスクリプト。**空にしない** —— 登録済みのスクリプトが無い配備は `POST /api/crawls` が 400 で止めるので、
  * 空を既定にすると、この試験の大半が「スクリプトが無いから 400」を見ることになる。
  * 空そのものを見る試験は `scripts: []` と明示する。
  */
@@ -1090,7 +1090,7 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
-  it("GET は台帳が指す合本の鍵・版・頁の数・時刻と、その後に書けなかった理由を返す", async () => {
+  it("GET は capture-ledger が指す合本の鍵・版・頁の数・時刻と、その後に書けなかった理由を返す", async () => {
     const crawl = {
       id: UUID,
       seeds: [SEED],
@@ -1420,7 +1420,7 @@ describe("走らせるものの解決", () => {
     expect(sent[0]).toEqual([]);
   });
 
-  it("台帳に無い id は 400 で名指しし、クロールを立てない", async () => {
+  it("登録されていない id は 400 で名指しし、クロールを立てない", async () => {
     // **黙って落とさない。** 落とすと、頼んだ側は全部走ったつもりで結果を読む。
     const { res, sent, crawls } = await start({
       seeds: [SEED],
@@ -1433,7 +1433,7 @@ describe("走らせるものの解決", () => {
   });
 
   it("行に固定するのは解決済みの source で、id ではない", async () => {
-    // 台帳のスクリプトは後から変わりうる。段をまたいで同じコードが走ることの根拠がこれ。
+    // 登録済みのスクリプトは後から変わりうる。段をまたいで同じコードが走ることの根拠がこれ。
     const { crawls } = await start({ seeds: [SEED], scripts: [{ catalog: "autoscroll" }] });
     expect(crawls[0]?.scripts).toEqual([
       {
@@ -1450,10 +1450,10 @@ describe("走らせるものの解決", () => {
   });
 
   /**
-   * **台帳にスクリプトが無い配備は、ここで止まる。** 通すと、スクロールも遅延読み込みもしない
+   * **登録済みのスクリプトが無い配備は、ここで止まる。** 通すと、スクロールも遅延読み込みもしない
    * クロールが「成功」として出ていく —— アーカイブは出るので、後から見分ける手が無い。
    */
-  it("既定を頼まれたのに台帳にスクリプトが無いなら、400 で止めてクロールを立てない", async () => {
+  it("既定を頼まれたのに登録済みのスクリプトが無いなら、400 で止めてクロールを立てない", async () => {
     const crawls: FakeCrawl[] = [];
     const sent: unknown[] = [];
     const app = await buildApp(
@@ -1485,7 +1485,7 @@ describe("走らせるものの解決", () => {
     expect(sent).toEqual([]);
   });
 
-  it("台帳にスクリプトが無くても、[] と明示すれば通る", async () => {
+  it("登録済みのスクリプトが無くても、[] と明示すれば通る", async () => {
     // 設定漏れと「何も走らせない」という意思は別物。後者を表せなくしない。
     const crawls: FakeCrawl[] = [];
     const app = await buildApp(depsWith({ crawls, allowed: true, scripts: [] }));
@@ -1501,8 +1501,8 @@ describe("走らせるものの解決", () => {
     expect(crawls[0]?.scripts).toEqual([]);
   });
 
-  it("GET は台帳のスクリプトに身元だけを返す —— source は返さない", async () => {
-    // 何が走っているかを知るのに要るのは「どれの何版か」。中身は台帳と archive に在る。
+  it("GET は登録済みのスクリプトに身元だけを返す —— source は返さない", async () => {
+    // 何が走っているかを知るのに要るのは「どれの何版か」。中身は capture-ledger と archive に在る。
     const { crawls } = await start({ seeds: [SEED], scripts: [{ catalog: "autoscroll" }] });
     const app = await buildApp(depsWith({ crawls, allowed: true, scripts: CATALOG }));
     const res = await app.inject({ method: "GET", url: `/api/crawls/${crawls[0]!.id}` });
@@ -1531,7 +1531,7 @@ describe("走らせるものの解決", () => {
   } as const;
   const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
 
-  it("その場の TS は inline- の id・版 1・options 空で写り、sha256 は台帳が source から打つ", async () => {
+  it("その場の TS は inline- の id・版 1・options 空で写り、sha256 は capture-ledger が source から打つ", async () => {
     const { res, crawls } = await start({ seeds: [SEED], scripts: [{ inline: INLINE }] });
     expect(res.statusCode).toBe(202);
     expect(crawls[0]?.scripts).toEqual([
@@ -1546,7 +1546,7 @@ describe("走らせるものの解決", () => {
     ]);
   });
 
-  it("その場の TS と台帳のスクリプトの名指しを、頼んだ並びのまま 1 列に写す", async () => {
+  it("その場の TS と登録済みのスクリプトの名指しを、頼んだ並びのまま 1 列に写す", async () => {
     const { sent } = await start({
       seeds: [SEED],
       scripts: [{ catalog: "autoscroll" }, { inline: INLINE }, { catalog: "autofetch" }],
@@ -1558,7 +1558,7 @@ describe("走らせるものの解決", () => {
     ]);
   });
 
-  it("その場の TS だけなら、台帳のスクリプトを引かない", async () => {
+  it("その場の TS だけなら、登録済みのスクリプトを引かない", async () => {
     // 偽の DB は、本物の Postgres と同じく空の in () を断る。引けば 500 になる
     const { res, sent } = await start({ seeds: [SEED], scripts: [{ inline: INLINE }] });
     expect(res.statusCode).toBe(202);
@@ -1610,7 +1610,7 @@ describe("走らせるものの解決", () => {
     expect(res.body).not.toContain("/* v2 */");
   });
 
-  /** 始めた行を 1 本持つ台帳に、名前で引くエンドポイントを 1 回打つ。 */
+  /** 始めた行を 1 本持つ偽の DB に、名前で引くエンドポイントを 1 回打つ。 */
   const askInline = async (name: string, opts: { allowed?: boolean; id?: string } = {}) => {
     const { crawls } = await start({
       seeds: [SEED],
@@ -1638,8 +1638,8 @@ describe("走らせるものの解決", () => {
     });
   });
 
-  it("台帳のスクリプト・知らない名前・無いクロールは 404", async () => {
-    // 台帳のスクリプトは台帳と archive に在る。名前で引くエンドポイントは、その場の TS だけを返す
+  it("登録済みのスクリプト・知らない名前・無いクロールは 404", async () => {
+    // 登録済みのスクリプトは capture-ledger と archive に在る。名前で引くエンドポイントは、その場の TS だけを返す
     expect((await askInline("autoscroll")).statusCode).toBe(404);
     expect((await askInline("nope")).statusCode).toBe(404);
     expect((await askInline("close-banner", { id: UUID })).statusCode).toBe(404);
@@ -1684,7 +1684,7 @@ describe("型の誤りを取り直すエンドポイント", () => {
     message: "Parameter 'el' implicitly has an 'any' type.",
   };
 
-  /** その場の TS と台帳のスクリプトで 1 本始め、webhook に渡った列をそのまま控える。 */
+  /** その場の TS と登録済みのスクリプトで 1 本始め、webhook に渡った列をそのまま控える。 */
   const startCapturing = async () => {
     const crawls: FakeCrawl[] = [];
     const sent: CrawlScript[][] = [];
@@ -1748,7 +1748,7 @@ describe("型の誤りを取り直すエンドポイント", () => {
     });
     await ask(crawls, tsCompile);
     expect(asked).toHaveLength(1);
-    // 台帳のスクリプトも入っている —— 一緒に走る物の重なり (TS2451) は、組み合わせでしか起きない
+    // 登録済みのスクリプトも入っている —— 一緒に走る物の重なり (TS2451) は、組み合わせでしか起きない
     expect(asked[0]!.map((s) => s.id)).toEqual(["inline-close-banner", "autoscroll"]);
     expect(asked[0]).toEqual(sent[0]);
   });
@@ -2038,7 +2038,7 @@ describe("直しのエンドポイント", () => {
     expect(f.rows).toHaveLength(0);
   });
 
-  it("誤りが台帳のスクリプトにだけなら 422 で、Claude を呼ばない", async () => {
+  it("誤りが登録済みのスクリプトにだけなら 422 で、Claude を呼ばない", async () => {
     const crawls = await startWithInline();
     const f = fakes({
       compile: [
@@ -2087,7 +2087,7 @@ describe("直しのエンドポイント", () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it("許可の無い名乗り・台帳のスクリプト・無いクロールには 404（検査も Claude も呼ばない）", async () => {
+  it("許可の無い名乗り・登録済みのスクリプト・無いクロールには 404（検査も Claude も呼ばない）", async () => {
     const crawls = await startWithInline();
     const f = fakes({ compile: [] });
     expect((await askFix(crawls, f, { allowed: false })).statusCode).toBe(404);
@@ -2405,7 +2405,7 @@ describe("対象サイト（サイト用のスクリプト）と起点", () => {
     expect(without.ids).toEqual(["autoscroll"]);
   });
 
-  it("台帳のスクリプトが全部別のサイト用なら、省いた頼みは「この起点で走る物が無い」で断る（スクリプトが無いとは言わない）", async () => {
+  it("登録済みのスクリプトが全部別のサイト用なら、省いた頼みは「この起点で走る物が無い」で断る（スクリプトが無いとは言わない）", async () => {
     const { res } = await startWith(
       SITED.filter((script) => script.sites.length > 0),
       { seeds: ["https://other.test/"] },
