@@ -257,6 +257,7 @@ JWT で名乗ります。§6 のヘッダは、JWT の設定の API には効き
 TOKEN=$(pnpm run --silent idp:token)   # idp:bootstrap が作った自分の利用者（acme）
 curl -X POST http://127.0.0.1:7070/api/crawls \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -H "idempotency-key: $(uuidgen)" \
   -d '{"seeds":["https://example.com/"],"maxDepth":0}'
 # → 202 { "crawlId": "9072b625-…" }
 ```
@@ -371,6 +372,8 @@ curl -X POST http://127.0.0.1:7070/api/crawls/<crawlId>/failed \
 
 締めるのは走行中の行だけで、flow が落ちたときに締めに来る route と同じものです。
 何が欠けていたかは、capture-scheduler の `pnpm run doctor` が名指しします。
+`409` は鍵（`Idempotency-Key`）に覚えられないので、締めた後は同じ鍵で送り直して構いません
+（[同じ要求を 2 回送っても 1 本](/capture-ledger/ja/archive-ledger/#同じ要求を-2-回送っても-1-本)）。
 
 ## 次に読むもの
 

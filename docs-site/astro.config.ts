@@ -89,6 +89,7 @@ export default defineConfig({
                 { label: "capture_submissions", slug: "databases/capture-submissions" },
                 { label: "archives", slug: "databases/archives" },
                 { label: "crawl_schedules", slug: "databases/crawl-schedules" },
+                { label: "crawl_requests", slug: "databases/crawl-requests" },
                 { label: "fga_outbox", slug: "databases/fga-outbox" },
                 { label: "tuple", slug: "databases/tuple" },
               ],

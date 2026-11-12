@@ -261,6 +261,7 @@ Identify with a JWT. The headers from §6 do nothing on an API set up for JWTs.
 TOKEN=$(pnpm run --silent idp:token)   # your user from idp:bootstrap, in acme
 curl -X POST http://127.0.0.1:7070/api/crawls \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -H "idempotency-key: $(uuidgen)" \
   -d '{"seeds":["https://example.com/"],"maxDepth":0}'
 # → 202 { "crawlId": "9072b625-…" }
 ```
@@ -380,7 +381,9 @@ curl -X POST http://127.0.0.1:7070/api/crawls/<crawlId>/failed \
 ```
 
 It closes running rows only, and it is the same route the flow uses to close a crawl when it
-fails. What was missing, capture-scheduler's `pnpm run doctor` names.
+fails. What was missing, capture-scheduler's `pnpm run doctor` names. A `409` is not remembered
+against the key (`Idempotency-Key`), so after closing the crawl you can send again with the same key
+([Sending the same request twice still starts one crawl](/capture-ledger/archive-ledger/#sending-the-same-request-twice-still-starts-one-crawl)).
 
 ## Next
 

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import type { Kysely } from "kysely";
@@ -49,6 +49,12 @@ const unreachableDeps = {
 } as unknown as CrawlRouteDeps;
 
 const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organizations": "acme" };
+/**
+ * `POST /api/crawls` の鍵 (CAPTURE-180)。**1 回ごとに新しい鍵** —— 同じ鍵を使い回すと、2 本目のつもりの要求が
+ * 覚えている 1 本目の答えになる。
+ */
+const keyHeader = (): Record<string, string> => ({ "idempotency-key": randomUUID() });
+const startHeaders = (): Record<string, string> => ({ ...SUBJECT, ...keyHeader() });
 const UUID = "d272d256-e528-4581-bb4e-8d9477d78196";
 const SEED = "https://site.test/start";
 
@@ -87,7 +93,7 @@ describe("クロール route の入力検証", () => {
   });
 
   const post = (payload: Record<string, unknown>) =>
-    app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+    app.inject({ method: "POST", url: "/api/crawls", headers: startHeaders(), payload });
 
   it("本文は 1 MiB まで —— エンドポイントが自分で決め、ちょうどは通り、1 バイト超えは 413（capture-workbench の門と同じ数）", async () => {
     // 数は直に書く。CRAWL_BODY_LIMIT を読むと、定数ごと変えた日に試験も一緒に動いてしまう
@@ -105,7 +111,7 @@ describe("クロール route の入力検証", () => {
       small.inject({
         method: "POST",
         url: "/api/crawls",
-        headers: { ...SUBJECT, "content-type": "application/json" },
+        headers: { ...startHeaders(), "content-type": "application/json" },
         payload,
       });
     expect(Buffer.byteLength(body(LIMIT))).toBe(LIMIT);
@@ -334,241 +340,321 @@ const FAKE_HOST_TYPES = {
  * **index そのものはここでは証明できない** —— 制約を持っているのが偽物のほうだから。
  * 本物の Postgres に対して別途確かめること。
  */
+/** 覚えている始める要求 (`crawl_requests`・CAPTURE-180)。 */
+interface FakeRequest {
+  orgId: string;
+  key: string;
+  requestSha256: string;
+  crawlId: string;
+  answer: { crawlId: string };
+  createdAt: Date;
+}
+
 const fakeDb = (
   crawls: FakeCrawl[],
   pages: FakePage[] = [],
   /** `updateTable(...).set(値)` の値を、呼ばれた順に積む。 */
   updates: Record<string, unknown>[] = [],
   scripts: FakeScript[] = [],
-) => ({
-  insertInto: (table: string) => ({
-    values: (row: Record<string, unknown> | Record<string, unknown>[]) => ({
-      /**
-       * 深さ 0 の行は `onConflict(...).returning(...)` で入れる。
-       *
-       * **重複排除まで写す。**
-       * 本物は `(crawl_id, url_hash)` の unique index が落とすので、
-       * ここで素通しにすると「同じ URL を起点に 2 度書いても 2 回取る」という、
-       * 本物では起きない振る舞いを試験が肯定してしまう。
-       */
-      onConflict: () => ({
-        returning: () => ({
-          execute: async (): Promise<{ url: string; host: string }[]> => {
-            const rows = (Array.isArray(row) ? row : [row]) as { url: string; host: string }[];
-            const seen = new Set<string>();
-            return Promise.resolve(
-              rows.filter((r) => (seen.has(r.url) ? false : (seen.add(r.url), true))),
-            );
-          },
-        }),
-      }),
-      execute: async (): Promise<void> => {
-        if (table === "crawlPages") return Promise.resolve();
-        if (crawls.some((c) => c.state === "running")) {
-          const err = new Error("duplicate key") as Error & { code: string; constraint: string };
-          err.code = "23505";
-          err.constraint = "crawls_single_active_idx";
+  /** 覚えている鍵。**主キー (組織と鍵) の重複は本物と同じ 23505 で断る。** */
+  requests: FakeRequest[] = [],
+) => {
+  const db = {
+    /**
+     * トランザクション。**断られたら鍵の行を巻き戻す** —— 本物は rollback で消える。巻き戻さないと、走行中の 409 の
+     * 後に同じ鍵で送り直したとき、覚えていないはずの答えが返る形を試験が肯定してしまう。
+     */
+    transaction: () => ({
+      execute: async <T>(fn: (trx: unknown) => Promise<T>): Promise<T> => {
+        const before = [...requests];
+        try {
+          return await fn(db);
+        } catch (err) {
+          requests.splice(0, requests.length, ...before);
           throw err;
         }
-        const inserting = row as unknown as FakeCrawl & {
-          scripts: unknown;
-          rules: unknown;
-          variables: unknown;
-          secrets: unknown;
-        };
-        crawls.push({
-          ...inserting,
-          rules:
-            typeof inserting.rules === "string" ? (JSON.parse(inserting.rules) as CrawlRule[]) : [],
-          // **jsonb は文字列で書いて、配列で読む。** 本物は node-pg が戻すので、
-          // ここで写さないと「書いた形のまま読める」という、本物では起きない
-          // 振る舞いを試験が肯定する。
-          scripts:
-            typeof inserting.scripts === "string"
-              ? (JSON.parse(inserting.scripts) as FakeScript[])
-              : [],
-          // 値も jsonb (`024`)。同じく文字列で書いて object で読む
-          variables:
-            typeof inserting.variables === "string"
-              ? (JSON.parse(inserting.variables) as Record<string, string>)
-              : {},
-          secrets:
-            typeof inserting.secrets === "string"
-              ? (JSON.parse(inserting.secrets) as Record<string, CrawlSecret>)
-              : {},
-          stopReason: null,
-          startedAt: new Date(),
-          finishedAt: null,
-          pagesDiscovered: 0,
-          pagesCaptured: 0,
-          error: null,
-          ...NO_REPLAY_BUNDLE,
-          ...NO_SCHEDULE,
-        });
-        await Promise.resolve();
       },
     }),
-  }),
-  updateTable: () => ({
-    set: (values: Record<string, unknown>) => {
-      updates.push(values);
-      /**
-       * `where` は何度でも続き、`returning(...).execute()` で「実際に当たった行」を返す。
-       *
-       * **`state = 'running'` の条件まで写す。** 素通しにすると、終わったクロールに
-       * 後から `failed` を被せる誤りが試験で見えなくなる。
-       */
-      const build = (conds: [string, unknown][]) => ({
-        // 式で書いた条件 (`where((eb) => …)`) は写さない。見ているのは id と state だけ。
-        where: (column: string | ((eb: unknown) => unknown), _op?: unknown, value?: unknown) =>
-          typeof column === "function" ? build(conds) : build([...conds, [column, value]]),
-        execute: async (): Promise<void> => Promise.resolve(),
-        returning: () => ({
-          execute: async (): Promise<{ id: string }[]> => {
-            const id = conds.find(([c]) => c === "id")?.[1];
-            const wantState = conds.find(([c]) => c === "state")?.[1];
-            const row = crawls.find((c) => c.id === id);
-            if (!row) return Promise.resolve([]);
-            if (wantState !== undefined && row.state !== wantState) return Promise.resolve([]);
-            row.state = "failed";
-            return Promise.resolve([{ id: row.id }]);
-          },
+    /** 期限切れの鍵を消す (`createdAt < 値`)。 */
+    deleteFrom: () => ({
+      where: (_c: unknown, _o: unknown, cutoff: Date) => ({
+        execute: async (): Promise<void> => {
+          const kept = requests.filter((r) => r.createdAt >= cutoff);
+          requests.splice(0, requests.length, ...kept);
+          await Promise.resolve();
+        },
+      }),
+    }),
+    insertInto: (table: string) => ({
+      values: (row: Record<string, unknown> | Record<string, unknown>[]) => ({
+        /**
+         * 深さ 0 の行は `onConflict(...).returning(...)` で入れる。
+         *
+         * **重複排除まで写す。**
+         * 本物は `(crawl_id, url_hash)` の unique index が落とすので、
+         * ここで素通しにすると「同じ URL を起点に 2 度書いても 2 回取る」という、
+         * 本物では起きない振る舞いを試験が肯定してしまう。
+         */
+        onConflict: () => ({
+          returning: () => ({
+            execute: async (): Promise<{ url: string; host: string }[]> => {
+              const rows = (Array.isArray(row) ? row : [row]) as { url: string; host: string }[];
+              const seen = new Set<string>();
+              return Promise.resolve(
+                rows.filter((r) => (seen.has(r.url) ? false : (seen.add(r.url), true))),
+              );
+            },
+          }),
         }),
-      });
-      return build([]);
-    },
-  }),
-  selectFrom: (table: string) => ({
-    selectAll: () => ({
-      // 予定の名前の相関副問い合わせ (`032`)。偽 DB では `scheduleName` を行に置くだけ
-      select: () => ({
+        execute: async (): Promise<void> => {
+          if (table === "crawlPages") return Promise.resolve();
+          if (table === "crawlRequests") {
+            const r = row as unknown as Omit<FakeRequest, "answer" | "createdAt"> & {
+              answer: string;
+            };
+            if (requests.some((q) => q.orgId === r.orgId && q.key === r.key)) {
+              const err = new Error("duplicate key") as Error & {
+                code: string;
+                constraint: string;
+              };
+              err.code = "23505";
+              err.constraint = "crawl_requests_pkey";
+              throw err;
+            }
+            requests.push({
+              ...r,
+              answer: JSON.parse(r.answer) as { crawlId: string },
+              createdAt: new Date(),
+            });
+            return Promise.resolve();
+          }
+          if (crawls.some((c) => c.state === "running")) {
+            const err = new Error("duplicate key") as Error & { code: string; constraint: string };
+            err.code = "23505";
+            err.constraint = "crawls_single_active_idx";
+            throw err;
+          }
+          const inserting = row as unknown as FakeCrawl & {
+            scripts: unknown;
+            rules: unknown;
+            variables: unknown;
+            secrets: unknown;
+          };
+          crawls.push({
+            ...inserting,
+            rules:
+              typeof inserting.rules === "string"
+                ? (JSON.parse(inserting.rules) as CrawlRule[])
+                : [],
+            // **jsonb は文字列で書いて、配列で読む。** 本物は node-pg が戻すので、
+            // ここで写さないと「書いた形のまま読める」という、本物では起きない
+            // 振る舞いを試験が肯定する。
+            scripts:
+              typeof inserting.scripts === "string"
+                ? (JSON.parse(inserting.scripts) as FakeScript[])
+                : [],
+            // 値も jsonb (`024`)。同じく文字列で書いて object で読む
+            variables:
+              typeof inserting.variables === "string"
+                ? (JSON.parse(inserting.variables) as Record<string, string>)
+                : {},
+            secrets:
+              typeof inserting.secrets === "string"
+                ? (JSON.parse(inserting.secrets) as Record<string, CrawlSecret>)
+                : {},
+            stopReason: null,
+            startedAt: new Date(),
+            finishedAt: null,
+            pagesDiscovered: 0,
+            pagesCaptured: 0,
+            error: null,
+            ...NO_REPLAY_BUNDLE,
+            ...NO_SCHEDULE,
+          });
+          await Promise.resolve();
+        },
+      }),
+    }),
+    updateTable: () => ({
+      set: (values: Record<string, unknown>) => {
+        updates.push(values);
+        /**
+         * `where` は何度でも続き、`returning(...).execute()` で「実際に当たった行」を返す。
+         *
+         * **`state = 'running'` の条件まで写す。** 素通しにすると、終わったクロールに
+         * 後から `failed` を被せる誤りが試験で見えなくなる。
+         */
+        const build = (conds: [string, unknown][]) => ({
+          // 式で書いた条件 (`where((eb) => …)`) は写さない。見ているのは id と state だけ。
+          where: (column: string | ((eb: unknown) => unknown), _op?: unknown, value?: unknown) =>
+            typeof column === "function" ? build(conds) : build([...conds, [column, value]]),
+          execute: async (): Promise<void> => Promise.resolve(),
+          returning: () => ({
+            execute: async (): Promise<{ id: string }[]> => {
+              const id = conds.find(([c]) => c === "id")?.[1];
+              const wantState = conds.find(([c]) => c === "state")?.[1];
+              const row = crawls.find((c) => c.id === id);
+              if (!row) return Promise.resolve([]);
+              if (wantState !== undefined && row.state !== wantState) return Promise.resolve([]);
+              row.state = "failed";
+              return Promise.resolve([{ id: row.id }]);
+            },
+          }),
+        });
+        return build([]);
+      },
+    }),
+    selectFrom: (table: string) => ({
+      selectAll: () => ({
+        // 予定の名前の相関副問い合わせ (`032`)。偽 DB では `scheduleName` を行に置くだけ
+        select: () => ({
+          where: (_c: unknown, _o: unknown, id: string) => ({
+            executeTakeFirst: async (): Promise<FakeCrawl | undefined> =>
+              Promise.resolve(crawls.find((c) => c.id === id)),
+          }),
+        }),
         where: (_c: unknown, _o: unknown, id: string) => ({
           executeTakeFirst: async (): Promise<FakeCrawl | undefined> =>
             Promise.resolve(crawls.find((c) => c.id === id)),
         }),
       }),
-      where: (_c: unknown, _o: unknown, id: string) => ({
-        executeTakeFirst: async (): Promise<FakeCrawl | undefined> =>
-          Promise.resolve(crawls.find((c) => c.id === id)),
-      }),
-    }),
-    /**
-     * **問い合わせが指定した条件だけを当てる。** 最初は `enabled` を無条件に
-     * 絞っていたが、それだと**本物から `enabled` の条件を外しても試験が緑のまま**に
-     * なる (反証で素通りした)。偽物が制約を持っていると、消したことに気づけない。
-     */
-    select: () => {
-      if (table === "hostTypes") {
-        // `readHostTypes` の読み方 (いちばん新しい版の 1 行) だけを写す
-        const query = {
-          orderBy: () => query,
-          limit: () => query,
-          executeTakeFirst: async () => Promise.resolve(FAKE_HOST_TYPES),
-        };
-        return query;
-      }
-      if (table === "scripts") {
-        /**
-         * `resolveScripts` の読み方を写す。**条件は指定されたものだけを当てる**
-         * (上の判断) —— 偽物が `enabled` で勝手に絞ると、
-         * 本物からその条件が消えても試験は緑のままになる。
-         */
-        const scriptQuery = (where: [string, unknown, unknown][]) => ({
-          distinctOn: () => scriptQuery(where),
-          where: (column: string, op: unknown, value: unknown) =>
-            scriptQuery([...where, [column, op, value]]),
-          orderBy: () => scriptQuery(where),
-          execute: async (): Promise<FakeScript[]> => {
-            // **本物の Postgres は空の `in ()` を構文エラーで断る** (Kysely は空の配列を
-            // そのまま `in ()` に組む。2026-10-14 に開発の DB で確かめた)。偽物も断らないと、
-            // 「名指しが無ければ登録済みのスクリプトを引かない」分岐を外しても、試験は緑のままになる。
-            if (where.some(([, op, value]) => op === "in" && (value as unknown[]).length === 0)) {
-              throw new Error('syntax error at or near ")"');
-            }
-            const matched = scripts.filter((s) =>
-              where.every(([column, op, value]) =>
-                op === "in"
-                  ? (value as unknown[]).includes((s as unknown as Record<string, unknown>)[column])
-                  : (s as unknown as Record<string, unknown>)[column] === value,
+      /**
+       * **問い合わせが指定した条件だけを当てる。** 最初は `enabled` を無条件に
+       * 絞っていたが、それだと**本物から `enabled` の条件を外しても試験が緑のまま**に
+       * なる (反証で素通りした)。偽物が制約を持っていると、消したことに気づけない。
+       */
+      select: () => {
+        if (table === "crawlRequests") {
+          const requestQuery = (where: [string, unknown][]) => ({
+            where: (column: string, _op: unknown, value: unknown) =>
+              requestQuery([...where, [column, value]]),
+            executeTakeFirst: async () =>
+              Promise.resolve(
+                requests.find((r) =>
+                  where.every(
+                    ([column, value]) =>
+                      (r as unknown as Record<string, unknown>)[column] === value,
+                  ),
+                ),
               ),
-            );
-            // `distinctOn("id")` + `ORDER BY id, version DESC` = id ごとに最新版 1 本。
-            const byId = new Map<string, FakeScript>();
-            for (const row of [...matched].sort((a, b) => b.version - a.version)) {
-              if (!byId.has(row.id)) byId.set(row.id, row);
-            }
-            return Promise.resolve([...byId.values()].sort((a, b) => a.id.localeCompare(b.id)));
-          },
-        });
-        return scriptQuery([]);
-      }
-      if (table === "crawls") {
-        /**
-         * 409 の「走っている 1 本」と、一覧の両方が通る。**指定された条件・並び・上限
-         * だけを当てる** (上の判断) —— 偽物が勝手に新しい順へ
-         * 並べると、本物から `orderBy` が消えても試験は緑のままになる。
-         */
-        type Cond = [string, unknown, unknown];
-        const crawlQuery = (
-          where: Cond[],
-          order?: { column: string; dir: string },
-          limit?: number,
-        ) => {
-          const matched = (): FakeCrawl[] => {
-            const cell = (c: FakeCrawl, column: string): unknown =>
-              (c as unknown as Record<string, unknown>)[column];
-            let rows = crawls.filter((c) =>
-              where.every(([column, op, value]) =>
-                op === "<"
-                  ? (cell(c, column) as Date) < (value as Date)
-                  : cell(c, column) === value,
-              ),
-            );
-            if (order) {
-              const { column, dir } = order;
-              rows = [...rows].sort((a, b) => {
-                const left = Number(cell(a, column));
-                const right = Number(cell(b, column));
-                return dir === "desc" ? right - left : left - right;
-              });
-            }
-            return limit === undefined ? rows : rows.slice(0, limit);
+          });
+          return requestQuery([]);
+        }
+        if (table === "hostTypes") {
+          // `readHostTypes` の読み方 (いちばん新しい版の 1 行) だけを写す
+          const query = {
+            orderBy: () => query,
+            limit: () => query,
+            executeTakeFirst: async () => Promise.resolve(FAKE_HOST_TYPES),
           };
-          return {
+          return query;
+        }
+        if (table === "scripts") {
+          /**
+           * `resolveScripts` の読み方を写す。**条件は指定されたものだけを当てる**
+           * (上の判断) —— 偽物が `enabled` で勝手に絞ると、
+           * 本物からその条件が消えても試験は緑のままになる。
+           */
+          const scriptQuery = (where: [string, unknown, unknown][]) => ({
+            distinctOn: () => scriptQuery(where),
             where: (column: string, op: unknown, value: unknown) =>
-              crawlQuery([...where, [column, op, value]], order, limit),
-            orderBy: (column: string, dir: string) => crawlQuery(where, { column, dir }, limit),
-            limit: (n: number) => crawlQuery(where, order, n),
-            executeTakeFirst: async () => Promise.resolve(matched()[0]),
-            execute: async () => Promise.resolve(matched()),
+              scriptQuery([...where, [column, op, value]]),
+            orderBy: () => scriptQuery(where),
+            execute: async (): Promise<FakeScript[]> => {
+              // **本物の Postgres は空の `in ()` を構文エラーで断る** (Kysely は空の配列を
+              // そのまま `in ()` に組む。2026-10-14 に開発の DB で確かめた)。偽物も断らないと、
+              // 「名指しが無ければ登録済みのスクリプトを引かない」分岐を外しても、試験は緑のままになる。
+              if (where.some(([, op, value]) => op === "in" && (value as unknown[]).length === 0)) {
+                throw new Error('syntax error at or near ")"');
+              }
+              const matched = scripts.filter((s) =>
+                where.every(([column, op, value]) =>
+                  op === "in"
+                    ? (value as unknown[]).includes(
+                        (s as unknown as Record<string, unknown>)[column],
+                      )
+                    : (s as unknown as Record<string, unknown>)[column] === value,
+                ),
+              );
+              // `distinctOn("id")` + `ORDER BY id, version DESC` = id ごとに最新版 1 本。
+              const byId = new Map<string, FakeScript>();
+              for (const row of [...matched].sort((a, b) => b.version - a.version)) {
+                if (!byId.has(row.id)) byId.set(row.id, row);
+              }
+              return Promise.resolve([...byId.values()].sort((a, b) => a.id.localeCompare(b.id)));
+            },
+          });
+          return scriptQuery([]);
+        }
+        if (table === "crawls") {
+          /**
+           * 409 の「走っている 1 本」と、一覧の両方が通る。**指定された条件・並び・上限
+           * だけを当てる** (上の判断) —— 偽物が勝手に新しい順へ
+           * 並べると、本物から `orderBy` が消えても試験は緑のままになる。
+           */
+          type Cond = [string, unknown, unknown];
+          const crawlQuery = (
+            where: Cond[],
+            order?: { column: string; dir: string },
+            limit?: number,
+          ) => {
+            const matched = (): FakeCrawl[] => {
+              const cell = (c: FakeCrawl, column: string): unknown =>
+                (c as unknown as Record<string, unknown>)[column];
+              let rows = crawls.filter((c) =>
+                where.every(([column, op, value]) =>
+                  op === "<"
+                    ? (cell(c, column) as Date) < (value as Date)
+                    : cell(c, column) === value,
+                ),
+              );
+              if (order) {
+                const { column, dir } = order;
+                rows = [...rows].sort((a, b) => {
+                  const left = Number(cell(a, column));
+                  const right = Number(cell(b, column));
+                  return dir === "desc" ? right - left : left - right;
+                });
+              }
+              return limit === undefined ? rows : rows.slice(0, limit);
+            };
+            return {
+              where: (column: string, op: unknown, value: unknown) =>
+                crawlQuery([...where, [column, op, value]], order, limit),
+              orderBy: (column: string, dir: string) => crawlQuery(where, { column, dir }, limit),
+              limit: (n: number) => crawlQuery(where, order, n),
+              executeTakeFirst: async () => Promise.resolve(matched()[0]),
+              execute: async () => Promise.resolve(matched()),
+            };
           };
-        };
-        return crawlQuery([]);
-      }
-      if (table === "crawlPages") {
-        // `GET /api/crawls/:id` の `failures`。**指定された条件だけを当てる**（下と同じ理由）。
-        const pageQuery = (where: [string, unknown][], limit: number | undefined) => ({
-          where: (column: string, _op: unknown, value: unknown) =>
-            pageQuery([...where, [column, value]], limit),
-          orderBy: () => pageQuery(where, limit),
-          limit: (n: number) => pageQuery(where, n),
-          execute: async () => {
-            const matched = pages.filter((p) =>
-              where.every(
-                ([column, value]) => (p as unknown as Record<string, unknown>)[column] === value,
-              ),
-            );
-            // `count(*) over ()` の答え。窓関数は limit の前に数える
-            const rows = matched.map((p) => ({ ...p, total: matched.length }));
-            return Promise.resolve(limit === undefined ? rows : rows.slice(0, limit));
-          },
-        });
-        return pageQuery([], undefined);
-      }
-      throw new Error(`偽の DB に無い表: ${table}`);
-    },
-  }),
-});
+          return crawlQuery([]);
+        }
+        if (table === "crawlPages") {
+          // `GET /api/crawls/:id` の `failures`。**指定された条件だけを当てる**（下と同じ理由）。
+          const pageQuery = (where: [string, unknown][], limit: number | undefined) => ({
+            where: (column: string, _op: unknown, value: unknown) =>
+              pageQuery([...where, [column, value]], limit),
+            orderBy: () => pageQuery(where, limit),
+            limit: (n: number) => pageQuery(where, n),
+            execute: async () => {
+              const matched = pages.filter((p) =>
+                where.every(
+                  ([column, value]) => (p as unknown as Record<string, unknown>)[column] === value,
+                ),
+              );
+              // `count(*) over ()` の答え。窓関数は limit の前に数える
+              const rows = matched.map((p) => ({ ...p, total: matched.length }));
+              return Promise.resolve(limit === undefined ? rows : rows.slice(0, limit));
+            },
+          });
+          return pageQuery([], undefined);
+        }
+        throw new Error(`偽の DB に無い表: ${table}`);
+      },
+    }),
+  };
+  return db;
+};
 
 /**
  * 既定のスクリプト。**空にしない** —— 登録済みのスクリプトが無い配備は `POST /api/crawls` が 400 で止めるので、
@@ -607,6 +693,8 @@ const compilesAll = compilesWith({});
 
 const depsWith = (opts: {
   crawls: FakeCrawl[];
+  /** 覚えている始める要求 (CAPTURE-180)。省けば空 */
+  requests?: FakeRequest[];
   allowed: boolean;
   dispatch?: CrawlRouteDeps["dispatch"];
   pages?: FakePage[];
@@ -628,7 +716,13 @@ const depsWith = (opts: {
   formats?: string;
 }): CrawlRouteDeps =>
   ({
-    db: fakeDb(opts.crawls, opts.pages, opts.updates, opts.scripts ?? DEFAULT_CATALOG),
+    db: fakeDb(
+      opts.crawls,
+      opts.pages,
+      opts.updates,
+      opts.scripts ?? DEFAULT_CATALOG,
+      opts.requests,
+    ),
     fga: { check: async () => Promise.resolve({ allowed: opts.allowed }) },
     resolveIdentity: () => Promise.resolve({ subject: "alice", organizations: ["acme"] }),
     dispatch: opts.dispatch ?? (() => Promise.resolve()),
@@ -657,6 +751,7 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
     expect(res.statusCode).toBe(401);
@@ -668,6 +763,7 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
     expect(res.statusCode).toBe(404);
@@ -680,6 +776,7 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: ["ftp://site.test/x"] },
     });
     expect(res.statusCode).toBe(400);
@@ -701,6 +798,7 @@ describe("クロール route の認可と単一実行", () => {
     await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: ["https://a.site.test/1", "https://b.site.test/2"] },
     });
     expect(sent[0]?.map((f) => f.url)).toEqual(["https://a.site.test/1", "https://b.site.test/2"]);
@@ -724,6 +822,7 @@ describe("クロール route の認可と単一実行", () => {
     await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED, SEED] },
     });
     expect(sent[0]).toHaveLength(1);
@@ -736,6 +835,7 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED, "ftp://site.test/x"] },
     });
     expect(res.statusCode).toBe(400);
@@ -748,6 +848,7 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
     expect(res.statusCode).toBe(202);
@@ -772,6 +873,7 @@ describe("クロール route の認可と単一実行", () => {
     await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED], maxDepth: 0 },
     });
     expect(sent).toEqual([expect.objectContaining({ links: true })]);
@@ -782,7 +884,12 @@ describe("クロール route の認可と単一実行", () => {
     // 既定は控えめな側。**30 が効いていること**が、上限で止まる普通の姿を作る。
     const crawls: FakeCrawl[] = [];
     const app = await buildApp(depsWith({ crawls, allowed: true }));
-    await app.inject({ method: "POST", url: "/api/crawls", payload: { seeds: [SEED] } });
+    await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: keyHeader(),
+      payload: { seeds: [SEED] },
+    });
     expect(crawls[0]).toMatchObject({
       rules: [{ follow: "same-origin" }],
       maxDepth: 2,
@@ -799,6 +906,7 @@ describe("クロール route の認可と単一実行", () => {
     await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: ["https://site.test/start#top"] },
     });
     expect(crawls[0]?.seeds?.[0]).toBe("https://site.test/start");
@@ -811,11 +919,13 @@ describe("クロール route の認可と単一実行", () => {
     const first = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
     const second = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
     expect(first.statusCode).toBe(202);
@@ -837,11 +947,13 @@ describe("クロール route の認可と単一実行", () => {
     const first = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
     const second = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
     expect(second.statusCode).toBe(409);
@@ -859,7 +971,12 @@ describe("クロール route の認可と単一実行", () => {
     const app = await buildApp(
       depsWith({ crawls: [], allowed: true, updates, dispatch: () => Promise.resolve(JOB) }),
     );
-    await app.inject({ method: "POST", url: "/api/crawls", payload: { seeds: [SEED] } });
+    await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: keyHeader(),
+      payload: { seeds: [SEED] },
+    });
     // 投げるのは待たない (応答が先に返る) ので、残すのは次の tick。
     await new Promise((resolve) => setImmediate(resolve));
     expect(updates).toContainEqual({ lastJobId: JOB, lastJobDepth: 0 });
@@ -871,7 +988,12 @@ describe("クロール route の認可と単一実行", () => {
     const app = await buildApp(
       depsWith({ crawls: [], allowed: true, updates, dispatch: () => Promise.resolve(undefined) }),
     );
-    await app.inject({ method: "POST", url: "/api/crawls", payload: { seeds: [SEED] } });
+    await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: keyHeader(),
+      payload: { seeds: [SEED] },
+    });
     await new Promise((resolve) => setImmediate(resolve));
     expect(updates.filter((u) => "lastJobId" in u)).toEqual([]);
     await app.close();
@@ -892,6 +1014,7 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
+      headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
     const { crawlId } = res.json<{ crawlId: string }>();
@@ -917,7 +1040,12 @@ describe("クロール route の認可と単一実行", () => {
           }),
       }),
     );
-    await app.inject({ method: "POST", url: "/api/crawls", payload: { seeds: [SEED] } });
+    await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: keyHeader(),
+      payload: { seeds: [SEED] },
+    });
     // webhook の答えを待つ間に、flow が `/failed` で締めた (とする)
     const first = crawls[0];
     if (first !== undefined) first.state = "succeeded";
@@ -1149,7 +1277,12 @@ describe("起点の一覧", () => {
   const post = async (payload: Record<string, unknown>) => {
     const crawls: FakeCrawl[] = [];
     const app = await buildApp(depsWith({ crawls, allowed: true }));
-    const res = await app.inject({ method: "POST", url: "/api/crawls", payload });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: keyHeader(),
+      payload,
+    });
     await app.close();
     return { res, crawls };
   };
@@ -1385,7 +1518,12 @@ describe("走らせるものの解決", () => {
         },
       }),
     );
-    const res = await app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: startHeaders(),
+      payload,
+    });
     await app.close();
     return { res, sent, crawls };
   };
@@ -1475,7 +1613,7 @@ describe("走らせるものの解決", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
-      headers: SUBJECT,
+      headers: startHeaders(),
       payload: { seeds: [SEED] },
     });
     await app.close();
@@ -1497,7 +1635,7 @@ describe("走らせるものの解決", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
-      headers: SUBJECT,
+      headers: startHeaders(),
       payload: { seeds: [SEED], scripts: [] },
     });
     await app.close();
@@ -1706,7 +1844,7 @@ describe("型の誤りを取り直すエンドポイント", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
-      headers: SUBJECT,
+      headers: startHeaders(),
       payload: { seeds: [SEED], scripts: [{ inline: INLINE }, { catalog: "autoscroll" }] },
     });
     await app.close();
@@ -1940,7 +2078,7 @@ describe("直しのエンドポイント", () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/crawls",
-      headers: SUBJECT,
+      headers: startHeaders(),
       payload: { seeds: [SEED], scripts: [{ inline: INLINE }, { catalog: "autoscroll" }] },
     });
     await app.close();
@@ -2364,7 +2502,12 @@ describe("対象サイト（サイト用のスクリプト）と起点", () => {
         },
       }),
     );
-    const res = await app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: startHeaders(),
+      payload,
+    });
     await app.close();
     return { res, crawls, dispatched, ids: dispatched[0]?.map((script) => script["id"]) };
   };
@@ -2432,7 +2575,12 @@ describe("規則の並びで始める", () => {
   const start = async (payload: Record<string, unknown>) => {
     const crawls: FakeCrawl[] = [];
     const app = await buildApp(depsWith({ crawls, allowed: true }));
-    const res = await app.inject({ method: "POST", url: "/api/crawls", payload });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: keyHeader(),
+      payload,
+    });
     await app.close();
     return { status: res.statusCode, body: res.json<Record<string, unknown>>(), crawls };
   };
@@ -2596,7 +2744,12 @@ describe("クロールごとの値（変数とシークレット）", () => {
         ...(opts.formats !== undefined && { formats: opts.formats }),
       }),
     );
-    const res = await app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: startHeaders(),
+      payload,
+    });
     await app.close();
     return { res, crawls, sent };
   };
@@ -2614,7 +2767,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
       const res = await app.inject({
         method: "POST",
         url: "/api/crawls",
-        headers: SUBJECT,
+        headers: startHeaders(),
         payload: { seeds: [SEED], variables },
       });
       return res;
@@ -2646,7 +2799,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
       const res = await app.inject({
         method: "POST",
         url: "/api/crawls",
-        headers: SUBJECT,
+        headers: startHeaders(),
         payload: {
           seeds: [SEED],
           scripts: [{ inline: { name: "probe", phase: "behavior", source: "x;", params } }],
@@ -3102,7 +3255,12 @@ describe("シークレットを WARC に残すか（宣言の archive）", () =>
         ...(opts.formats !== undefined && { formats: opts.formats }),
       }),
     );
-    const res = await app.inject({ method: "POST", url: "/api/crawls", headers: SUBJECT, payload });
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: startHeaders(),
+      payload,
+    });
     await app.close();
     return { res, crawls, sent };
   };
@@ -3234,5 +3392,142 @@ describe("シークレットを WARC に残すか（宣言の archive）", () =>
     });
     expect(res.statusCode).toBe(202);
     expect(sent[0]?.secrets).toEqual({});
+  });
+});
+
+/**
+ * 始める要求の鍵 (`Idempotency-Key`・CAPTURE-180)。応答が切れた後に送り直しても 2 本目を始めない。
+ * 同時に届いた 2 本 (主キーの待ち) と migration は、本物の Postgres で見る (偽の DB は待たない)。
+ */
+describe("始める要求の鍵", () => {
+  const PAYLOAD = { seeds: [SEED] };
+  const setup = (crawls: FakeCrawl[] = [], requests: FakeRequest[] = []) => {
+    const dispatched: string[] = [];
+    const deps = depsWith({
+      crawls,
+      requests,
+      allowed: true,
+      dispatch: (level) => {
+        dispatched.push(level.crawlId);
+        return Promise.resolve(undefined);
+      },
+    });
+    return { deps, dispatched, crawls, requests };
+  };
+  const post = (app: FastifyInstance, key: string | undefined, payload: object = PAYLOAD) =>
+    app.inject({
+      method: "POST",
+      url: "/api/crawls",
+      headers: key === undefined ? {} : { "idempotency-key": key },
+      payload,
+    });
+
+  it("鍵が無ければ 400 で、行も段も作らない", async () => {
+    const { deps, dispatched, crawls } = setup();
+    const app = await buildApp(deps);
+    const res = await post(app, undefined);
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "Idempotency-Key header is required (1 to 255 visible ASCII characters)",
+    });
+    expect(crawls).toEqual([]);
+    expect(dispatched).toEqual([]);
+    await app.close();
+  });
+
+  it("形の違う鍵（空白を含む・256 字）も 400", async () => {
+    const { deps } = setup();
+    const app = await buildApp(deps);
+    expect((await post(app, "a b")).statusCode).toBe(400);
+    expect((await post(app, "k".repeat(256))).statusCode).toBe(400);
+    expect((await post(app, "k".repeat(255))).statusCode).toBe(202);
+    await app.close();
+  });
+
+  it("同じ鍵・同じ本文の 2 回目は、最初と同じ crawlId の 202 で、段は 1 回しか投げない", async () => {
+    const { deps, dispatched, crawls } = setup();
+    const app = await buildApp(deps);
+    const first = await post(app, "k-1");
+    // 最初の 1 本はまだ走行中。鍵が無ければ 2 回目は 409 になる所
+    const second = await post(app, "k-1", { seeds: [SEED] });
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(202);
+    expect(second.json()).toEqual(first.json());
+    expect(crawls).toHaveLength(1);
+    expect(dispatched).toEqual([first.json<{ crawlId: string }>().crawlId]);
+    await app.close();
+  });
+
+  it("本文の鍵の並びが違っても同じ要求", async () => {
+    const { deps, crawls } = setup();
+    const app = await buildApp(deps);
+    const first = await post(app, "k-1", { seeds: [SEED], maxDepth: 0 });
+    const second = await post(app, "k-1", { maxDepth: 0, seeds: [SEED] });
+    expect(second.json()).toEqual(first.json());
+    expect(crawls).toHaveLength(1);
+    await app.close();
+  });
+
+  it("同じ鍵で違う本文なら 422 で、2 本目を始めない", async () => {
+    const { deps, dispatched, crawls } = setup();
+    const app = await buildApp(deps);
+    await post(app, "k-1");
+    const res = await post(app, "k-1", { seeds: ["https://site.test/other"] });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({
+      error: "Idempotency-Key was already used with a different request",
+    });
+    expect(crawls).toHaveLength(1);
+    expect(dispatched).toHaveLength(1);
+    await app.close();
+  });
+
+  it("走行中の 409 は覚えない —— 走行中の 1 本が終わった後に同じ鍵で送り直せば始まる", async () => {
+    const running = [{ id: UUID, state: "running" }] as unknown as FakeCrawl[];
+    const { deps, dispatched, requests } = setup(running);
+    const app = await buildApp(deps);
+    const busy = await post(app, "k-1");
+    expect(busy.statusCode).toBe(409);
+    expect(requests).toEqual([]);
+    running[0]!.state = "succeeded";
+    const res = await post(app, "k-1");
+    expect(res.statusCode).toBe(202);
+    expect(dispatched).toHaveLength(1);
+    await app.close();
+  });
+
+  it("中身の 400 も覚えない —— 直さずに同じ鍵で送り直しても同じ 400", async () => {
+    const { deps, requests } = setup();
+    const app = await buildApp(deps);
+    const bad = await post(app, "k-1", { seeds: ["ftp://site.test/x"] });
+    expect(bad.statusCode).toBe(400);
+    expect(requests).toEqual([]);
+    await app.close();
+  });
+
+  it("24 時間より古い鍵は忘れ、同じ鍵で新しく始まる", async () => {
+    const old: FakeRequest = {
+      orgId: "acme",
+      key: "k-1",
+      requestSha256: "0".repeat(64),
+      crawlId: UUID,
+      answer: { crawlId: UUID },
+      createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
+    };
+    const { deps, dispatched, requests } = setup([], [old]);
+    const app = await buildApp(deps);
+    const res = await post(app, "k-1");
+    expect(res.statusCode).toBe(202);
+    expect(res.json<{ crawlId: string }>().crawlId).not.toBe(UUID);
+    expect(dispatched).toHaveLength(1);
+    expect(requests.map((r) => r.crawlId)).toEqual([res.json<{ crawlId: string }>().crawlId]);
+    await app.close();
+  });
+
+  it("鍵は名乗りの後に見る —— 名乗らない鍵なしは 401", async () => {
+    const { deps } = setup();
+    const app = await buildApp({ ...deps, resolveIdentity: () => Promise.resolve(undefined) });
+    expect((await post(app, undefined)).statusCode).toBe(401);
+    await app.close();
   });
 });

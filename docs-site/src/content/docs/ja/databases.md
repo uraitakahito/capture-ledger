@@ -37,6 +37,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | `crawl_pages`                                                              | クロールが触った URL 1 つにつき 1 行（取る前の pending も）。重複排除の索引でもあり、取り込みのログの数（`log_counts`）も持つ                            |
 | `crawl_decisions`                                                          | クロールの規則が決めたこと。段 × 規則 × ホスト名で 1 行                                                                                                  |
 | [`crawl_schedules`](/capture-ledger/ja/databases/crawl-schedules/)         | 定期実行の予定。時計の表で、回は `crawls` の行                                                                                                           |
+| [`crawl_requests`](/capture-ledger/ja/databases/crawl-requests/)           | クロールを始める要求の鍵（`Idempotency-Key`）。組織と鍵ごとに最初の答えを覚える                                                                          |
 | `scripts`                                                                  | クロールが名指せるスクリプト                                                                                                                             |
 | `host_types`                                                               | 受け皿（`__bh`）の型。スクリプトを読む人に見せる写し                                                                                                     |
 | `derivations`                                                              | 派生の層。Claude が作った物（直す係の案・前回からの変化の要約）を、証拠と分けて model・prompt の版・費用と一緒に残す。組織ごとの月の上限もこの表で数える |

@@ -63,6 +63,17 @@ import {
   RULES_MAX,
   type CrawlBody,
 } from "../crawl/prepare.js";
+import {
+  findRequest,
+  forgetOldRequests,
+  KEY_REUSED,
+  MISSING_KEY,
+  REQUEST_KEY_HEADER,
+  requestDigest,
+  requestKeyOf,
+  type RememberedRequest,
+  type RequestKey,
+} from "../crawl/request-key.js";
 import { nothingCapturedError } from "../crawl/close.js";
 import { pagesFailed } from "../crawl/page-counts.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
@@ -453,6 +464,23 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // 許しをくれた組織とは限らない。
       const who = { orgId: identity.organizations[0] ?? "", subject: identity.subject };
 
+      // **鍵は名乗りの後に見る** (CAPTURE-180)。schema の headers に置くと名乗る前に 400 になり、
+      // 名乗らずに叩いて 401 を見る点検 (capture-scheduler の doctor の crawl route) が崩れる。
+      const key = requestKeyOf(request.headers[REQUEST_KEY_HEADER]);
+      if (key === undefined) return reply.code(400).send(MISSING_KEY);
+      const asked: RequestKey = { key, sha256: requestDigest(request.body ?? {}) };
+      await forgetOldRequests(db);
+      const answerRemembered = (remembered: RememberedRequest) => {
+        if (remembered.requestSha256 !== asked.sha256) return reply.code(422).send(KEY_REUSED);
+        log.info(
+          { subject: identity.subject, crawlId: remembered.answer.crawlId },
+          "Crawl start repeated with the same Idempotency-Key",
+        );
+        return reply.code(202).send(remembered.answer);
+      };
+      const remembered = await findRequest(db, who.orgId, key);
+      if (remembered) return answerRemembered(remembered);
+
       const prepared = await prepareCrawl(
         {
           db,
@@ -469,7 +497,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         { db, capture, ...(sink && { sink }), dispatchLevel },
         prepared,
         who,
+        asked,
       );
+      if (launched.kind === "remembered") return answerRemembered(launched.request);
       if (launched.kind === "busy") {
         log.info({ subject: identity.subject }, "Crawl already in progress");
         return reply.code(409).send(launched.body);

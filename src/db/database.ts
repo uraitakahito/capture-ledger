@@ -542,6 +542,20 @@ export interface DerivationsTable {
   createdAt: ColumnType<Date, string | undefined, never>;
 }
 
+/**
+ * クロールを始める要求の鍵 (`037`・CAPTURE-180)。組織と鍵の組ごとに、最初に始めたクロールの答えを覚える。
+ * 主キーは (orgId, key)。`crawls` の行と同じトランザクションで入る。
+ */
+export interface CrawlRequestsTable {
+  orgId: string;
+  key: string;
+  requestSha256: string;
+  crawlId: string;
+  /** 返した 202 の本文。jsonb なので、書くときは文字列、読むと object。 */
+  answer: ColumnType<{ crawlId: string }, string, never>;
+  createdAt: ColumnType<Date, string | undefined, never>;
+}
+
 export interface Database {
   crawlSchedules: CrawlSchedulesTable;
   archives: ArchivesTable;
@@ -556,4 +570,5 @@ export interface Database {
   derivations: DerivationsTable;
   pageChanges: PageChangesTable;
   crawlChanges: CrawlChangesTable;
+  crawlRequests: CrawlRequestsTable;
 }
