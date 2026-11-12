@@ -1982,7 +1982,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           // ように 1 ページで黙って終わったクロールが緑に見える。深さ 0 は辿らないと頼んだので、0 本でも `completed`。
           const noLinks = crawl.maxDepth > 0 && totals.pagesDiscovered === 0;
           const reason =
-            stopReason ?? (done ? (noLinks ? ("no_links" as const) : ("completed" as const)) : null);
+            stopReason ??
+            (done ? (noLinks ? ("no_links" as const) : ("completed" as const)) : null);
           // **`succeeded` は 1 枚以上撮れたクロールだけ** (`crawl/close.ts`)
           const nothingCaptured = done && totals.pagesCaptured === 0;
           if (reason !== null || done) {
