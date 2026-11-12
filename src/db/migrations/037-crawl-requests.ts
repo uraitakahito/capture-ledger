@@ -22,12 +22,15 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     .addColumn("org_id", "text", (col) => col.notNull())
     .addColumn("key", "text", (col) => col.notNull())
     .addColumn("request_sha256", "text", (col) => col.notNull())
-    .addColumn("crawl_id", "uuid", (col) =>
-      col.notNull().references("crawls.id").onDelete("cascade"),
-    )
+    .addColumn("crawl_id", "uuid", (col) => col.notNull())
     .addColumn("answer", "jsonb", (col) => col.notNull())
     .addColumn("created_at", "timestamptz", (col) => col.notNull().defaultTo(sql`now()`))
+    // **主キーは遅らせない** —— 同じ鍵が同時に来たとき、後ろはここで前の commit を待つ
     .addPrimaryKeyConstraint("crawl_requests_pkey", ["org_id", "key"])
+    // **外部キーは commit まで遅らせる。** 鍵の行は `crawls` の行より先に入れる (後ろを主キーで待たせるため)
+    .addForeignKeyConstraint("crawl_requests_crawl_id_fkey", ["crawl_id"], "crawls", ["id"], (fk) =>
+      fk.onDelete("cascade").deferrable().initiallyDeferred(),
+    )
     .execute();
   // #endregion crawl-requests
   await db.schema
