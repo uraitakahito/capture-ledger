@@ -9,7 +9,8 @@ import { sql, type Kysely, type Selectable } from "kysely";
 
 import { isUniqueViolation } from "../api/authorization.js";
 import type { SinkConfig } from "../api/sink.js";
-import { crawlValues, insertCrawl, type SeededPage } from "../crawl/launch.js";
+import type { CaptureSettings } from "../config/capture-formats.js";
+import { crawlValues, insertCrawl, type DispatchedCrawl } from "../crawl/launch.js";
 import { pagesFailed } from "../crawl/page-counts.js";
 import type { CrawlBody, CrawlRequester, PreparedCrawl } from "../crawl/prepare.js";
 import type {
@@ -67,6 +68,8 @@ export interface FirePlan {
   crawlId: string;
   prepared: PreparedCrawl;
   who: CrawlRequester;
+  /** 最初の段に載せる形式と署名 (段の行は送る段そのものを持つ) */
+  capture: CaptureSettings;
   sink: SinkConfig | undefined;
   /** 本来の時刻。「いま撮る」は null。 */
   scheduledFor: Date | null;
@@ -79,7 +82,8 @@ export interface FirePlan {
 }
 
 export type FireResult =
-  | { kind: "started"; seeded: SeededPage[] }
+  /** 始めた。`level` は最初の段 (段の行は同じトランザクションで足した)。投げるのは呼ぶ側 */
+  | { kind: "started"; level: DispatchedCrawl }
   | { kind: "failed" }
   /** 走行中の行とぶつかった。rollback したので、期限も頼みも動いていない。 */
   | { kind: "busy" }
@@ -297,15 +301,16 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
 
         let result: FireResult;
         if (plan.failure === undefined) {
-          const seeded = await insertCrawl(
+          const level = await insertCrawl(
             trx,
             plan.prepared,
             plan.crawlId,
             plan.who,
+            plan.capture,
             plan.sink,
             mark,
           );
-          result = { kind: "started", seeded };
+          result = { kind: "started", level };
         } else {
           // 始めなかった回も回として残す。残さないと、画面に出せない
           await trx

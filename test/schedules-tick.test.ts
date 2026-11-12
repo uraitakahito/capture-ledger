@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
-import type { DispatchedCrawl } from "../src/crawl/launch.js";
+import { firstLevel, type DispatchedCrawl } from "../src/crawl/launch.js";
 import { WindmillUnreachable, type WindmillVariables } from "../src/crawl/windmill-variables.js";
 import type { CrawlScript, ScheduleRecipe } from "../src/db/database.js";
 import type { FirePlan, FireResult, ScheduleRow, ScheduleStore } from "../src/schedules/store.js";
@@ -103,7 +103,13 @@ const fakeStore = (rows: ScheduleRow[]) => {
       lastStarted = plan.now;
       return Promise.resolve({
         kind: "started",
-        seeded: plan.prepared.seeds.map((seed) => ({ url: seed.normalized, host: seed.host })),
+        level: firstLevel(
+          plan.prepared,
+          plan.crawlId,
+          plan.prepared.seeds.map((seed) => ({ url: seed.normalized, host: seed.host })),
+          plan.capture,
+          plan.sink,
+        ),
       });
     },
   } as unknown as ScheduleStore;

@@ -11,6 +11,7 @@ import { describe, it, expect, vi } from "vitest";
 import Fastify from "fastify";
 import type { CrawlRouteDeps } from "../src/api/crawls.js";
 import { nothingCapturedError } from "../src/crawl/close.js";
+import { LEVEL_KEY, levelResponder } from "./level-responder.js";
 import { recordingDb, type RecordedQuery } from "./recording-db.js";
 
 vi.mock("../src/crawl/admit-level.js", () => ({ admitLevel: vi.fn() }));
@@ -52,19 +53,30 @@ const crawlRow = (
 const close = async (
   results: Record<string, unknown>[],
   opts: { row?: ReturnType<typeof crawlRow>; recovered?: string[] } = {},
-): Promise<{ status: number; body: unknown; update: RecordedQuery | undefined }> => {
+): Promise<{
+  status: number;
+  body: unknown;
+  update: RecordedQuery | undefined;
+  /** 段の行に書いた数 (CAPTURE-180)。足さずに書く */
+  levelCounts: RecordedQuery | undefined;
+  /** クロールの合計の書き直し (段の行の和) */
+  totals: RecordedQuery | undefined;
+}> => {
   vi.mocked(admitLevel).mockResolvedValue({
     admittedUrls: opts.recovered ?? [],
     logCounts: new Map(),
   } as unknown as Awaited<ReturnType<typeof admitLevel>>);
-  const { db, queries } = recordingDb([
-    [opts.row ?? crawlRow()], // クロールの行
-    ...results.map(() => [{ id: "11" }]), // 報告した行を閉じる
-    ...(results.some((page) => "taskId" in page) ? [[]] : []), // capture_submissions
-    ...(opts.recovered === undefined ? [] : [[]]), // 拾い直した行を直す
-    [{ url: SEED }, { url: OTHER }], // crawl_pages の URL
-    [], // crawls の集計
-  ]);
+  const { db, queries } = recordingDb(
+    [
+      [opts.row ?? crawlRow()], // クロールの行
+      ...results.map(() => [{ id: "11" }]), // 報告した行を閉じる
+      ...(results.some((page) => "taskId" in page) ? [[]] : []), // capture_submissions
+      ...(opts.recovered === undefined ? [] : [[]]), // 拾い直した行を直す
+      [{ url: SEED }, { url: OTHER }], // crawl_pages の URL
+      [], // crawls の集計
+    ],
+    levelResponder(),
+  );
   const app = Fastify({ logger: false, ajv: { customOptions: { removeAdditional: false } } });
   registerCrawlRoutes(app, {
     db,
@@ -79,7 +91,7 @@ const close = async (
   const res = await app.inject({
     method: "POST",
     url: `/api/crawls/${CRAWL}/pages`,
-    headers: SUBJECT,
+    headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
     payload: {
       depth: 1,
       compiled: { typescript: "6.0.3", hostTypes: "v0.2.0", scripts: [] },
@@ -90,7 +102,11 @@ const close = async (
   return {
     status: res.statusCode,
     body: res.json(),
-    update: queries.find((query) => query.sql.startsWith('update "crawls" set "pages_captured"')),
+    update: queries.find((query) => query.sql.startsWith('update "crawls" set "stop_reason"')),
+    levelCounts: queries.find((query) =>
+      query.sql.startsWith('update "crawl_levels" set "pages_captured"'),
+    ),
+    totals: queries.find((query) => query.sql.startsWith('update "crawls" set "pages_captured"')),
   };
 };
 
@@ -104,29 +120,20 @@ describe("1 枚も撮れずに終わったクロール", () => {
     expect(status).toBe(200);
     expect(body).toEqual({ next: [], stopReason: "failed" });
     // 走っている行だけを動かす条件は、state・stop_reason・error の 3 つとも更新の中に在る
+    // 数は足さない —— 段の行に書き、合計は段の行の和で書き直す (CAPTURE-180)
     expect(update?.sql).toBe(
-      'update "crawls" set "pages_captured" = "pages_captured" + $1, ' +
-        '"pages_discovered" = "pages_discovered" + $2, ' +
-        '"stop_reason" = case when "state" = $3 then $4 else "stop_reason" end, ' +
-        '"state" = case when "state" = $5 then $6 else "state" end, ' +
-        '"finished_at" = case when "state" = $7 then $8 else "finished_at" end, ' +
-        '"error" = case when "state" = $9 then $10 else "error" end where "id" = $11',
+      'update "crawls" set "stop_reason" = case when "state" = $1 then $2 else "stop_reason" end, ' +
+        '"state" = case when "state" = $3 then $4 else "state" end, ' +
+        '"finished_at" = case when "state" = $5 then $6 else "finished_at" end, ' +
+        '"error" = case when "state" = $7 then $8 else "error" end where "id" = $9',
     );
     const parameters = update?.parameters ?? [];
-    expect(parameters.slice(0, 7)).toEqual([
-      0,
-      0,
-      "running",
-      "failed",
-      "running",
-      "failed",
-      "running",
-    ]);
-    expect(parameters[8]).toBe("running");
-    expect(parameters[9]).toBe(
+    expect(parameters.slice(0, 5)).toEqual(["running", "failed", "running", "failed", "running"]);
+    expect(parameters[6]).toBe("running");
+    expect(parameters[7]).toBe(
       `1 枚も撮れませんでした（取れず 2・見送り 0）。最初の理由: ${reason}`,
     );
-    expect(parameters[10]).toBe(CRAWL);
+    expect(parameters[8]).toBe(CRAWL);
   });
 
   it("全部を見送っても failed で締め、見送りの数と理由を書く", async () => {
@@ -195,21 +202,21 @@ describe("1 枚でも撮れたクロール", () => {
       { recovered: [SEED] },
     );
     expectSucceeded(closed, "no_links");
-    expect(closed.update?.parameters[0]).toBe(1);
+    expect(closed.levelCounts?.parameters[0]).toBe(1);
   });
 });
 
-describe("走っていない行に届いた、1 枚も撮れていない報告", () => {
-  // 読んだ後・書く前に締められた行もあるので、読んだ状態では分岐しない。何を書くかは UPDATE の条件が決める
-  it("読んだ状態に関わらず同じ条件つきの UPDATE を送る（締めた時の理由を上書きしない）", async () => {
-    const { update } = await close(
+describe("締めたクロールに届いた、1 枚も撮れていない報告", () => {
+  // CAPTURE-77・CAPTURE-180: ページは記録するが、状態は書かず (締めた時の理由を上書きしない)、次の段も作らない
+  it("状態の UPDATE を送らず、合計だけを段の行から数え直す", async () => {
+    const { status, body, update, totals } = await close(
       [{ url: SEED, status: "failed", skipReason: "http_error: HTTP 404: Not Found" }],
       { row: crawlRow({ state: "failed" }) },
     );
-    expect(update?.sql).toContain('"error" = case when "state" = $9 then $10 else "error" end');
-    expect(update?.sql).toContain(
-      '"stop_reason" = case when "state" = $3 then $4 else "stop_reason" end',
-    );
+    expect(status).toBe(200);
+    expect(body).toEqual({ next: [], stopReason: null });
+    expect(update).toBeUndefined();
+    expect(totals).toBeDefined();
   });
 });
 

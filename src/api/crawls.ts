@@ -41,18 +41,24 @@ import type {
   CrawlsTable,
   CrawlState,
   CrawlStopReason,
+  CrawlLevelState,
   Database,
+  LevelAnswer,
   LogCounts,
 } from "../db/database.js";
 import { readHostTypes, INLINE_PREFIX, isInlineId } from "../scripts/store.js";
 import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
+import { randomUUID } from "node:crypto";
 import {
+  insertLevel,
   launchCrawl,
   levelDispatcher,
   secretsForFlow,
   toDispatched,
   type CrawlDispatcher,
+  type DispatchedCrawl,
+  type LevelDispatcher,
   type ReplayBundleWriter,
 } from "../crawl/launch.js";
 import {
@@ -63,6 +69,12 @@ import {
   RULES_MAX,
   type CrawlBody,
 } from "../crawl/prepare.js";
+import {
+  LEVEL_REPORT_LEASE_MS,
+  MISSING_LEVEL_KEY,
+  Superseded,
+  writeTotals,
+} from "../crawl/levels.js";
 import {
   findRequest,
   forgetOldRequests,
@@ -153,6 +165,22 @@ const waczCount = sql<number>`(
   where p.crawl_id = crawls.id
 )`;
 
+/**
+ * 一番新しい段を Windmill に投げた様子 (CAPTURE-180・`038`)。workbench が「段 N を Windmill に送り直し M 回」と
+ * 最後の誤りを出す。`attempts` は送った回数 (受け取られた 1 回を含む)。段の行の無いクロール (段の行を入れる前に
+ * 始めた物) は null。
+ */
+export interface DispatchSummary {
+  depth: number;
+  state: CrawlLevelState;
+  attempts: number;
+  lastError: string | null;
+}
+const dispatchOf = sql<DispatchSummary | null>`(
+  select json_build_object('depth', l.depth, 'state', l.state, 'attempts', l.attempts, 'lastError', l.last_error)
+  from crawl_levels l where l.crawl_id = crawls.id order by l.depth desc limit 1
+)`;
+
 /** その回の予定の名前。消した予定の行も残っているので、消した後も名前を言える (`032`)。 */
 const scheduleName = sql<string | null>`(
   select s.name from crawl_schedules s where s.id = crawls.schedule_id
@@ -188,6 +216,10 @@ export interface CrawlRouteDeps {
   /** 受け取り先の設定。無ければ送り先を配らない。 */
   sink?: SinkConfig;
   dispatch: CrawlDispatcher;
+  /** 投げる係 (`crawl/launch.ts`)。配備では `server.ts` が 1 つ作って分け合う。無ければ `dispatch` から作る */
+  levels?: Pick<LevelDispatcher, "bundleAfterClose" | "dispatchLevel">;
+  /** その場の送り直しの間 (ms)。`levels` を渡さないとき (試験) だけ効く */
+  dispatchRetryDelaysMs?: readonly number[];
   /**
    * Windmill の変数に在るかを訊くクライアント (`crawl/windmill-variables.ts`)。webhook と同じ設定から作るので、
    * 無いのは URL が flow の webhook の形でないときだけ —— そのとき、シークレットを宣言したスクリプトの
@@ -385,11 +417,17 @@ type LogUnreadable =
 export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps): void => {
   const { db, fga, resolveIdentity, dispatch, capture, sink, tsCompile, claude, derivations } =
     deps;
-  const { bundleAfterClose, dispatchLevel } = levelDispatcher({
-    db,
-    dispatch,
-    writeReplayBundle: deps.writeReplayBundle,
-  });
+  // **投げる係は 1 つ** (CAPTURE-180)。配備では `server.ts` が作り、定期実行の周回と投げる係の時計と分け合う。
+  // 渡されなければ (試験) ここで作る
+  const { bundleAfterClose, dispatchLevel } =
+    deps.levels ??
+    levelDispatcher({
+      db,
+      dispatch,
+      writeReplayBundle: deps.writeReplayBundle,
+      ...(sink && { sink }),
+      ...(deps.dispatchRetryDelaysMs && { retryDelaysMs: deps.dispatchRetryDelaysMs }),
+    });
 
   /**
    * 次の段を送る前に、シークレットの更新時刻を読み直す。**続ける** —— 段の先で解くのは新しい値で、
@@ -595,6 +633,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           scheduleName.as("scheduleName"),
           "scheduledFor",
           "scheduleMissed",
+          dispatchOf.as("dispatch"),
         ])
         .orderBy("startedAt", "desc")
         .limit(CRAWLS_PAGE);
@@ -623,6 +662,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           waczCount: crawl.waczCount,
           lastJob:
             crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
+          dispatch: crawl.dispatch,
           // 合本 (`027`)。workbench は走っているクロールを 2 秒ごとに引くので、欄は行の列から (保管庫を読まない)
           replayBundle: replayBundleOf(crawl),
           ...scheduleOf(crawl),
@@ -653,7 +693,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       const crawl = await db
         .selectFrom("crawls")
         .selectAll()
-        .select(scheduleName.as("scheduleName"))
+        .select([scheduleName.as("scheduleName"), dispatchOf.as("dispatch")])
         .where("id", "=", request.params.id)
         .executeTakeFirst();
       if (!crawl) return reply.code(404).send({ error: "not found" });
@@ -719,6 +759,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         })),
         lastJob:
           crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
+        // 一番新しい段を Windmill に投げた様子 (CAPTURE-180)。一覧と同じ形
+        dispatch: crawl.dispatch,
         // capture-ledger が指す合本と、書けなかった理由 (`027`)。一覧と同じ形
         replayBundle: replayBundleOf(crawl),
         ...scheduleOf(crawl),
@@ -1490,247 +1532,399 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       const { depth, results, compiled } = request.body;
 
-      // ── 0. 走った JS の hash を、固定したスクリプトに写す ────────────
-      // capture-ledger の `sha256` は TS の物で、archive に残るのは JS。その間を継ぐ JS の hash は
-      // 報告にしか無い。揃っていなければ断る (400/409) —— **capture-ledger と flow の片方だけを新しく
-      // すると 1 段目でここに当たる。** 黙って通すより、報告の形が違うことを最初に言う。
-      const merge = mergeCompiled(crawl.scripts, compiled);
-      if ("status" in merge) {
-        log.warn({ crawlId, depth, scriptId: merge.scriptId }, merge.error);
-        return reply.code(merge.status).send({ error: merge.error, scriptId: merge.scriptId });
+      // ── 段の鍵 (CAPTURE-180) ─────────────────────────────────────────
+      // 鍵は段の行の `job_id` で、flow が `level_key` の引数で受けて返す。**同じ段の報告の 2 回目** (応答が切れた
+      // 後の report_level の再試行・同じ引数で流し直した flow・worker が止まった後の Windmill のやり直し) には、
+      // 最初の答えを返す。数を重ねず、次の段も 2 回投げない。
+      const key = requestKeyOf(request.headers[REQUEST_KEY_HEADER]);
+      if (key === undefined) return reply.code(400).send(MISSING_LEVEL_KEY);
+      const level = await db
+        .selectFrom("crawlLevels")
+        .select(["jobId", "state", "answer"])
+        .where("crawlId", "=", crawlId)
+        .where("depth", "=", depth)
+        .executeTakeFirst();
+      // 段の行の無い段 (段の行を入れる前に始めたクロールか、投げていない深さ) と、鍵の違う報告は 422 ——
+      // 待っても通らない。待てば通る「報告中」の 409 と分ける
+      if (!level) return reply.code(422).send({ error: "no such level of this crawl" });
+      if (level.jobId !== key) {
+        return reply.code(422).send({ error: "Idempotency-Key is not the key of this level" });
       }
-      if (merge.changed) {
+      if (level.state === "reported" && level.answer !== null) {
+        log.info({ crawlId, depth }, "Level reported again; answered as the first time");
+        return reply.code(200).send(level.answer);
+      }
+      // **締めた段・締めたクロールに届いた報告** (CAPTURE-77): ページは記録し (archives にも入る)、次の段は作らない。
+      let closedLevel = level.state === "abandoned" || crawl.state !== "running";
+      // 報告の試みの印。終わりの commit はこの印が同じときだけ通す —— 期限切れで取り直した 2 本目と、遅れた
+      // 1 本目が並んでも、片方しか書けない。1 つのトランザクションにしないのは、途中で保管庫を読むから
+      const token = randomUUID();
+      /**
+       * 報告中の期限を延ばす。保管庫を読む段 (manifest・リンク) の後に呼ぶ —— 頁の多い段の処理が 2 分を超えても、
+       * 生きている試みの期限は切れない。取り直されていたら何もしない (終わりの commit が 409 で断る)
+       */
+      const renewLease = async (): Promise<void> => {
         await db
-          .updateTable("crawls")
-          .set({ scripts: JSON.stringify(merge.scripts) })
-          .where("id", "=", crawlId)
+          .updateTable("crawlLevels")
+          .set({ leaseUntil: new Date(Date.now() + LEVEL_REPORT_LEASE_MS).toISOString() })
+          .where("crawlId", "=", crawlId)
+          .where("depth", "=", depth)
+          .where("state", "=", "reporting")
+          .where("reportToken", "=", token)
           .execute();
-      }
-
-      // 起点と規則は投入時に検査しているので、読めない行はここに来ない。**それでも
-      // 全部を読み直す** —— 規則を当てるのに要るのは読んだ形で、行に入っているのは
-      // 文字列だから。1 本でも読めなければ行が壊れている。
-      const parsedSeeds: ParsedUrl[] = [];
-      for (const raw of crawl.seeds) {
-        const parsed = parseHttpUrl(raw);
-        if (parsed === undefined) {
-          return reply.code(500).send({ error: "a crawl seed is not a usable url" });
-        }
-        parsedSeeds.push(parsed);
-      }
-      const rules = compileRules(crawl.rules);
-      if (rules === undefined) {
-        return reply.code(500).send({ error: "a crawl rule is not readable" });
-      }
-
-      // ── 1. 報告された行を閉じる ────────────────────────────────────────
-      // 閉じた行の id は、そのページで見つけたリンクの `discovered_from` に書く (木の形を後から辿れる)。
-      const idOf = new Map<string, string>();
-      for (const page of results) {
-        const closed = await db
-          .updateTable("crawlPages")
+      };
+      if (!closedLevel) {
+        const at = new Date();
+        const claimed = await db
+          .updateTable("crawlLevels")
           .set({
-            state: page.status,
-            skipReason: page.skipReason ?? null,
-            taskId: page.taskId ?? null,
-            correlationId: page.correlationId ?? null,
-            submittedAt: page.submittedAt ?? null,
-            finishedAt: page.finishedAt ?? null,
+            state: "reporting",
+            reportToken: token,
+            leaseUntil: new Date(at.getTime() + LEVEL_REPORT_LEASE_MS).toISOString(),
           })
           .where("crawlId", "=", crawlId)
-          .where("url", "=", page.url)
-          .returning("id")
-          .executeTakeFirst();
-        if (closed !== undefined) idOf.set(page.url, closed.id);
-      }
-
-      // ── 2. 帰属を書く ────────────────────────────────────────────────
-      // 投げたのが ledger でなくても、記録はここに残す。reconciler はこの行 (帰属と
-      // manifest の鍵) だけを読む。
-      //
-      // **状態は問わない。`taskId` を持つ全件に書く。** 以前は `captured` だけに
-      // 書いていたが、それだと失敗と報告された取り込みの帰属が残らない ——
-      // 実体が S3 に在っても組織が言えず、capture-ledger に入れようがない。
-      // 投入が通っている限り id は在るので、書かない理由が無い。
-      const submitted = results.filter(
-        (r): r is PageReport & { taskId: string } =>
-          typeof r.taskId === "string" && r.taskId !== "",
-      );
-      // 報告の場所を capture-ledger の形に。**1 度だけ計算し、書き留める値と読みに行く鍵に同じものを使う。**
-      const manifests = new Map(submitted.map((r) => [r.taskId, manifestOutcome(r, deps.bucket)]));
-      let recovered: string[] = [];
-      if (submitted.length > 0) {
-        await db
-          .insertInto("captureSubmissions")
-          .values(
-            // **戻り値の型を書く。** 無いと excess property 検査が効かず、`.map()` を
-            // 通った object literal は**存在しない列を書いても typecheck が緑になる**
-            // (`source_url` を落としたときに実測)。ledger に DB を使う試験は 1 本も
-            // 無いので、schema とのずれを静的に捕まえるのはここだけ。
-            submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
-              taskId: r.taskId,
-              correlationId: r.correlationId ?? crawlId,
-              orgId: crawl.orgId,
-              submittedBy: crawl.requestedBy,
-              // nullable な列は `Insertable` で省略できる —— 書き忘れても typecheck は緑。
-              // 値は `test/routes-crawls-manifest.test.ts` が見ている。
-              manifestKey: manifests.get(r.taskId)?.key ?? null,
-              manifestError: manifests.get(r.taskId)?.error ?? null,
-            })),
+          .where("depth", "=", depth)
+          // 投げた (受け取りの確認の前) の段にも報告は届きうる
+          .where((eb) =>
+            eb.or([
+              eb("state", "in", ["pending", "sent", "accepted"]),
+              eb.and([eb("state", "=", "reporting"), eb("leaseUntil", "<=", at)]),
+            ]),
           )
-          .onConflict((oc) => oc.column("taskId").doNothing())
-          .execute();
+          .returning("depth")
+          .executeTakeFirst();
+        if (claimed === undefined) {
+          const now = await db
+            .selectFrom("crawlLevels")
+            .select(["state", "answer"])
+            .where("crawlId", "=", crawlId)
+            .where("depth", "=", depth)
+            .executeTakeFirst();
+          if (now?.state === "reported" && now.answer !== null) {
+            return reply.code(200).send(now.answer);
+          }
+          if (now?.state !== "abandoned") {
+            // 報告中 (期限の内)。flow の再試行に任せる
+            return reply.code(409).send({ error: "this level is being reported" });
+          }
+          closedLevel = true;
+        }
+      }
+      /** 報告を記録する。`token` が無いのは締めた段 (次の段を作らない)。 */
+      const recordLevel = async (token: string | undefined) => {
+        // ── 0. 走った JS の hash を、固定したスクリプトに写す ────────────
+        // capture-ledger の `sha256` は TS の物で、archive に残るのは JS。その間を継ぐ JS の hash は
+        // 報告にしか無い。揃っていなければ断る (400/409) —— **capture-ledger と flow の片方だけを新しく
+        // すると 1 段目でここに当たる。** 黙って通すより、報告の形が違うことを最初に言う。
+        const merge = mergeCompiled(crawl.scripts, compiled);
+        if ("status" in merge) {
+          log.warn({ crawlId, depth, scriptId: merge.scriptId }, merge.error);
+          return reply.code(merge.status).send({ error: merge.error, scriptId: merge.scriptId });
+        }
+        if (merge.changed) {
+          await db
+            .updateTable("crawls")
+            .set({ scripts: JSON.stringify(merge.scripts) })
+            .where("id", "=", crawlId)
+            .execute();
+        }
 
-        // ── 2b. capture-ledger に載せる ──────────────────────────────────────────
-        // ここが無いと、クロールしたページは `reconcile` を走らせるまで存在しない。
-        // 詳しくは `crawl/admit-level.ts`。
+        // 起点と規則は投入時に検査しているので、読めない行はここに来ない。**それでも
+        // 全部を読み直す** —— 規則を当てるのに要るのは読んだ形で、行に入っているのは
+        // 文字列だから。1 本でも読めなければ行が壊れている。
+        const parsedSeeds: ParsedUrl[] = [];
+        for (const raw of crawl.seeds) {
+          const parsed = parseHttpUrl(raw);
+          if (parsed === undefined) {
+            return reply.code(500).send({ error: "a crawl seed is not a usable url" });
+          }
+          parsedSeeds.push(parsed);
+        }
+        const rules = compileRules(crawl.rules);
+        if (rules === undefined) {
+          return reply.code(500).send({ error: "a crawl rule is not readable" });
+        }
+
+        // ── 1. 報告された行を閉じる ────────────────────────────────────────
+        // 閉じた行の id は、そのページで見つけたリンクの `discovered_from` に書く (木の形を後から辿れる)。
+        const idOf = new Map<string, string>();
+        for (const page of results) {
+          const closed = await db
+            .updateTable("crawlPages")
+            .set({
+              state: page.status,
+              skipReason: page.skipReason ?? null,
+              taskId: page.taskId ?? null,
+              correlationId: page.correlationId ?? null,
+              submittedAt: page.submittedAt ?? null,
+              finishedAt: page.finishedAt ?? null,
+            })
+            .where("crawlId", "=", crawlId)
+            .where("url", "=", page.url)
+            .returning("id")
+            .executeTakeFirst();
+          if (closed !== undefined) idOf.set(page.url, closed.id);
+        }
+
+        // ── 2. 帰属を書く ────────────────────────────────────────────────
+        // 投げたのが ledger でなくても、記録はここに残す。reconciler はこの行 (帰属と
+        // manifest の鍵) だけを読む。
         //
-        // **失敗の報告も渡す。** 報告は flow の言い分で、正本は BrowserHive が成果物の
-        // 隣に書く manifest。`failed` と報告されたページに成功の manifest が在れば、
-        // 取り込みは成功している。
-        //
-        // **読むのは報告が運んだ鍵。** 書けなかった取り込みには鍵が無く、admitLevel は
-        // それを飛ばす。
-        const admitted = await admitLevel(
-          submitted.map((r) => ({
-            taskId: r.taskId,
-            url: r.url,
-            manifestKey: manifests.get(r.taskId)?.key ?? null,
-          })),
+        // **状態は問わない。`taskId` を持つ全件に書く。** 以前は `captured` だけに
+        // 書いていたが、それだと失敗と報告された取り込みの帰属が残らない ——
+        // 実体が S3 に在っても組織が言えず、capture-ledger に入れようがない。
+        // 投入が通っている限り id は在るので、書かない理由が無い。
+        const submitted = results.filter(
+          (r): r is PageReport & { taskId: string } =>
+            typeof r.taskId === "string" && r.taskId !== "",
+        );
+        // 報告の場所を capture-ledger の形に。**1 度だけ計算し、書き留める値と読みに行く鍵に同じものを使う。**
+        const manifests = new Map(
+          submitted.map((r) => [r.taskId, manifestOutcome(r, deps.bucket)]),
+        );
+        let recovered: string[] = [];
+        if (submitted.length > 0) {
+          await db
+            .insertInto("captureSubmissions")
+            .values(
+              // **戻り値の型を書く。** 無いと excess property 検査が効かず、`.map()` を
+              // 通った object literal は**存在しない列を書いても typecheck が緑になる**
+              // (`source_url` を落としたときに実測)。ledger に DB を使う試験は 1 本も
+              // 無いので、schema とのずれを静的に捕まえるのはここだけ。
+              submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
+                taskId: r.taskId,
+                correlationId: r.correlationId ?? crawlId,
+                orgId: crawl.orgId,
+                submittedBy: crawl.requestedBy,
+                // nullable な列は `Insertable` で省略できる —— 書き忘れても typecheck は緑。
+                // 値は `test/routes-crawls-manifest.test.ts` が見ている。
+                manifestKey: manifests.get(r.taskId)?.key ?? null,
+                manifestError: manifests.get(r.taskId)?.error ?? null,
+              })),
+            )
+            .onConflict((oc) => oc.column("taskId").doNothing())
+            .execute();
+
+          // ── 2b. capture-ledger に載せる ──────────────────────────────────────────
+          // ここが無いと、クロールしたページは `reconcile` を走らせるまで存在しない。
+          // 詳しくは `crawl/admit-level.ts`。
+          //
+          // **失敗の報告も渡す。** 報告は flow の言い分で、正本は BrowserHive が成果物の
+          // 隣に書く manifest。`failed` と報告されたページに成功の manifest が在れば、
+          // 取り込みは成功している。
+          //
+          // **読むのは報告が運んだ鍵。** 書けなかった取り込みには鍵が無く、admitLevel は
+          // それを飛ばす。
+          const admitted = await admitLevel(
+            submitted.map((r) => ({
+              taskId: r.taskId,
+              url: r.url,
+              manifestKey: manifests.get(r.taskId)?.key ?? null,
+            })),
+            {
+              db,
+              s3: deps.s3,
+              bucket: deps.bucket,
+              crawlId,
+              orgId: crawl.orgId,
+              requestedBy: crawl.requestedBy,
+            },
+          );
+
+          // ── 2c. 拾えたものは記録を直す ──────────────────────────────────
+          // **`archives` には在るのにクロールの記録では失敗している、を残さない。**
+          // どちらが正しいかを後から言えなくなる。manifest が成功を語っているなら
+          // そちらが正 —— 報告のほうは、flow が答えをどう受け取ったかでしかない。
+          const reportedFailed = new Set(
+            results.filter((r) => r.status !== "captured").map((r) => r.url),
+          );
+          recovered = admitted.admittedUrls.filter((url) => reportedFailed.has(url));
+          if (recovered.length > 0) {
+            await db
+              .updateTable("crawlPages")
+              .set({ state: "captured", skipReason: null })
+              .where("crawlId", "=", crawlId)
+              .where("url", "in", recovered)
+              .execute();
+            log.info(
+              { crawlId, depth, recovered: recovered.length },
+              "recovered captures the flow could not see",
+            );
+          }
+
+          // ── 2d. 取り込みのログの数を、ページの行に写す (`025`) ────────────────
+          // WACZ が無く `archives` に入らなかった取り込み (時間切れ・失敗) の数も在る (`crawl/admit-level.ts`)。
+          // 引くのはクロールと taskId の組で、上書きなので、同じ段の報告がやり直されても値は変わらない。
+          for (const [taskId, counts] of admitted.logCounts) {
+            await db
+              .updateTable("crawlPages")
+              .set({ logCounts: JSON.stringify(counts) })
+              .where("crawlId", "=", crawlId)
+              .where("taskId", "=", taskId)
+              .execute();
+          }
+        }
+
+        if (token !== undefined) await renewLease();
+
+        // ── 3. 見つけたリンクを読み、規則を当てる ────────────────────────
+        // **ページごとに読む。** リンク元が「撮って辿る」でなければ、そのページのリンクは見ない ——
+        // 撮るだけの先は辿らない。links はどのページでも取る (`capture-formats.ts`) ので撮るだけのページにも
+        // 在るが、取って読まない。
+        const pages: { from: string | null; links: DecidedLink[] }[] = [];
+        for (const page of results) {
+          if (page.linksLocation === undefined || page.linksLocation === "") continue;
+          const from = parseHttpUrl(page.url);
+          if (from === undefined || !takeLinksFrom(from, rules, parsedSeeds)) continue;
+          // `s3://bucket/key` から鍵だけを取り出す。bucket はこちらの設定を使う ——
+          // 報告に入っていた bucket を信じると、報告する側が読み先を選べることになる。
+          const key = page.linksLocation.replace(/^s3:\/\/[^/]+\//, "");
+          const raw = await getJsonObject(deps.s3, deps.bucket, key);
+          if (raw === null || typeof raw !== "object") continue;
+          // **リダイレクトの後のページでも決める。** 頼んだ URL が辿る範囲でも、外へ跳ばされた先は
+          // 辿るページではない —— 読むと、撮るだけのはずの外のページのリンクが次の段に入る。
+          // `finalUrl` は BrowserHive が links の JSON に必ず書く (無い古い形なら頼んだ URL で決める)。
+          const finalUrl = (raw as { finalUrl?: unknown }).finalUrl;
+          if (typeof finalUrl === "string") {
+            const landed = parseHttpUrl(finalUrl);
+            if (landed === undefined || !takeLinksFrom(landed, rules, parsedSeeds)) continue;
+          }
+          const parsed = (raw as { links?: unknown }).links;
+          if (!Array.isArray(parsed)) continue;
+          const links: DiscoveredLink[] = [];
+          for (const item of parsed) {
+            if (
+              typeof item === "object" &&
+              item !== null &&
+              typeof (item as DiscoveredLink).href === "string"
+            ) {
+              links.push(item as DiscoveredLink);
+            }
+          }
+          pages.push({
+            from: idOf.get(page.url) ?? null,
+            links: decideLinks(links, rules, parsedSeeds),
+          });
+        }
+
+        if (token !== undefined) await renewLease();
+        const discovered = acceptLinks(pages);
+        const nextDepth = depth + 1;
+
+        // ── 3b. 決めたことを残す ──────────────────────────────────────────
+        // 規則 × ホスト名で、別々の URL を数える (`crawl/decisions.ts`)。**同じ段の報告をやり直したら
+        // 置き換える** —— 足すと、やり直しのたびに数が増える。
+        const decisions = aggregateDecisions(
+          pages.flatMap((page) => page.links),
+          nextDepth,
+        );
+        if (decisions.length > 0) {
+          await db
+            .insertInto("crawlDecisions")
+            .values(decisions.map((row) => ({ crawlId, ...row })))
+            .onConflict((oc) =>
+              oc.columns(["crawlId", "depth", "rule", "hostname"]).doUpdateSet((eb) => ({
+                action: eb.ref("excluded.action"),
+                links: eb.ref("excluded.links"),
+                samples: eb.ref("excluded.samples"),
+              })),
+            )
+            .execute();
+        }
+
+        const capturedCount =
+          results.filter((r) => r.status === "captured").length + recovered.length;
+
+        // ── 締めた段・締めたクロール ───────────────────────────────────────
+        // ページは上で記録した。段の数を書き、クロールの合計を数え直すだけで、次の段の行は作らない (CAPTURE-77)
+        if (token === undefined) {
+          await db
+            .updateTable("crawlLevels")
+            .set({ pagesCaptured: capturedCount, pagesDiscovered: discovered.length })
+            .where("crawlId", "=", crawlId)
+            .where("depth", "=", depth)
+            .execute();
+          await db.transaction().execute(async (trx) => {
+            await writeTotals(trx, crawlId);
+          });
+          log.info(
+            { crawlId, depth, reported: results.length },
+            "Recorded a level of a closed crawl; no next level",
+          );
+          return reply.code(200).send({ next: [], stopReason: crawl.stopReason });
+        }
+
+        // ── 4. 上限を当てる ──────────────────────────────────────────────
+        // **既に行のある URL は候補にしない。** まだ撮っていない候補が無ければ、深さや枚数で切ったとは言えない。
+        // 上限より先に除くので、既知の URL が枠を取ることも無い (入れる瞬間の守りは 5 の unique index)。
+        // `in` で引かずに行を全部読む —— 行数は `max_pages` で上が決まり、リンクの本数で引数が増えない。
+        const knownRows = await db
+          .selectFrom("crawlPages")
+          .select(["url", "depth", "state"])
+          .where("crawlId", "=", crawlId)
+          .execute();
+        const knownUrls = new Set(knownRows.map((row) => row.url));
+
+        const { toInsert, stopReason } = planNextLevel(
+          discovered.filter((link) => !knownUrls.has(link.url)),
           {
-            db,
-            s3: deps.s3,
-            bucket: deps.bucket,
-            crawlId,
-            orgId: crawl.orgId,
-            requestedBy: crawl.requestedBy,
+            nextDepth,
+            maxDepth: crawl.maxDepth,
+            maxPages: crawl.maxPages,
+            known: knownRows.length,
           },
         );
 
-        // ── 2c. 拾えたものは記録を直す ──────────────────────────────────
-        // **`archives` には在るのにクロールの記録では失敗している、を残さない。**
-        // どちらが正しいかを後から言えなくなる。manifest が成功を語っているなら
-        // そちらが正 —— 報告のほうは、flow が答えをどう受け取ったかでしかない。
-        const reportedFailed = new Set(
-          results.filter((r) => r.status !== "captured").map((r) => r.url),
-        );
-        recovered = admitted.admittedUrls.filter((url) => reportedFailed.has(url));
-        if (recovered.length > 0) {
-          await db
-            .updateTable("crawlPages")
-            .set({ state: "captured", skipReason: null })
+        // 次の段に載せる物 (ホストごとの最後の時刻と、読み直したシークレット) は、次の段がありうるときだけ引く。
+        // 取り直した 2 回目では、前の試みが入れた深さ n+1 の pending の行が次の段になる
+        const mayContinue =
+          toInsert.length > 0 ||
+          knownRows.some((row) => row.depth === nextDepth && row.state === "pending");
+        const lastByHost = new Map<string, string>();
+        let secrets = crawl.secrets;
+        if (mayContinue) {
+          // ホストごとの「最後に触り終えた時刻」を引く。段をまたぐ間隔のために要る。
+          const seen = await db
+            .selectFrom("crawlPages")
+            .select((eb) => ["host", eb.fn.max("finishedAt").as("last")])
             .where("crawlId", "=", crawlId)
-            .where("url", "in", recovered)
+            .where("finishedAt", "is not", null)
+            .groupBy("host")
             .execute();
-          log.info(
-            { crawlId, depth, recovered: recovered.length },
-            "recovered captures the flow could not see",
-          );
-        }
-
-        // ── 2d. 取り込みのログの数を、ページの行に写す (`025`) ────────────────
-        // WACZ が無く `archives` に入らなかった取り込み (時間切れ・失敗) の数も在る (`crawl/admit-level.ts`)。
-        // 引くのはクロールと taskId の組で、上書きなので、同じ段の報告がやり直されても値は変わらない。
-        for (const [taskId, counts] of admitted.logCounts) {
-          await db
-            .updateTable("crawlPages")
-            .set({ logCounts: JSON.stringify(counts) })
-            .where("crawlId", "=", crawlId)
-            .where("taskId", "=", taskId)
-            .execute();
-        }
-      }
-
-      // ── 3. 見つけたリンクを読み、規則を当てる ────────────────────────
-      // **ページごとに読む。** リンク元が「撮って辿る」でなければ、そのページのリンクは見ない ——
-      // 撮るだけの先は辿らない。links はどのページでも取る (`capture-formats.ts`) ので撮るだけのページにも
-      // 在るが、取って読まない。
-      const pages: { from: string | null; links: DecidedLink[] }[] = [];
-      for (const page of results) {
-        if (page.linksLocation === undefined || page.linksLocation === "") continue;
-        const from = parseHttpUrl(page.url);
-        if (from === undefined || !takeLinksFrom(from, rules, parsedSeeds)) continue;
-        // `s3://bucket/key` から鍵だけを取り出す。bucket はこちらの設定を使う ——
-        // 報告に入っていた bucket を信じると、報告する側が読み先を選べることになる。
-        const key = page.linksLocation.replace(/^s3:\/\/[^/]+\//, "");
-        const raw = await getJsonObject(deps.s3, deps.bucket, key);
-        if (raw === null || typeof raw !== "object") continue;
-        // **リダイレクトの後のページでも決める。** 頼んだ URL が辿る範囲でも、外へ跳ばされた先は
-        // 辿るページではない —— 読むと、撮るだけのはずの外のページのリンクが次の段に入る。
-        // `finalUrl` は BrowserHive が links の JSON に必ず書く (無い古い形なら頼んだ URL で決める)。
-        const finalUrl = (raw as { finalUrl?: unknown }).finalUrl;
-        if (typeof finalUrl === "string") {
-          const landed = parseHttpUrl(finalUrl);
-          if (landed === undefined || !takeLinksFrom(landed, rules, parsedSeeds)) continue;
-        }
-        const parsed = (raw as { links?: unknown }).links;
-        if (!Array.isArray(parsed)) continue;
-        const links: DiscoveredLink[] = [];
-        for (const item of parsed) {
-          if (
-            typeof item === "object" &&
-            item !== null &&
-            typeof (item as DiscoveredLink).href === "string"
-          ) {
-            links.push(item as DiscoveredLink);
+          for (const row of seen) {
+            if (row.last !== null) lastByHost.set(row.host, new Date(row.last).toISOString());
           }
+          // シークレットが途中で替わっていないかを読み直してから配る (替わっていても続ける)
+          secrets = await noteRotations(crawlId, crawl.secrets, nextDepth);
         }
-        pages.push({
-          from: idOf.get(page.url) ?? null,
-          links: decideLinks(links, rules, parsedSeeds),
-        });
-      }
 
-      const discovered = acceptLinks(pages);
-      const nextDepth = depth + 1;
+        // ── 5〜7. 終わりの commit ──────────────────────────────────────────
+        // 試みの印を照らし、次の段のページを入れ、段を報告済みにし、合計を書き直し、次の段の行を作る。**ここまでを
+        // 1 つのトランザクションに** —— 印が違えば (期限切れで取り直された) 何も残さない。
+        let answer: LevelAnswer = { next: [], stopReason: null };
+        let nextLevel: DispatchedCrawl | undefined;
+        await db.transaction().execute(async (trx) => {
+          const mine = await trx
+            .selectFrom("crawlLevels")
+            .select("depth")
+            .where("crawlId", "=", crawlId)
+            .where("depth", "=", depth)
+            .where("state", "=", "reporting")
+            .where("reportToken", "=", token)
+            .forUpdate()
+            .executeTakeFirst();
+          if (mine === undefined) throw new Superseded();
+          // 締める側 (`/failed`・投げる係) と並ばないよう、クロールの行も取る
+          const live = await trx
+            .selectFrom("crawls")
+            .select(["state", "stopReason"])
+            .where("id", "=", crawlId)
+            .forUpdate()
+            .executeTakeFirstOrThrow();
 
-      // ── 3b. 決めたことを残す ──────────────────────────────────────────
-      // 規則 × ホスト名で、別々の URL を数える (`crawl/decisions.ts`)。**同じ段の報告をやり直したら
-      // 置き換える** —— 足すと、やり直しのたびに数が増える。
-      const decisions = aggregateDecisions(
-        pages.flatMap((page) => page.links),
-        nextDepth,
-      );
-      if (decisions.length > 0) {
-        await db
-          .insertInto("crawlDecisions")
-          .values(decisions.map((row) => ({ crawlId, ...row })))
-          .onConflict((oc) =>
-            oc.columns(["crawlId", "depth", "rule", "hostname"]).doUpdateSet((eb) => ({
-              action: eb.ref("excluded.action"),
-              links: eb.ref("excluded.links"),
-              samples: eb.ref("excluded.samples"),
-            })),
-          )
-          .execute();
-      }
-
-      // ── 4. 上限を当てる ──────────────────────────────────────────────
-      // **既に行のある URL は候補にしない。** まだ撮っていない候補が無ければ、深さや枚数で切ったとは言えない。
-      // 上限より先に除くので、既知の URL が枠を取ることも無い (入れる瞬間の守りは 5 の unique index)。
-      // `in` で引かずに行を全部読む —— 行数は `max_pages` で上が決まり、リンクの本数で引数が増えない。
-      const knownRows = await db
-        .selectFrom("crawlPages")
-        .select("url")
-        .where("crawlId", "=", crawlId)
-        .execute();
-      const knownUrls = new Set(knownRows.map((row) => row.url));
-
-      const { toInsert, stopReason } = planNextLevel(
-        discovered.filter((link) => !knownUrls.has(link.url)),
-        {
-          nextDepth,
-          maxDepth: crawl.maxDepth,
-          maxPages: crawl.maxPages,
-          known: knownRows.length,
-        },
-      );
-
-      // ── 5. 重複を index に落とさせ、入った行だけを次の段にする ──────────
-      const inserted =
-        toInsert.length === 0
-          ? []
-          : await db
+          // ── 5. 重複を index に落とさせる ──────────────────────────────
+          if (toInsert.length > 0) {
+            await trx
               .insertInto("crawlPages")
               .values(
                 toInsert.map((link) => ({
@@ -1743,136 +1937,176 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                 })),
               )
               .onConflict((oc) => oc.columns(["crawlId", "urlHash"]).doNothing())
-              .returning(["url", "host"])
               .execute();
+          }
+          // **次の段は「今回入った行」でなく、深さ n+1 の pending の行。** 取り直した 2 回目では入る行が 0 になり、
+          // `returning` で決めると途中で完了と読む。走行中のクロールだけ (締めた後に次の段を作らない。CAPTURE-77)
+          const next =
+            live.state === "running"
+              ? await trx
+                  .selectFrom("crawlPages")
+                  .select(["url", "host"])
+                  .where("crawlId", "=", crawlId)
+                  .where("depth", "=", nextDepth)
+                  .where("state", "=", "pending")
+                  .orderBy("id")
+                  .execute()
+              : [];
+          const done = next.length === 0;
 
-      // ── 6. 集計と、終わったなら締める ────────────────────────────────
-      // **拾い直したぶんも数える。** 報告だけを数えると、`archives` に入った件数と
-      // `pages_captured` が食い違う。
-      const capturedCount =
-        results.filter((r) => r.status === "captured").length + recovered.length;
-      const done = inserted.length === 0;
+          // ── 6. 数を書き、合計を数え直し、終わったなら締める ──────────────────
+          // **拾い直したぶんも数える。** 報告だけを数えると、`archives` に入った件数と `pages_captured` が食い違う。
+          // 段の数は**書く** (足さない) ので、報告をやり直しても重ならない
+          await trx
+            .updateTable("crawlLevels")
+            .set({ pagesCaptured: capturedCount, pagesDiscovered: discovered.length })
+            .where("crawlId", "=", crawlId)
+            .where("depth", "=", depth)
+            .execute();
+          const totals = await writeTotals(trx, crawlId);
 
-      // **最初に効いた理由を残す。上書きしない。**
-      //
-      // 段の途中で `max_pages` に当たって切っても、そのあと最後の段が `max_depth` で
-      // 終われば、素朴に書くと後者で上書きされる。すると「深さの範囲は全部辿った」と
-      // 読めてしまうが、実際には切り落としている —— 実測で踏んだ: 50 件見つけて 9 件
-      // 入れたクロールが `max_depth` と記録された。
-      //
-      // `coalesce` で最初の非 NULL を守る。`budget.ts` が深さを件数より優先するのと
-      // 同じ考え方で、**先に効いた制約**が理由になる。
-      //
-      // **締めるのは走行中の行だけ** (CAPTURE-61)。`/failed` や投げられなかった段で締めた後に段の報告が届いても、
-      // succeeded に戻さない —— 戻すと、failed で締めて署名した合本と、行の状態が食い違う。条件は行の更新の中で
-      // 見る (読んだ時の `crawl.state` で決めると、読んだ後・書く前に締められた行を戻す)。数と理由はこれまでどおり
-      // 足す (報告された取り込みは、締めた後でも capture-ledger に入っている)。
-      //
-      // **辿るよう頼んだのに 1 本もリンクが無ければ `no_links`** (CAPTURE-245)。深さ 1 以上で、規則が通した
-      // リンクがこの段までの延べで 0 本のとき。`completed` (全部辿った) と言うと、frameset の頁のように
-      // 1 ページで黙って終わったクロールが緑に見える。深さ 0 は辿らないと頼んだので、0 本でも `completed`。
-      const noLinks = crawl.maxDepth > 0 && crawl.pagesDiscovered + discovered.length === 0;
-      const reason =
-        stopReason ?? (done ? (noLinks ? ("no_links" as const) : ("completed" as const)) : null);
-      // **`succeeded` は 1 枚以上撮れたクロールだけ** (`crawl/close.ts`)
-      const nothingCaptured = done && crawl.pagesCaptured + capturedCount === 0;
-      await db
-        .updateTable("crawls")
-        .set((eb) => ({
-          pagesCaptured: eb("pagesCaptured", "+", capturedCount),
-          pagesDiscovered: eb("pagesDiscovered", "+", discovered.length),
-          ...(reason === null ? {} : { stopReason: eb.fn.coalesce("stopReason", eb.val(reason)) }),
-          ...(done
-            ? {
-                state: eb
-                  .case()
-                  .when("state", "=", "running")
-                  .then(eb.val<CrawlState>(nothingCaptured ? "failed" : "succeeded"))
-                  .else(eb.ref("state"))
-                  .end(),
-                // 読みの型は Date、書くのは ISO の文字列 (ほかの書き込みと同じ)。式の型を書きの型に寄せる
-                finishedAt: eb
-                  .case()
-                  .when("state", "=", "running")
-                  .then(eb.val(new Date().toISOString()))
-                  .else(eb.ref("finishedAt"))
-                  .end()
-                  .$castTo<string | null>(),
-                ...(nothingCaptured
+          // **最初に効いた理由を残す。上書きしない。**
+          //
+          // 段の途中で `max_pages` に当たって切っても、そのあと最後の段が `max_depth` で
+          // 終われば、素朴に書くと後者で上書きされる。すると「深さの範囲は全部辿った」と
+          // 読めてしまうが、実際には切り落としている —— 実測で踏んだ: 50 件見つけて 9 件
+          // 入れたクロールが `max_depth` と記録された。
+          //
+          // `coalesce` で最初の非 NULL を守る。`budget.ts` が深さを件数より優先するのと
+          // 同じ考え方で、**先に効いた制約**が理由になる。
+          //
+          // **締めるのは走行中の行だけ** (CAPTURE-61)。条件は行の更新の中で見る。
+          //
+          // **辿るよう頼んだのに 1 本もリンクが無ければ `no_links`** (CAPTURE-245)。深さ 1 以上で、規則が通した
+          // リンクがこの段までの延べで 0 本のとき (合計は段の行の和)。`completed` (全部辿った) と言うと、frameset の頁の
+          // ように 1 ページで黙って終わったクロールが緑に見える。深さ 0 は辿らないと頼んだので、0 本でも `completed`。
+          const noLinks = crawl.maxDepth > 0 && totals.pagesDiscovered === 0;
+          const reason =
+            stopReason ??
+            (done ? (noLinks ? ("no_links" as const) : ("completed" as const)) : null);
+          // **`succeeded` は 1 枚以上撮れたクロールだけ** (`crawl/close.ts`)
+          const nothingCaptured = done && totals.pagesCaptured === 0;
+          if (reason !== null || done) {
+            await trx
+              .updateTable("crawls")
+              .set((eb) => ({
+                ...(reason === null
+                  ? {}
+                  : { stopReason: eb.fn.coalesce("stopReason", eb.val(reason)) }),
+                ...(done
                   ? {
-                      stopReason: eb
+                      state: eb
                         .case()
                         .when("state", "=", "running")
-                        .then(eb.val<CrawlStopReason>("failed"))
-                        .else(eb.ref("stopReason"))
+                        .then(eb.val<CrawlState>(nothingCaptured ? "failed" : "succeeded"))
+                        .else(eb.ref("state"))
                         .end(),
-                      error: eb
+                      // 読みの型は Date、書くのは ISO の文字列 (ほかの書き込みと同じ)。式の型を書きの型に寄せる
+                      finishedAt: eb
                         .case()
                         .when("state", "=", "running")
-                        .then(eb.val(nothingCapturedError(results)))
-                        .else(eb.ref("error"))
-                        .end(),
+                        .then(eb.val(new Date().toISOString()))
+                        .else(eb.ref("finishedAt"))
+                        .end()
+                        .$castTo<string | null>(),
+                      ...(nothingCaptured
+                        ? {
+                            stopReason: eb
+                              .case()
+                              .when("state", "=", "running")
+                              .then(eb.val<CrawlStopReason>("failed"))
+                              .else(eb.ref("stopReason"))
+                              .end(),
+                            error: eb
+                              .case()
+                              .when("state", "=", "running")
+                              .then(eb.val(nothingCapturedError(results)))
+                              .else(eb.ref("error"))
+                              .end(),
+                          }
+                        : {}),
                     }
                   : {}),
-              }
-            : {}),
-        }))
-        .where("id", "=", crawlId)
-        .execute();
+              }))
+              .where("id", "=", crawlId)
+              .execute();
+          }
 
-      log.info(
-        { crawlId, depth, reported: results.length, next: inserted.length, stopReason },
-        "Crawl level recorded",
-      );
+          answer = {
+            next: next.map((row) => ({ url: row.url, host: row.host, depth: nextDepth })),
+            // **行の理由が先** (上の `coalesce`)。枚数で切った後の段で、返事だけ「全部辿った」と言わない
+            stopReason: done ? (nothingCaptured ? "failed" : (live.stopReason ?? reason)) : null,
+          };
+          await trx
+            .updateTable("crawlLevels")
+            .set({
+              state: "reported",
+              reportedAt: new Date().toISOString(),
+              leaseUntil: null,
+              answer: JSON.stringify(answer),
+            })
+            .where("crawlId", "=", crawlId)
+            .where("depth", "=", depth)
+            .execute();
 
-      // ── 7. 次の段があるなら、こちらから投げる ────────────────────────
-      // flow は 1 段を処理して報告するだけ。繰り返しをここに置いたのは、上限の判定
-      // (`budget.ts`) と同じ場所に置くため —— そして Windmill の while ループが
-      // 止まらなかったため (`DispatchedCrawl` の注記を見ること)。
-      if (!done) {
-        // ホストごとの「最後に触り終えた時刻」を引く。段をまたぐ間隔のために要る。
-        const lastByHost = new Map<string, string>();
-        const seen = await db
-          .selectFrom("crawlPages")
-          .select((eb) => ["host", eb.fn.max("finishedAt").as("last")])
-          .where("crawlId", "=", crawlId)
-          .where("finishedAt", "is not", null)
-          .groupBy("host")
-          .execute();
-        for (const row of seen) {
-          if (row.last !== null) lastByHost.set(row.host, new Date(row.last).toISOString());
-        }
-
-        // シークレットが途中で替わっていないかを読み直してから配る (替わっていても続ける)
-        const secrets = await noteRotations(crawlId, crawl.secrets, nextDepth);
-
-        dispatchLevel({
-          crawlId,
-          depth: nextDepth,
-          frontier: inserted.map((row) => ({
-            url: row.url,
-            host: row.host,
-            lastFinishedAt: lastByHost.get(row.host) ?? null,
-          })),
-          perHostDelayMs: crawl.perHostDelayMs,
-          hostParallelism: crawl.hostParallelism,
-          captureFormats: capture.formats,
-          signing: capture.signing,
-          // 登録済みのスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
-          scripts: crawl.scripts.map(toDispatched),
-          // 値も行に固定した物をそのまま。変数は値ごと、シークレットは名前 → path と、残す名前 (読み直した写しから)
-          variables: crawl.variables,
-          ...secretsForFlow(secrets),
-          userAgent: crawl.userAgent ?? "",
-          ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
+          // ── 7. 次の段があるなら、段の行を作る (投げるのは commit の後) ─────────────
+          // flow は 1 段を処理して報告するだけ。繰り返しをここに置いたのは、上限の判定
+          // (`budget.ts`) と同じ場所に置くため —— そして Windmill の while ループが
+          // 止まらなかったため (`DispatchedCrawl` の注記を見ること)。
+          if (!done) {
+            nextLevel = {
+              crawlId,
+              depth: nextDepth,
+              levelKey: randomUUID(),
+              frontier: next.map((row) => ({
+                url: row.url,
+                host: row.host,
+                lastFinishedAt: lastByHost.get(row.host) ?? null,
+              })),
+              perHostDelayMs: crawl.perHostDelayMs,
+              hostParallelism: crawl.hostParallelism,
+              captureFormats: capture.formats,
+              signing: capture.signing,
+              // 登録済みのスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
+              scripts: crawl.scripts.map(toDispatched),
+              // 値も行に固定した物をそのまま。変数は値ごと、シークレットは名前 → path と、残す名前 (読み直した写しから)
+              variables: crawl.variables,
+              ...secretsForFlow(secrets),
+              userAgent: crawl.userAgent ?? "",
+              ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
+            };
+            await insertLevel(trx, nextLevel);
+          }
         });
-      }
 
-      return reply.code(200).send({
-        next: inserted.map((row) => ({ url: row.url, host: row.host, depth: nextDepth })),
-        // **行の理由が先** (上の `coalesce`)。枚数で切った後の段で、返事だけ「全部辿った」と言わない
-        stopReason: done ? (nothingCaptured ? "failed" : (crawl.stopReason ?? reason)) : null,
-      });
+        log.info(
+          { crawlId, depth, reported: results.length, next: answer.next.length, stopReason },
+          "Crawl level recorded",
+        );
+        if (nextLevel !== undefined) dispatchLevel(nextLevel);
+        return reply.code(200).send(answer);
+      };
+
+      try {
+        return await recordLevel(closedLevel ? undefined : token);
+      } catch (err) {
+        // 途中で落ちた (保管庫が読めない など)。**取った印を手放す** —— 期限 (2 分) を待たずに、flow の再試行が取り直せる
+        if (!closedLevel && !(err instanceof Superseded)) {
+          await db
+            .updateTable("crawlLevels")
+            .set({ leaseUntil: new Date().toISOString() })
+            .where("crawlId", "=", crawlId)
+            .where("depth", "=", depth)
+            .where("reportToken", "=", token)
+            .where("state", "=", "reporting")
+            .execute()
+            .catch(() => undefined);
+        }
+        if (err instanceof Superseded) {
+          return reply.code(409).send({ error: "another attempt took over this level report" });
+        }
+        throw err;
+      }
     },
   );
 
@@ -1909,7 +2143,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 一覧していた頃も同じで、見つけても帰属が無く `unattributed` と数えるだけだった。
    * **成果物は残るが、`archives` とクロールの記録からは欠ける。**
    */
-  app.post<{ Params: { id: string }; Body: { reason?: string } }>(
+  app.post<{
+    Params: { id: string };
+    Body: { reason?: string; depth?: number; levelKey?: string };
+  }>(
     "/api/crawls/:id/failed",
     {
       schema: {
@@ -1921,7 +2158,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         body: {
           type: "object",
           additionalProperties: false,
-          properties: { reason: { type: "string", maxLength: 2000 } },
+          properties: {
+            reason: { type: "string", maxLength: 2000 },
+            // 落ちた段とその鍵 (CAPTURE-180)。flow の fail_crawl が送る。2 つは揃って来る
+            depth: { type: "integer", minimum: 0 },
+            levelKey: { type: "string", minLength: 1, maxLength: 255 },
+          },
+          dependencies: { depth: ["levelKey"], levelKey: ["depth"] },
         },
       },
     },
@@ -1933,6 +2176,25 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       }
 
       const crawlId = request.params.id;
+      // **一番新しい段の flow の失敗だけが締める** (CAPTURE-180)。古い段の flow (報告の後の合本・索引の段で
+      // 落ちた・手で流し直した) の失敗で、次の段を撮っている健全なクロールを締めない。鍵の無い要求は人の「締める」
+      const { depth, levelKey } = request.body ?? {};
+      if (levelKey !== undefined) {
+        const newest = await db
+          .selectFrom("crawlLevels")
+          .select(["depth", "jobId"])
+          .where("crawlId", "=", crawlId)
+          .orderBy("depth", "desc")
+          .limit(1)
+          .executeTakeFirst();
+        if (newest === undefined || newest.depth !== depth || newest.jobId !== levelKey) {
+          log.info(
+            { crawlId, depth, newest: newest?.depth },
+            "Not closing: the failure is not from the newest level",
+          );
+          return reply.code(200).send({ closed: false });
+        }
+      }
       const closed = await db
         .updateTable("crawls")
         .set({
@@ -1952,7 +2214,20 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         log.info({ crawlId }, "Nothing to close");
         return reply.code(200).send({ closed: false });
       }
-      log.warn({ crawlId, reason: request.body?.reason }, "Crawl closed by the flow");
+      // 一番新しい段を「締めた」に。遅れて届いた報告はページを記録するが、次の段を作らない (CAPTURE-77)
+      await db
+        .updateTable("crawlLevels")
+        .set({ state: "abandoned" })
+        .where("crawlId", "=", crawlId)
+        .where("state", "not in", ["reported", "abandoned"])
+        .where("depth", "=", (eb) =>
+          eb
+            .selectFrom("crawlLevels as newest")
+            .select((e) => e.fn.max("newest.depth").as("depth"))
+            .where("newest.crawlId", "=", crawlId),
+        )
+        .execute();
+      log.warn({ crawlId, depth, reason: request.body?.reason }, "Crawl closed");
       // 締めた状態 (failed) の合本を書き、署名の設定が在れば署名する。**待ってから答える** —— 落ちた段の後に
       // 段は来ないので、ここで書かなければ誰も書かない。合本が書けなくても締めたことは変わらない (投げない)
       await bundleAfterClose(crawlId);

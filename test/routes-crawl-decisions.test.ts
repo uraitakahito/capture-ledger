@@ -16,6 +16,7 @@ import {
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
 import { WindmillUnreachable, type WindmillVariables } from "../src/crawl/windmill-variables.js";
 import type { CrawlRule, CrawlSecret } from "../src/db/database.js";
+import { LEVEL_KEY, levelResponder, type LevelOptions } from "./level-responder.js";
 import { recordingDb, type RecordedQuery } from "./recording-db.js";
 
 const CRAWL = "d272d256-e528-4581-bb4e-8d9477d78196";
@@ -63,13 +64,15 @@ interface Built {
 }
 
 const build = async (opts: {
+  /** 段の行の答え方 (`level-responder.ts`)。省けば受け取り確認済みの段 */
+  level?: LevelOptions;
   results?: readonly (readonly object[])[];
   allowed?: boolean;
   links?: Record<string, unknown>;
   /** Windmill の変数のクライアント。省けば無い配備 (読み直しをしない)。 */
   windmill?: WindmillVariables;
 }): Promise<Built> => {
-  const { db, queries } = recordingDb(opts.results);
+  const { db, queries } = recordingDb(opts.results, levelResponder(opts.level));
   const read: string[] = [];
   const dispatched: DispatchedCrawl[] = [];
   const s3 = {
@@ -142,7 +145,7 @@ describe("段の報告で、規則が決めたことを残す", () => {
     const res = await app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: {
         depth: 0,
         compiled: COMPILED,
@@ -217,16 +220,15 @@ describe("段の報告で、規則が決めたことを残す", () => {
         [{ id: "11" }], // 報告した行を閉じる
         [], // crawl_decisions
         [{ url: seed }], // crawl_pages の URL
+        [], // ホストごとの最後の時刻 (次の段がありうるので、終わりの commit の前に引く)
         [{ url: `${FIXTURES}/links/leaf/1`, host: "capture-fixtures.capture-ledger:8080" }], // 次の段の行
-        [], // crawls の集計
-        [], // ホストごとの最後の時刻
       ],
       links: { "hub.links.json": { links: [{ href: `${FIXTURES}/links/leaf/1` }] } },
     });
     await app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: {
         depth: 0,
         compiled: COMPILED,
@@ -255,7 +257,7 @@ describe("段の報告で、規則が決めたことを残す", () => {
     const res = await app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: {
         depth: 1,
         compiled: COMPILED,
@@ -294,7 +296,7 @@ describe("段の報告で、規則が決めたことを残す", () => {
     const res = await app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: {
         depth: 1,
         compiled: COMPILED,
@@ -321,13 +323,14 @@ describe("段の報告で、規則が決めたことを残す", () => {
     const res = await app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: { depth: 0, compiled: COMPILED, results: [] },
     });
     await app.close();
     expect(res.statusCode).toBe(500);
     expect(res.json()).toEqual({ error: "a crawl rule is not readable" });
-    expect(queries).toHaveLength(1);
+    // クロールの行を読んだだけ (段の行は、鍵を照らして取り、落ちたので手放した)
+    expect(queries.filter((q) => !q.sql.includes('"crawl_levels"'))).toHaveLength(1);
   });
 });
 
@@ -350,17 +353,16 @@ describe("次の段を送る前に、シークレットの更新時刻を読み�
     [{ id: "11" }], // 報告した行を閉じる (returning id)
     [], // crawl_decisions
     [{ url: seed }], // crawl_pages の URL
+    [], // ホストごとの最後の時刻 (次の段がありうるので、終わりの commit の前に引く)
+    // (替わっていれば) secrets の更新は level-responder が答える
     [{ url: `${FIXTURES}/links/leaf/1`, host: "capture-fixtures.capture-ledger:8080" }], // 次の段の行
-    [], // crawls の集計
-    [], // ホストごとの最後の時刻
-    [], // (替わっていれば) secrets の更新
   ];
   const links = { "rules.links.json": { links: [{ href: `${FIXTURES}/links/leaf/1` }] } };
   const report = (built: Built) =>
     built.app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: {
         depth: 0,
         compiled: COMPILED,
@@ -774,48 +776,61 @@ describe("段の報告で締めるのは、走っているクロールだけ", (
   const seed = `${FIXTURES}/links/rules`;
 
   /** 次の段が無い報告 (リンクを読まない) を投げ、最後の crawls の UPDATE を返す。 */
-  const closeByReport = async (state: string): Promise<RecordedQuery | undefined> => {
+  const closeByReport = async (
+    state: string,
+  ): Promise<{
+    body: unknown;
+    update: RecordedQuery | undefined;
+    counts: RecordedQuery | undefined;
+  }> => {
     const { app, queries } = await build({
       results: [
         [{ ...crawlRow([{ follow: "same-host" }], [seed]), state }], // クロールの行
         [{ id: "11" }], // 報告した行を閉じる
         [{ url: seed }], // crawl_pages の URL
-        [], // crawls の集計
+        [], // 次の段の行 (pending)
       ],
     });
     const res = await app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: { depth: 0, compiled: COMPILED, results: [{ url: seed, status: "captured" }] },
     });
     await app.close();
-    expect(res.json()).toEqual({ next: [], stopReason: "completed" });
-    return queries.find((query) => query.sql.startsWith('update "crawls" set "pages_captured"'));
+    return {
+      body: res.json(),
+      update: queries.find((query) => query.sql.startsWith('update "crawls" set "stop_reason"')),
+      counts: queries.find((query) =>
+        query.sql.startsWith('update "crawl_levels" set "pages_captured"'),
+      ),
+    };
   };
 
-  it("succeeded と終わった時刻は、行が running のときだけ書く（数と理由はこれまでどおり足す）", async () => {
-    const update = await closeByReport("running");
+  it("succeeded と終わった時刻は、行が running のときだけ書く（数は段の行に書く）", async () => {
+    const { body, update, counts } = await closeByReport("running");
+    expect(body).toEqual({ next: [], stopReason: "completed" });
+    // 読んだ後・書く前に締められた行もあるので、条件は更新の中で見る
     expect(update?.sql).toBe(
-      'update "crawls" set "pages_captured" = "pages_captured" + $1, ' +
-        '"pages_discovered" = "pages_discovered" + $2, "stop_reason" = coalesce("stop_reason", $3), ' +
-        '"state" = case when "state" = $4 then $5 else "state" end, ' +
-        '"finished_at" = case when "state" = $6 then $7 else "finished_at" end where "id" = $8',
+      'update "crawls" set "stop_reason" = coalesce("stop_reason", $1), ' +
+        '"state" = case when "state" = $2 then $3 else "state" end, ' +
+        '"finished_at" = case when "state" = $4 then $5 else "finished_at" end where "id" = $6',
     );
-    expect(update?.parameters.slice(0, 6)).toEqual([
-      1,
-      0,
+    expect(update?.parameters.slice(0, 4)).toEqual([
       "completed",
       "running",
       "succeeded",
       "running",
     ]);
-    expect(update?.parameters[7]).toBe(CRAWL);
+    expect(update?.parameters[5]).toBe(CRAWL);
+    // 段の数は足さずに書く (CAPTURE-180)。クロールの合計は段の行の和で書き直す
+    expect(counts?.parameters.slice(0, 2)).toEqual([1, 0]);
   });
 
-  it("読んだ時に failed だった行にも、同じ条件つきの UPDATE を送る（読んだ状態で決めない）", async () => {
-    const update = await closeByReport("failed");
-    expect(update?.sql).toContain('"state" = case when "state" = $4 then $5 else "state" end');
+  it("読んだ時に締めてあったクロールには、状態を書かない（ページは記録し、次の段は作らない）", async () => {
+    const { body, update } = await closeByReport("failed");
+    expect(body).toEqual({ next: [], stopReason: null });
+    expect(update).toBeUndefined();
   });
 });
 
@@ -858,16 +873,17 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
         [{ id: "11" }], // 報告した行を閉じる
         ...(opts.hrefs.length > 0 ? [[]] : []), // crawl_decisions
         opts.known.map((url) => ({ url })), // crawl_pages の URL
-        ...(opts.inserted === undefined ? [] : [opts.inserted.map((url) => ({ url, host: HOST }))]), // 次の段の行
-        [], // crawls の集計
-        [], // ホストごとの最後の時刻 (次の段があるときだけ読まれる)
+        // 次の段の候補があれば、終わりの commit の前にホストごとの最後の時刻を引く。その後に次の段の行 (pending)
+        ...(opts.inserted === undefined
+          ? [[]]
+          : [[], opts.inserted.map((url) => ({ url, host: HOST }))]),
       ],
       links: { "page.links.json": { links: opts.hrefs.map((href) => ({ href })) } },
     });
     const res = await app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: {
         depth: opts.depth,
         compiled: COMPILED,
@@ -878,13 +894,21 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     return {
       body: res.json<{ next: { url: string }[]; stopReason: string | null }>(),
       queries,
-      update: queries.find((query) => query.sql.startsWith('update "crawls" set "pages_captured"')),
+      update: queries.find((query) => query.sql.startsWith('update "crawls" set "stop_reason"')),
       insert: queries.find((query) => query.sql.startsWith('insert into "crawl_pages"')),
+      /** 段に書いた撮れた数・リンクの数 (CAPTURE-180) と、クロールに残した理由 */
+      summary: [
+        ...(queries
+          .find((query) => query.sql.startsWith('update "crawl_levels" set "pages_captured"'))
+          ?.parameters.slice(0, 2) ?? []),
+        queries.find((query) => query.sql.startsWith('update "crawls" set "stop_reason"'))
+          ?.parameters[0],
+      ],
     };
   };
 
   it("最後の段のリンクが既に行のある URL だけなら、切っていない", async () => {
-    const { body, queries, update, insert } = await reportPage({
+    const { body, queries, summary, insert } = await reportPage({
       depth: 1,
       maxDepth: 1,
       hrefs: [seed],
@@ -893,14 +917,14 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     expect(body).toEqual({ next: [], stopReason: "completed" });
     expect(insert).toBeUndefined();
     // 撮れた 1・リンク 1。**リンクは既知の URL も数える** (延べ)
-    expect(update?.parameters.slice(0, 3)).toEqual([1, 1, "completed"]);
+    expect(summary).toEqual([1, 1, "completed"]);
     expect(queries.map((query) => query.sql)).toContain(
-      'select "url" from "crawl_pages" where "crawl_id" = $1',
+      'select "url", "depth", "state" from "crawl_pages" where "crawl_id" = $1',
     );
   });
 
   it("最後の段に新しい URL があれば、深さで切った", async () => {
-    const { body, update, insert } = await reportPage({
+    const { body, summary, insert } = await reportPage({
       depth: 1,
       maxDepth: 1,
       hrefs: [seed, unseen],
@@ -908,18 +932,18 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     });
     expect(body).toEqual({ next: [], stopReason: "max_depth" });
     expect(insert).toBeUndefined();
-    expect(update?.parameters.slice(0, 3)).toEqual([1, 2, "max_depth"]);
+    expect(summary).toEqual([1, 2, "max_depth"]);
   });
 
   it("リンクが無ければ、深さ 0 でも切っていない", async () => {
-    const { body, update } = await reportPage({ depth: 0, maxDepth: 0, hrefs: [], known: [page] });
+    const { body, summary } = await reportPage({ depth: 0, maxDepth: 0, hrefs: [], known: [page] });
     expect(body).toEqual({ next: [], stopReason: "completed" });
-    expect(update?.parameters.slice(0, 3)).toEqual([1, 0, "completed"]);
+    expect(summary).toEqual([1, 0, "completed"]);
   });
 
   describe("辿るよう頼んだのにリンクが 1 本も無ければ no_links（CAPTURE-245）", () => {
     it("深さ 1 を頼み、起点の段でリンクが 0 本なら no_links", async () => {
-      const { body, update } = await reportPage({
+      const { body, summary } = await reportPage({
         depth: 0,
         maxDepth: 1,
         pagesDiscovered: 0,
@@ -927,7 +951,7 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
         known: [page],
       });
       expect(body).toEqual({ next: [], stopReason: "no_links" });
-      expect(update?.parameters.slice(0, 3)).toEqual([1, 0, "no_links"]);
+      expect(summary).toEqual([1, 0, "no_links"]);
     });
 
     it("深さ 0 なら、0 本でも completed（辿らないと頼んだので）", async () => {
@@ -953,7 +977,7 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     });
 
     it("リンクはあったが規則が全部落としたなら no_links（数えるのは規則が通した本数）", async () => {
-      const { body, update } = await reportPage({
+      const { body, summary } = await reportPage({
         depth: 0,
         maxDepth: 1,
         pagesDiscovered: 0,
@@ -961,7 +985,7 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
         known: [page],
       });
       expect(body).toEqual({ next: [], stopReason: "no_links" });
-      expect(update?.parameters.slice(0, 3)).toEqual([1, 0, "no_links"]);
+      expect(summary).toEqual([1, 0, "no_links"]);
     });
 
     it("先に立った上限の理由が行にあれば、そちらを残す", async () => {
@@ -974,19 +998,19 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
         known: [seed, page],
       });
       expect(body).toEqual({ next: [], stopReason: "max_pages" });
-      expect(update?.sql).toContain('"stop_reason" = coalesce("stop_reason", $3)');
+      expect(update?.sql).toContain('"stop_reason" = coalesce("stop_reason", $1)');
     });
   });
 
   it("深さ 0 で新しい URL があれば、深さで切った", async () => {
-    const { body, update } = await reportPage({
+    const { body, summary } = await reportPage({
       depth: 0,
       maxDepth: 0,
       hrefs: [unseen],
       known: [page],
     });
     expect(body).toEqual({ next: [], stopReason: "max_depth" });
-    expect(update?.parameters.slice(0, 3)).toEqual([1, 1, "max_depth"]);
+    expect(summary).toEqual([1, 1, "max_depth"]);
   });
 
   it("枠を使い切っていても、候補が無ければ枚数で切ったとは言わない", async () => {
@@ -1022,7 +1046,7 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
       known: [seed, page, unseen],
     });
     expect(body).toEqual({ next: [], stopReason: "max_pages" });
-    expect(update?.sql).toContain('"stop_reason" = coalesce("stop_reason", $3)');
+    expect(update?.sql).toContain('"stop_reason" = coalesce("stop_reason", $1)');
   });
 
   it("枚数で切った後に深さでも切ったら、返事は先に立った理由", async () => {
@@ -1049,7 +1073,7 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     expect(insert?.parameters).toContain(unseen);
     expect(insert?.parameters).not.toContain(seed);
     expect(body).toEqual({ next: [{ url: unseen, host: HOST, depth: 1 }], stopReason: null });
-    // 切っていないので、理由は書かない
-    expect(update?.sql).not.toContain('"stop_reason"');
+    // 切っておらず、続くので、クロールの状態も理由も書かない (数は段の行と合計の書き直し)
+    expect(update).toBeUndefined();
   });
 });

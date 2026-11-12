@@ -8,6 +8,7 @@
  *
  * `admitLevel` は偽物にして呼ばれ方だけを記録する。
  */
+import { LEVEL_KEY } from "./level-responder.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { CrawlRouteDeps } from "../src/api/crawls.js";
@@ -31,45 +32,27 @@ let fakeScripts: CrawlScript[] = [];
 /** 走った JS の hash と変換の記録。capture-ledger 側で必須なので、どの報告にも載せる。 */
 const COMPILED = { typescript: "6.0.3", hostTypes: "v0.2.0", scripts: [] };
 
+/**
+ * 段の行 (`038`・CAPTURE-180) の問い合わせ。鍵の照らしと、取る所までだけを写す (この偽 DB はその先で落ちる)。
+ * どの鎖も同じ物を返し、最後に受け取り確認済みの段の行を返す。
+ */
+const levelChain: Record<string, unknown> = new Proxy(
+  {},
+  {
+    get: (_target, name) =>
+      name === "executeTakeFirst"
+        ? () => Promise.resolve({ jobId: LEVEL_KEY, state: "accepted", answer: null, depth: 0 })
+        : name === "execute"
+          ? () => Promise.resolve([])
+          : name === "then"
+            ? undefined
+            : () => levelChain,
+  },
+);
+
 const fakeDb = {
-  selectFrom: () => ({
-    selectAll: () => ({
-      where: () => ({
-        executeTakeFirst: () =>
-          Promise.resolve({
-            id: CRAWL,
-            orgId: "acme",
-            requestedBy: "alice",
-            state: "running",
-            maxPages: 10,
-            maxDepth: 2,
-            rules: [{ follow: "same-host" }],
-            seeds: [PAGE],
-            perHostDelayMs: 0,
-            hostParallelism: 1,
-            pagesDiscovered: 1,
-            pagesCaptured: 0,
-            artifactKeyPrefix: null,
-            scripts: fakeScripts,
-            // 本物の行は必ず持つ (024 の NOT NULL DEFAULT)。偽物も同じ形で
-            variables: {},
-            secrets: {},
-          }),
-      }),
-    }),
-  }),
-  updateTable: () => ({
-    set: () => ({
-      where: () => ({
-        execute: () => Promise.resolve(),
-        // 報告した行を閉じるときは id を返させる (`discovered_from` に書く)。この偽物は行を持たない
-        where: () => ({
-          execute: () => Promise.resolve(),
-          returning: () => ({ executeTakeFirst: () => Promise.resolve(undefined) }),
-        }),
-      }),
-    }),
-  }),
+  selectFrom: (table: string) => (table === "crawlLevels" ? levelChain : selectCrawl),
+  updateTable: (table: string) => (table === "crawlLevels" ? levelChain : updateOther),
   insertInto: () => ({
     values: (rows: unknown) => {
       inserted.push(rows);
@@ -78,6 +61,46 @@ const fakeDb = {
         execute: () => Promise.resolve(),
       };
     },
+  }),
+};
+
+const selectCrawl = {
+  selectAll: () => ({
+    where: () => ({
+      executeTakeFirst: () =>
+        Promise.resolve({
+          id: CRAWL,
+          orgId: "acme",
+          requestedBy: "alice",
+          state: "running",
+          maxPages: 10,
+          maxDepth: 2,
+          rules: [{ follow: "same-host" }],
+          seeds: [PAGE],
+          perHostDelayMs: 0,
+          hostParallelism: 1,
+          pagesDiscovered: 1,
+          pagesCaptured: 0,
+          artifactKeyPrefix: null,
+          scripts: fakeScripts,
+          // 本物の行は必ず持つ (024 の NOT NULL DEFAULT)。偽物も同じ形で
+          variables: {},
+          secrets: {},
+        }),
+    }),
+  }),
+};
+
+const updateOther = {
+  set: () => ({
+    where: () => ({
+      execute: () => Promise.resolve(),
+      // 報告した行を閉じるときは id を返させる (`discovered_from` に書く)。この偽物は行を持たない
+      where: () => ({
+        execute: () => Promise.resolve(),
+        returning: () => ({ executeTakeFirst: () => Promise.resolve(undefined) }),
+      }),
+    }),
   }),
 };
 
@@ -109,7 +132,7 @@ const report = async (results: Record<string, unknown>[]): Promise<number> => {
     const res = await app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: { depth: 0, results, compiled: COMPILED },
     });
     return res.statusCode;
@@ -127,7 +150,7 @@ const post = async (
     const res = await app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload,
     });
     return { status: res.statusCode, body: res.json<Record<string, unknown>>() };

@@ -26,7 +26,7 @@ import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
 import { registerScheduleRoutes } from "./schedules.js";
 import type { ReplayBundleWriter } from "../crawl/launch.js";
-import { levelDispatcher } from "../crawl/launch.js";
+import { levelClock, levelDispatcher } from "../crawl/launch.js";
 import { prepareCrawl } from "../crawl/prepare.js";
 import { scheduleSettings } from "../config/schedules.js";
 import { scheduleStoreOf } from "../schedules/store.js";
@@ -197,6 +197,8 @@ const start = async (options: ServerOptions): Promise<void> => {
   const dispatch = createWindmillDispatcher();
   // 定期実行の周回 (`schedules/tick.ts`)。クロールのエンドポイントと同じ設定で動くので、エンドポイントが無い配備では周回も無い
   let clock: ScheduleClock | undefined;
+  // 投げる係の時計 (CAPTURE-180)。受け取りを確かめられない段を送り直し、10 分で諦める。webhook の無い配備では無い
+  let levelClockHere: ReturnType<typeof levelClock> | undefined;
   // Claude のクライアント。直す係 (下) と前回からの変化の周回が同じ物を使う。鍵が無ければ無い
   const claude = createClaude();
   if (dispatch === undefined) {
@@ -232,6 +234,14 @@ const start = async (options: ServerOptions): Promise<void> => {
         bucket: storage.bucket,
         ...(signer && { signer }),
       });
+    // **投げる係は 1 つ** (CAPTURE-180)。クロールのエンドポイント・定期実行の周回・投げる係の時計が分け合う
+    const levels = levelDispatcher({
+      db,
+      dispatch,
+      writeReplayBundle: bundleWriter,
+      ...(sink && { sink }),
+    });
+    levelClockHere = levelClock(levels);
     registerCrawlRoutes(app, {
       db,
       fga,
@@ -239,6 +249,7 @@ const start = async (options: ServerOptions): Promise<void> => {
       bucket: storage.bucket,
       resolveIdentity,
       dispatch,
+      levels,
       ...(sink && { sink }),
       ...(windmill && { windmill }),
       tsCompile,
@@ -254,7 +265,7 @@ const start = async (options: ServerOptions): Promise<void> => {
     // 定期実行。周回はクロールを始める係をエンドポイントと分け合う。始める前に確かめる関数も同じ物
     const settings = scheduleSettings();
     const store = scheduleStoreOf(db);
-    const { dispatchLevel } = levelDispatcher({ db, dispatch, writeReplayBundle: bundleWriter });
+    const { dispatchLevel } = levels;
     const scheduleClockHere = scheduleClock({
       store,
       capture,
@@ -337,13 +348,15 @@ const start = async (options: ServerOptions): Promise<void> => {
    * リクエストだけで、実行は 202 を返した後に続いているので、その勘定に入らない。
    * 途中で落ちたクロールの行は `running` のまま残り、**部分 unique index が次を全部
    * 塞ぐ** —— 生きているものと区別する術が行に無い。締めるのは flow の failure_module で、
-   * `POST /api/crawls/:id/failed` を叩く (capture-scheduler の fail_crawl.ts)。**ledger と flow が
-   * 同時に落ちたとき**と、行を足してから webhook を投げ終えるまでの間に ledger が落ちたときは、残った行を
-   * 手で締めることになる (定期の回なら状態が `stuck` になり、画面に「締める」が出る)。
+   * `POST /api/crawls/:id/failed` を叩く (capture-scheduler の fail_crawl.ts)。行を足してから webhook を投げ終える
+   * までの間に ledger が落ちたときは、段の行 (`crawl_levels`) が残るので、起こし直した後に投げる係の時計が送る
+   * (CAPTURE-180)。**ledger と flow が同時に落ちたとき**は、残った行を手で締めることになる (定期の回なら状態が
+   * `stuck` になり、画面に「締める」が出る)。
    */
   const shutdown = async (): Promise<void> => {
     clearInterval(drainTimer);
     await clock?.stop();
+    await levelClockHere?.stop();
     await changes.stop();
     await app.close();
     await db.destroy();
@@ -354,6 +367,7 @@ const start = async (options: ServerOptions): Promise<void> => {
   await app.listen(listen);
   // **待ち受けの後に回す。** 周回が投げた段の報告は、この API に戻ってくる
   clock?.start();
+  levelClockHere?.start();
   changes.start();
   // 最後に、待ち受け・名乗り方と、段の報告を受けられるかを言う (`startup-notes.ts`)。
   // 開発用ヘッダの警告もここから出る —— ヘッダが実際に効いているときだけ。

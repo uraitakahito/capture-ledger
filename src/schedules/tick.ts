@@ -23,7 +23,7 @@ import { randomUUID } from "node:crypto";
 
 import type { SinkConfig } from "../api/sink.js";
 import type { CaptureSettings } from "../config/capture-formats.js";
-import { firstLevel, type DispatchedCrawl } from "../crawl/launch.js";
+import type { DispatchedCrawl } from "../crawl/launch.js";
 import { resolveSecrets, type PreparedCrawl, type RefusedCrawl } from "../crawl/prepare.js";
 import type { WindmillVariables } from "../crawl/windmill-variables.js";
 import type { CrawlSecret } from "../db/database.js";
@@ -116,6 +116,7 @@ export const tickSchedules = async (deps: TickDeps): Promise<TickResult> => {
     crawlId,
     prepared,
     who,
+    capture: deps.capture,
     sink,
     scheduledFor: isDue ? row.nextRunAt : null,
     missed: isDue ? missedSince(row.cron, row.timezone, row.nextRunAt, now) : 0,
@@ -136,7 +137,7 @@ export const tickSchedules = async (deps: TickDeps): Promise<TickResult> => {
 
   switch (result.kind) {
     case "started":
-      deps.dispatchLevel(firstLevel(prepared, crawlId, result.seeded, deps.capture, sink));
+      deps.dispatchLevel(result.level);
       log.info(
         { scheduleId: row.id, crawlId, scheduledFor: isDue ? row.nextRunAt : null },
         "Schedule started a crawl",

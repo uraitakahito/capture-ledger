@@ -358,6 +358,8 @@ const fakeDb = (
   scripts: FakeScript[] = [],
   /** 覚えている鍵。**主キー (組織と鍵) の重複は本物と同じ 23505 で断る。** */
   requests: FakeRequest[] = [],
+  /** 足した段の行 (`crawl_levels`)。 */
+  levels: Record<string, unknown>[] = [],
 ) => {
   const db = {
     /**
@@ -408,6 +410,11 @@ const fakeDb = (
         }),
         execute: async (): Promise<void> => {
           if (table === "crawlPages") return Promise.resolve();
+          // 段の行 (`038`・CAPTURE-180)。最初の段は `crawls` の行と同じトランザクションで入る。
+          if (table === "crawlLevels") {
+            levels.push(row as unknown as Record<string, unknown>);
+            return Promise.resolve();
+          }
           if (table === "crawlRequests") {
             const r = row as unknown as Omit<FakeRequest, "answer" | "createdAt"> & {
               answer: string;
@@ -475,8 +482,13 @@ const fakeDb = (
         },
       }),
     }),
-    updateTable: () => ({
+    updateTable: (table: string) => ({
       set: (values: Record<string, unknown>) => {
+        // 段の行の書き込み (投げる係が状態を進める) は `updates` に積まない。見ているのは `crawls` の行
+        if (table === "crawlLevels") {
+          const noop = { where: () => noop, execute: async (): Promise<void> => Promise.resolve() };
+          return noop;
+        }
         updates.push(values);
         /**
          * `where` は何度でも続き、`returning(...).execute()` で「実際に当たった行」を返す。
@@ -524,6 +536,14 @@ const fakeDb = (
        * なる (反証で素通りした)。偽物が制約を持っていると、消したことに気づけない。
        */
       select: () => {
+        // その場の送り直しの前に、段がまだ投げる前・投げたかを見る (`stillUnsent`)
+        if (table === "crawlLevels") {
+          const levelQuery = {
+            where: () => levelQuery,
+            executeTakeFirst: async () => Promise.resolve({ state: "sent" }),
+          };
+          return levelQuery;
+        }
         if (table === "crawlRequests") {
           const requestQuery = (where: [string, unknown][]) => ({
             where: (column: string, _op: unknown, value: unknown) =>
@@ -983,10 +1003,20 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
-  it("job の id が返らなければ、何も書かない", async () => {
+  it("Windmill が job の id を本文で返さなくても、段の鍵（渡した job_id）を残す", async () => {
+    // 段の鍵は webhook の `?job_id=` で渡した id そのもの (CAPTURE-180)。本文が読めなくても、run はその id で在る
     const updates: Record<string, unknown>[] = [];
+    const sent: DispatchedCrawl[] = [];
     const app = await buildApp(
-      depsWith({ crawls: [], allowed: true, updates, dispatch: () => Promise.resolve(undefined) }),
+      depsWith({
+        crawls: [],
+        allowed: true,
+        updates,
+        dispatch: (level) => {
+          sent.push(level);
+          return Promise.resolve(undefined);
+        },
+      }),
     );
     await app.inject({
       method: "POST",
@@ -994,34 +1024,44 @@ describe("クロール route の認可と単一実行", () => {
       headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(updates.filter((u) => "lastJobId" in u)).toEqual([]);
+    await vi.waitFor(() => {
+      expect(updates.filter((u) => "lastJobId" in u)).toEqual([
+        { lastJobId: sent[0]?.levelKey, lastJobDepth: 0 },
+      ]);
+    });
     await app.close();
   });
 
-  it("段を投げられなければ走っているクロールを締め、終わった状態の合本を書く", async () => {
-    // 次の段が無いので、ここで書かなければ誰も書かない (`/failed` と同じ)
+  it("段を投げられなくても、その場では締めない —— 同じ段の鍵で 3 回送り、後は投げる係の時計に任せる", async () => {
+    // webhook の時間切れでも Windmill は flow を走らせていることがある。1 回の失敗で締めると、締めた行の上で
+    // flow が走る (CAPTURE-180)。10 分で諦めて締めるのは時計 (`test/crawl-dispatch.test.ts`)
     const crawls: FakeCrawl[] = [];
     const bundles: [string, number | null][] = [];
-    const app = await buildApp(
-      depsWith({
+    const sent: DispatchedCrawl[] = [];
+    const app = await buildApp({
+      ...depsWith({
         crawls,
         allowed: true,
         bundles,
-        dispatch: () => Promise.reject(new Error("crawl webhook → 502")),
+        dispatch: (level) => {
+          sent.push(level);
+          return Promise.reject(new Error("crawl webhook → 502"));
+        },
       }),
-    );
-    const res = await app.inject({
+      dispatchRetryDelaysMs: [0, 0],
+    });
+    await app.inject({
       method: "POST",
       url: "/api/crawls",
       headers: keyHeader(),
       payload: { seeds: [SEED] },
     });
-    const { crawlId } = res.json<{ crawlId: string }>();
     await vi.waitFor(() => {
-      expect(bundles).toEqual([[crawlId, null]]);
+      expect(sent).toHaveLength(3);
     });
-    expect(crawls[0]?.state).toBe("failed");
+    expect(new Set(sent.map((level) => level.levelKey)).size).toBe(1);
+    expect(crawls[0]?.state).toBe("running");
+    expect(bundles).toEqual([]);
     await app.close();
   });
 

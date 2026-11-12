@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { scheduleStoreOf, type FirePlan, type ScheduleRow } from "../src/schedules/store.js";
 import type { PreparedCrawl } from "../src/crawl/prepare.js";
+import { parseCaptureFormats } from "../src/config/capture-formats.js";
 import { recordingDb } from "./recording-db.js";
 
 /**
@@ -39,6 +40,7 @@ const plan = (overrides: Partial<FirePlan> = {}): FirePlan => ({
   crawlId: CRAWL,
   prepared,
   who: { orgId: "acme", subject: "alice" },
+  capture: parseCaptureFormats("wacz", false),
   sink: undefined,
   scheduledFor: new Date("2026-11-03T19:00:00.000Z"),
   missed: 3,
@@ -174,10 +176,18 @@ describe("予定の store", () => {
   describe("回を始める", () => {
     const seeded = [{ url: "https://site.test/", host: "site.test" }];
 
-    it("1 つのトランザクションで、予定を掴み・行と起点を足し・次の回へ進める", async () => {
-      const { db, queries } = recordingDb([[{ id: ID }], [], seeded, []]);
+    it("1 つのトランザクションで、予定を掴み・行と起点と最初の段の行を足し・次の回へ進める", async () => {
+      const { db, queries } = recordingDb([[{ id: ID }], [], seeded, [], []]);
       const answer = await scheduleStoreOf(db).fire(plan());
-      expect(answer).toEqual({ kind: "started", seeded });
+      // 最初の段 (投げるのは周回。段の行は同じトランザクションで足した。CAPTURE-180)
+      expect(answer).toMatchObject({
+        kind: "started",
+        level: {
+          crawlId: CRAWL,
+          depth: 0,
+          frontier: [{ url: "https://site.test/", host: "site.test", lastFinishedAt: null }],
+        },
+      });
       const sqls = queries.map((query) => query.sql);
       expect(sqls[0]).toBe("begin");
       expect(sqls[1]).toContain('from "crawl_schedules"');
@@ -187,15 +197,16 @@ describe("予定の store", () => {
       expect(sqls[2]).toContain('"scheduled_for"');
       expect(sqls[2]).toContain('"schedule_missed"');
       expect(sqls[3]).toContain('insert into "crawl_pages"');
-      expect(sqls[4]).toContain('update "crawl_schedules"');
-      expect(sqls[4]).toContain('"next_run_at" = $1');
-      expect(sqls[4]).toContain('"run_requested_at" = $2');
-      expect(queries[4]!.parameters.slice(0, 2)).toEqual(["2026-11-07T19:00:00.000Z", null]);
-      expect(sqls[5]).toBe("commit");
+      expect(sqls[4]).toContain('insert into "crawl_levels"');
+      expect(sqls[5]).toContain('update "crawl_schedules"');
+      expect(sqls[5]).toContain('"next_run_at" = $1');
+      expect(sqls[5]).toContain('"run_requested_at" = $2');
+      expect(queries[5]!.parameters.slice(0, 2)).toEqual(["2026-11-07T19:00:00.000Z", null]);
+      expect(sqls[6]).toBe("commit");
     });
 
     it("いま撮る（次の期限が無い）は、期限を書かない", async () => {
-      const { db, queries } = recordingDb([[{ id: ID }], [], seeded, []]);
+      const { db, queries } = recordingDb([[{ id: ID }], [], seeded, [], []]);
       const manual = plan({ scheduledFor: null, missed: 0 });
       delete manual.nextRunAt;
       await scheduleStoreOf(db).fire(manual);

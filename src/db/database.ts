@@ -7,6 +7,7 @@
  * camelCase (`urlHash`) を DB 側の snake_case (`url_hash`) へ自動で写せる。
  */
 import type { ColumnType, Generated, GeneratedAlways } from "kysely";
+import type { DispatchedCrawl } from "../crawl/launch.js";
 import type { CrawlBody, PreparedCrawl } from "../crawl/prepare.js";
 
 /**
@@ -556,6 +557,41 @@ export interface CrawlRequestsTable {
   createdAt: ColumnType<Date, string | undefined, never>;
 }
 
+/** 段の状態 (`038`・CAPTURE-180)。 */
+export type CrawlLevelState =
+  "pending" | "sent" | "accepted" | "reporting" | "reported" | "abandoned";
+
+/**
+ * クロールの段 1 つ (`038`・CAPTURE-180)。主キーは (crawlId, depth)。`jobId` が Windmill への投入と段の報告の鍵。
+ * `args` は送る段そのもの (`DispatchedCrawl`)。jsonb なので、書くときは文字列、読むと object。
+ */
+export interface CrawlLevelsTable {
+  crawlId: string;
+  depth: number;
+  jobId: string;
+  state: CrawlLevelState;
+  args: ColumnType<DispatchedCrawl, string, string>;
+  attempts: ColumnType<number, number | undefined, number>;
+  lastError: string | null;
+  nextAttemptAt: ColumnType<Date, string | undefined, string>;
+  sentAt: ColumnType<Date | null, string | null | undefined, string | null>;
+  acceptedAt: ColumnType<Date | null, string | null | undefined, string | null>;
+  reportToken: string | null;
+  leaseUntil: ColumnType<Date | null, string | null | undefined, string | null>;
+  reportedAt: ColumnType<Date | null, string | null | undefined, string | null>;
+  pagesCaptured: ColumnType<number, number | undefined, number>;
+  pagesDiscovered: ColumnType<number, number | undefined, number>;
+  /** 最初の報告に返した 200 の本文。同じ鍵の 2 回目に返す。 */
+  answer: ColumnType<LevelAnswer | null, string | null | undefined, string | null>;
+  createdAt: ColumnType<Date, string | undefined, never>;
+}
+
+/** 段の報告の答え (`POST /api/crawls/:id/pages` の 200)。 */
+export interface LevelAnswer {
+  next: { url: string; host: string; depth: number }[];
+  stopReason: string | null;
+}
+
 export interface Database {
   crawlSchedules: CrawlSchedulesTable;
   archives: ArchivesTable;
@@ -571,4 +607,5 @@ export interface Database {
   pageChanges: PageChangesTable;
   crawlChanges: CrawlChangesTable;
   crawlRequests: CrawlRequestsTable;
+  crawlLevels: CrawlLevelsTable;
 }

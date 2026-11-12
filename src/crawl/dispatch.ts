@@ -17,14 +17,21 @@
  * ただし **片方だけ設定されているのは拒む**。半端な設定は「動くはずなのに 401 が返る」
  * という形で、頼んだ後にしか気づけない失敗になる。両方か、どちらも無いか。
  *
- * ## 失敗したら
+ * ## 段の鍵で送る (CAPTURE-180)
  *
- * 投げられなければクロールは始まらないので、`crawls` の行は `failed` で締める
- * (呼ぶ側でそうしている)。**黙って `running` のまま置かない** —— 部分 unique index が
- * 効いているので、締め忘れた行は次のクロールを永久に塞ぐ。
+ * webhook に `?job_id=<段の鍵>` を付ける。Windmill (CE 1.806.0 で確かめた) は渡した id で job を作り、在る id には
+ * 400 `Bad request: Job with id … already exists` を返して 2 本目を作らない。だから送り直してよい ——
+ * **時間切れは「投げられなかった」ではない** (Windmill は job を作って flow を走らせていることがある)。
+ * 400 の `already exists` は「もう受け取っている」と読む。
+ *
+ * ## 受け取りを確かめられなければ
+ *
+ * ここは投げて答えを返すだけ。送り直しと諦めるのは呼ぶ側 (`launch.ts` の `levelDispatcher`): その場で 3 回、
+ * それでも駄目なら時計が同じ id で送り直し、段の行を作ってから 10 分で諦めてクロールを `failed` で締める。
+ * **黙って `running` のまま置かない** —— 部分 unique index が効いているので、締め忘れた行は次のクロールを永久に塞ぐ。
  */
 import { optional } from "../config/env.js";
-import type { CrawlDispatcher, DispatchedCrawl } from "./launch.js";
+import { DispatchRefused, type CrawlDispatcher, type DispatchedCrawl } from "./launch.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -44,6 +51,13 @@ export const jobIdFrom = (body: string): string | undefined => {
 };
 
 /**
+ * 同じ `job_id` の job が既に在る、という Windmill の答えか。CE 1.806.0 の本文は
+ * `Bad request: Job with id <id> already exists` (2026-11-12 に dev の Windmill で確かめた。CAPTURE-180 段 0)。
+ */
+export const alreadyTaken = (status: number, body: string): boolean =>
+  status === 400 && /already exists/i.test(body);
+
+/**
  * `DispatchedCrawl` の欄と flow の引数名の対応。**型で網羅させる** —— `-?` で省略可能な欄も
  * 必須にしてあるので、`DispatchedCrawl` に欄を足してここに書き忘れると typecheck が落ちる。
  *
@@ -60,6 +74,9 @@ export const jobIdFrom = (body: string): string | undefined => {
 const FLOW_ARGS: { readonly [K in keyof DispatchedCrawl]-?: string } = {
   crawlId: "crawl_id",
   depth: "depth",
+  // **段の鍵も必ず送る** (CAPTURE-180)。flow は段の報告の `Idempotency-Key` と fail_crawl の本文に返す。
+  // Windmill の「この段からやり直す」は CE に無い (EE だけ) が、同じ引数で流し直した flow も同じ鍵で報告する
+  levelKey: "level_key",
   frontier: "frontier",
   perHostDelayMs: "per_host_delay_ms",
   hostParallelism: "host_parallelism",
@@ -119,10 +136,11 @@ export const createWindmillDispatcher = (): CrawlDispatcher | undefined => {
   );
 
   return async (crawl: DispatchedCrawl): Promise<string | undefined> => {
-    // `waggle_url` / `token` / `browserhive_target` は送らない —— flow の schema の
-    // 既定値 (`$var:` 参照) が埋める。ledger は自分がコンテナからどう見えるかを
-    // 知らないし、issuer の鍵も持っていないので、どちらもここでは決められない。
-    const res = await fetch(url, {
+    // `waggle_url` / `token` / `browserhive_target` は送らない —— flow の側で Windmill の変数から読む。
+    // ledger は自分がコンテナからどう見えるかを知らないので、ここでは決められない。
+    const target = new URL(url);
+    target.searchParams.set("job_id", crawl.levelKey);
+    const res = await fetch(target, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify(flowArgs(crawl)),
@@ -132,7 +150,14 @@ export const createWindmillDispatcher = (): CrawlDispatcher | undefined => {
       // 本文まで読むのは、Windmill が理由を本文で返すから。status だけだと
       // 「404 でした」しか残らず、path の綴りなのか token なのかが分からない。
       const body = await res.text();
-      throw new Error(`crawl webhook → ${String(res.status)} ${body.slice(0, 200)}`);
+      // 同じ段の鍵の job が在る —— 前の送信 (時間切れになった物も) を Windmill は受け取っている
+      if (alreadyTaken(res.status, body)) return crawl.levelKey;
+      const message = `crawl webhook → ${String(res.status)} ${body.slice(0, 200)}`;
+      // 4xx は送り直しても同じ答え (path・トークン・引数)。408 と 429 は待てば通りうる
+      if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
+        throw new DispatchRefused(message);
+      }
+      throw new Error(message);
     }
     // 起こした job の id を返す。呼ぶ側は `crawls.last_job_id` に残し、失敗したクロールから
     // その run へ 1 回で辿れるようにする (`016`)。

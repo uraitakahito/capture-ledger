@@ -23,4 +23,4 @@ description: クロールを始める要求の鍵（Idempotency-Key）。組織�
 
 ## 消し方
 
-24 時間より古い行は、次に始める要求が消します（`created_at` の index）。定期実行の回は API を通らないので、この表に行を作りません。
+24 時間より古い行は、次に始める要求と投げる係の時計（[crawl_levels](/capture-ledger/ja/databases/crawl-levels/)）が消します（`created_at` の index）。定期実行の回は API を通らないので、この表に行を作りません。

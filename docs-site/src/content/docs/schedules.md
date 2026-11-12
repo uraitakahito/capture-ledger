@@ -17,15 +17,15 @@ The screen is the Schedules tab in capture-workbench. This page covers the ledge
    `CAPTURE_LEDGER_SCHEDULE_QUIET_MINUTES` (default 10) has passed since both the API started and the
    latest crawl started. Run-now does not wait.
 4. Ask Windmill whether the declared secrets exist.
-5. In one transaction, add the crawl row and its seed pages, and move on to the next run.
-6. Send the webhook after the commit.
+5. In one transaction, add the crawl row, its seed pages and its first level row ([crawl_levels](/capture-ledger/databases/crawl-levels/)), and move on to the next run.
+6. Send the webhook, with the level key, after the commit.
 
-| What happened                                                             | What follows                                                                                      |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| It collided with a running row                                            | Rollback. The due time does not move and the schedule stays queued. There is no "skipped" outcome |
-| A secret is missing, Windmill cannot be asked, or the row cannot be added | A `failed` row is added and the schedule moves to its next run                                    |
-| The webhook could not be sent                                             | The row is closed as `failed` (the same as a crawl started by hand)                               |
-| The ledger was down                                                       | One run when it comes back. How many runs passed stays in `crawls.schedule_missed`                |
+| What happened                                                             | What follows                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| It collided with a running row                                            | Rollback. The due time does not move and the schedule stays queued. There is no "skipped" outcome                                                                                                                   |
+| A secret is missing, Windmill cannot be asked, or the row cannot be added | A `failed` row is added and the schedule moves to its next run                                                                                                                                                      |
+| The webhook could not be sent                                             | The same as a crawl started by hand: a 4xx (path, token) closes the row as `failed` at once; no connection, a timeout or a 5xx is sent again by the level clock, which gives up and closes the row after 10 minutes |
+| The ledger was down                                                       | One run when it comes back. How many runs passed stays in `crawls.schedule_missed`                                                                                                                                  |
 
 A row left running is not closed by the tick, so that a run that really is running does not get
 closed. When that schedule's own latest run has been `running` for an hour or more, its health
