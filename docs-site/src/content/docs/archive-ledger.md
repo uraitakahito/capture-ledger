@@ -168,7 +168,7 @@ organizations**. A caller without the permission gets neither 403 nor 404 but an
 **empty array**, and every row carries its `orgId` so the caller can say what it is
 seeing. Rows carry both `state` and `stopReason`: `succeeded` only says that a page was
 captured, so the state alone cannot tell a full walk (`completed`) from a crawl that was cut
-(`max_depth`, `max_pages`). Rows also carry `maxDepth`, which tells a crawl that never meant
+(`max_depth`, `max_pages`) or one that found no link to follow (`no_links`). Rows also carry `maxDepth`, which tells a crawl that never meant
 to follow links (depth 0).
 
 **A `succeeded` crawl captured at least one page.** A crawl that ends with none (every page
@@ -383,7 +383,9 @@ organization on the caller's identity, which need not be the one that gave the g
 
 The same endpoint, with a depth above 0, walks the links out from its seeds.
 Windmill runs the walking; capture-ledger decides which links to take, what has been seen,
-and when to stop.
+and when to stop. The links come from BrowserHive's `.links.json`: the `<a href>` of the top
+document and of the frames its script can read (same-origin `frame` and `iframe` documents,
+BrowserHive v29.1.0 and later). Links inside frames from other origins are not read.
 
 ```sh
 curl -X POST http://localhost:7070/api/crawls \
@@ -438,8 +440,10 @@ ran fast" without the timestamps.
 
 ### Where it stops, and why
 
-`stopReason` is one of `completed`, `max_depth`, `max_pages`, or `failed`. Without it
-a finished crawl cannot say whether it followed everything or was cut off. `max_depth` and
+`stopReason` is one of `completed`, `no_links`, `max_depth`, `max_pages`, or `failed`. Without it
+a finished crawl cannot say whether it followed everything or was cut off. `no_links` is a crawl
+asked to follow links (depth 1 or more) that ended with no link the rules let through — it never
+got past its seeds. A depth-0 crawl with no links is `completed`: it was not asked to follow. `max_depth` and
 `max_pages` are set only when links not yet captured were left over (reaching a limit with
 nothing left is `completed`). With the default of 30 pages, `max_pages` is the ordinary
 outcome — that is deliberate, so the limit is visible in normal use rather than a surprise.

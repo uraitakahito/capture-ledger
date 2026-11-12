@@ -447,8 +447,13 @@ export type CrawlRuleAction = "follow" | "capture" | "skip";
  */
 export type CrawlRule = { follow: string } | { capture: string } | { skip: string };
 
-/** なぜ終わったか。これが無いと「全部辿った」と「上限で切った」が区別できない。 */
-export type CrawlStopReason = "completed" | "max_depth" | "max_pages" | "failed";
+/**
+ * なぜ終わったか。これが無いと「全部辿った」と「上限で切った」が区別できない。
+ *
+ * `no_links` は、辿るよう頼んだ (深さ 1 以上) のに、規則が通したリンクが 1 本も無いまま締まったクロール。
+ * 起点から 1 歩も進めなかったことは、`completed` (全部辿った) と分けて言う。
+ */
+export type CrawlStopReason = "completed" | "no_links" | "max_depth" | "max_pages" | "failed";
 
 /**
  * クロールが触った URL 1 つ。重複排除は `(crawlId, urlHash)` の unique index が持つ。`008` を見ること。

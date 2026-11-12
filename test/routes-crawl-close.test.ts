@@ -25,7 +25,9 @@ const SEED = "https://site.test/";
 const OTHER = "https://site.test/other";
 const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organizations": "acme" };
 
-const crawlRow = (over: { pagesCaptured?: number; state?: string } = {}) => ({
+const crawlRow = (
+  over: { pagesCaptured?: number; pagesDiscovered?: number; state?: string } = {},
+) => ({
   id: CRAWL,
   seeds: [SEED],
   rules: [{ follow: "same-host" }],
@@ -138,15 +140,21 @@ describe("1 枚も撮れずに終わったクロール", () => {
 });
 
 describe("1 枚でも撮れたクロール", () => {
-  /** 書いた状態と、エラーの欄を書かないことを見る。 */
-  const expectSucceeded = ({
-    body,
-    update,
-  }: {
-    body: unknown;
-    update: RecordedQuery | undefined;
-  }): void => {
-    expect(body).toEqual({ next: [], stopReason: "completed" });
+  /**
+   * 書いた状態と、エラーの欄を書かないことを見る。理由は試験ごとに渡す —— 深さ 2 を頼んでリンクが 1 本も
+   * 無ければ `no_links`、前の段でリンクを見つけていれば `completed`（CAPTURE-245）。
+   */
+  const expectSucceeded = (
+    {
+      body,
+      update,
+    }: {
+      body: unknown;
+      update: RecordedQuery | undefined;
+    },
+    stopReason: "completed" | "no_links",
+  ): void => {
+    expect(body).toEqual({ next: [], stopReason });
     expect(update?.parameters).toContain("succeeded");
     expect(update?.parameters).not.toContain("failed");
     expect(update?.sql).not.toContain('"error"');
@@ -158,6 +166,7 @@ describe("1 枚でも撮れたクロール", () => {
         { url: SEED, status: "captured" },
         { url: OTHER, status: "failed", skipReason: "http_error: HTTP 404: Not Found" },
       ]),
+      "no_links",
     );
   });
 
@@ -165,8 +174,9 @@ describe("1 枚でも撮れたクロール", () => {
     expectSucceeded(
       await close(
         [{ url: OTHER, status: "failed", skipReason: "http_error: HTTP 404: Not Found" }],
-        { row: crawlRow({ pagesCaptured: 3 }) },
+        { row: crawlRow({ pagesCaptured: 3, pagesDiscovered: 3 }) },
       ),
+      "completed",
     );
   });
 
@@ -184,7 +194,7 @@ describe("1 枚でも撮れたクロール", () => {
       ],
       { recovered: [SEED] },
     );
-    expectSucceeded(closed);
+    expectSucceeded(closed, "no_links");
     expect(closed.update?.parameters[0]).toBe(1);
   });
 });

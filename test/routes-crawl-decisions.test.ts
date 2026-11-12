@@ -837,6 +837,8 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     maxPages?: number;
     /** 前の段までに行に残った理由。 */
     rowReason?: string;
+    /** 前の段までに規則が通したリンクの延べ（既定は crawlRow の値）。 */
+    pagesDiscovered?: number;
     hrefs: string[];
     known: string[];
     /** 次の段に入ると見込む行。 */
@@ -850,6 +852,7 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
             maxDepth: opts.maxDepth,
             maxPages: opts.maxPages ?? 20,
             stopReason: opts.rowReason ?? null,
+            ...(opts.pagesDiscovered !== undefined && { pagesDiscovered: opts.pagesDiscovered }),
           },
         ], // クロールの行
         [{ id: "11" }], // 報告した行を閉じる
@@ -912,6 +915,67 @@ describe("切った物があるときだけ、打ち切りと言う", () => {
     const { body, update } = await reportPage({ depth: 0, maxDepth: 0, hrefs: [], known: [page] });
     expect(body).toEqual({ next: [], stopReason: "completed" });
     expect(update?.parameters.slice(0, 3)).toEqual([1, 0, "completed"]);
+  });
+
+  describe("辿るよう頼んだのにリンクが 1 本も無ければ no_links（CAPTURE-245）", () => {
+    it("深さ 1 を頼み、起点の段でリンクが 0 本なら no_links", async () => {
+      const { body, update } = await reportPage({
+        depth: 0,
+        maxDepth: 1,
+        pagesDiscovered: 0,
+        hrefs: [],
+        known: [page],
+      });
+      expect(body).toEqual({ next: [], stopReason: "no_links" });
+      expect(update?.parameters.slice(0, 3)).toEqual([1, 0, "no_links"]);
+    });
+
+    it("深さ 0 なら、0 本でも completed（辿らないと頼んだので）", async () => {
+      const { body } = await reportPage({
+        depth: 0,
+        maxDepth: 0,
+        pagesDiscovered: 0,
+        hrefs: [],
+        known: [page],
+      });
+      expect(body).toEqual({ next: [], stopReason: "completed" });
+    });
+
+    it("前の段でリンクを見つけていれば、この段で 0 本でも completed", async () => {
+      const { body } = await reportPage({
+        depth: 1,
+        maxDepth: 2,
+        pagesDiscovered: 1,
+        hrefs: [],
+        known: [seed, page],
+      });
+      expect(body).toEqual({ next: [], stopReason: "completed" });
+    });
+
+    it("リンクはあったが規則が全部落としたなら no_links（数えるのは規則が通した本数）", async () => {
+      const { body, update } = await reportPage({
+        depth: 0,
+        maxDepth: 1,
+        pagesDiscovered: 0,
+        hrefs: ["http://outside.invalid/x"],
+        known: [page],
+      });
+      expect(body).toEqual({ next: [], stopReason: "no_links" });
+      expect(update?.parameters.slice(0, 3)).toEqual([1, 0, "no_links"]);
+    });
+
+    it("先に立った上限の理由が行にあれば、そちらを残す", async () => {
+      const { body, update } = await reportPage({
+        depth: 1,
+        maxDepth: 2,
+        pagesDiscovered: 0,
+        rowReason: "max_pages",
+        hrefs: [],
+        known: [seed, page],
+      });
+      expect(body).toEqual({ next: [], stopReason: "max_pages" });
+      expect(update?.sql).toContain('"stop_reason" = coalesce("stop_reason", $3)');
+    });
   });
 
   it("深さ 0 で新しい URL があれば、深さで切った", async () => {

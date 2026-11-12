@@ -157,7 +157,7 @@ curl http://localhost:7070/api/archives
 だから `submitter` を与えることは**組織を跨ぐ信頼**です。権限が無い呼び出し元には 403 でも 404 でもなく**空の配列**を返し、代わりに各行へ
 `orgId` を載せます —— 見えている範囲を、呼ぶ側が言えるようにするためです。
 行が持つのは状態と `stopReason` の両方です。`succeeded` は「1 枚以上撮れた」なので、状態だけでは
-「全部辿った」（`completed`）と「切った」（`max_depth`・`max_pages`）の区別が付きません。
+「全部辿った」（`completed`）と「切った」（`max_depth`・`max_pages`）と「辿るリンクが無かった」（`no_links`）の区別が付きません。
 `maxDepth` も載るので、辿らないクロール（深さ 0）かどうかも言えます。
 
 **`succeeded` は 1 枚以上撮れたクロールです。** 1 枚も撮れずに終わると（全部のページが取れないか、robots で
@@ -347,7 +347,9 @@ subject に 202 が出た。
 ## リンクを辿る
 
 同じエンドポイントに深さを 1 以上で渡すと、起点からリンクを辿る。辿る作業は Windmill が回し、
-**どのリンクを取るか・既読・打ち切り**を決めるのは capture-ledger。
+**どのリンクを取るか・既読・打ち切り**を決めるのは capture-ledger。リンクは BrowserHive の `.links.json` から読む。
+中身は、一番上の文書と、その script から読める枠（同じ origin の `frame`・`iframe` の文書。BrowserHive v29.1.0 から）の
+`<a href>`。別 origin の枠の中のリンクは読まない。
 
 ```sh
 curl -X POST http://localhost:7070/api/crawls \
@@ -399,8 +401,10 @@ WINDOW w AS (PARTITION BY host ORDER BY submitted_at);
 
 ### どこで、なぜ止まったか
 
-`stopReason` は `completed` / `max_depth` / `max_pages` / `failed` のいずれか。これが無いと、
-終わったクロールが「全部辿った」のか「切られた」のかを言えない。`max_depth` と `max_pages` は、
+`stopReason` は `completed` / `no_links` / `max_depth` / `max_pages` / `failed` のいずれか。これが無いと、
+終わったクロールが「全部辿った」のか「切られた」のかを言えない。`no_links` は、辿るよう頼んだ（深さ 1 以上）のに、
+規則が通したリンクが 1 本も無いまま締まったクロール —— 起点から 1 歩も進めなかった。深さ 0 でリンクが無いのは
+`completed`（辿らないと頼んだので）。`max_depth` と `max_pages` は、
 まだ撮っていないリンクが残っていたときだけ立つ（上限に当たっても、残りが無ければ `completed`）。
 既定の 30 ページでは **`max_pages` で止まるのが普通** —— 上限が日常的に見えているほうがよいので、そう選んである。
 
