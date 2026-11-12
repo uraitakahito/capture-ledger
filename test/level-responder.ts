@@ -7,6 +7,8 @@
  *
  * 次の段の行は、並べた行の「次の段の行」(以前は `returning` の答え、いまは深さ n+1 の pending の行を読む答え) を使う。
  * クロールの合計は、並べたクロールの行の数 (前の段までの和) に、この段の行に書いた数を足して答える。
+ *
+ * リンクを 1 本ずつ残す問い合わせ (`crawl_links`・`039`) も、ここが答える。
  */
 import type { CrawlLevelState } from "../src/db/database.js";
 import type { Responder } from "./recording-db.js";
@@ -27,6 +29,11 @@ export interface LevelOptions {
   missing?: boolean;
   /** 一番新しい段の深さ (`/failed` の照らし)。省けば 0 */
   newestDepth?: number;
+  /**
+   * リンクを残すとき (`039`) に読む、クロールの `crawl_pages` の URL → 見つけたページ。省けば行が無い
+   * (規則が通したリンクは、どれも上限で切ったと残る)
+   */
+  pageParents?: { url: string; discoveredFrom: string | null }[];
 }
 
 const has = (sql: string, ...parts: string[]): boolean => parts.every((part) => sql.includes(part));
@@ -57,6 +64,12 @@ export const levelResponder = (opts: LevelOptions = {}) => {
         if (has(sql, 'update "crawls" set "secrets"')) return [];
         // 次の段のページを入れる (段の報告は returning を使わない)
         if (has(sql, 'insert into "crawl_pages"') && !has(sql, "returning")) return [];
+        // リンクを 1 本ずつ残す (`039`): 行を読み、置き換え、記録した時刻を立てる。並べた行は使わない
+        if (has(sql, 'select "url", "discovered_from" from "crawl_pages"')) {
+          return opts.pageParents ?? [];
+        }
+        if (has(sql, '"crawl_links"')) return [];
+        if (has(sql, 'update "crawls" set "links_recorded_at"')) return [];
         return undefined;
       }
       if (has(sql, "sum(pages_captured)")) {

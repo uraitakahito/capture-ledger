@@ -270,6 +270,11 @@ export interface CrawlsTable {
    * 埋める前の古い行は NULL (組にしない)。
    */
   recipeSha256: ColumnType<string | null, string | null | undefined, string>;
+  /**
+   * リンクを 1 本ずつ記録し始めた時刻 (`039`・`crawl_links`)。NULL は「記録が無いクロール」 —— リンクが 0 本の
+   * クロールは、行が無くてもここが立つ。
+   */
+  linksRecordedAt: ColumnType<Date | null, never, string | null>;
 }
 
 /** 解決して固定した撮り方 (`032`)。シークレットは宣言だけを持ち、回ごとに Windmill へ訊き直す。 */
@@ -519,6 +524,29 @@ export interface CrawlDecisionsTable {
   samples: string[];
 }
 
+/** リンク 1 本がどうなったか (`039`)。決めるのは `crawl/link-outcomes.ts`。 */
+export type CrawlLinkOutcome =
+  "followed" | "known" | "max_pages" | "max_depth" | "closed" | "skip" | "nofollow";
+
+/** 撮ったページにあったリンク 1 本ずつ (`039`)。主キーは `(from_page, seq)`。 */
+export interface CrawlLinksTable {
+  crawlId: string;
+  /** リンクのあったページ (`crawl_pages.id`)。 */
+  fromPage: string;
+  /** ページの中の順。0 から。 */
+  seq: number;
+  /** 正規化したリンク先。 */
+  url: string;
+  urlHash: GeneratedAlways<Buffer>;
+  /** ポートを外したホスト名。 */
+  hostname: string;
+  /** リンクの文字。 */
+  text: string;
+  /** 当たった規則の番号。0 はどれにも当たらなかった。規則を当てていなければ NULL。 */
+  rule: number | null;
+  outcome: CrawlLinkOutcome;
+}
+
 /**
  * 派生の層 (`026`)。Claude が作った物を、証拠と分けて残す。いまの `kind` は `fix` だけ。
  * `usd` は numeric なので、node-pg は文字列で返す。
@@ -608,4 +636,5 @@ export interface Database {
   crawlChanges: CrawlChangesTable;
   crawlRequests: CrawlRequestsTable;
   crawlLevels: CrawlLevelsTable;
+  crawlLinks: CrawlLinksTable;
 }

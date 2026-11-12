@@ -164,6 +164,14 @@ jobs:
       - name: Changes against Postgres
         run: pnpm run build:tools && node dist/tools/changes-smoke.js
 
+      # リンクを 1 本ずつ残す表 (CAPTURE-246・`039`) を、本物の Postgres に当てる。
+      #
+      # 置き換えで行が増えないこと・url_hash の生成列で行き先のページと結べること・outcome の CHECK・cascade・
+      # 上限いっぱいの行の INSERT は、試験の記録する DB では確かめられない。自分の組織 (smoke-<pid>) の締めた
+      # クロール 1 本だけを足して、最後に消す。
+      - name: Links against Postgres
+        run: pnpm run build:tools && node dist/tools/links-smoke.js
+
       # 契約 (openapi.json) から生成した型が、コミットされた物と一致するか。
       - name: OpenAPI types drift check
         run: pnpm run openapi:check
