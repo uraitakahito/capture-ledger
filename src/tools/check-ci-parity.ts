@@ -66,6 +66,8 @@ const ONLY_IN_CI = {
     "同上。予定の store と周回を本物の DB に当てる (src/tools/schedules-smoke.ts)",
   "Changes against Postgres":
     "同上。前回からの変化の store と読む SQL を本物の DB に当てる (src/tools/changes-smoke.ts)",
+  "Links against Postgres":
+    "同上。リンクを 1 本ずつ残す表の置き換え・生成列・CHECK を本物の DB に当てる (src/tools/links-smoke.ts)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

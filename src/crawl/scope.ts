@@ -107,8 +107,9 @@ export const inScope = (
   }
 };
 
-/** BrowserHive の `.links.json` の 1 件。`rel` はそのまま渡ってくる。 */
+/** BrowserHive の `.links.json` の 1 件。`rel` と `text` (リンクの文字) はそのまま渡ってくる。 */
 export interface DiscoveredLink {
   href: string;
   rel?: string | null;
+  text?: string | null;
 }

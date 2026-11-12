@@ -8,6 +8,7 @@ import {
   decide,
   decideLinks,
   matches,
+  pageLinks,
   parsePattern,
   ruleOf,
   takeLinksFrom,
@@ -381,6 +382,65 @@ describe("リンクに当てて、入れる物を選ぶ", () => {
     expect(accepted.map((link) => link.url)).toEqual([
       "https://a.site.test/1",
       "https://b.site.test/2",
+    ]);
+  });
+});
+
+describe("1 ページのリンクを、あった順に読む（crawl_links に残す形）", () => {
+  const seed = url("https://site.test/");
+  const rules = compileRules([{ follow: "same-origin" }])!;
+  const links = [
+    { href: "https://site.test/a", text: "一", rel: null },
+    { href: "https://site.test/b", rel: "external nofollow" },
+    { href: "https://other.test/c" },
+    { href: "mailto:someone@site.test" },
+    { href: "https://site.test/a#top", text: "二" },
+  ];
+
+  it("nofollow は落とさずに印を付け、規則を当てない。http(s) でないものは落とす", () => {
+    expect(pageLinks(links, rules, [seed])).toEqual([
+      {
+        url: "https://site.test/a",
+        host: "site.test",
+        hostname: "site.test",
+        action: "follow",
+        rule: 1,
+        nofollow: false,
+        text: "一",
+      },
+      {
+        url: "https://site.test/b",
+        host: "site.test",
+        hostname: "site.test",
+        nofollow: true,
+        text: "",
+      },
+      {
+        url: "https://other.test/c",
+        host: "other.test",
+        hostname: "other.test",
+        action: "skip",
+        rule: 0,
+        nofollow: false,
+        text: "",
+      },
+      {
+        url: "https://site.test/a",
+        host: "site.test",
+        hostname: "site.test",
+        action: "follow",
+        rule: 1,
+        nofollow: false,
+        text: "二",
+      },
+    ]);
+  });
+
+  it("規則を当てた物（decideLinks）には、nofollow が入らない", () => {
+    expect(decideLinks(links, rules, [seed]).map((link) => link.url)).toEqual([
+      "https://site.test/a",
+      "https://other.test/c",
+      "https://site.test/a",
     ]);
   });
 });

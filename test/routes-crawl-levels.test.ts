@@ -211,6 +211,58 @@ describe("終わりの commit", () => {
     expect(sqls.indexOf(created!.sql)).toBeLessThan(sqls.indexOf("commit"));
   });
 
+  it("リンクを 1 本ずつ残す: 次の段のページを入れた後に行を読み、この段のページの行を置き換える（039）", async () => {
+    // 行を読むと、葉は起点 (id 11) が見つけた行。起点の行は見つけたページが無い
+    const { app, queries } = await build(results, {
+      pageParents: [
+        { url: SEED, discoveredFrom: null },
+        { url: LEAF, discoveredFrom: "11" },
+      ],
+    });
+    const res = await report(app);
+    await app.close();
+    expect(res.statusCode).toBe(200);
+    const sqls = queries.map((query) => query.sql);
+    const at = (prefix: string): number => sqls.findIndex((sql) => sql.startsWith(prefix));
+    const inserted = at('insert into "crawl_pages"');
+    const read = at('select "url", "discovered_from" from "crawl_pages"');
+    const removed = at('delete from "crawl_links"');
+    const written = at('insert into "crawl_links"');
+    // 入れた行を読んでから決める。消してから入れる (足さない)。全部が終わりのトランザクションの中
+    expect(inserted).toBeGreaterThan(sqls.indexOf("begin"));
+    expect(read).toBeGreaterThan(inserted);
+    expect(removed).toBeGreaterThan(read);
+    expect(written).toBeGreaterThan(removed);
+    expect(written).toBeLessThan(sqls.indexOf("commit"));
+    // 消すのは、この段でリンクを読んだページ (起点の行 11) の行だけ
+    expect(queries[removed]?.parameters).toEqual([CRAWL, "11"]);
+    // 行: クロール・リンクのあったページ・順・URL・ホスト名・文字・規則・どうなったか
+    expect(queries[written]?.parameters).toEqual([
+      CRAWL,
+      "11",
+      0,
+      LEAF,
+      "capture-fixtures.capture-ledger",
+      "",
+      1,
+      "followed",
+    ]);
+    const stamped = queries.find((query) =>
+      query.sql.startsWith('update "crawls" set "links_recorded_at"'),
+    );
+    expect(stamped?.sql).toContain('"links_recorded_at" is null');
+  });
+
+  it("行の無いリンクは、深さの内なら「枚数で切った」と残る", async () => {
+    const { app, queries } = await build(results, {
+      pageParents: [{ url: SEED, discoveredFrom: null }],
+    });
+    await report(app);
+    await app.close();
+    const written = queries.find((query) => query.sql.startsWith('insert into "crawl_links"'));
+    expect(written?.parameters.at(-1)).toBe("max_pages");
+  });
+
   it("期限切れで別の試みに取り直されていたら 409 で、報告済みにも次の段にもしない", async () => {
     const { app, queries, dispatched } = await build(results, { superseded: true });
     const res = await report(app);
@@ -283,6 +335,9 @@ describe("締めたクロールに届いた段の報告（CAPTURE-77）", () => 
     expect(touched(queries, 'insert into "crawl_pages"')).toBe(false);
     expect(touched(queries, 'update "crawls" set "stop_reason"')).toBe(false);
     expect(dispatched).toEqual([]);
+    // リンクは残す。規則が通しても次の段に入らないので「締まっていた」(039)
+    const written = queries.find((query) => query.sql.startsWith('insert into "crawl_links"'));
+    expect(written?.parameters.at(-1)).toBe("closed");
   });
 });
 

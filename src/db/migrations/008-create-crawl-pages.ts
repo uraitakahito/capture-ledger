@@ -50,7 +50,8 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     // 礼儀の単位。URL から取り出して保存する —— 後から測るときに再計算したくない。
     .addColumn("host", "text", (col) => col.notNull())
     // `pending` / `captured` / `failed` / `skipped`。
-    // `skipped` は範囲外・robots・上限で落としたもので、**取らなかった理由が残る**。
+    // `skipped` は、行を作った後に見送ったもの (いまは robots.txt だけ) で、理由が `skip_reason` に残る。
+    // 規則で落としたリンクと、上限で切ったリンクは行にならない —— 1 本ずつ `crawl_links` (`039`) に残す。
     .addColumn("state", "text", (col) => col.notNull())
     .addColumn("skip_reason", "text")
     // BrowserHive が返した id。capture-ledger の行と繋がる。

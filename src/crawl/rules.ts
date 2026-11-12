@@ -242,34 +242,64 @@ export interface DecidedLink extends Decision {
 }
 
 /**
- * 1 ページのリンクに規則を当てる。
+ * 1 ページにあったリンク 1 本。規則を当てた結果か、当てる前に外した印 (`nofollow`) を持つ。`crawl_links` (`039`) に
+ * 残す形で、`text` はリンクの文字。
+ */
+export type PageLink =
+  | (DecidedLink & { nofollow: false; text: string })
+  | { url: string; host: string; hostname: string; nofollow: true; text: string };
+
+/**
+ * 1 ページのリンクを、あった順に読む。http(s) でないものは落とす。`rel="nofollow"` は落とさずに印を付ける
+ * (規則は当てない)。`rel` は空白区切りの語の並びなので、部分一致ではなく語として見る (`nofollowme` のような値を
+ * 誤って外さないため)。
  *
- * 当てる前に落とすもの (どの規則の数にも入らない): http(s) でないもの、`rel="nofollow"`。`rel` は
- * 空白区切りの語の並びなので、部分一致ではなく語として見る (`nofollowme` のような値を誤って落とさない
- * ため)。**重複は落とさない** —— 数えるのは `aggregateDecisions` が別々の URL で、入れるのは
- * `acceptLinks` が 1 本にする。
+ * **重複は落とさない** —— 数えるのは `aggregateDecisions` が別々の URL で、入れるのは `acceptLinks` が 1 本にし、
+ * 残すのは `crawl/link-outcomes.ts` が URL ごとに 1 行にする。
+ */
+export const pageLinks = (
+  links: readonly DiscoveredLink[],
+  rules: readonly CompiledRule[],
+  seeds: readonly ParsedUrl[],
+): PageLink[] => {
+  const read: PageLink[] = [];
+  for (const link of links) {
+    const parsed = parseHttpUrl(link.href);
+    if (parsed === undefined) continue;
+    const at = { url: parsed.normalized, host: parsed.host, hostname: parsed.hostname };
+    const text = typeof link.text === "string" ? link.text : "";
+    const rel = (link.rel ?? "").toLowerCase().split(/\s+/);
+    if (rel.includes("nofollow")) read.push({ ...at, nofollow: true, text });
+    else read.push({ ...at, ...decide(parsed, rules, seeds), nofollow: false, text });
+  }
+  return read;
+};
+
+/**
+ * 1 ページのリンクに規則を当てる。`pageLinks` から、当てる前に外した物 (`rel="nofollow"`) を除いた物 ——
+ * どの規則の数にも入らない。
  */
 export const decideLinks = (
   links: readonly DiscoveredLink[],
   rules: readonly CompiledRule[],
   seeds: readonly ParsedUrl[],
-): DecidedLink[] => {
-  const decided: DecidedLink[] = [];
-  for (const link of links) {
-    const rel = (link.rel ?? "").toLowerCase().split(/\s+/);
-    if (rel.includes("nofollow")) continue;
+): DecidedLink[] => decidedOf(pageLinks(links, rules, seeds));
 
-    const parsed = parseHttpUrl(link.href);
-    if (parsed === undefined) continue;
-    decided.push({
-      url: parsed.normalized,
-      host: parsed.host,
-      hostname: parsed.hostname,
-      ...decide(parsed, rules, seeds),
-    });
-  }
-  return decided;
-};
+/** 読んだリンクのうち、規則を当てた物。 */
+export const decidedOf = (links: readonly PageLink[]): DecidedLink[] =>
+  links.flatMap((link) =>
+    link.nofollow
+      ? []
+      : [
+          {
+            url: link.url,
+            host: link.host,
+            hostname: link.hostname,
+            action: link.action,
+            rule: link.rule,
+          },
+        ],
+  );
 
 export interface AcceptedLink {
   url: string;

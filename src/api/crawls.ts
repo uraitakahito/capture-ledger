@@ -109,14 +109,18 @@ import {
   acceptLinks,
   checkRules,
   compileRules,
-  decideLinks,
+  decidedOf,
+  pageLinks,
   ruleOf,
   ruleParts,
   takeLinksFrom,
   type DecidedLink,
+  type PageLink,
 } from "../crawl/rules.js";
 import { aggregateDecisions, SAMPLES } from "../crawl/decisions.js";
 import { planNextLevel } from "../crawl/budget.js";
+import { cutOf, linkRows } from "../crawl/link-outcomes.js";
+import { pageParents, replaceLinks } from "../crawl/links-store.js";
 import { getJsonObject } from "../archive/s3.js";
 import { manifestOutcome, readManifest } from "../archive/manifest.js";
 import { maySubmit, unauthorized } from "./authorization.js";
@@ -1771,7 +1775,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // **ページごとに読む。** リンク元が「撮って辿る」でなければ、そのページのリンクは見ない ——
         // 撮るだけの先は辿らない。links はどのページでも取る (`capture-formats.ts`) ので撮るだけのページにも
         // 在るが、取って読まない。
-        const pages: { from: string | null; links: DecidedLink[] }[] = [];
+        // `all` は読んだ全部 (`rel="nofollow"` で外した物も)。`crawl_links` (`039`) に 1 本ずつ残す
+        const pages: { from: string | null; links: DecidedLink[]; all: PageLink[] }[] = [];
         for (const page of results) {
           if (page.linksLocation === undefined || page.linksLocation === "") continue;
           const from = parseHttpUrl(page.url);
@@ -1801,10 +1806,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               links.push(item as DiscoveredLink);
             }
           }
-          pages.push({
-            from: idOf.get(page.url) ?? null,
-            links: decideLinks(links, rules, parsedSeeds),
-          });
+          const all = pageLinks(links, rules, parsedSeeds);
+          pages.push({ from: idOf.get(page.url) ?? null, links: decidedOf(all), all });
         }
 
         if (token !== undefined) await renewLease();
@@ -1835,6 +1838,33 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         const capturedCount =
           results.filter((r) => r.status === "captured").length + recovered.length;
 
+        // ── 3c. リンクを 1 本ずつ残す (`039`) ─────────────────────────────────
+        // 次の段のページを入れた**後**に、同じトランザクションの中で呼ぶ。どうなったかは `crawl_pages` の行
+        // (URL → 見つけたページ) から決めるので、報告をやり直しても同じ行になる (`crawl/link-outcomes.ts`)
+        const recordLinks = async (trx: Kysely<Database>, closed: boolean): Promise<void> => {
+          const read = pages.filter(
+            (page): page is typeof page & { from: string } => page.from !== null,
+          );
+          const { rows, dropped } = linkRows(
+            crawlId,
+            read.map((page) => ({ from: page.from, links: page.all })),
+            await pageParents(trx, crawlId),
+            cutOf({ nextDepth, maxDepth: crawl.maxDepth, closed }),
+          );
+          await replaceLinks(
+            trx,
+            crawlId,
+            read.map((page) => page.from),
+            rows,
+          );
+          if (dropped > 0) {
+            log.warn(
+              { crawlId, depth, dropped },
+              "Links over the per-page limit were not recorded",
+            );
+          }
+        };
+
         // ── 締めた段・締めたクロール ───────────────────────────────────────
         // ページは上で記録した。段の数を書き、クロールの合計を数え直すだけで、次の段の行は作らない (CAPTURE-77)
         if (token === undefined) {
@@ -1845,6 +1875,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             .where("depth", "=", depth)
             .execute();
           await db.transaction().execute(async (trx) => {
+            // 締めた後に届いた段のリンクも残す。規則が通しても次の段には入らないので `closed` (`039`)
+            await recordLinks(trx, true);
             await writeTotals(trx, crawlId);
           });
           log.info(
@@ -1939,6 +1971,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               .onConflict((oc) => oc.columns(["crawlId", "urlHash"]).doNothing())
               .execute();
           }
+          // ── 5b. リンクを 1 本ずつ残す (`039`)。上で入れた行を読んで決める ──────────
+          // 行の無いリンクは、上限 (4) が切った物。この道では、締まっていても 5 の行は入っている
+          await recordLinks(trx, false);
+
           // **次の段は「今回入った行」でなく、深さ n+1 の pending の行。** 取り直した 2 回目では入る行が 0 になり、
           // `returning` で決めると途中で完了と読む。走行中のクロールだけ (締めた後に次の段を作らない。CAPTURE-77)
           const next =
