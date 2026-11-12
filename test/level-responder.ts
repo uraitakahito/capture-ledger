@@ -34,6 +34,8 @@ export interface LevelOptions {
    * (規則が通したリンクは、どれも上限で切ったと残る)
    */
   pageParents?: { url: string; discoveredFrom: string | null }[];
+  /** 規則が通した別々の URL の数 (リンクの記録から数えた答え)。省けば null (記録の無いクロール) */
+  distinctDiscovered?: number;
 }
 
 const has = (sql: string, ...parts: string[]): boolean => parts.every((part) => sql.includes(part));
@@ -70,6 +72,8 @@ export const levelResponder = (opts: LevelOptions = {}) => {
         }
         if (has(sql, '"crawl_links"')) return [];
         if (has(sql, 'update "crawls" set "links_recorded_at"')) return [];
+        // 規則が通した別々の URL の数 (`links-read.ts` の `distinctDiscovered`)。省けば、記録の無いクロール
+        if (has(sql, "count(distinct l.url_hash)")) return [{ n: opts.distinctDiscovered ?? null }];
         return undefined;
       }
       if (has(sql, "sum(pages_captured)")) {

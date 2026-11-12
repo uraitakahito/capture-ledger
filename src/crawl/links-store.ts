@@ -1,5 +1,5 @@
 /**
- * `crawl_links` (`039`) に書く。段の報告 (`api/crawls.ts`) が使う。
+ * `crawl_links` (`039`) に書く。段の報告 (`api/crawls.ts`) と埋め直し (`crawl/links-backfill.ts`) が使う。
  */
 import type { Kysely } from "kysely";
 

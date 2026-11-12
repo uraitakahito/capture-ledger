@@ -167,7 +167,7 @@ jobs:
       # リンクを 1 本ずつ残す表 (CAPTURE-246・`039`) を、本物の Postgres に当てる。
       #
       # 置き換えで行が増えないこと・url_hash の生成列で行き先のページと結べること・outcome の CHECK・cascade・
-      # 上限いっぱいの行の INSERT は、試験の記録する DB では確かめられない。自分の組織 (smoke-<pid>) の締めた
+      # 上限いっぱいの行の INSERT・読む側の SQL (URL ごとの最初の 1 本・出入りの数) は、試験の記録する DB では確かめられない。自分の組織 (smoke-<pid>) の締めた
       # クロール 1 本だけを足して、最後に消す。
       - name: Links against Postgres
         run: pnpm run build:tools && node dist/tools/links-smoke.js

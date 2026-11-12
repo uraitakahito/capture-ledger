@@ -9,6 +9,7 @@
  *   - `url_hash` の生成列が `crawl_pages.url_hash` と同じ式で、行き先のページと結べること
  *   - `outcome` の CHECK と、クロールを消したときの cascade
  *   - 1 ページの上限いっぱいの行が、1 回の INSERT の引数の上限に収まること
+ *   - 読む側の SQL (URL ごとの最初の 1 本・出入りの数・木に無い辺・別々の URL の数) が通り、数が合うこと
  *
  * CI の check job が、migration を当てた後に走らせる (`.github/workflows/ci.yaml`)。手元でも走る:
  *
@@ -22,6 +23,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 
 import { LINKS_PER_PAGE, linkRows } from "../crawl/link-outcomes.js";
+import { distinctDiscovered, readLinkGraph, readPageLinksOf } from "../crawl/links-read.js";
 import { pageParents, replaceLinks } from "../crawl/links-store.js";
 import type { PageLink } from "../crawl/rules.js";
 import { createKyselyClient } from "../db/kysely.js";
@@ -72,8 +74,8 @@ try {
     values (${crawlId}, ${[`${SITE}/hub`]}, '[{"follow":"same-origin"}]', 1, 3, 2000, 4, ${org}, 'smoke',
       'succeeded', now(), now())`.execute(db);
   const hub = await insertPage("/hub", 0, null);
-  await insertPage("/leaf/1", 1, hub);
-  await insertPage("/leaf/2", 1, hub);
+  const leaf1 = await insertPage("/leaf/1", 1, hub);
+  const leaf2 = await insertPage("/leaf/2", 1, hub);
 
   // hub の形で枚数 3: 4 本のうち 2 本が入り、2 本は枚数で切る。落とした物と nofollow も 1 本ずつ
   const hubLinks: PageLink[] = [
@@ -154,14 +156,130 @@ try {
   }
   check("知らない outcome は CHECK が断る", refused);
 
+  // ── 読む側 (`crawl/links-read.ts`) ───────────────────────────────────────
+  // 葉 1 にもリンクを書く: 起点へ戻る・葉 3 (起点が先に見つけて枚数で切った URL。ここでは深さで切る)・
+  // 起点と同じ別のホストの URL・もう 1 つの別のホスト
+  const other = (url: string): PageLink => ({
+    url,
+    host: new URL(url).host,
+    hostname: new URL(url).hostname,
+    action: "skip",
+    rule: 0,
+    nofollow: false,
+    text: "",
+  });
+  const leafRows = linkRows(
+    crawlId,
+    [
+      {
+        from: leaf1,
+        links: [
+          link("/hub", "戻る"),
+          link("/leaf/3"),
+          other("https://other.test/page"),
+          other("https://other2.test/"),
+        ],
+      },
+    ],
+    await pageParents(db, crawlId),
+    "max_depth",
+  );
+  await replaceLinks(db, crawlId, [leaf1], leafRows.rows);
+
+  const graph = await readLinkGraph(db, crawlId);
+  check(
+    "内訳は URL ごと: 行の在る 2 つは結末で、行の無い URL は最初に見つけたリンクの理由で数える",
+    JSON.stringify(graph?.summary) ===
+      JSON.stringify({
+        pending: 0,
+        captured: 2,
+        failed: 0,
+        skipped: 0,
+        maxPages: 2,
+        maxDepth: 0,
+        closed: 0,
+        skip: 2,
+        nofollow: 1,
+        hosts: 2,
+      }),
+    JSON.stringify(graph?.summary),
+  );
+  check(
+    "束は最初に見つけたページに付く (葉 3 は起点の枚数の束で、葉 1 の深さの束にならない)",
+    JSON.stringify(graph?.bundles) ===
+      JSON.stringify([{ from: hub, outcome: "max_pages", urls: 2 }]),
+    JSON.stringify(graph?.bundles),
+  );
+  const outOf = (id: string) => graph?.pages.find((page) => page.id === id);
+  check(
+    "ページごとの出入りの数",
+    JSON.stringify(outOf(hub)?.out) ===
+      JSON.stringify({
+        followed: 2,
+        known: 0,
+        maxPages: 2,
+        maxDepth: 0,
+        closed: 0,
+        skip: 1,
+        nofollow: 1,
+      }) &&
+      outOf(hub)?.in === 1 &&
+      outOf(leaf1)?.out?.known === 1 &&
+      outOf(leaf1)?.out?.maxDepth === 1 &&
+      outOf(leaf1)?.out?.skip === 2 &&
+      outOf(leaf1)?.in === 1 &&
+      outOf(leaf2)?.in === 1 &&
+      outOf(leaf2)?.out?.followed === 0,
+    JSON.stringify(graph?.pages.map((page) => [page.id, page.out, page.in])),
+  );
+  check(
+    "ページの親と、木に無い辺 (葉 1 → 起点)",
+    outOf(hub)?.parent === null &&
+      outOf(leaf1)?.parent === hub &&
+      JSON.stringify(graph?.cross) === JSON.stringify([[leaf1, hub]]) &&
+      graph?.crossTruncated === false,
+    JSON.stringify(graph?.cross),
+  );
+  check(
+    "別のホストはホスト名ごと",
+    JSON.stringify(graph?.hosts) ===
+      JSON.stringify([
+        { hostname: "other.test", urls: 1 },
+        { hostname: "other2.test", urls: 1 },
+      ]),
+    JSON.stringify(graph?.hosts),
+  );
+  const distinct = await distinctDiscovered(db, crawlId);
+  check(
+    "規則が通した別々の URL の数は、起点を除いて 4 (葉 1・葉 2・葉 3・hidden)",
+    distinct === 4,
+    String(distinct),
+  );
+  const ofHub = await readPageLinksOf(db, crawlId, hub);
+  check(
+    "1 ページの出入り: 出るリンクはあった順で、行き先のページの id が付く。入るリンクは元のページ",
+    ofHub?.out.length === 6 &&
+      ofHub.out[0]?.to === leaf1 &&
+      ofHub.out[0].text === "leaf 1" &&
+      ofHub.out[1]?.to === leaf2 &&
+      ofHub.out[2]?.to === null &&
+      ofHub.out[2].outcome === "max_pages" &&
+      JSON.stringify(ofHub.in) === JSON.stringify([{ from: leaf1, text: "戻る" }]),
+    JSON.stringify(ofHub),
+  );
+  check(
+    "ほかのクロールのページは読ませない",
+    (await readPageLinksOf(db, randomUUID(), hub)) === undefined,
+  );
+
   // 1 ページの上限を超えるリンク: 上限いっぱいを 1 回で書け、超えた数が返る
   const many = Array.from({ length: LINKS_PER_PAGE + 5 }, (_, i) => link(`/many/${String(i)}`));
   const dropped = await write(many);
   const total = await sql<{ n: number }>`
     select count(*)::int as n from crawl_links where crawl_id = ${crawlId}`.execute(db);
   check(
-    "上限いっぱいの行を書け、前の行は置き換わる",
-    dropped === 5 && total.rows[0]?.n === LINKS_PER_PAGE,
+    "上限いっぱいの行を書け、そのページの前の行は置き換わる (葉 1 の 4 行は残る)",
+    dropped === 5 && total.rows[0]?.n === LINKS_PER_PAGE + 4,
     `${String(dropped)} ${String(total.rows[0]?.n)}`,
   );
 

@@ -459,11 +459,12 @@ WINDOW w AS (PARTITION BY host ORDER BY submitted_at);
 まだ撮っていないリンクが残っていたときだけ立つ（上限に当たっても、残りが無ければ `completed`）。
 既定の 30 ページでは **`max_pages` で止まるのが普通** —— 上限が日常的に見えているほうがよいので、そう選んである。
 
-`pagesCaptured` は撮れたページの数で、起点も数える。`pagesDiscovered` は撮ったページのリンクのうち規則が通した数で、
-深さ 0 のクロールでも数える。撮らなかった物（robots で見送った物・上限で切った物）も、既に撮った URL
-（起点へ戻るリンクなど）も入り、段ごとに足すので、別の段で同じ URL が出ると 2 度数える。`pagesFailed` は
-取れなかったページの数。数え方が違うので、差は落とした数にならない。規則と robots が落とした物は
-`GET /api/crawls/:id/decisions` で見る。
+`pagesCaptured` は撮れたページの数で、起点も数える。`pagesDiscovered` は、撮ったページのリンクのうち規則が通した
+**別々の URL の数**で、深さ 0 のクロールでも数える。撮らなかった物（robots で見送った物・上限で切った物）も入る。
+起点は数えない（起点へ戻るリンクは「見つけた」ではない）。`linksRecorded` が `false` のクロール（リンクを 1 本ずつ
+残す前のクロール）だけは、段ごとに足した延べのままで、別の段で同じ URL が出ると 2 度数えている。`pagesFailed` は
+取れなかったページの数。内訳（撮った・枚数で切った・深さで切った・規則で落とした）は `GET /api/crawls/:id/links`、
+規則と robots が落とした物は `GET /api/crawls/:id/decisions` で見る。
 
 ### 何を辿るか
 
@@ -560,6 +561,40 @@ curl 'http://localhost:7070/api/decisions?domain=ads.example.com&days=90&action=
 そのホストとその下をラベルの境目で照らし、新しいクロールから並べる。`days` の既定は 90、
 `action` の既定は `skip` で、500 行で切ったときは `truncated` が言う。Windmill は run の中身を
 最長 30 日で消すが、この行はクロールの行がある限り残る。
+
+### リンクを 1 本ずつ残す
+
+段の報告は、撮ったページにあったリンクを 1 本ずつ、どうなったかと一緒に
+[`crawl_links`](/capture-ledger/ja/databases/crawl-links/) に残す。次の段のページを入れるのと同じ
+トランザクションで、この段のページの行を置き換える。
+
+```sh
+curl http://localhost:7070/api/crawls/9072b625-…/links
+# → { "crawlId": "…", "recorded": true,
+#     "summary": { "captured": 29, "failed": 0, "skipped": 0, "pending": 0,
+#                  "maxPages": 28, "maxDepth": 3, "closed": 0, "skip": 69, "nofollow": 0, "hosts": 17 },
+#     "pages": [{ "id": "754", "parent": null, "depth": 0, "url": "https://…/", "title": "…", "state": "captured",
+#                 "reason": null, "out": { "followed": 9, "known": 0, "maxPages": 0, "maxDepth": 0,
+#                                          "closed": 0, "skip": 5, "nofollow": 0 }, "in": 0 }, …],
+#     "bundles": [{ "from": "757", "outcome": "max_pages", "urls": 14 }, …],
+#     "hosts": [{ "hostname": "jfdb.jp", "urls": 45 }, …],
+#     "cross": [["755", "763"], …], "crossTruncated": false }
+
+curl http://localhost:7070/api/crawls/9072b625-…/links/757
+# → { "out": [{ "seq": 0, "url": "https://…/tv/trick3.htm", "text": "「TRICK3」", "rule": 1,
+#               "outcome": "followed", "to": "781" }, …],
+#     "in":  [{ "from": "754", "text": "ドラマ出演" }] }
+```
+
+`summary` は**見つけた別々の URL（起点を除く）がどうなったか**。`captured`・`failed`・`skipped`・`pending` は
+行ができた URL の結末、`maxPages`・`maxDepth`・`closed` は規則が通したのに入らなかった理由、`skip` は規則で
+落とした物（`hosts` はそのホスト名の数）。同じ URL を何ページが指していても 1 つで、行の無い URL は、
+最初に見つけたリンク（浅い段 → ページの id → ページの中の順）の `outcome` で数える。`pages[].out` と `in` は
+そのページの出入りのリンクの数、`bundles` は行の無い URL を最初に見つけたページと理由で束ねた数、
+`cross` は木に無い辺（もう行があるページへのリンク。2,000 本で切り、切ったら `crossTruncated`）。
+
+リンクの記録が無いクロール（この表を足す前のクロール）は `recorded: false` で、ページと親（木）だけを返す。
+`pnpm run links:backfill --write` が、保管庫に `.links.json` が残るクロールを埋める。
 
 ### ページと取り込みのログ
 

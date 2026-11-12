@@ -39,6 +39,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | [`crawl_schedules`](/capture-ledger/ja/databases/crawl-schedules/)         | 定期実行の予定。時計の表で、回は `crawls` の行                                                                                                           |
 | [`crawl_requests`](/capture-ledger/ja/databases/crawl-requests/)           | クロールを始める要求の鍵（`Idempotency-Key`）。組織と鍵ごとに最初の答えを覚える                                                                          |
 | [`crawl_levels`](/capture-ledger/ja/databases/crawl-levels/)               | クロールの段。Windmill の job の id を段の鍵に持ち、送り直しと段の報告の 2 回目を見分ける                                                                |
+| [`crawl_links`](/capture-ledger/ja/databases/crawl-links/)                 | 撮ったページにあったリンク 1 本ずつと、どうなったか（次の段に入れた・枚数や深さで切った・規則で落とした）                                                |
 | `scripts`                                                                  | クロールが名指せるスクリプト                                                                                                                             |
 | `host_types`                                                               | 受け皿（`__bh`）の型。スクリプトを読む人に見せる写し                                                                                                     |
 | `derivations`                                                              | 派生の層。Claude が作った物（直す係の案・前回からの変化の要約）を、証拠と分けて model・prompt の版・費用と一緒に残す。組織ごとの月の上限もこの表で数える |

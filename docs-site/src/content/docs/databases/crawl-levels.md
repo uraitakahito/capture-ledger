@@ -26,7 +26,7 @@ description: The levels of a crawl. Each holds the Windmill job id as its level 
 
 ## Counts are written per level
 
-`pages_captured` and `pages_discovered` are **written** per level, and the totals on `crawls` are rewritten as the sum of the level rows. Nothing is added, so a level report that arrives twice does not pile up counts. A crawl started before level rows existed has none, and its totals on `crawls` stay as they are.
+`pages_captured` and `pages_discovered` are **written** per level, and the totals on `crawls` are rewritten from the level rows. Nothing is added, so a level report that arrives twice does not pile up counts. The captured count is the sum of the levels. The link count (`crawls.pages_discovered`) is, when the crawl has a link record ([crawl_links](/capture-ledger/databases/crawl-links/)), the number of distinct URLs the rules let through, not the per-level sum. A crawl started before level rows existed has none, and its totals on `crawls` stay as they are.
 
 ## The level clock
 

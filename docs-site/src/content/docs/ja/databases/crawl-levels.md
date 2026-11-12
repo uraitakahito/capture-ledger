@@ -26,7 +26,7 @@ description: クロールの段。Windmill の job の id を段の鍵として�
 
 ## 数は段ごとに書く
 
-`pages_captured`・`pages_discovered` は段ごとに**書き**、`crawls` の合計は段の行の和で書き直します。足し算をしないので、同じ段の報告が 2 回届いても数は重なりません。段の行を入れる前に始めたクロールは段の行を持たず、`crawls` の合計の列はそのまま残ります。
+`pages_captured`・`pages_discovered` は段ごとに**書き**、`crawls` の合計は段の行から書き直します。足し算をしないので、同じ段の報告が 2 回届いても数は重なりません。撮れた数は段の和です。見つけたリンクの数（`crawls.pages_discovered`）は、リンクの記録（[crawl_links](/capture-ledger/ja/databases/crawl-links/)）が在れば、規則が通した別々の URL の数で、段の和（延べ）ではありません。段の行を入れる前に始めたクロールは段の行を持たず、`crawls` の合計の列はそのまま残ります。
 
 ## 投げる係の時計
 
