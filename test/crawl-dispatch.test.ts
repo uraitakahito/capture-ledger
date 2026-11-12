@@ -16,10 +16,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DispatchedCrawl } from "../src/api/crawls.js";
 import { createWindmillDispatcher, flowArgs, jobIdFrom } from "../src/crawl/dispatch.js";
+import { LEVEL_GIVE_UP_MS, levelDispatcher } from "../src/crawl/launch.js";
+import { recordingDb } from "./recording-db.js";
 
 const CRAWL: DispatchedCrawl = {
   crawlId: "456a75bf-7082-49a7-86ce-e2fb24e879da",
   depth: 1,
+  levelKey: "7a1c0f00-5d2e-4b6a-9c3d-0000000000c1",
   frontier: [{ url: "http://fixtures.test/links/a", host: "fixtures.test", lastFinishedAt: null }],
   perHostDelayMs: 3000,
   hostParallelism: 2,
@@ -68,6 +71,7 @@ describe("webhook の本文", () => {
     expect(flowArgs({ ...CRAWL, artifactSink: SINK })).toEqual({
       crawl_id: CRAWL.crawlId,
       depth: CRAWL.depth,
+      level_key: CRAWL.levelKey,
       frontier: CRAWL.frontier,
       per_host_delay_ms: CRAWL.perHostDelayMs,
       host_parallelism: CRAWL.hostParallelism,
@@ -161,5 +165,139 @@ describe("起こした job の id", () => {
   it("id の形でなければ残さない（誤ったリンクを作らない）", async () => {
     await expect(dispatchAnswering("job-id")).resolves.toBeUndefined();
     expect(jobIdFrom("")).toBeUndefined();
+  });
+});
+
+/**
+ * 段の鍵で送る (CAPTURE-180)。webhook に `?job_id=<段の鍵>` を付け、Windmill の「在る id」の 400 は受け取り扱い。
+ * 2026-11-12 に dev の Windmill CE 1.806.0 で確かめた答え: 同じ id の 2 回目は
+ * `400 Bad request: Job with id <id> already exists` で、job は増えない。
+ */
+describe("段の鍵で送る", () => {
+  const URL_ = "http://windmill.test/api/w/crawl/jobs/run/f/crawl";
+  const answering = (status: number, body: string) => {
+    vi.stubEnv("CAPTURE_LEDGER_CRAWL_WEBHOOK_URL", URL_);
+    vi.stubEnv("CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN", "webhook-token");
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", (url: URL) => {
+      urls.push(String(url));
+      return Promise.resolve(new Response(body, { status }));
+    });
+    return { dispatch: createWindmillDispatcher()!, urls };
+  };
+
+  it("webhook の URL に段の鍵を job_id で付ける —— 送り直しても Windmill は同じ id の job を 2 本作らない", async () => {
+    const { dispatch, urls } = answering(201, `"${CRAWL.levelKey}"`);
+    await expect(dispatch(CRAWL)).resolves.toBe(CRAWL.levelKey);
+    expect(urls).toEqual([`${URL_}?job_id=${CRAWL.levelKey}`]);
+  });
+
+  it("同じ job_id の job が在るという 400 は、受け取られていたと読む（時間切れの後の送り直し）", async () => {
+    const { dispatch } = answering(
+      400,
+      `Bad request: Job with id ${CRAWL.levelKey} already exists`,
+    );
+    await expect(dispatch(CRAWL)).resolves.toBe(CRAWL.levelKey);
+  });
+
+  it("ほかの 400 は受け取りではない（理由を本文ごと投げる）", async () => {
+    const { dispatch } = answering(400, "Bad request: invalid args");
+    await expect(dispatch(CRAWL)).rejects.toThrow("crawl webhook → 400 Bad request: invalid args");
+  });
+});
+
+/**
+ * 投げる係の時計 (`levelDispatcher` の `tick`)。受け取りを確かめられない段を同じ段の鍵で送り直し、
+ * 段の行を作ってから 10 分で諦めてクロールを締める。
+ */
+describe("投げる係の時計", () => {
+  const NOW = new Date("2026-11-12T10:00:00.000Z");
+  const row = (createdAt: Date, crawlState = "running") => ({
+    crawlId: CRAWL.crawlId,
+    depth: CRAWL.depth,
+    args: CRAWL,
+    attempts: 3,
+    lastError: "crawl webhook → 502",
+    createdAt,
+    crawlState,
+  });
+  const setup = (rows: object[], dispatch: () => Promise<string | undefined>) => {
+    const { db, queries } = recordingDb([
+      [], // 期限切れの始める要求の鍵を消す
+      rows, // 受け取りを確かめられない段
+      [], // 段の行を進める (受け取り確認済み・締めた)
+      [{ id: CRAWL.crawlId }], // (諦めたとき) 走行中のクロールを締める (returning id)
+    ]);
+    const sent: DispatchedCrawl[] = [];
+    const bundles: string[] = [];
+    const levels = levelDispatcher({
+      db,
+      dispatch: (level) => {
+        sent.push(level);
+        return dispatch();
+      },
+      writeReplayBundle: (crawlId) => {
+        bundles.push(crawlId);
+        return Promise.resolve(undefined);
+      },
+      retryDelaysMs: [0, 0],
+      now: () => NOW,
+    });
+    return { levels, queries, sent, bundles };
+  };
+
+  it("投げる前・投げたの段を、行が持つ段そのもの (args) で、同じ段の鍵のまま送り直す", async () => {
+    const { levels, sent, queries } = setup([row(new Date(NOW.getTime() - 60_000))], () =>
+      Promise.resolve(CRAWL.levelKey),
+    );
+    expect(await levels.tick()).toEqual({ sent: 1, abandoned: 0 });
+    expect(sent).toEqual([CRAWL]);
+    // 受け取られたので受け取り確認済みに。投げる前・投げたの行だけを進める
+    const accepted = queries.find((q) =>
+      q.sql.startsWith('update "crawl_levels" set "state" = $1'),
+    );
+    expect(accepted?.parameters[0]).toBe("accepted");
+    expect(accepted?.sql).toContain('"state" in ($');
+  });
+
+  it("10 分経っても受け取られない段は送らずに諦め、走行中のクロールを failed で締めて合本を書く", async () => {
+    const { levels, sent, queries, bundles } = setup(
+      [row(new Date(NOW.getTime() - LEVEL_GIVE_UP_MS))],
+      () => Promise.resolve(undefined),
+    );
+    expect(await levels.tick()).toEqual({ sent: 0, abandoned: 1 });
+    expect(sent).toEqual([]);
+    const abandon = queries.find((q) => q.sql.startsWith('update "crawl_levels" set "state" = $1'));
+    expect(abandon?.parameters[0]).toBe("abandoned");
+    const close = queries.find((q) => q.sql.startsWith('update "crawls" set "state" = $1'));
+    expect(close?.parameters.slice(0, 2)).toEqual(["failed", "failed"]);
+    expect(close?.parameters[3]).toContain("within 10 minutes (3 tries): crawl webhook → 502");
+    expect(close?.sql).toContain('"state" = $');
+    expect(bundles).toEqual([CRAWL.crawlId]);
+  });
+
+  it("締めたクロールの段は送らずに「締めた」にする", async () => {
+    const { levels, sent, queries } = setup([row(new Date(NOW.getTime() - 60_000), "failed")], () =>
+      Promise.resolve(CRAWL.levelKey),
+    );
+    expect(await levels.tick()).toEqual({ sent: 0, abandoned: 0 });
+    expect(sent).toEqual([]);
+    expect(
+      queries.find((q) => q.sql.startsWith('update "crawl_levels" set "state" = $1'))
+        ?.parameters[0],
+    ).toBe("abandoned");
+  });
+
+  it("その場の送り直しは同じ段の鍵で 3 回まで。受け取られなければ「投げた」にして、クロールは締めない", async () => {
+    const { levels, sent, queries } = setup([], () => Promise.reject(new Error("timeout")));
+    levels.dispatchLevel(CRAWL);
+    await vi.waitFor(() => {
+      expect(sent).toHaveLength(3);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(new Set(sent.map((level) => level.levelKey))).toEqual(new Set([CRAWL.levelKey]));
+    const tried = queries.filter((q) => q.sql.startsWith('update "crawl_levels" set "state" = $1'));
+    expect(tried.map((q) => q.parameters[0])).toEqual(["sent", "sent", "sent"]);
+    expect(queries.some((q) => q.sql.startsWith('update "crawls" set "state"'))).toBe(false);
   });
 });

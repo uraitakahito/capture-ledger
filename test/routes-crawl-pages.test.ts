@@ -10,6 +10,7 @@ import { describe, it, expect } from "vitest";
 import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 import { registerCrawlRoutes, type CrawlRouteDeps } from "../src/api/crawls.js";
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
+import { LEVEL_KEY, levelResponder, type LevelOptions } from "./level-responder.js";
 import { recordingDb, type RecordedQuery } from "./recording-db.js";
 
 const CRAWL = "d272d256-e528-4581-bb4e-8d9477d78196";
@@ -32,11 +33,13 @@ interface Built {
 }
 
 const build = async (opts: {
+  /** 段の行の答え方 (`level-responder.ts`)。省けば受け取り確認済みの段 */
+  level?: LevelOptions;
   results?: readonly (readonly object[])[];
   allowed?: boolean;
   store?: Record<string, Stored>;
 }): Promise<Built> => {
-  const { db, queries } = recordingDb(opts.results);
+  const { db, queries } = recordingDb(opts.results, levelResponder(opts.level));
   const read: string[] = [];
   const s3 = {
     send: (command: { input: { Bucket: string; Key: string } }) => {
@@ -476,7 +479,7 @@ describe("段の報告で、取り込みのログの数をページの行に写�
     const res = await built.app.inject({
       method: "POST",
       url: `/api/crawls/${CRAWL}/pages`,
-      headers: SUBJECT,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
       payload: {
         depth: 0,
         compiled: { typescript: "6.0.3", hostTypes: "v0.7.0", scripts: [] },

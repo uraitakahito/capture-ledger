@@ -8,11 +8,11 @@ description: How capture-ledger, Postgres, BrowserHive and the artifact store fi
 ```mermaid
 flowchart LR
   U((caller)) -->|"POST /api/crawls"| W
-  PG[("Postgres<br/>crawl_schedules / crawls / crawl_pages")] <--> W
+  PG[("Postgres<br/>crawl_schedules / crawls / crawl_levels / crawl_pages")] <--> W
   subgraph W["capture-ledger (Node 26 / TypeScript)"]
     direction TB
     API["api/crawls.ts<br/>rules, dedup, budget"]
-    DIS["crawl/dispatch.ts<br/>one webhook POST"]
+    DIS["crawl/dispatch.ts<br/>webhook POST by level key"]
     API --> DIS
   end
   DIS -->|"webhook + token"| WM["Windmill flow<br/>(capture-scheduler)"]
@@ -43,6 +43,15 @@ One level is one round trip. The flow captures the URLs it was handed and posts
 `POST /api/crawls/:id/pages` with a `taskId` and a status per page. capture-ledger writes
 `crawl_pages`, attributes the submissions, filters the discovered links, applies
 the budget, and answers with the next level — or with a `stopReason`.
+
+**A level happens once, by its key (CAPTURE-180).** When the ledger decides a level it makes a level
+row (`crawl_levels`) and picks a random id for the Windmill job. The webhook gets it as `?job_id=`,
+and the flow gets it as the `level_key` argument. Windmill refuses a second job with an id it already
+has (a 400), so sending again after a timeout still gives one flow. The ledger sends three times on
+the spot; if it still cannot confirm that Windmill took the level, the level clock (every 30
+seconds) sends it again, and 10 minutes after the level row was made it gives up and closes the crawl
+as `failed`. The level report carries the key in `Idempotency-Key`, and a second report of the same
+level gets the first answer ([Level keys](/capture-ledger/archive-ledger/#level-keys)).
 
 The level report does **not** carry artifact locations. It carries only where
 BrowserHive (or the sink) wrote the `.result.json` manifest next to the artifacts,

@@ -269,7 +269,7 @@ key**.
 - **Only a started crawl (202) is remembered.** A 409 for a running crawl and a 400 for the body are
   not, so the same key starts a crawl once the running one has ended (or once the body is fixed).
 - The bodies are compared with their keys sorted (a different key order in the JSON is the same request).
-- A key lasts 24 hours. The next request that starts a crawl deletes older keys, and the same string
+- A key lasts 24 hours. The next request that starts a crawl and the level clock delete older keys, and the same string
   can start a new crawl.
 - The key row goes in the same transaction as the `crawls` row and its seed pages. When two
   requests with the same key arrive together, the second waits on the key's primary key for the
@@ -289,25 +289,68 @@ A `running` row is closed in exactly three ways, and each one only touches a row
 
 - **The level report says no level follows.** When a report leaves zero pages for the next
   level, the row closes; if no page was captured at all, it closes as `failed`.
-- **`POST /api/crawls/:id/failed`.** The flow's closing step calls it when a level fails, and a
-  person can call the same route.
-- **The ledger could not dispatch a level.** A webhook answer other than 2xx, no answer within
-  10 seconds (the default), or no connection closes the row as `failed`, with the message on it.
+- **`POST /api/crawls/:id/failed`.** The flow's closing step calls it when a level fails, with
+  the failed level's `depth` and `levelKey`; it closes only for the newest level's key, and a
+  failure from an older level's flow gets `{"closed": false}`. A person can call the same route
+  without a key, and it closes as before.
+- **No level was taken by Windmill within 10 minutes.** The ledger sends a level three times on
+  the spot (at once, then after 2 and 4 seconds); if it still cannot confirm that Windmill took
+  it, the level clock (every 30 seconds) sends it again with the same level key. If the level is
+  still not taken 10 minutes after its row was made, the row closes as `failed`, with the message
+  on it ([Level keys](#level-keys)).
 
-Nothing closes a row by time. The closing step uses the same token and the same address as the
-level report, so a **stale token (401)**, a caller without `can_submit` (**404**), or an API
-that cannot be reached makes both fail, and the row stays `running`. Cancelling the run in
-Windmill means the closing step never runs. And if the ledger goes down after adding the row but
-before the webhook has been sent, the row stays too.
+Nothing closes a row by time once its level has been taken. The closing step uses the same
+token and the same address as the level report, so a **stale token (401)**, a caller without
+`can_submit` (**404**), or an API that cannot be reached makes both fail, and the row stays
+`running`. Cancelling the run in Windmill means the closing step never runs. If the ledger goes
+down after adding the row but before the webhook has been sent, the level row remains, and the
+level clock sends it once the API is up again.
 
 A row that blocks is named by the body of the **409** (`crawlId`, `startedAt`), and `lastJobId`
 leads from it to the Windmill run. Close it with `POST /api/crawls/:id/failed`, or, when the
 schedule's health is `stuck` or `overdue`, with the "close" button on the schedules tab of
 capture-workbench.
 
-Closing does not stop a flow that is still alive: the level report does not look at the row's
-state, so the flow keeps capturing and the ledger still dispatches its next level. A closed
-row is never turned back into `succeeded`, but the later reports still add their pages and counts.
+Closing does not stop a flow that is still alive. That level finishes capturing and reports, but
+**the ledger only records its pages and makes no next level** (CAPTURE-77). A closed row is never
+turned back into `succeeded`, and counts never pile up (they are rewritten as the sum of the level
+rows).
+
+### Level keys
+
+When the ledger decides a level (the first one in the same transaction as the crawl row, later
+ones in the same transaction as the previous level's report), it makes a level row
+([`crawl_levels`](/capture-ledger/databases/crawl-levels/)) and picks a random id for the Windmill
+job. That id is **the level key**.
+
+- **Sending:** the webhook gets `?job_id=<level key>`, and the flow gets it as the `level_key`
+  argument. Windmill refuses a second job with an id it already has
+  (`400 Bad request: Job with id … already exists`), so sending again after a timeout still gives
+  one flow (that 400 counts as taken).
+- **Reporting:** the flow puts the level key in the `Idempotency-Key` of the level report
+  (`POST /api/crawls/:id/pages`).
+
+| Level report that arrives                          | Answer                                                                    |
+| -------------------------------------------------- | ------------------------------------------------------------------------- |
+| no key                                             | 400                                                                       |
+| no level row (a crawl started before level rows)   | 409                                                                       |
+| not this level's key                               | 409                                                                       |
+| a level already reported                           | **the first answer (200)**; nothing is written and no level is sent again |
+| a level being reported (within its 2-minute lease) | 409 (left to the flow's retry)                                            |
+| a closed level or a closed crawl                   | 200; its pages are recorded and no next level is made                     |
+
+The same level report arrives twice after a dropped response is retried by report_level, after
+the flow is run again by hand with the same arguments, or after Windmill reruns a job whose worker
+stopped. Windmill's "restart from this step" (`jobs/restart`) is not available in the Community
+Edition (enterprise version only; checked on 2026-11-12).
+
+A report is not handled in one transaction (it reads the store on the way). The level becomes
+"reporting" with an attempt token and a 2-minute lease, and the final commit (the next level's
+pages, reported, the rewritten totals, the next level row) goes through only while that token is
+still the level's. When a second attempt takes over an expired lease and the late first attempt
+finishes too, only one of them can write (the late one gets 409). The next level is read from the
+`pending` rows at depth n+1, not from the rows inserted this time, so a second attempt does not read
+the crawl as finished half-way.
 
 ### What a caller may send
 

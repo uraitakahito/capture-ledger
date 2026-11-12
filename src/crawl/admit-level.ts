@@ -139,6 +139,10 @@ export const admitLevel = async (
       if (result.archiveId !== undefined) {
         registered += 1;
         admittedUrls.push(page.url);
+      } else if (result.reason === "already-known") {
+        // **既に `archives` に在る取り込みも、拾えた物に数える** (CAPTURE-180)。数えないと、同じ段の報告を
+        // やり直したとき (前の試みが入れた後)、失敗と報告されて拾い直したページが失敗に戻る
+        admittedUrls.push(page.url);
       }
     } catch (err) {
       // 1 件の失敗で段を落とさない。上の docstring のとおり、遅れて拾えるものは遅れてよい。

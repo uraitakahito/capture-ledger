@@ -125,6 +125,7 @@ const planOf = (row: ScheduleRow, now: Date, overrides: Partial<FirePlan> = {}):
   crawlId: randomUUID(),
   prepared: preparedOf(row),
   who: { orgId: row.orgId, subject: row.createdBy },
+  capture: parseCaptureFormats("wacz", false),
   sink: undefined,
   scheduledFor: row.nextRunAt,
   missed: 0,

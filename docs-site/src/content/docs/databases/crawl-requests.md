@@ -24,5 +24,5 @@ with the same key would not start a crawl even after the running one ended or th
 
 ## How rows go
 
-The next request that starts a crawl deletes rows older than 24 hours (the `created_at` index). A
+The next request that starts a crawl, and the level clock ([crawl_levels](/capture-ledger/databases/crawl-levels/)), delete rows older than 24 hours (the `created_at` index). A
 scheduled run does not go through the API and makes no row here.

@@ -30,8 +30,18 @@ export interface RecordedQuery {
   parameters: readonly unknown[];
 }
 
+/**
+ * 問い合わせに、並べた行より先に答える係 (任意)。`answer` が配列を返せば、その問い合わせは並べた行を使わない。
+ * `seen` は並べた行から答えた問い合わせを知らせる (答えた行から、後の答えを決めるため)。
+ */
+export interface Responder {
+  answer: (sql: string, parameters: readonly unknown[]) => readonly object[] | undefined;
+  seen?: (sql: string, rows: readonly object[]) => void;
+}
+
 export const recordingDb = (
   results: readonly (readonly object[])[] = [],
+  responder?: Responder,
 ): { db: Kysely<Database>; queries: RecordedQuery[] } => {
   const queries: RecordedQuery[] = [];
   const pending = [...results];
@@ -39,8 +49,12 @@ export const recordingDb = (
   const connection: DatabaseConnection = {
     executeQuery<R>(compiled: CompiledQuery): Promise<QueryResult<R>> {
       queries.push({ sql: compiled.sql, parameters: compiled.parameters });
+      const answered = responder?.answer(compiled.sql, compiled.parameters);
+      if (answered !== undefined) return Promise.resolve({ rows: [...answered] as unknown as R[] });
       // 代役なので、返す行の形は呼ぶ側の申告どおりに扱う。
-      return Promise.resolve({ rows: [...(pending.shift() ?? [])] as unknown as R[] });
+      const rows = pending.shift() ?? [];
+      responder?.seen?.(compiled.sql, rows);
+      return Promise.resolve({ rows: [...rows] as unknown as R[] });
     },
     streamQuery(): AsyncIterableIterator<never> {
       throw new Error("recordingDb は streamQuery に対応していない");

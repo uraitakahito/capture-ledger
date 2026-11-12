@@ -8,11 +8,11 @@ description: capture-ledger・Postgres・BrowserHive・成果物ストアの関�
 ```mermaid
 flowchart LR
   U((呼び出し元)) -->|"POST /api/crawls"| W
-  PG[("Postgres<br/>crawl_schedules / crawls / crawl_pages")] <--> W
+  PG[("Postgres<br/>crawl_schedules / crawls / crawl_levels / crawl_pages")] <--> W
   subgraph W["capture-ledger (Node 26 / TypeScript)"]
     direction TB
     API["api/crawls.ts<br/>範囲・重複排除・上限"]
-    DIS["crawl/dispatch.ts<br/>webhook を 1 回 POST"]
+    DIS["crawl/dispatch.ts<br/>webhook を段の鍵で POST"]
     API --> DIS
   end
   DIS -->|"webhook + token"| WM["Windmill の flow<br/>(capture-scheduler)"]
@@ -42,6 +42,12 @@ capture-ledger の設定に BrowserHive の在り処は 1 つも入っていま�
 ページごとの `taskId` と状態を載せて返します。capture-ledger は `crawl_pages` を書き、
 帰属を記録し、見つかったリンクを範囲で絞り、上限を当て、次の段を答えます ——
 あるいは `stopReason` を返します。
+
+**段は鍵で 1 回にします（CAPTURE-180）。** capture-ledger は段を決めたときに段の行（`crawl_levels`）を作り、Windmill の job の id を
+乱数で決めて持ちます。webhook には `?job_id=` で付け、flow には `level_key` の引数で渡します。Windmill は在る id の 2 本目を 400 で
+断るので、時間切れの後に同じ id で送り直しても flow は 1 本です。その場で 3 回、それでも受け取りを確かめられなければ投げる係の時計
+（30 秒ごと）が送り直し、段の行を作ってから 10 分で諦めてクロールを `failed` で締めます。段の報告は `Idempotency-Key` にこの鍵を
+付け、同じ段の 2 回目には最初の答えが返ります（[段の鍵](/capture-ledger/ja/archive-ledger/#段の鍵)）。
 
 段の報告に**成果物の在り処は載っていません**。載っているのは、
 BrowserHive（または受け取り先）が成果物の隣に `.result.json`（manifest）を書いた場所だけです。そこで
