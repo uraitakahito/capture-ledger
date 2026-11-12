@@ -115,6 +115,14 @@ Only runs closed within the last 48 hours are picked up. `recentRuns[].change` i
 summary, and the WACZ before and after). Both need `can_submit`, and return only pages whose two WACZ files the
 caller may view (`can_view`).
 
+Both answers name the previous run as `prev` (`crawlId`, `startedAt`, `scheduledFor`; `null` when there is none).
+In the answer for one run, `pages` are the pages with a diff and `unchanged` are the compared pairs without one (the
+URL and the WACZ before and after). Besides pairs with the same text digest, `unchanged` holds pairs whose digests
+differ only by blank lines and indentation (the tick keeps no diff for them). `pagesCompared` counts the pairs present
+in both runs, not withheld, with a text digest on both sides (a page in only one run is not counted). It also counts
+pairs with a WACZ the caller may not view, so `pages` plus `unchanged` equals it only for a caller who may view every
+WACZ of the run (`restricted: false`).
+
 ## Settings
 
 | Environment variable                           | Default | Effect                                                                          |

@@ -20,6 +20,9 @@ import { sql, type Kysely } from "kysely";
 
 import type { ChangeSignificance, CrawlChangeState, Database } from "../db/database.js";
 import type { DiffLine } from "./change-of.js";
+import { comparedPagesOf, type ComparedPage } from "./pairs.js";
+
+export type { ComparedPage } from "./pairs.js";
 
 /** 拾う回の窓。締まってからこれより古い回は、周回は拾わない。 */
 export const PICK_WINDOW_HOURS = 48;
@@ -32,17 +35,6 @@ export interface RunToCompare {
   orgId: string;
   startedAt: Date;
   recipeSha256: string;
-}
-
-/** 回の中のページ 1 つ (比べる行)。 */
-export interface ComparedPage {
-  archiveId: string;
-  bucket: string;
-  objectKey: string;
-  url: string;
-  stage: string | null;
-  textSha256: string | null;
-  textWithheld: string | null;
 }
 
 export interface NewPageChange {
@@ -129,12 +121,6 @@ export interface ChangeStore {
   ): Promise<void>;
 }
 
-/** 比べる行の選び方。after-behaviors の写し、無ければ文書の行 (stage の無い行)。after-load だけの回は文書の行。 */
-export const comparedLineOf = <T extends { stage: string | null }>(
-  rows: readonly T[],
-): T | undefined =>
-  rows.find((row) => row.stage === "after-behaviors") ?? rows.find((row) => row.stage === null);
-
 const iso = (date: Date) => date.toISOString();
 const later = (now: Date, ms: number) => iso(new Date(now.getTime() + ms));
 
@@ -200,34 +186,8 @@ export const changeStoreOf = (db: Kysely<Database>): ChangeStore => ({
     return row?.id;
   },
 
-  async comparedPages(crawlId) {
-    const rows = await db
-      .selectFrom("archives")
-      .innerJoin("archivePages", "archivePages.archiveId", "archives.id")
-      .select([
-        "archives.id as archiveId",
-        "archives.bucket",
-        "archives.objectKey",
-        "archives.sourceUrl as url",
-        "archivePages.stage",
-        "archivePages.textSha256",
-        "archivePages.textWithheld",
-      ])
-      .where("archives.crawlId", "=", crawlId)
-      .where("archives.inspectedAt", "is not", null)
-      .orderBy("archives.capturedAt")
-      .orderBy("archivePages.ordinal")
-      .execute();
-    const byArchive = new Map<string, ComparedPage[]>();
-    for (const row of rows)
-      byArchive.set(row.archiveId, [...(byArchive.get(row.archiveId) ?? []), row]);
-    const byUrl = new Map<string, ComparedPage>();
-    for (const pages of byArchive.values()) {
-      const line = comparedLineOf(pages);
-      // 回の中で同じ URL は 1 度しか撮らない (`crawl_pages` の重複排除)。在れば先の物
-      if (line !== undefined && !byUrl.has(line.url)) byUrl.set(line.url, line);
-    }
-    return [...byUrl.values()];
+  comparedPages(crawlId) {
+    return comparedPagesOf(db, crawlId);
   },
 
   async finishCompare(crawlId, outcome, now) {

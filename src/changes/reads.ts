@@ -5,6 +5,7 @@ import { sql, type Kysely } from "kysely";
 
 import type { ChangeSignificance, CrawlChangeState, Database } from "../db/database.js";
 import type { DiffLine } from "./change-of.js";
+import { comparedPagesOf, pairsOf, type ComparedRow } from "./pairs.js";
 
 /** 一覧 1 ページの回の数。 */
 export const CHANGES_PAGE_SIZE = 50;
@@ -16,6 +17,9 @@ export interface ChangeRunRow {
   startedAt: Date;
   scheduledFor: Date | null;
   prevCrawlId: string | null;
+  /** 前の回の始まった時刻と本来の時刻 (CAPTURE-236)。前の回が無ければ null。 */
+  prevStartedAt: Date | null;
+  prevScheduledFor: Date | null;
   state: CrawlChangeState;
   pagesCompared: number;
   pagesChanged: number;
@@ -45,6 +49,17 @@ export interface PageChangeRow {
   before: ArchiveRef | null;
 }
 
+/**
+ * 比べた組のうち、差分の無いページ (CAPTURE-236)。文字の digest が同じ組と、digest は違うが空行と字下げだけが
+ * 違った組 (周回は `page_changes` に残さない)。
+ */
+export interface UnchangedPageRow {
+  url: string;
+  stage: string | null;
+  after: ArchiveRef;
+  before: ArchiveRef;
+}
+
 export interface ChangeRunDetail {
   run: ChangeRunRow;
   summary: {
@@ -54,6 +69,8 @@ export interface ChangeRunDetail {
     output: Record<string, unknown>;
   } | null;
   pages: PageChangeRow[];
+  /** 並びは URL の順。前の回が無ければ空。 */
+  unchanged: UnchangedPageRow[];
 }
 
 export interface ChangeReads {
@@ -66,6 +83,7 @@ const runQuery = (db: Kysely<Database>) =>
     .selectFrom("crawlChanges as cc")
     .innerJoin("crawls as c", "c.id", "cc.crawlId")
     .leftJoin("crawlSchedules as s", "s.id", "cc.scheduleId")
+    .leftJoin("crawls as p", "p.id", "cc.prevCrawlId")
     .select([
       "cc.crawlId",
       "cc.scheduleId",
@@ -73,6 +91,8 @@ const runQuery = (db: Kysely<Database>) =>
       "c.startedAt",
       "c.scheduledFor",
       "cc.prevCrawlId",
+      "p.startedAt as prevStartedAt",
+      "p.scheduledFor as prevScheduledFor",
       "cc.state",
       "cc.pagesCompared",
       "cc.pagesChanged",
@@ -98,7 +118,8 @@ export const changeReadsOf = (db: Kysely<Database>): ChangeReads => ({
   async runDetail(crawlId) {
     const run = await runQuery(db).where("cc.crawlId", "=", crawlId).executeTakeFirst();
     if (run === undefined) return undefined;
-    const [summary, rows] = await Promise.all([
+    const prevCrawlId = run.prevCrawlId;
+    const [summary, rows, pairs] = await Promise.all([
       db
         .selectFrom("crawlChanges as cc")
         .innerJoin("derivations as d", "d.id", "cc.derivationId")
@@ -130,6 +151,12 @@ export const changeReadsOf = (db: Kysely<Database>): ChangeReads => ({
         .where("pc.crawlId", "=", crawlId)
         .orderBy("pc.url")
         .execute(),
+      // 前の回が無ければページを読まない
+      prevCrawlId === null
+        ? []
+        : Promise.all([comparedPagesOf(db, crawlId), comparedPagesOf(db, prevCrawlId)]).then(
+            ([current, previous]) => pairsOf(current, previous),
+          ),
     ]);
     const ref = (
       id: string | null,
@@ -141,6 +168,14 @@ export const changeReadsOf = (db: Kysely<Database>): ChangeReads => ({
       id === null || objectKey === null || sourceUrl === null || capturedAt === null
         ? null
         : { archiveId: id, objectKey, sourceUrl, capturedAt, browserhiveVersion: version };
+    const archive = (page: ComparedRow): ArchiveRef => ({
+      archiveId: page.archiveId,
+      objectKey: page.objectKey,
+      sourceUrl: page.url,
+      capturedAt: page.capturedAt,
+      browserhiveVersion: page.browserhiveVersion,
+    });
+    const changed = new Set(rows.map((r) => r.url));
     return {
       run,
       summary: summary ?? null,
@@ -154,6 +189,15 @@ export const changeReadsOf = (db: Kysely<Database>): ChangeReads => ({
         after: ref(r.afterId, r.afterKey, r.afterUrl, r.afterAt, r.afterVersion),
         before: ref(r.beforeId, r.beforeKey, r.beforeUrl, r.beforeAt, r.beforeVersion),
       })),
+      unchanged: pairs
+        .filter((pair) => !changed.has(pair.after.url))
+        .sort((a, b) => (a.after.url < b.after.url ? -1 : a.after.url > b.after.url ? 1 : 0))
+        .map((pair) => ({
+          url: pair.after.url,
+          stage: pair.after.stage,
+          after: archive(pair.after),
+          before: archive(pair.before),
+        })),
     };
   },
 });

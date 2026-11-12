@@ -106,6 +106,13 @@ options、変数の値、User-Agent、宣言したシークレットの名前で
 `GET /api/crawls/:id/changes`（ページごとの差分・要約・前と今の WACZ）で読み、どちらも `can_submit` で通し、
 前と今の WACZ を `can_view` で見てよいページだけを返します。
 
+どちらの答えも、前の回を `prev`（`crawlId`・`startedAt`・`scheduledFor`。前の回が無ければ `null`）で返します。
+1 本の答えの `pages` は差分の在るページで、`unchanged` は比べた組のうち差分の無いページ（URL・前と今の WACZ）です。
+文字の digest が同じ組のほか、digest は違うが空行と字下げだけが違った組も `unchanged` に入ります（周回は差分を残さない）。
+比べた数 `pagesCompared` は、伏せずに両方の回に在り、どちらも文字の digest が在る組の数です（片方の回にしか無い
+ページは数えない）。`pagesCompared` は見てよくない WACZ を含む組も数えるので、`pages` と `unchanged` を足した数と
+等しくなるのは、回の WACZ を全部見てよい名乗り（`restricted: false`）のときだけです。
+
 ## 設定
 
 | 環境変数                                       | 既定 | 効果                                                                            |
