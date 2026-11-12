@@ -5,29 +5,45 @@ description: How capture-ledger, Postgres, BrowserHive and the artifact store fi
 
 ## Stage 0 — where the project is today
 
+capture-ledger's part ends when it has decided a level and handed it to the Windmill flow.
+
 ```mermaid
-flowchart LR
-  U((caller)) -->|"POST /api/crawls"| W
-  PG[("Postgres<br/>crawl_schedules / crawls / crawl_levels / crawl_pages")] <--> W
+---
+config:
+  layout: dagre
+---
+flowchart TB
+  U(["caller"]) -->|"POST /api/crawls"| API
   subgraph W["capture-ledger (Node 26 / TypeScript)"]
-    direction TB
     API["api/crawls.ts<br/>rules, dedup, budget"]
     DIS["crawl/dispatch.ts<br/>webhook POST by level key"]
     API --> DIS
   end
+  W <--> PG[("Postgres<br/>crawls and the crawl_* tables")]
   DIS -->|"webhook + token"| WM["Windmill flow<br/>(capture-scheduler)"]
+  WM -->|"POST /api/crawls/:id/pages"| API
+```
+
+What each table holds is in the [database overview](/capture-ledger/databases/).
+
+The flow asks BrowserHive for the captures. The artifacts land in SeaweedFS, where capture-ledger reads the manifest and the links.
+
+```mermaid
+---
+config:
+  layout: dagre
+---
+flowchart TB
+  WM["Windmill flow<br/>(capture-scheduler)"]
   WM -->|Capture| BH1
   WM -->|Capture| BH2
   subgraph BH["BrowserHive — one process per browser"]
-    BH1[browserhive-1]
-    BH2[browserhive-2]
+    BH1[browserhive-1] -->|CDP| C1[chromium-1]
+    BH2[browserhive-2] -->|CDP| C2[chromium-2]
   end
-  BH1 -->|CDP| C1[chromium-1]
-  BH2 -->|CDP| C2[chromium-2]
-  BH1 -->|PutObject| S3[(SeaweedFS<br/>bucket: browserhive)]
+  BH1 -->|PutObject| S3[("SeaweedFS<br/>bucket: browserhive")]
   BH2 -->|PutObject| S3
-  WM -->|"POST /api/crawls/:id/pages"| API
-  S3 -.->|".links.json / .result.json"| API
+  S3 -.->|".links.json / .result.json"| API["capture-ledger<br/>api/crawls.ts"]
 ```
 
 ## From submission to outcome
@@ -84,28 +100,40 @@ the result in the ledger and hands out signed URLs only to those allowed to read
 it. That is where OpenFGA comes in.
 
 ```mermaid
-flowchart LR
-  S3[(SeaweedFS<br/>bucket: browserhive)]
+---
+config:
+  layout: dagre
+---
+flowchart TB
+  S3[("SeaweedFS<br/>bucket: browserhive")]
   subgraph W["capture-ledger"]
-    direction TB
     REG["crawl/admit-level.ts<br/>admit what a level captured"]
     RC["reconcile.ts<br/>read recorded manifest keys"]
     OW["outbox-worker.ts<br/>deliver tuples"]
-    API["api/routes.ts<br/>signing endpoint"]
   end
   S3 -.->|.result.json| REG
   S3 -.->|.result.json| RC
-  PG -.->|pending manifest keys| RC
   REG --> PG
+  PG -.->|pending manifest keys| RC
   RC --> PG
   PG[("Postgres<br/>archives + fga_outbox")]
   PG -->|FOR UPDATE SKIP LOCKED| OW
   OW -->|Write tuples| FGA[("OpenFGA<br/>its own Postgres")]
-  U((caller)) -->|"POST /api/archives/:id/url"| API
-  API -->|"Check can_view<br/>+ contextual tuple"| FGA
-  FGA -->|allowed| API
-  API -->|"signed URL (300s)"| U
-  U -.->|GET| S3
+```
+
+To read, capture-ledger asks OpenFGA before it returns a signed URL.
+
+```mermaid
+sequenceDiagram
+  actor U as caller
+  participant API as capture-ledger<br/>api/routes.ts
+  participant FGA as OpenFGA
+  participant S3 as SeaweedFS
+  U->>API: POST /api/archives/:id/url
+  API->>FGA: Check can_view<br/>+ contextual tuple
+  FGA-->>API: allowed
+  API-->>U: signed URL (300s)
+  U->>S3: GET
 ```
 
 How to read it:
