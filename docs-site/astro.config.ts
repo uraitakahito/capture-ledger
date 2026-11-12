@@ -22,10 +22,16 @@ export default defineConfig({
     // トップページの図がそうなった)。図のソースは改行を <br/> で書いてあり、自動の折り返し
     // には頼っていない。
     //
-    // 配置は mermaid 12 の既定 (ELK) に任せている。mermaid 11 の配置に戻すなら
-    // mermaidConfig に layout: "dagre" を足す —— 2026-09 に両方を撮って比べ、architecture の
-    // 2 枚目が読める大きさになる ELK を採った。
-    mermaid({ theme: "neutral", mermaidConfig: { flowchart: { wrappingWidth: 200 } } }),
+    // 図は本文の欄に収まるまで縮められ、文字の大きさに下限は無い (mermaid の useMaxWidth と
+    // astro-mermaid の max-width: 100%)。16px で描いた図の幅が欄を超えた分だけ文字が小さくなる
+    // ので、横に段が並ぶ図は縦向き (flowchart TB) にするか、何枚かに割る。
+    //
+    // 配置の既定は mermaid 12 の ELK。architecture の図は図の頭で `layout: dagre` を指定している
+    // —— 縦向きでは ELK より線の回り込みが少なく、背も低くなった (CAPTURE-286 で両方を撮って比べた)。
+    //
+    // 色は astro-mermaid の autoTheme が Starlight のテーマに合わせて default と dark を選ぶので、
+    // theme は書かない (書いても使われない)。
+    mermaid({ mermaidConfig: { flowchart: { wrappingWidth: 200 } } }),
     starlight({
       title: "capture-ledger Docs",
       customCss: ["./src/styles/tables.css"],

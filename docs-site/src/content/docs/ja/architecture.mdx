@@ -5,29 +5,45 @@ description: capture-ledger・Postgres・BrowserHive・成果物ストアの関�
 
 ## Stage 0 — 現在の到達点
 
+capture-ledger が受け持つのは、段を決めて Windmill の flow に渡すところまでです。
+
 ```mermaid
-flowchart LR
-  U((呼び出し元)) -->|"POST /api/crawls"| W
-  PG[("Postgres<br/>crawl_schedules / crawls / crawl_levels / crawl_pages")] <--> W
+---
+config:
+  layout: dagre
+---
+flowchart TB
+  U(["呼び出し元"]) -->|"POST /api/crawls"| API
   subgraph W["capture-ledger (Node 26 / TypeScript)"]
-    direction TB
     API["api/crawls.ts<br/>範囲・重複排除・上限"]
     DIS["crawl/dispatch.ts<br/>webhook を段の鍵で POST"]
     API --> DIS
   end
+  W <--> PG[("Postgres<br/>crawls と crawl_* の表")]
   DIS -->|"webhook + token"| WM["Windmill の flow<br/>(capture-scheduler)"]
+  WM -->|"POST /api/crawls/:id/pages"| API
+```
+
+表ごとの役割は[データベースの全体像](/capture-ledger/ja/databases/)にあります。
+
+取り込みは flow が BrowserHive に頼みます。成果物は SeaweedFS に残り、capture-ledger はそこから manifest とリンクを読みます。
+
+```mermaid
+---
+config:
+  layout: dagre
+---
+flowchart TB
+  WM["Windmill の flow<br/>(capture-scheduler)"]
   WM -->|Capture| BH1
   WM -->|Capture| BH2
   subgraph BH["BrowserHive — browser 1 台に 1 プロセス"]
-    BH1[browserhive-1]
-    BH2[browserhive-2]
+    BH1[browserhive-1] -->|CDP| C1[chromium-1]
+    BH2[browserhive-2] -->|CDP| C2[chromium-2]
   end
-  BH1 -->|CDP| C1[chromium-1]
-  BH2 -->|CDP| C2[chromium-2]
-  BH1 -->|PutObject| S3[(SeaweedFS<br/>bucket: browserhive)]
+  BH1 -->|PutObject| S3[("SeaweedFS<br/>bucket: browserhive")]
   BH2 -->|PutObject| S3
-  WM -->|"POST /api/crawls/:id/pages"| API
-  S3 -.->|".links.json / .result.json"| API
+  S3 -.->|".links.json / .result.json"| API["capture-ledger<br/>api/crawls.ts"]
 ```
 
 ## 投げてから、結末を回収するまで
@@ -78,28 +94,40 @@ capture-ledger は、**報告された場所のとおりに** manifest を読み
 出番です。
 
 ```mermaid
-flowchart LR
-  S3[(SeaweedFS<br/>bucket: browserhive)]
+---
+config:
+  layout: dagre
+---
+flowchart TB
+  S3[("SeaweedFS<br/>bucket: browserhive")]
   subgraph W["capture-ledger"]
-    direction TB
-    REG["watch.ts → register.ts<br/>結果を待って登録"]
+    REG["crawl/admit-level.ts<br/>段で撮れた物を受け入れる"]
     RC["reconcile.ts<br/>書き留めた manifest の鍵を読む"]
     OW["outbox-worker.ts<br/>タプルを配送"]
-    API["api/routes.ts<br/>署名エンドポイント"]
   end
   S3 -.->|.result.json| REG
   S3 -.->|.result.json| RC
-  PG -.->|未登録の manifest の鍵| RC
   REG --> PG
+  PG -.->|未登録の manifest の鍵| RC
   RC --> PG
   PG[("Postgres<br/>archives + fga_outbox")]
   PG -->|FOR UPDATE SKIP LOCKED| OW
   OW -->|Write tuples| FGA[("OpenFGA<br/>専用の Postgres")]
-  U((利用者)) -->|"POST /api/archives/:id/url"| API
-  API -->|"Check can_view<br/>+ contextual tuple"| FGA
-  FGA -->|allowed| API
-  API -->|"署名付き URL (300 秒)"| U
-  U -.->|GET| S3
+```
+
+読むときは、capture-ledger が OpenFGA に訊いてから署名付き URL を返します。
+
+```mermaid
+sequenceDiagram
+  actor U as 利用者
+  participant API as capture-ledger<br/>api/routes.ts
+  participant FGA as OpenFGA
+  participant S3 as SeaweedFS
+  U->>API: POST /api/archives/:id/url
+  API->>FGA: Check can_view<br/>+ contextual tuple
+  FGA-->>API: allowed
+  API-->>U: 署名付き URL (300 秒)
+  U->>S3: GET
 ```
 
 読み方の要点:
