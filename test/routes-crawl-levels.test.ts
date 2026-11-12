@@ -108,20 +108,20 @@ describe("段の報告の鍵", () => {
     expect(queries.some((query) => query.sql.startsWith("update"))).toBe(false);
   });
 
-  it("段の鍵と違えば 409 で、何も書かない（別の段の flow・古い flow の報告）", async () => {
+  it("段の鍵と違えば 422 で、何も書かない（別の段の flow・古い flow の報告。待っても通らない）", async () => {
     const { app, queries } = await build([[crawlRow()]]);
     const res = await report(app, "00000000-0000-4000-8000-000000000000");
     await app.close();
-    expect(res.statusCode).toBe(409);
+    expect(res.statusCode).toBe(422);
     expect(res.json()).toEqual({ error: "Idempotency-Key is not the key of this level" });
     expect(queries.some((query) => query.sql.startsWith("update"))).toBe(false);
   });
 
-  it("段の行の無い段は 409（段の行を入れる前に始めたクロール）", async () => {
+  it("段の行の無い段は 422（段の行を入れる前に始めたクロール）", async () => {
     const { app } = await build([[crawlRow()]], { missing: true });
     const res = await report(app);
     await app.close();
-    expect(res.statusCode).toBe(409);
+    expect(res.statusCode).toBe(422);
     expect(res.json()).toEqual({ error: "no such level of this crawl" });
   });
 
@@ -166,6 +166,12 @@ describe("段の報告の鍵", () => {
     expect(claim?.sql).toContain('"state" in ($');
     expect(claim?.sql).toContain('"lease_until" <= $');
     expect(claim?.parameters[0]).toBe("reporting");
+    // 保管庫を読んだ後に期限を延ばす (頁の多い段でも、生きている試みの期限が切れない)。自分の印のときだけ
+    const renewals = queries.filter((query) =>
+      query.sql.startsWith('update "crawl_levels" set "lease_until" = $1'),
+    );
+    expect(renewals.length).toBeGreaterThanOrEqual(1);
+    expect(renewals[0]?.sql).toContain('"report_token" = $');
   });
 });
 

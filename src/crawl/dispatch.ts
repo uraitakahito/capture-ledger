@@ -31,7 +31,7 @@
  * **黙って `running` のまま置かない** —— 部分 unique index が効いているので、締め忘れた行は次のクロールを永久に塞ぐ。
  */
 import { optional } from "../config/env.js";
-import type { CrawlDispatcher, DispatchedCrawl } from "./launch.js";
+import { DispatchRefused, type CrawlDispatcher, type DispatchedCrawl } from "./launch.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -152,7 +152,12 @@ export const createWindmillDispatcher = (): CrawlDispatcher | undefined => {
       const body = await res.text();
       // 同じ段の鍵の job が在る —— 前の送信 (時間切れになった物も) を Windmill は受け取っている
       if (alreadyTaken(res.status, body)) return crawl.levelKey;
-      throw new Error(`crawl webhook → ${String(res.status)} ${body.slice(0, 200)}`);
+      const message = `crawl webhook → ${String(res.status)} ${body.slice(0, 200)}`;
+      // 4xx は送り直しても同じ答え (path・トークン・引数)。408 と 429 は待てば通りうる
+      if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) {
+        throw new DispatchRefused(message);
+      }
+      throw new Error(message);
     }
     // 起こした job の id を返す。呼ぶ側は `crawls.last_job_id` に残し、失敗したクロールから
     // その run へ 1 回で辿れるようにする (`016`)。

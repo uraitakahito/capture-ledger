@@ -170,6 +170,8 @@ export interface LevelDeps {
   db: Kysely<Database>;
   dispatch: CrawlDispatcher;
   writeReplayBundle: ReplayBundleWriter;
+  /** 受け取り先の設定。時計が段の行の args から送り直すとき、受け取り先の印を作り直す (行には残さない) */
+  sink?: SinkConfig;
   /** その場の送り直しの間。試験だけが縮める */
   retryDelaysMs?: readonly number[];
   now?: () => Date;
@@ -179,6 +181,12 @@ export interface LevelDeps {
 export type LevelDispatcher = ReturnType<typeof levelDispatcher>;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Windmill が送り直しても同じ答えで断った (flow の path・トークン・引数の誤り)。`dispatch.ts` が 4xx (408・429 と
+ * 「同じ id が在る」の 400 を除く) で投げる。投げる係は 10 分待たずに段を諦めてクロールを締める。
+ */
+export class DispatchRefused extends Error {}
 const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /**
@@ -192,6 +200,9 @@ export const insertLevel = async (
   level: DispatchedCrawl,
   now = new Date(),
 ): Promise<void> => {
+  // **受け取り先の印 (bearer) は残さない。** 送り直すときに投げる係が作り直す (期限も新しくなる)
+  const stored: Omit<DispatchedCrawl, "artifactSink"> = { ...level };
+  delete (stored as Partial<DispatchedCrawl>).artifactSink;
   await db
     .insertInto("crawlLevels")
     .values({
@@ -199,7 +210,7 @@ export const insertLevel = async (
       depth: level.depth,
       jobId: level.levelKey,
       state: "pending",
-      args: JSON.stringify(level),
+      args: JSON.stringify(stored),
       nextAttemptAt: new Date(now.getTime() + LEVEL_TICK_INTERVAL_MS).toISOString(),
     })
     .execute();
@@ -210,6 +221,7 @@ export const levelDispatcher = ({
   db,
   dispatch,
   writeReplayBundle,
+  sink,
   retryDelaysMs = LEVEL_RETRY_DELAYS_MS,
   now = () => new Date(),
 }: LevelDeps) => {
@@ -227,7 +239,8 @@ export const levelDispatcher = ({
   };
 
   /**
-   * 1 回送る。受け取られたら段を「受け取り確認済み」にして true。**受け取られたかが分からなければ「投げた」にして
+   * 1 回送る。**片が付いたら true** —— 受け取られた (段を「受け取り確認済み」に) か、送り直しても同じ答えの断りで
+   * 段を諦めた。**受け取られたかが分からなければ「投げた」にして
    * false** —— 時間切れでも Windmill は job を作っているかもしれないが、同じ `job_id` で送り直せば、在れば 400
    * (`already exists`) で受け取り扱い、無ければ作られる。2 本にはならない。
    *
@@ -239,6 +252,13 @@ export const levelDispatcher = ({
     try {
       jobId = await dispatch(level);
     } catch (err) {
+      // **送り直しても同じ答えの断り** (flow の path・トークン・引数の誤り)。10 分待たずに締める ——
+      // 以前と同じく、設定の誤りはその場でクロールの誤りとして見える
+      if (err instanceof DispatchRefused) {
+        log.error({ err, crawlId, depth }, "Windmill refused a level");
+        await abandon(crawlId, depth, err.message);
+        return true;
+      }
       log.warn({ err, crawlId, depth }, "Could not confirm that Windmill took a level");
       await db
         .updateTable("crawlLevels")
@@ -291,6 +311,7 @@ export const levelDispatcher = ({
       if (await sendOnce(level)) return;
       for (const ms of retryDelaysMs) {
         await sleep(ms);
+        if (!(await stillUnsent(level))) return;
         if (await sendOnce(level)) return;
       }
       log.warn(
@@ -302,29 +323,51 @@ export const levelDispatcher = ({
     });
   };
 
-  /** 段を諦め、走行中のクロールを failed で締める。締めたら終わった状態の合本を書く (CAPTURE-61)。 */
-  const abandon = async (crawlId: string, depth: number, error: string): Promise<void> => {
-    await db
-      .updateTable("crawlLevels")
-      .set({ state: "abandoned" })
-      .where("crawlId", "=", crawlId)
-      .where("depth", "=", depth)
-      .where("state", "in", ["pending", "sent"])
-      .execute();
-    const closed = await db
-      .updateTable("crawls")
-      .set({
-        state: "failed",
-        stopReason: "failed",
-        finishedAt: now().toISOString(),
-        error,
-      })
-      .where("id", "=", crawlId)
-      // **走行中のものだけ** (`/failed` と同じ)。先に締めた者の理由を上書きしない
-      .where("state", "=", "running")
-      .returning("id")
-      .execute();
-    if (closed.length > 0) await bundleAfterClose(crawlId);
+  /**
+   * 段を諦め、走行中のクロールを failed で締める。締めたら終わった状態の合本を書く (CAPTURE-61)。
+   *
+   * **段の行とクロールの行を 1 つのトランザクションで。** 段がまだ投げる前・投げたのときだけ締める ——
+   * 読んだ後に報告が届いて段を取っていたら (Windmill は受け取っていた)、締めない。2 つを別々に書くと、間で API が
+   * 落ちたとき「締めた段・走行中のクロール」が残り、誰も次の段を作らず、走行中の 1 本の index が後を全部塞ぐ。
+   */
+  async function abandon(crawlId: string, depth: number, error: string): Promise<void> {
+    const closed = await db.transaction().execute(async (trx) => {
+      const given = await trx
+        .updateTable("crawlLevels")
+        .set({ state: "abandoned" })
+        .where("crawlId", "=", crawlId)
+        .where("depth", "=", depth)
+        .where("state", "in", ["pending", "sent"])
+        .returning("depth")
+        .executeTakeFirst();
+      if (given === undefined) return false;
+      const rows = await trx
+        .updateTable("crawls")
+        .set({
+          state: "failed",
+          stopReason: "failed",
+          finishedAt: now().toISOString(),
+          error,
+        })
+        .where("id", "=", crawlId)
+        // **走行中のものだけ** (`/failed` と同じ)。先に締めた者の理由を上書きしない
+        .where("state", "=", "running")
+        .returning("id")
+        .execute();
+      return rows.length > 0;
+    });
+    if (closed) await bundleAfterClose(crawlId);
+  }
+
+  /** まだ投げる前・投げたか (その場の送り直しの間に、時計か報告が先に進めていないか)。 */
+  const stillUnsent = async (level: DispatchedCrawl): Promise<boolean> => {
+    const row = await db
+      .selectFrom("crawlLevels")
+      .select("state")
+      .where("crawlId", "=", level.crawlId)
+      .where("depth", "=", level.depth)
+      .executeTakeFirst();
+    return row !== undefined && (row.state === "pending" || row.state === "sent");
   };
 
   /**
@@ -378,7 +421,10 @@ export const levelDispatcher = ({
         abandoned += 1;
         continue;
       }
-      await sendOnce(row.args);
+      // 受け取り先の印は行に残していないので、作り直して載せる (期限も新しく)
+      await sendOnce(
+        sink ? { ...row.args, artifactSink: sinkForCrawl(sink, row.crawlId) } : row.args,
+      );
       sent += 1;
     }
     return { sent, abandoned };

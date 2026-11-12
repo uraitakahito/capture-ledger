@@ -235,7 +235,12 @@ const start = async (options: ServerOptions): Promise<void> => {
         ...(signer && { signer }),
       });
     // **投げる係は 1 つ** (CAPTURE-180)。クロールのエンドポイント・定期実行の周回・投げる係の時計が分け合う
-    const levels = levelDispatcher({ db, dispatch, writeReplayBundle: bundleWriter });
+    const levels = levelDispatcher({
+      db,
+      dispatch,
+      writeReplayBundle: bundleWriter,
+      ...(sink && { sink }),
+    });
     levelClockHere = levelClock(levels);
     registerCrawlRoutes(app, {
       db,

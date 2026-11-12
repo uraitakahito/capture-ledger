@@ -293,11 +293,13 @@ A `running` row is closed in exactly three ways, and each one only touches a row
   the failed level's `depth` and `levelKey`; it closes only for the newest level's key, and a
   failure from an older level's flow gets `{"closed": false}`. A person can call the same route
   without a key, and it closes as before.
-- **No level was taken by Windmill within 10 minutes.** The ledger sends a level three times on
-  the spot (at once, then after 2 and 4 seconds); if it still cannot confirm that Windmill took
-  it, the level clock (every 30 seconds) sends it again with the same level key. If the level is
-  still not taken 10 minutes after its row was made, the row closes as `failed`, with the message
-  on it ([Level keys](#level-keys)).
+- **Windmill did not take a level.** A 4xx from the webhook (a wrong flow path, token or
+  argument; not 408 or 429) gets the same answer however often it is sent, so the row closes as
+  `failed` at once, with the message on it. No connection, a timeout (10 seconds by default) or a
+  5xx may still have been taken by Windmill, so the row is not closed: the ledger sends three times
+  on the spot (at once, then after 2 and 4 seconds), the level clock (every 30 seconds) keeps
+  sending with the same level key, and only when the level is still not taken 10 minutes after its
+  row was made does the row close ([Level keys](#level-keys)).
 
 Nothing closes a row by time once its level has been taken. The closing step uses the same
 token and the same address as the level report, so a **stale token (401)**, a caller without
@@ -333,8 +335,8 @@ job. That id is **the level key**.
 | Level report that arrives                          | Answer                                                                    |
 | -------------------------------------------------- | ------------------------------------------------------------------------- |
 | no key                                             | 400                                                                       |
-| no level row (a crawl started before level rows)   | 409                                                                       |
-| not this level's key                               | 409                                                                       |
+| no level row (a crawl started before level rows)   | 422                                                                       |
+| not this level's key                               | 422                                                                       |
 | a level already reported                           | **the first answer (200)**; nothing is written and no level is sent again |
 | a level being reported (within its 2-minute lease) | 409 (left to the flow's retry)                                            |
 | a closed level or a closed crawl                   | 200; its pages are recorded and no next level is made                     |

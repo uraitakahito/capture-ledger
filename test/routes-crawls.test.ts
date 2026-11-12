@@ -536,6 +536,14 @@ const fakeDb = (
        * なる (反証で素通りした)。偽物が制約を持っていると、消したことに気づけない。
        */
       select: () => {
+        // その場の送り直しの前に、段がまだ投げる前・投げたかを見る (`stillUnsent`)
+        if (table === "crawlLevels") {
+          const levelQuery = {
+            where: () => levelQuery,
+            executeTakeFirst: async () => Promise.resolve({ state: "sent" }),
+          };
+          return levelQuery;
+        }
         if (table === "crawlRequests") {
           const requestQuery = (where: [string, unknown][]) => ({
             where: (column: string, _op: unknown, value: unknown) =>

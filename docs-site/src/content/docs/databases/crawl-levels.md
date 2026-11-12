@@ -11,18 +11,18 @@ description: The levels of a crawl. Each holds the Windmill job id as its level 
 
 ## States
 
-| State       | Meaning                                                                                                   |
-| ----------- | --------------------------------------------------------------------------------------------------------- |
-| `pending`   | Not sent yet. The first level is made with the crawl row, later ones with the previous level's report     |
-| `sent`      | Sent, but not known to be taken (timeout, no connection, 5xx). Sent again with the same level key         |
-| `accepted`  | Taken by Windmill (a 2xx, or the `already exists` 400)                                                    |
-| `reporting` | Its level report is being handled. `report_token` is the attempt's token, `lease_until` its lease (2 min) |
-| `reported`  | The report is recorded. `answer` keeps the first answer, returned to a second report with the same key    |
-| `abandoned` | Given up or closed (not taken within 10 minutes, the newest level's fail_crawl, a person's "close")       |
+| State       | Meaning                                                                                                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pending`   | Not sent yet. The first level is made with the crawl row, later ones with the previous level's report                                                                    |
+| `sent`      | Sent, but not known to be taken (timeout, no connection, 5xx, 408, 429). Sent again with the same level key; a 4xx (path, token, arguments) makes it `abandoned` at once |
+| `accepted`  | Taken by Windmill (a 2xx, or the `already exists` 400)                                                                                                                   |
+| `reporting` | Its level report is being handled. `report_token` is the attempt's token, `lease_until` its lease (2 min)                                                                |
+| `reported`  | The report is recorded. `answer` keeps the first answer, returned to a second report with the same key                                                                   |
+| `abandoned` | Given up or closed (not taken within 10 minutes, the newest level's fail_crawl, a person's "close")                                                                      |
 
 ## It keeps the arguments
 
-`args` is the level exactly as the webhook sends it (seeds, the copy of the secrets, variables, User-Agent and so on). Sending again, and sending a level that was never sent before the API restarted, need it. It holds no secret values (only names and Windmill variable paths).
+`args` is the level as the webhook sends it (the level's URLs `frontier`, scripts, variables, secret names with their Windmill variable paths, User-Agent and so on). Sending again, and sending a level that was never sent before the API restarted, need it. It holds no secret values. Nor does it keep the sink's token (the `artifactSink` bearer): the level clock makes a new one, with a new expiry, when it sends again.
 
 ## Counts are written per level
 

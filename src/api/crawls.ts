@@ -425,6 +425,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       db,
       dispatch,
       writeReplayBundle: deps.writeReplayBundle,
+      ...(sink && { sink }),
       ...(deps.dispatchRetryDelaysMs && { retryDelaysMs: deps.dispatchRetryDelaysMs }),
     });
 
@@ -1543,10 +1544,11 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         .where("crawlId", "=", crawlId)
         .where("depth", "=", depth)
         .executeTakeFirst();
-      // 段の行の無い段: 段の行を入れる前に始めたクロールか、投げていない深さ
-      if (!level) return reply.code(409).send({ error: "no such level of this crawl" });
+      // 段の行の無い段 (段の行を入れる前に始めたクロールか、投げていない深さ) と、鍵の違う報告は 422 ——
+      // 待っても通らない。待てば通る「報告中」の 409 と分ける
+      if (!level) return reply.code(422).send({ error: "no such level of this crawl" });
       if (level.jobId !== key) {
-        return reply.code(409).send({ error: "Idempotency-Key is not the key of this level" });
+        return reply.code(422).send({ error: "Idempotency-Key is not the key of this level" });
       }
       if (level.state === "reported" && level.answer !== null) {
         log.info({ crawlId, depth }, "Level reported again; answered as the first time");
@@ -1557,6 +1559,20 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // 報告の試みの印。終わりの commit はこの印が同じときだけ通す —— 期限切れで取り直した 2 本目と、遅れた
       // 1 本目が並んでも、片方しか書けない。1 つのトランザクションにしないのは、途中で保管庫を読むから
       const token = randomUUID();
+      /**
+       * 報告中の期限を延ばす。保管庫を読む段 (manifest・リンク) の後に呼ぶ —— 頁の多い段の処理が 2 分を超えても、
+       * 生きている試みの期限は切れない。取り直されていたら何もしない (終わりの commit が 409 で断る)
+       */
+      const renewLease = async (): Promise<void> => {
+        await db
+          .updateTable("crawlLevels")
+          .set({ leaseUntil: new Date(Date.now() + LEVEL_REPORT_LEASE_MS).toISOString() })
+          .where("crawlId", "=", crawlId)
+          .where("depth", "=", depth)
+          .where("state", "=", "reporting")
+          .where("reportToken", "=", token)
+          .execute();
+      };
       if (!closedLevel) {
         const at = new Date();
         const claimed = await db
@@ -1749,6 +1765,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           }
         }
 
+        if (token !== undefined) await renewLease();
+
         // ── 3. 見つけたリンクを読み、規則を当てる ────────────────────────
         // **ページごとに読む。** リンク元が「撮って辿る」でなければ、そのページのリンクは見ない ——
         // 撮るだけの先は辿らない。links はどのページでも取る (`capture-formats.ts`) ので撮るだけのページにも
@@ -1789,6 +1807,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           });
         }
 
+        if (token !== undefined) await renewLease();
         const discovered = acceptLinks(pages);
         const nextDepth = depth + 1;
 
