@@ -7,10 +7,12 @@ import type { ChangeReads, ChangeRunDetail, ChangeRunRow } from "../src/changes/
 
 /**
  * 前回からの変化を読むエンドポイント。読む SQL は偽物 (`changes/reads.ts` の形は `changes-smoke` が本物の DB で見る)。
- * 見るのは認可の 2 段 (`can_submit` で通し、`can_view` で絞る) と、要約に必ず付く印。
+ * 見るのは認可の 2 段 (`can_submit` で通し、`can_view` で絞る) と、要約に必ず付く印と、答えの形 (`prev`・`unchanged`)。
  */
 const CRAWL = "11111111-1111-4111-8111-111111111111";
 const NOW = new Date("2026-11-12T04:00:00.000Z");
+const PREV = "33333333-3333-4333-8333-333333333333";
+const PREV_AT = new Date("2026-11-11T04:00:05.000Z");
 
 const run = (over: Partial<ChangeRunRow> = {}): ChangeRunRow => ({
   crawlId: CRAWL,
@@ -18,14 +20,16 @@ const run = (over: Partial<ChangeRunRow> = {}): ChangeRunRow => ({
   scheduleName: "毎朝の 5 サイト",
   startedAt: NOW,
   scheduledFor: NOW,
-  prevCrawlId: "33333333-3333-4333-8333-333333333333",
+  prevCrawlId: PREV,
+  prevStartedAt: PREV_AT,
+  prevScheduledFor: new Date("2026-11-11T04:00:00.000Z"),
   state: "summarized",
-  pagesCompared: 2,
+  pagesCompared: 3,
   pagesChanged: 2,
   significance: "content",
   headline: "ANA のニュースが入れ替わった",
   error: null,
-  archiveIds: ["a-now", "a-prev", "b-now", "b-prev"],
+  archiveIds: ["a-now", "a-prev", "b-now", "b-prev", "c-now", "c-prev"],
   ...over,
 });
 
@@ -85,6 +89,7 @@ const detail: ChangeRunDetail = {
       before: ref("b-prev"),
     },
   ],
+  unchanged: [{ url: "https://c.test/", stage: null, after: ref("c-now"), before: ref("c-prev") }],
 };
 
 describe("前回からの変化を読むエンドポイント", () => {
@@ -92,15 +97,17 @@ describe("前回からの変化を読むエンドポイント", () => {
   let named: boolean;
   let submit: boolean;
   let viewable: Set<string>;
+  let current: ChangeRunDetail;
 
   beforeEach(async () => {
     named = true;
     submit = true;
-    viewable = new Set(["a-now", "a-prev", "b-now", "b-prev"]);
+    viewable = new Set(["a-now", "a-prev", "b-now", "b-prev", "c-now", "c-prev"]);
+    current = detail;
     app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
     const reads: ChangeReads = {
-      listRuns: () => Promise.resolve([run()]),
-      runDetail: (id) => Promise.resolve(id === CRAWL ? structuredClone(detail) : undefined),
+      listRuns: () => Promise.resolve([current.run]),
+      runDetail: (id) => Promise.resolve(id === CRAWL ? structuredClone(current) : undefined),
     };
     registerChangeRoutes(app, {
       fga: {
@@ -185,6 +192,78 @@ describe("前回からの変化を読むエンドポイント", () => {
     }>();
     expect(body.pages.map((p) => p.url)).toEqual(["https://a.test/"]);
     expect(body).toMatchObject({ restricted: true, headline: null });
+  });
+
+  it("一覧と 1 本は前の回を prev で返し、prevCrawlId を返さない", async () => {
+    const prev = {
+      crawlId: PREV,
+      startedAt: PREV_AT.toISOString(),
+      scheduledFor: "2026-11-11T04:00:00.000Z",
+    };
+    const list = (await app.inject({ url: "/api/changes" })).json<{
+      runs: Record<string, unknown>[];
+    }>();
+    const one = (await app.inject({ url: `/api/crawls/${CRAWL}/changes` })).json<
+      Record<string, unknown>
+    >();
+    for (const body of [list.runs[0], one]) {
+      expect(body).toHaveProperty("prev", prev);
+      expect(body).not.toHaveProperty("prevCrawlId");
+    }
+  });
+
+  it("比べて同じだったページを unchanged で返し、見てよい名乗りでは pages と足して pagesCompared", async () => {
+    const body = (await app.inject({ url: `/api/crawls/${CRAWL}/changes` })).json<{
+      pagesCompared: number;
+      pages: unknown[];
+      unchanged: unknown[];
+    }>();
+    expect(body.unchanged).toEqual([
+      {
+        url: "https://c.test/",
+        stage: null,
+        before: { ...ref("c-prev"), capturedAt: NOW.toISOString() },
+        after: { ...ref("c-now"), capturedAt: NOW.toISOString() },
+      },
+    ]);
+    expect(body.pages.length + body.unchanged.length).toBe(body.pagesCompared);
+  });
+
+  it("前か今の WACZ を見てよくない同じだったページは返さない", async () => {
+    for (const id of ["c-prev", "c-now"]) {
+      viewable = new Set(["a-now", "a-prev", "b-now", "b-prev", "c-now", "c-prev"]);
+      viewable.delete(id);
+      const body = (await app.inject({ url: `/api/crawls/${CRAWL}/changes` })).json<{
+        pages: unknown[];
+        unchanged: unknown[];
+        restricted: boolean;
+      }>();
+      expect(body).toMatchObject({ unchanged: [], restricted: true });
+      expect(body.pages).toHaveLength(2);
+    }
+  });
+
+  it("前の回の無い回は prev が null、unchanged が空", async () => {
+    current = {
+      run: run({
+        state: "no_previous",
+        prevCrawlId: null,
+        prevStartedAt: null,
+        prevScheduledFor: null,
+        pagesCompared: 0,
+        pagesChanged: 0,
+        significance: null,
+        headline: null,
+        archiveIds: ["a-now"],
+      }),
+      summary: null,
+      pages: [],
+      unchanged: [],
+    };
+    const one = (await app.inject({ url: `/api/crawls/${CRAWL}/changes` })).json<unknown>();
+    expect(one).toMatchObject({ prev: null, unchanged: [], pages: [], summary: null });
+    const list = (await app.inject({ url: "/api/changes" })).json<{ runs: unknown[] }>();
+    expect(list.runs[0]).toMatchObject({ prev: null });
   });
 
   it("無い回は 404、id が UUID でなければ 400", async () => {

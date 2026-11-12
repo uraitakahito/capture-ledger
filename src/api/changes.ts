@@ -2,7 +2,8 @@
  * 前回からの変化を読むエンドポイント (CAPTURE-167)。capture-workbench のタブ「変化」が読む。
  *
  * - `GET /api/changes?before=`: 予定の回のまとめの一覧 (新しい順・50 本ずつ)
- * - `GET /api/crawls/:id/changes`: 回 1 本の、ページごとの差分・要約・前と今の WACZ
+ * - `GET /api/crawls/:id/changes`: 回 1 本の、ページごとの差分・要約・前と今の WACZ と、比べて同じだったページ
+ *   (`unchanged`・CAPTURE-236)
  *
  * **名乗りは `can_submit` で通し、中身は `can_view` で絞る。** 予定の一覧 (`GET /api/schedules`) と同じく、クロールを
  * 頼める名乗りだけが回を見る。差分と要約はページの文字から作った物なので、前と今の両方の WACZ を見てよいページだけを
@@ -31,7 +32,14 @@ const runAnswer = (row: ChangeRunRow, restricted: boolean) => ({
   scheduleName: row.scheduleName,
   startedAt: row.startedAt,
   scheduledFor: row.scheduledFor,
-  prevCrawlId: row.prevCrawlId,
+  prev:
+    row.prevCrawlId === null
+      ? null
+      : {
+          crawlId: row.prevCrawlId,
+          startedAt: row.prevStartedAt,
+          scheduledFor: row.prevScheduledFor,
+        },
   state: row.state,
   pagesCompared: row.pagesCompared,
   pagesChanged: row.pagesChanged,
@@ -95,6 +103,7 @@ export const registerChangeRoutes = (app: FastifyInstance, deps: ChangeRouteDeps
           [
             ...detail.run.archiveIds,
             ...detail.pages.flatMap((p) => [p.after?.archiveId, p.before?.archiveId]),
+            ...detail.unchanged.flatMap((p) => [p.after.archiveId, p.before.archiveId]),
           ].filter((id): id is string => id !== undefined),
         ),
       ]);
@@ -134,6 +143,15 @@ export const registerChangeRoutes = (app: FastifyInstance, deps: ChangeRouteDeps
                 usd: Number(detail.summary.usd),
               },
         pages,
+        // pages と同じく、前と今の両方を見てよい組だけ。見てよい名乗りなら pages と足して pagesCompared
+        unchanged: detail.unchanged
+          .filter((page) => visible(page.after.archiveId) && visible(page.before.archiveId))
+          .map((page) => ({
+            url: page.url,
+            stage: page.stage,
+            before: page.before,
+            after: page.after,
+          })),
       });
     },
   );

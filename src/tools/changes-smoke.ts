@@ -3,13 +3,15 @@
  * 前回からの変化 (CAPTURE-167) の store と読む SQL を、本物の Postgres に当てる (CI の check の job)。
  *
  * `for update skip locked`・`make_interval`・`on conflict ... where kind = 'change'` (`034` の部分の一意)・jsonb の
- * 差分・`array(...)` は、試験の記録する DB では確かめられない。自分の組織 (smoke-<pid>) の予定・回・アーカイブだけを
+ * 差分・`array(...)`・同じだったページ (`unchanged`。周回と同じ組の作り方で、`page_changes` に無い組) は、試験の記録する
+ * DB では確かめられない。自分の組織 (smoke-<pid>) の予定・回・アーカイブだけを
  * 足して、最後に消す。**使い捨ての DB を指して走らせること** —— 拾う SQL はほかの組織の回も拾う。
  */
 import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
+import { pairsOf } from "../changes/pairs.js";
 import { changeReadsOf } from "../changes/reads.js";
 import { changeStoreOf } from "../changes/store.js";
 import { createKyselyClient } from "../db/kysely.js";
@@ -71,11 +73,14 @@ try {
   await insertCrawl(prev, RECIPE, ago(31 * HOUR), ago(30 * HOUR));
   await insertCrawl(other, OTHER_RECIPE, ago(21 * HOUR), ago(20 * HOUR));
   await insertCrawl(current, RECIPE, ago(10 * 60_000), ago(5 * 60_000));
+  // a は同じ文字、b は違う文字、c は digest が違うが空行だけの違い (周回は page_changes に残さない)
   const prevA = await insertArchive(prev, "https://site.test/a", "same");
-  await insertArchive(prev, "https://site.test/b", "old");
+  const prevB = await insertArchive(prev, "https://site.test/b", "old");
+  const prevC = await insertArchive(prev, "https://site.test/c", "blank-old");
   await insertArchive(other, "https://site.test/a", "same");
   const curA = await insertArchive(current, "https://site.test/a", "same");
-  await insertArchive(current, "https://site.test/b", "new");
+  const curB = await insertArchive(current, "https://site.test/b", "new");
+  const curC = await insertArchive(current, "https://site.test/c", "blank-new");
 
   // ── 比べる回を拾う ───────────────────────────────────────
   const order: string[] = [];
@@ -89,21 +94,23 @@ try {
       const pages = await store.comparedPages(current);
       check(
         "回のページは URL ごとに 1 つ、after-behaviors の行",
-        pages.length === 2 && pages.every((p) => p.stage === "after-behaviors"),
+        pages.length === 3 && pages.every((p) => p.stage === "after-behaviors"),
         JSON.stringify(pages),
       );
+      const pairs = pairsOf(pages, await store.comparedPages(prev));
+      check("比べる組は 3 つ", pairs.length === 3, JSON.stringify(pairs));
       await store.finishCompare(
         current,
         {
           state: "diffed",
           prevCrawlId: prev,
-          pagesCompared: 2,
+          pagesCompared: pairs.length,
           pagesChanged: 1,
           pages: [
             {
               url: "https://site.test/b",
-              archiveId: curA,
-              prevArchiveId: prevA,
+              archiveId: curB,
+              prevArchiveId: prevB,
               stage: "after-behaviors",
               state: "diffed",
               added: 1,
@@ -219,7 +226,7 @@ try {
   check(
     "一覧は新しい順で、今回と前の回の WACZ の id を持つ",
     runs[0]?.crawlId === current &&
-      runs[0].archiveIds.length === 4 &&
+      runs[0].archiveIds.length === 6 &&
       runs[0].scheduleName === `smoke ${org}`,
     JSON.stringify(runs[0]),
   );
@@ -227,11 +234,43 @@ try {
   check(
     "1 本はページの差分と前後の WACZ と要約を返す",
     detail?.pages.length === 1 &&
-      detail.pages[0]?.after?.archiveId === curA &&
-      detail.pages[0].before?.archiveId === prevA &&
+      detail.pages[0]?.after?.archiveId === curB &&
+      detail.pages[0].before?.archiveId === prevB &&
       detail.pages[0].after.browserhiveVersion === "29.0.2" &&
       detail.summary?.promptVersion === "change-v1",
     JSON.stringify(detail),
+  );
+  check(
+    "1 本は前の回の始まった時刻を持つ",
+    detail?.run.prevCrawlId === prev &&
+      detail.run.prevStartedAt?.toISOString() === ago(31 * HOUR) &&
+      detail.run.prevScheduledFor === null,
+    JSON.stringify(detail?.run),
+  );
+  check(
+    "同じだったページは、同じ文字の a と空行だけ違う c (URL の順・前と今の WACZ)",
+    JSON.stringify(
+      detail?.unchanged.map((p) => [p.url, p.before.archiveId, p.after.archiveId, p.stage]),
+    ) ===
+      JSON.stringify([
+        ["https://site.test/a", prevA, curA, "after-behaviors"],
+        ["https://site.test/c", prevC, curC, "after-behaviors"],
+      ]) && detail?.unchanged[0]?.after.browserhiveVersion === "29.0.2",
+    JSON.stringify(detail?.unchanged),
+  );
+  check(
+    "違ったページと同じだったページを足すと、比べた数",
+    detail?.pages.length !== undefined &&
+      detail.pages.length + detail.unchanged.length === detail.run.pagesCompared,
+    JSON.stringify(detail?.run),
+  );
+  const first = await reads.runDetail(prev);
+  check(
+    "前の回の無い回は、前の時刻も同じだったページも無い",
+    first?.run.prevCrawlId === null &&
+      first.run.prevStartedAt === null &&
+      first.unchanged.length === 0,
+    JSON.stringify(first),
   );
   const recent = await scheduleStoreOf(db).recentRuns(schedule);
   check(

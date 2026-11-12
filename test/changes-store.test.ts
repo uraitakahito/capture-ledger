@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { changeStoreOf, comparedLineOf } from "../src/changes/store.js";
+import { comparedLineOf } from "../src/changes/pairs.js";
+import { changeStoreOf } from "../src/changes/store.js";
 import { recordingDb } from "./recording-db.js";
 
 /**

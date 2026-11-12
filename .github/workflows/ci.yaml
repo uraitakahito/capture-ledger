@@ -159,8 +159,8 @@ jobs:
 
       # 前回からの変化 (CAPTURE-167) の store と読む SQL を、本物の Postgres に当てる。
       #
-      # 回を拾う SKIP LOCKED・034 の部分の一意にぶつかったときの ON CONFLICT・jsonb の差分・array(...) は、試験の
-      # 記録する DB では確かめられない。自分の組織 (smoke-<pid>) の予定・回・アーカイブだけを足して、最後に消す。
+      # 回を拾う SKIP LOCKED・034 の部分の一意にぶつかったときの ON CONFLICT・jsonb の差分・array(...)・同じだった
+      # ページ (周回と同じ組の作り方) は、試験の記録する DB では確かめられない。自分の組織 (smoke-<pid>) の予定・回・アーカイブだけを足して、最後に消す。
       - name: Changes against Postgres
         run: pnpm run build:tools && node dist/tools/changes-smoke.js
 

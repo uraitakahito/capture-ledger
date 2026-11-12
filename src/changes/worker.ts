@@ -17,6 +17,7 @@ import { createChildLogger } from "../logger.js";
 import { readWaczFacts } from "../replay-bundle/inspect.js";
 import type { PageLine } from "../search/document.js";
 import { changeOf } from "./change-of.js";
+import { pairsOf } from "./pairs.js";
 import type {
   ChangeStore,
   ComparedPage,
@@ -94,15 +95,9 @@ const compareRun = async (
     deps.store.comparedPages(run.crawlId),
     deps.store.comparedPages(prevCrawlId),
   ]);
-  const before = new Map(previous.map((page) => [page.url, page]));
-  let compared = 0;
+  const pairs = pairsOf(current, previous);
   const pages: NewPageChange[] = [];
-  for (const page of current) {
-    const prev = before.get(page.url);
-    // 伏せた・文字の無いページは比べない
-    if (prev === undefined || page.textSha256 === null || prev.textSha256 === null) continue;
-    if (page.textWithheld !== null || prev.textWithheld !== null) continue;
-    compared += 1;
+  for (const { after: page, before: prev } of pairs) {
     if (page.textSha256 === prev.textSha256) continue;
     const base = {
       url: page.url,
@@ -132,7 +127,7 @@ const compareRun = async (
   const state = pages.length > 0 ? "diffed" : "unchanged";
   await deps.store.finishCompare(
     run.crawlId,
-    { state, prevCrawlId, pagesCompared: compared, pagesChanged: pages.length, pages },
+    { state, prevCrawlId, pagesCompared: pairs.length, pagesChanged: pages.length, pages },
     now,
   );
   return { kind: "compared", crawlId: run.crawlId, state, pagesChanged: pages.length };
