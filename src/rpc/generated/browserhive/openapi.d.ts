@@ -133,7 +133,8 @@ export interface components {
             /** @description 描画後の DOM (behavior とバナー除去の後) を直列化した HTML (`text/html`)。受け取った元の本文ではない。 */
             html?: string;
             /**
-             * @description ページの `a[href]` から http(s) の URL を集めて重複を除いた JSON (`.links.json`、`application/json`)。
+             * @description ページの一番上の文書と同じ origin の枠の文書の `a[href]` から http(s) の URL を集めて重複を除いた
+             *     JSON (`.links.json`、`application/json`)。枠の数は `frames` に入る。
              *     JSON には redirect の後の最終 URL (`finalUrl`) も入る —— report の `url` は要求した URL のまま。
              */
             links?: string;
@@ -194,7 +195,10 @@ export interface components {
             /** @description 描画後の DOM を直列化した HTML。サーバが返した原文ではない。 */
             html: boolean;
             /**
-             * @description 描画後のページにある `<a href>` の一覧 (JSON)。http(s) のものだけを、href の完全一致で
+             * @description 描画後のページにある `<a href>` の一覧 (JSON)。読むのは一番上の文書と、その script から読める
+             *     枠の文書 (`frame`・`iframe` の同じ origin の文書。script が作った枠も) で、文書の順に並べる。
+             *     別 origin の枠と、伏せる方針の当たった枠の文書 (とその下) は読まず、`frames` に数だけを書く
+             *     (`read`・`unreadable`・`withheld`)。http(s) のものだけを、href の完全一致で文書をまたいで
              *     重複を除いて並べる。各項目は `href` (絶対 URL)・`text` (前後の空白を除き 200 文字まで)・
              *     `rel` (無ければ null)。
              */
