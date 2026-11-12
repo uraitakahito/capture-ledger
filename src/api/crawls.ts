@@ -1737,7 +1737,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // succeeded に戻さない —— 戻すと、failed で締めて署名した合本と、行の状態が食い違う。条件は行の更新の中で
       // 見る (読んだ時の `crawl.state` で決めると、読んだ後・書く前に締められた行を戻す)。数と理由はこれまでどおり
       // 足す (報告された取り込みは、締めた後でも capture-ledger に入っている)。
-      const reason = stopReason ?? (done ? ("completed" as const) : null);
+      //
+      // **辿るよう頼んだのに 1 本もリンクが無ければ `no_links`** (CAPTURE-245)。深さ 1 以上で、規則が通した
+      // リンクがこの段までの延べで 0 本のとき。`completed` (全部辿った) と言うと、frameset の頁のように
+      // 1 ページで黙って終わったクロールが緑に見える。深さ 0 は辿らないと頼んだので、0 本でも `completed`。
+      const noLinks = crawl.maxDepth > 0 && crawl.pagesDiscovered + discovered.length === 0;
+      const reason =
+        stopReason ?? (done ? (noLinks ? ("no_links" as const) : ("completed" as const)) : null);
       // **`succeeded` は 1 枚以上撮れたクロールだけ** (`crawl/close.ts`)
       const nothingCaptured = done && crawl.pagesCaptured + capturedCount === 0;
       await db

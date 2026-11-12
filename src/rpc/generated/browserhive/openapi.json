@@ -509,7 +509,7 @@
                     },
                     "links": {
                         "type": "string",
-                        "description": "ページの `a[href]` から http(s) の URL を集めて重複を除いた JSON (`.links.json`、`application/json`)。\nJSON には redirect の後の最終 URL (`finalUrl`) も入る —— report の `url` は要求した URL のまま。"
+                        "description": "ページの一番上の文書と同じ origin の枠の文書の `a[href]` から http(s) の URL を集めて重複を除いた\nJSON (`.links.json`、`application/json`)。枠の数は `frames` に入る。\nJSON には redirect の後の最終 URL (`finalUrl`) も入る —— report の `url` は要求した URL のまま。"
                     },
                     "mhtml": {
                         "type": "string",
@@ -576,7 +576,7 @@
                     },
                     "links": {
                         "type": "boolean",
-                        "description": "描画後のページにある `<a href>` の一覧 (JSON)。http(s) のものだけを、href の完全一致で\n重複を除いて並べる。各項目は `href` (絶対 URL)・`text` (前後の空白を除き 200 文字まで)・\n`rel` (無ければ null)。"
+                        "description": "描画後のページにある `<a href>` の一覧 (JSON)。読むのは一番上の文書と、その script から読める\n枠の文書 (`frame`・`iframe` の同じ origin の文書。script が作った枠も) で、文書の順に並べる。\n別 origin の枠と、伏せる方針の当たった枠の文書 (とその下) は読まず、`frames` に数だけを書く\n(`read`・`unreadable`・`withheld`)。http(s) のものだけを、href の完全一致で文書をまたいで\n重複を除いて並べる。各項目は `href` (絶対 URL)・`text` (前後の空白を除き 200 文字まで)・\n`rel` (無ければ null)。"
                     },
                     "mhtml": {
                         "type": "boolean",
