@@ -194,7 +194,7 @@ S3 は署名しか見ないので、URL を署名した瞬間に判断は確定�
 
 ```sh
 curl -X POST http://localhost:7070/api/crawls \
-     -H 'content-type: application/json' \
+     -H 'content-type: application/json' -H "idempotency-key: $(uuidgen)" \
      -d '{"seeds":["https://example.com/"],"maxDepth":2}'
 # → 202 { "crawlId": "9072b625-…" }
 
@@ -233,6 +233,28 @@ CREATE UNIQUE INDEX crawls_single_active_idx ON crawls ((true)) WHERE state = 'r
 叩く）。
 
 :::
+
+### 同じ要求を 2 回送っても 1 本
+
+**`POST /api/crawls` は `Idempotency-Key` の見出しを必ず求めます**（無い・形が違えば 400。見える ASCII の 1〜255 字）。
+capture-ledger は組織と鍵の組ごとに、最初に始めたクロールの答えを覚え（`crawl_requests`）、同じ鍵の送り直しには
+同じ `crawlId` の 202 を返して 2 本目を始めません。応答が切れた後に送り直す呼び出し元は、**同じ鍵**で送ります。
+
+| 来た物                 | 答え                                                 |
+| ---------------------- | ---------------------------------------------------- |
+| 新しい鍵               | いつもどおり（202・400・409 …）                      |
+| 覚えている鍵・同じ本文 | 最初の 202（同じ `crawlId`）。段は投げ直さない       |
+| 覚えている鍵・違う本文 | 422。1 つの鍵が 2 つの要求を指すと、どちらも嘘になる |
+| 鍵が無い               | 400                                                  |
+
+- **覚えるのは始めた答え（202）だけ。** 走行中の 409 も中身の 400 も覚えないので、走っている 1 本が終わってから（または直してから）同じ鍵で送れば始まります。
+- 本文は鍵の並びを揃えて比べます（JSON の鍵の順が違っても同じ要求）。
+- 鍵の期限は 24 時間。古い鍵は次に始める要求が消し、同じ字で新しく始められます。
+- 鍵の行は `crawls` の行・起点のページと同じトランザクションで入ります。同じ鍵が同時に 2 本届いたら、後ろは鍵の主キーの待ちで前の commit を待ち、前の答えを返します。
+- **鍵は名乗りの後に見ます。** 名乗らずに叩けば、鍵が無くても 401 です（capture-scheduler の doctor は、名乗らずに `{}` を送って 401 を見ることで、このエンドポイントが在るかを確かめます）。
+
+capture-workbench の「始める」と capture-scheduler の smoke・e2e は鍵を付けます。定期実行の回は API を通らないので鍵を使いません（重ならないのは時計の `skip locked` の仕事。[定期実行](/capture-ledger/ja/schedules/)）。
+表の形は [crawl_requests](/capture-ledger/ja/databases/crawl-requests/)。
 
 ### クロールの行の終わり方
 
@@ -353,7 +375,7 @@ subject に 202 が出た。
 
 ```sh
 curl -X POST http://localhost:7070/api/crawls \
-     -H 'content-type: application/json' \
+     -H 'content-type: application/json' -H "idempotency-key: $(uuidgen)" \
      -d '{"seeds":["https://example.com/"],"maxDepth":2,"perHostDelayMs":2000}'
 # → 202 { "crawlId": "9072b625-…" }
 

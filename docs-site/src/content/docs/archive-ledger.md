@@ -207,7 +207,7 @@ that starts a crawl, and one that reports on it.
 
 ```sh
 curl -X POST http://localhost:7070/api/crawls \
-     -H 'content-type: application/json' \
+     -H 'content-type: application/json' -H "idempotency-key: $(uuidgen)" \
      -d '{"seeds":["https://example.com/"],"maxDepth":2}'
 # → 202 { "crawlId": "9072b625-…" }
 
@@ -250,6 +250,37 @@ its due time does not move, and it starts once the running crawl has ended
 would hit the same hosts).
 
 :::
+
+### Sending the same request twice still starts one crawl
+
+**`POST /api/crawls` requires an `Idempotency-Key` header** (missing or malformed is a 400; 1 to 255
+visible ASCII characters). The ledger remembers the first crawl it started for each organization and
+key (`crawl_requests`), and answers a repeat with the same key with the same `crawlId` and a 202,
+without starting a second one. A caller that sends again after a dropped response sends **the same
+key**.
+
+| What arrives                 | Answer                                                       |
+| ---------------------------- | ------------------------------------------------------------ |
+| a new key                    | as usual (202, 400, 409, …)                                  |
+| a remembered key, same body  | the first 202 (same `crawlId`); no level is sent again       |
+| a remembered key, other body | 422: a key that names two requests makes either answer a lie |
+| no key                       | 400                                                          |
+
+- **Only a started crawl (202) is remembered.** A 409 for a running crawl and a 400 for the body are
+  not, so the same key starts a crawl once the running one has ended (or once the body is fixed).
+- The bodies are compared with their keys sorted (a different key order in the JSON is the same request).
+- A key lasts 24 hours. The next request that starts a crawl deletes older keys, and the same string
+  can start a new crawl.
+- The key row goes in the same transaction as the `crawls` row and its seed pages. When two
+  requests with the same key arrive together, the second waits on the key's primary key for the
+  first to commit and returns the first answer.
+- **The key is checked after identity.** A request that does not identify itself is a 401 even
+  without a key (capture-scheduler's doctor sends `{}` without identifying itself and expects a 401,
+  to see that the endpoint exists).
+
+capture-workbench's "Start" and capture-scheduler's smoke and e2e send a key. A scheduled run does not
+go through the API and uses no key (the clock's `skip locked` keeps it from running twice; see
+[Schedules](/capture-ledger/schedules/)). The table is [crawl_requests](/capture-ledger/databases/crawl-requests/).
 
 ### How a crawl row ends
 
@@ -389,7 +420,7 @@ BrowserHive v29.1.0 and later). Links inside frames from other origins are not r
 
 ```sh
 curl -X POST http://localhost:7070/api/crawls \
-     -H 'content-type: application/json' \
+     -H 'content-type: application/json' -H "idempotency-key: $(uuidgen)" \
      -d '{"seeds":["https://example.com/"],"maxDepth":2,"perHostDelayMs":2000}'
 # → 202 { "crawlId": "9072b625-…" }
 

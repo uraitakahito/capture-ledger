@@ -14,6 +14,7 @@ import { createChildLogger } from "../logger.js";
 import type { ReplayBundleResult } from "../replay-bundle/write.js";
 import type { CrawlRequester, PreparedCrawl } from "./prepare.js";
 import { recipeDigestOf } from "./recipe-digest.js";
+import { findRequest, type RememberedRequest, type RequestKey } from "./request-key.js";
 
 const log = createChildLogger({ module: "api" });
 
@@ -367,22 +368,51 @@ const busyBody = async (db: Kysely<Database>): Promise<Record<string, unknown>> 
 };
 
 export type Launched =
-  { kind: "started"; crawlId: string } | { kind: "busy"; body: Record<string, unknown> };
+  | { kind: "started"; crawlId: string }
+  | { kind: "busy"; body: Record<string, unknown> }
+  /** 同じ鍵の要求が先に始めていた (同時に届いた 2 本の後ろ)。覚えている答えを返す。 */
+  | { kind: "remembered"; request: RememberedRequest };
 
-/** 行を足して最初の段を投げる。走行中の 1 本とぶつかれば `busy` を返す (行は残らない)。 */
+/**
+ * 行を足して最初の段を投げる。走行中の 1 本とぶつかれば `busy` を返す (行は残らない)。
+ *
+ * 鍵 (`request`。CAPTURE-180) があれば、**鍵の行を先に**、`crawls` の行と起点のページと同じトランザクションで
+ * 入れる。同じ鍵が同時に来たら、後ろは鍵の主キーの待ちで前の commit を待ち、前の答えを読む ——
+ * `crawls` の行を先にすると、後ろは走行中の 1 本の index で待ち、409 を返してしまう。
+ * 走行中で断られたら鍵の行も残らない (409 は覚えない)。
+ */
 export const launchCrawl = async (
   deps: LaunchDeps,
   prepared: PreparedCrawl,
   who: CrawlRequester,
+  request?: RequestKey,
 ): Promise<Launched> => {
   const { db, capture, sink, dispatchLevel } = deps;
   const crawlId = randomUUID();
   let seeded: SeededPage[];
   try {
-    seeded = await insertCrawl(db, prepared, crawlId, who, sink);
+    seeded = await db.transaction().execute(async (trx) => {
+      if (request) {
+        await trx
+          .insertInto("crawlRequests")
+          .values({
+            orgId: who.orgId,
+            key: request.key,
+            requestSha256: request.sha256,
+            crawlId,
+            answer: JSON.stringify({ crawlId }),
+          })
+          .execute();
+      }
+      return insertCrawl(trx, prepared, crawlId, who, sink);
+    });
   } catch (err) {
     if (isUniqueViolation(err, "crawls_single_active")) {
       return { kind: "busy", body: await busyBody(db) };
+    }
+    if (request && isUniqueViolation(err, "crawl_requests_pkey")) {
+      const remembered = await findRequest(db, who.orgId, request.key);
+      if (remembered) return { kind: "remembered", request: remembered };
     }
     throw err;
   }
