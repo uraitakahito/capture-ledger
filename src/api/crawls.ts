@@ -98,22 +98,14 @@ import {
 import type { Claude } from "../claude/types.js";
 import { FIX_EFFORT, FIX_PROMPT_VERSION, fixInline, type FixResult } from "../scripts/fix.js";
 import type { DerivationStore } from "../derivations/store.js";
-import {
-  HOSTNAME,
-  parseHttpUrl,
-  siteOf,
-  type DiscoveredLink,
-  type ParsedUrl,
-} from "../crawl/scope.js";
+import { HOSTNAME, parseHttpUrl, siteOf, type ParsedUrl } from "../crawl/scope.js";
 import {
   acceptLinks,
   checkRules,
   compileRules,
   decidedOf,
-  pageLinks,
   ruleOf,
   ruleParts,
-  takeLinksFrom,
   type DecidedLink,
   type PageLink,
 } from "../crawl/rules.js";
@@ -121,6 +113,8 @@ import { aggregateDecisions, SAMPLES } from "../crawl/decisions.js";
 import { planNextLevel } from "../crawl/budget.js";
 import { cutOf, linkRows } from "../crawl/link-outcomes.js";
 import { pageParents, replaceLinks } from "../crawl/links-store.js";
+import { readPageLinks } from "../crawl/links-source.js";
+import { readLinkGraph, readPageLinksOf } from "../crawl/links-read.js";
 import { getJsonObject } from "../archive/s3.js";
 import { manifestOutcome, readManifest } from "../archive/manifest.js";
 import { maySubmit, unauthorized } from "./authorization.js";
@@ -619,6 +613,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           "finishedAt",
           "maxDepth",
           "pagesDiscovered",
+          "linksRecordedAt",
           "pagesCaptured",
           "error",
           "lastJobId",
@@ -659,7 +654,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           finishedAt: crawl.finishedAt,
           // 深さ 0 (辿らないクロール) かどうか。workbench が「このページだけ」と言うのに要る
           maxDepth: crawl.maxDepth,
+          // リンクの記録 (`039`) が在れば、規則が通した別々の URL の数 (起点を除く)。無ければ、段ごとに足した延べ
           pagesDiscovered: crawl.pagesDiscovered,
+          linksRecorded: crawl.linksRecordedAt !== null,
           pagesCaptured: crawl.pagesCaptured,
           pagesFailed: crawl.pagesFailed,
           error: crawl.error,
@@ -734,6 +731,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         startedAt: crawl.startedAt,
         finishedAt: crawl.finishedAt,
         pagesDiscovered: crawl.pagesDiscovered,
+        linksRecorded: crawl.linksRecordedAt !== null,
         pagesCaptured: crawl.pagesCaptured,
         pagesFailed: failures[0]?.total ?? 0,
         error: crawl.error,
@@ -1265,6 +1263,69 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   );
 
   /**
+   * クロール 1 本のリンクの構成 (図 1 枚ぶん)。**撮ったページ (親・深さ・結末・題・出入りのリンクの数) と、
+   * 見つけた別々の URL がどうなったかの内訳**を 1 度に返す (`crawl/links-read.ts`)。撮らなかった URL は 1 本ずつは
+   * 返さず、最初に見つけたページと理由で束ねた数 (`bundles`) と、規則で落とした物のホスト名ごとの数 (`hosts`) に
+   * する —— 1 本ずつは `GET /api/crawls/:id/links/:page`。
+   *
+   * リンクの記録 (`crawl_links`・`039`) が無いクロールは `recorded: false` で、ページと親 (木) だけを返す。
+   * 認可と 404 は `GET /api/crawls/:id` と同じ。
+   */
+  app.get<{ Params: { id: string } }>(
+    "/api/crawls/:id/links",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: { id: { type: "string", format: "uuid" } },
+          required: ["id"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) {
+        return reply.code(404).send({ error: "not found" });
+      }
+      const graph = await readLinkGraph(db, request.params.id);
+      if (graph === undefined) return reply.code(404).send({ error: "not found" });
+      return reply.code(200).send(graph);
+    },
+  );
+
+  /**
+   * 1 ページの出入りのリンク。`out` はそのページにあったリンクを 1 本ずつ (あった順・どうなったか・行き先の
+   * ページの id)、`in` はそのページへのリンクを持つページ。ページはクロールとの組で引く (ほかのクロールのページなら
+   * 404)。認可と 404 は `GET /api/crawls/:id` と同じ。
+   */
+  app.get<{ Params: { id: string; page: string } }>(
+    "/api/crawls/:id/links/:page",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            page: { type: "string", pattern: PAGE_ID },
+          },
+          required: ["id", "page"],
+        },
+      },
+    },
+    async (request, reply) => {
+      const identity = await resolveIdentity(request);
+      if (!identity) return unauthorized(reply);
+      if (!(await maySubmit(fga, identity))) {
+        return reply.code(404).send({ error: "not found" });
+      }
+      const links = await readPageLinksOf(db, request.params.id, request.params.page);
+      if (links === undefined) return reply.code(404).send({ error: "not found" });
+      return reply.code(200).send(links);
+    },
+  );
+
+  /**
    * そのドメイン (と、その下のサブドメイン) で規則が決めたこと。**クロールを跨いで**、新しい順。
    * 「このドメインを落としたことはあるか。どのクロールの、どの規則で」に答える。
    *
@@ -1779,35 +1840,19 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         const pages: { from: string | null; links: DecidedLink[]; all: PageLink[] }[] = [];
         for (const page of results) {
           if (page.linksLocation === undefined || page.linksLocation === "") continue;
-          const from = parseHttpUrl(page.url);
-          if (from === undefined || !takeLinksFrom(from, rules, parsedSeeds)) continue;
-          // `s3://bucket/key` から鍵だけを取り出す。bucket はこちらの設定を使う ——
-          // 報告に入っていた bucket を信じると、報告する側が読み先を選べることになる。
-          const key = page.linksLocation.replace(/^s3:\/\/[^/]+\//, "");
-          const raw = await getJsonObject(deps.s3, deps.bucket, key);
-          if (raw === null || typeof raw !== "object") continue;
-          // **リダイレクトの後のページでも決める。** 頼んだ URL が辿る範囲でも、外へ跳ばされた先は
-          // 辿るページではない —— 読むと、撮るだけのはずの外のページのリンクが次の段に入る。
-          // `finalUrl` は BrowserHive が links の JSON に必ず書く (無い古い形なら頼んだ URL で決める)。
-          const finalUrl = (raw as { finalUrl?: unknown }).finalUrl;
-          if (typeof finalUrl === "string") {
-            const landed = parseHttpUrl(finalUrl);
-            if (landed === undefined || !takeLinksFrom(landed, rules, parsedSeeds)) continue;
-          }
-          const parsed = (raw as { links?: unknown }).links;
-          if (!Array.isArray(parsed)) continue;
-          const links: DiscoveredLink[] = [];
-          for (const item of parsed) {
-            if (
-              typeof item === "object" &&
-              item !== null &&
-              typeof (item as DiscoveredLink).href === "string"
-            ) {
-              links.push(item as DiscoveredLink);
-            }
-          }
-          const all = pageLinks(links, rules, parsedSeeds);
-          pages.push({ from: idOf.get(page.url) ?? null, links: decidedOf(all), all });
+          // 読むか読まないか (撮るだけの先・外へ跳ばされた先は読まない) は `crawl/links-source.ts`
+          const read = await readPageLinks(
+            { s3: deps.s3, bucket: deps.bucket },
+            { url: page.url, linksLocation: page.linksLocation },
+            rules,
+            parsedSeeds,
+          );
+          if (read.kind !== "links") continue;
+          pages.push({
+            from: idOf.get(page.url) ?? null,
+            links: decidedOf(read.links),
+            all: read.links,
+          });
         }
 
         if (token !== undefined) await renewLease();

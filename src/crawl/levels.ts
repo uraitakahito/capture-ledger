@@ -7,6 +7,7 @@
 import { sql, type Kysely } from "kysely";
 
 import type { Database } from "../db/database.js";
+import { distinctDiscovered } from "./links-read.js";
 
 /**
  * 報告中の期限。過ぎれば、同じ段の次の報告が取り直せる (処理の途中で API が落ちたとき)。flow の report_level の再試行
@@ -27,8 +28,15 @@ export class Superseded extends Error {
 }
 
 /**
- * クロールの合計を段の行の和で書き直し、書いた値を返す。**足し算をしない** —— 報告のやり直しで数が重ならない。
+ * クロールの合計を書き直し、**段の行の和**を返す。**足し算をしない** —— 報告のやり直しで数が重ならない。
  * `db` はトランザクションでもよい。
+ *
+ * 撮れた数は段の行の和。**見つけたリンクの数 (`crawls.pages_discovered`・一覧の「リンク」) は、リンクの記録
+ * (`crawl_links`・`039`) が在れば、規則が通した別々の URL の数** (`links-read.ts` の `distinctDiscovered`)。
+ * 段の和は延べで、別の段で同じ URL が出ると 2 度数える —— 記録の無いクロールだけ、今までどおり延べを書く。
+ * リンクを残した**後**に呼ぶこと。
+ *
+ * 返す `pagesDiscovered` は段の和のまま。`no_links` (規則が通したリンクが 1 本も無い) の判定は、これで見る。
  */
 export const writeTotals = async (
   db: Kysely<Database>,
@@ -42,9 +50,13 @@ export const writeTotals = async (
     ])
     .where("crawlId", "=", crawlId)
     .executeTakeFirstOrThrow();
+  const distinct = await distinctDiscovered(db, crawlId);
   await db
     .updateTable("crawls")
-    .set({ pagesCaptured: totals.pagesCaptured, pagesDiscovered: totals.pagesDiscovered })
+    .set({
+      pagesCaptured: totals.pagesCaptured,
+      pagesDiscovered: distinct ?? totals.pagesDiscovered,
+    })
     .where("id", "=", crawlId)
     .execute();
   return totals;

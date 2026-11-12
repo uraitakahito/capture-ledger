@@ -91,6 +91,7 @@ export default defineConfig({
                 { label: "crawl_schedules", slug: "databases/crawl-schedules" },
                 { label: "crawl_requests", slug: "databases/crawl-requests" },
                 { label: "crawl_levels", slug: "databases/crawl-levels" },
+                { label: "crawl_links", slug: "databases/crawl-links" },
                 { label: "fga_outbox", slug: "databases/fga-outbox" },
                 { label: "tuple", slug: "databases/tuple" },
               ],

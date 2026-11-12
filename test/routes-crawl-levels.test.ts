@@ -313,6 +313,53 @@ describe("終わりの commit", () => {
       queries.some((query) => query.sql.includes('"pages_captured" = "pages_captured" +')),
     ).toBe(false);
   });
+
+  it("リンクの記録が在れば、クロールの合計の「見つけた数」は、規則が通した別々の URL の数を書く（段の和ではない）", async () => {
+    const { app, queries } = await build(results, { distinctDiscovered: 7 });
+    await report(app);
+    await app.close();
+    const totals = queries.find((query) =>
+      query.sql.startsWith('update "crawls" set "pages_captured" = $1, "pages_discovered" = $2'),
+    );
+    // 撮れた数は段の和 (この段の 1)、見つけた数は別々の URL の数
+    expect(totals?.parameters.slice(0, 2)).toEqual([1, 7]);
+    // 段の行には、段の数 (この段で規則が通した本数) をそのまま書く
+    const counts = queries.find((query) =>
+      query.sql.startsWith('update "crawl_levels" set "pages_captured" = $1'),
+    );
+    expect(counts?.parameters.slice(0, 2)).toEqual([1, 1]);
+  });
+
+  it("リンクの記録が無ければ、今までどおり段の和を書く", async () => {
+    const { app, queries } = await build(results);
+    await report(app);
+    await app.close();
+    const totals = queries.find((query) =>
+      query.sql.startsWith('update "crawls" set "pages_captured" = $1, "pages_discovered" = $2'),
+    );
+    // 並べたクロールの行の 1 (前の段までの和) に、この段の 1 を足した 2
+    expect(totals?.parameters.slice(0, 2)).toEqual([1, 2]);
+  });
+
+  it("no_links の判定は段の和で見る: 別々の URL が 0 でも、規則が通したリンクが在れば「リンクなし」にしない", async () => {
+    // 最後の段 (次の段の行が無い)。起点へ戻るリンクしか無いと、別々の URL は 0 だが、通したリンクは 1 本在る
+    const { app } = await build(
+      [
+        [crawlRow({ pagesDiscovered: 0 })],
+        [{ id: "11" }],
+        [],
+        [
+          { url: SEED, depth: 0, state: "captured" },
+          { url: LEAF, depth: 1, state: "captured" },
+        ],
+        [],
+      ],
+      { distinctDiscovered: 0 },
+    );
+    const res = await report(app);
+    await app.close();
+    expect(res.json()).toEqual({ next: [], stopReason: "completed" });
+  });
 });
 
 describe("締めたクロールに届いた段の報告（CAPTURE-77）", () => {

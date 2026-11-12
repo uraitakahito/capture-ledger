@@ -23,6 +23,19 @@ export const cutOf = (at: { nextDepth: number; maxDepth: number; closed: boolean
   at.closed ? "closed" : at.nextDepth > at.maxDepth ? "max_depth" : "max_pages";
 
 /**
+ * 埋め直しのときの、入らなかった理由。段の報告と違って「その段でクロールが締まっていたか」は残っていないので、
+ * クロールの止まった理由から決める: 深さを超えていれば深さ。深さの内で行が無いのは、枚数で切ったか、締まって
+ * いたかのどちらかで、**枚数で切ったクロールは止まった理由が必ず `max_pages`** (最初に効いた理由を残すので、
+ * 深さより先に枚数が効く)。そうでなければ、締まっていた。
+ */
+export const cutOfRecorded = (at: {
+  nextDepth: number;
+  maxDepth: number;
+  stopReason: string | null;
+}): Cut =>
+  at.nextDepth > at.maxDepth ? "max_depth" : at.stopReason === "max_pages" ? "max_pages" : "closed";
+
+/**
  * リンク 1 本がどうなったか。
  *
  * `rowFrom` は、行き先の URL の `crawl_pages` の行の `discovered_from` (行が無ければ `undefined`、起点の行なら

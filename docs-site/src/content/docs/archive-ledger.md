@@ -525,12 +525,14 @@ nothing left is `completed`). With the default of 30 pages, `max_pages` is the o
 outcome — that is deliberate, so the limit is visible in normal use rather than a surprise.
 
 `pagesCaptured` is the number of pages captured, seeds included. `pagesDiscovered` is the
-number of links on those pages that the rules let through, and a depth-0 crawl counts them
-too. It includes links that were never captured (skipped by robots, cut by a limit) and URLs
-already captured (such as a link back to the seed), and it is added up level by level, so a
-URL found on two levels counts twice. `pagesFailed` is the number of pages that could not be
-captured. They count different things, so their difference is not what was dropped. What the
-rules and robots dropped is on `GET /api/crawls/:id/decisions`.
+number of **distinct URLs** the rules let through among the links on the captured pages, counted
+for a depth-0 crawl too. It includes URLs that were not captured (deferred by robots, cut by a
+limit). Seeds are not counted (a link back to a seed is not a discovery). Only a crawl whose
+`linksRecorded` is `false` (one from before links were kept one row each) still has the per-level
+sum, which counts a URL twice when two levels find it. `pagesFailed` is the number of pages that
+could not be captured. The breakdown (captured, cut by the page or depth limit, dropped by a rule)
+is on `GET /api/crawls/:id/links`, and what the rules and robots dropped is on
+`GET /api/crawls/:id/decisions`.
 
 ### What gets followed
 
@@ -636,6 +638,43 @@ The domain query covers the host and its subdomains at a label boundary, newest 
 first; `days` defaults to 90 and `action` to `skip`, and `truncated` says when the answer
 was cut at 500 rows. Windmill keeps a run's details for 30 days at most; these rows last as
 long as the crawl does.
+
+### Every link, one row
+
+The level report keeps every link found on a captured page, with what became of it, in
+[`crawl_links`](/capture-ledger/databases/crawl-links/). It replaces the rows of this level's pages in
+the same transaction that inserts the next level's pages.
+
+```sh
+curl http://localhost:7070/api/crawls/9072b625-…/links
+# → { "crawlId": "…", "recorded": true,
+#     "summary": { "captured": 29, "failed": 0, "skipped": 0, "pending": 0,
+#                  "maxPages": 28, "maxDepth": 3, "closed": 0, "skip": 69, "nofollow": 0, "hosts": 17 },
+#     "pages": [{ "id": "754", "parent": null, "depth": 0, "url": "https://…/", "title": "…", "state": "captured",
+#                 "reason": null, "out": { "followed": 9, "known": 0, "maxPages": 0, "maxDepth": 0,
+#                                          "closed": 0, "skip": 5, "nofollow": 0 }, "in": 0 }, …],
+#     "bundles": [{ "from": "757", "outcome": "max_pages", "urls": 14 }, …],
+#     "hosts": [{ "hostname": "jfdb.jp", "urls": 45 }, …],
+#     "cross": [["755", "763"], …], "crossTruncated": false }
+
+curl http://localhost:7070/api/crawls/9072b625-…/links/757
+# → { "out": [{ "seq": 0, "url": "https://…/tv/trick3.htm", "text": "…", "rule": 1,
+#               "outcome": "followed", "to": "781" }, …],
+#     "in":  [{ "from": "754", "text": "…" }] }
+```
+
+`summary` says **what became of the distinct URLs the crawl found (seeds excluded)**. `captured`,
+`failed`, `skipped` and `pending` are the states of the URLs that got a row; `maxPages`, `maxDepth` and
+`closed` are why a URL the rules let through did not get one; `skip` counts the URLs a rule dropped
+(`hosts` is how many host names they span). A URL counts once however many pages link to it, and a URL
+with no row counts under the `outcome` of the first link that found it (shallowest level, then page id,
+then position on the page). `pages[].out` and `in` count that page's links out and in, `bundles` groups
+the URLs with no row by the page that first found them and the reason, and `cross` lists the edges that
+are not in the tree (links to a page that already had a row; cut at 2,000, and `crossTruncated` says so).
+
+A crawl with no link record (one from before this table) answers `recorded: false` with only its pages
+and their parents (the tree). `pnpm run links:backfill --write` fills the crawls whose `.links.json`
+are still in the store.
 
 ### Pages and their capture logs
 
