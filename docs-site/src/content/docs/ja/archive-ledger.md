@@ -136,15 +136,16 @@ curl http://localhost:7070/api/archives
 どちらのリクエストも形は route の JSON Schema で決まっています。説明ではなく
 検査そのものが契約です。
 
-|                                       |          |                                                                         |
-| ------------------------------------- | -------- | ----------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`          | `id`     | UUID。違えば **400**（認可より前に落ちる）                              |
-| `GET /api/archives`                   | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
-| `GET /api/crawls`                     | `state`  | `running` / `succeeded` / `failed`。違えば **400**                      |
-|                                       | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
-| `GET /api/crawls/:id/pages`           | `after`  | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                 |
-|                                       | `limit`  | 1〜500。既定 100。外れは **400**                                        |
-| `GET /api/crawls/:id/pages/:page/log` | `page`   | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる） |
+|                                         |          |                                                                         |
+| --------------------------------------- | -------- | ----------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`            | `id`     | UUID。違えば **400**（認可より前に落ちる）                              |
+| `GET /api/archives`                     | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
+| `GET /api/crawls`                       | `state`  | `running` / `succeeded` / `failed`。違えば **400**                      |
+|                                         | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
+| `GET /api/crawls/:id/pages`             | `after`  | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                 |
+|                                         | `limit`  | 1〜500。既定 100。外れは **400**                                        |
+| `GET /api/crawls/:id/pages/:page/log`   | `page`   | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる） |
+| `GET /api/crawls/:id/pages/:page/trace` | `page`   | 同じ                                                                    |
 
 `before` はカーソルで、直前に受け取った最後の行の `capturedAt`（クロールなら
 `startedAt`）を渡します。
@@ -652,6 +653,42 @@ capture-ledger が持つのは 2 回目の `taskId` だけなので、1 回目�
 またエンドポイントの認可は組織を見ない `maySubmit` で、クロールを始められる者は、どのクロールの行も ——
 スクリプトが報告した値も、取り込みのページが出した文も —— 読めます。`GET /api/crawls/:id`
 と同じ性質です。
+
+### 取り込みの経緯
+
+1 回の取り込みで何がいつ起きたかを、1 本で読むエンドポイントです。[capture-workbench](https://github.com/uraitakahito/capture-workbench)
+の「経緯」の画面が読みます。
+
+```sh
+curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
+# → { "page": { …一覧と同じ形…, "submittedAt": "2026-11-04T05:12:00.012Z", "finishedAt": "2026-11-04T05:12:15.201Z" },
+#     "archive": { "id": "a1b2…", "objectKey": "…/….wacz" },
+#     "capture": { "status": "success", "timestamp": "2026-11-04T05:12:15.108Z", "captureProcessingTimeMs": 14873,
+#                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … } },
+#     "log": { …ログのエンドポイントと同じ物… },
+#     "trace": null,
+#     "reason": null }
+```
+
+**capture-ledger は経緯を持ちません。** ログと同じく、そのたびに保管庫の `.result.json` を読んで返します。
+
+- `page` は一覧と同じ形に、flow が測った投入と完了（`crawl_pages` の `submitted_at`・`finished_at`）を足した物です。
+- `capture` は `.result.json` から、時間軸を組むのに要る欄を選んだ物です: `status`・`timestamp`・
+  `captureProcessingTimeMs`・`httpStatusCode`・`errorDetails`・`settle`・`waczStats`・`completeness`・`document`・
+  `windowsNotOpened`。下位の object は書かれたままで、取り込みに無い欄は鍵ごとありません。`timestamp` は取り込みが
+  終わった時刻で、`timestamp − captureProcessingTimeMs` が始まりです。ログの行の `ms` の起点（最初の行の
+  `at − ms`）とは、数十 ms ずれることがあります。
+- `archive` は WACZ の id と保管庫の鍵です。**鍵は、その WACZ を見てよいとき（`can_view`）だけ**で、見てよくなければ
+  `objectKey` は `null` です。WACZ の無い取り込み（時間切れ・失敗）では `archive` ごと `null` です。
+- `log` を持たない `.result.json`（BrowserHive v24.0.0 より前）は、`log` が `null` になるだけで、`capture` は返ります。
+- `trace` は、要求ごとの始まり・終わり・内訳です。BrowserHive v30.0.0 から `.result.json` に載り、それより前の取り込みでは `null` です。
+
+読めないときも 200 で、`capture`・`log`・`trace` が `null` になり、理由（`reason`）が入ります。理由はログのエンドポイントの
+上の 4 つ（`not-captured`・`no-manifest`・`manifest-missing`・`manifest-invalid`）で、`no-log` はありません。保管庫に届かなければ 502 です。
+
+認可はログと同じ `maySubmit` です。クロールを始められる者は、どのクロールの経緯も読めます。WACZ の中身を読む許可
+（`can_view`）より広いので、WACZ の鍵だけを `can_view` で絞っています。**この答えは署名の下にありません。**
+示すための正は、WACZ の中の記録です。
 
 ## 全文検索
 

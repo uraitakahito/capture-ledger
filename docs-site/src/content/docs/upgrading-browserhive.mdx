@@ -98,7 +98,7 @@ After bumping, read the upstream release notes for anything that touches
 
 ### What the manifest check accepts
 
-The level handler, reconcile and the log route read every `.result.json` through
+The level handler, reconcile, the log route and the trace route read every `.result.json` through
 `readManifest` (`src/archive/manifest.ts`), which checks it with Ajv against the copy of
 `CaptureResultReport`. What a bump changes there:
 

@@ -97,7 +97,7 @@ API の追加だけの変更 (オプショナルなリクエストフィール�
 
 ### manifest の照合が通すもの
 
-段の登録・reconcile・1 ページのログのエンドポイントは、どれも `.result.json` を `readManifest`
+段の登録・reconcile・1 ページのログのエンドポイント・取り込みの経緯のエンドポイントは、どれも `.result.json` を `readManifest`
 （`src/archive/manifest.ts`）で読み、写した `CaptureResultReport` に Ajv で照らします。版を上げると、
 ここで次のことが効きます。
 
