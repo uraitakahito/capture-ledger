@@ -136,7 +136,7 @@ const PAGES_MAX = 500;
  * JSON の数は 2^53 を超えると丸まる。桁を縛るのは、bigint の上限 (19 桁) を超える値を SQL に渡すと
  * Postgres が「範囲の外」で断り、400 ではなく 500 になるから。
  */
-const PAGE_ID = "^[0-9]{1,18}$";
+export const PAGE_ID = "^[0-9]{1,18}$";
 /** 一覧の 1 ページ。`GET /api/archives` と同じ大きさに揃えてある。 */
 const CRAWLS_PAGE = 50;
 /** `GET /api/decisions` が返す行の上限。超えたら `truncated` で言う (`com` のような広いドメインのため)。 */
@@ -298,7 +298,7 @@ const secretsOf = (
 
 /**
  * クロール 1 本のページの行と、その取り込みの WACZ の id・撮った時刻・WACZ が最初に入った合本の版。ページの一覧と
- * 1 ページのログのエンドポイントが、同じ形を返すため。
+ * 1 ページのログのエンドポイントと、経緯のエンドポイント (`api/trace.ts`) が、同じ形を返すため。
  *
  * **繋ぐのは `task_id`** (`archives.crawl_id` は 027 より前の行で空。`waczCount` と同じ)。uuid 側を text に倒す
  * (`waczCount` と同じ理由 —— 素で繋ぐと `operator does not exist`、逆向きは uuid の形でない値が 1 行でもあると
@@ -306,7 +306,7 @@ const secretsOf = (
  * 1 つの取り込みの WACZ は 1 本なので行は増えないはずだが、`distinct on` で 1 ページ 1 行に縛る —— 増えれば
  * 一覧の `limit` と `next` がずれる。並びはページの id の昇順 (`crawl_pages` に入った順)。
  */
-const pageRows = (db: Kysely<Database>, crawlId: string) =>
+export const pageRows = (db: Kysely<Database>, crawlId: string) =>
   db
     .selectFrom("crawlPages as p")
     .leftJoin("archives as a", (join) =>
@@ -351,7 +351,7 @@ interface PageRow {
  * `bundledRev ≤ replayBundle.rev` なら、そのページは capture-ledger が指す合本の中で開ける (workbench が replay の
  * `#view=replay&url=…&ts=…` を組むのに使う)。
  */
-const pageOf = (row: PageRow) => ({
+export const pageOf = (row: PageRow) => ({
   id: row.id,
   url: row.url,
   depth: row.depth,

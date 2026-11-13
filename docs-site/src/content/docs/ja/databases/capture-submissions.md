@@ -68,7 +68,7 @@ submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
 
 ## 読まれ方
 
-読み手は 2 つです。
+読み手は 3 つです。
 
 **reconcile**（`reconcile.ts`）が、`manifest_key` を持ち、まだアーカイブの無い行を引きます。
 
@@ -84,6 +84,9 @@ manifest_key を持ち、archives に行の無い capture_submissions の行
 を返します（[ページと取り込みのログ](/capture-ledger/ja/archive-ledger/#ページと取り込みのログ)）。
 `crawl_pages.task_id` は text、この表の `task_id` は uuid なので、uuid の側を text に倒して繋ぎます
 —— 逆向きは、uuid の形でない値が 1 行でもあると問い合わせごと落ちます。
+
+**取り込みの経緯のエンドポイント**（`GET /api/crawls/:id/pages/:page/trace`）も、同じ道で `manifest_key` を引き、
+その `.result.json` から取り込みの欄・`log`・`trace` を返します（[取り込みの経緯](/capture-ledger/ja/archive-ledger/#取り込みの経緯)）。
 
 ## 列の要点
 

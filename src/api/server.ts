@@ -40,6 +40,7 @@ import { claudeBudgetUsd, createClaude } from "../config/claude.js";
 import { derivationStoreOf } from "../derivations/store.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerChangeRoutes } from "./changes.js";
+import { registerTraceRoutes } from "./trace.js";
 import { changeReadsOf } from "../changes/reads.js";
 import { changeStoreOf } from "../changes/store.js";
 import { changeClock } from "../changes/worker.js";
@@ -322,6 +323,9 @@ const start = async (options: ServerOptions): Promise<void> => {
     index: searchSettings.index,
     resolveIdentity,
   });
+
+  // 取り込み 1 回の経緯 (CAPTURE-270)。保管庫の `.result.json` を読むだけなので、webhook の無い配備でも出す
+  registerTraceRoutes(app, { db, fga, s3, bucket: storage.bucket, resolveIdentity });
 
   // 前回からの変化 (CAPTURE-167)。予定の回を前の回と比べ、違えば Claude に要約させる。鍵が無ければ比べるだけ。
   // webhook の無い配備でも回す (予定の回が在れば比べられる)

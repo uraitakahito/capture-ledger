@@ -145,15 +145,16 @@ curl http://localhost:7070/api/archives
 The shape of both requests is a JSON Schema on the route, so the checking is
 the contract rather than a description of it:
 
-|                                       |          |                                                                                          |
-| ------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`          | `id`     | a UUID — anything else is **400**, before authorization runs                             |
-| `GET /api/archives`                   | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
-| `GET /api/crawls`                     | `state`  | `running` / `succeeded` / `failed` — anything else is **400**                            |
-|                                       | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
-| `GET /api/crawls/:id/pages`           | `after`  | the previous answer's `next`: digits only, at most 18 — anything else is **400**         |
-|                                       | `limit`  | 1 to 500, default 100 — anything else is **400**                                         |
-| `GET /api/crawls/:id/pages/:page/log` | `page`   | a page id: digits only, at most 18 — anything else is **400**, before authorization runs |
+|                                         |          |                                                                                          |
+| --------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`            | `id`     | a UUID — anything else is **400**, before authorization runs                             |
+| `GET /api/archives`                     | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
+| `GET /api/crawls`                       | `state`  | `running` / `succeeded` / `failed` — anything else is **400**                            |
+|                                         | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
+| `GET /api/crawls/:id/pages`             | `after`  | the previous answer's `next`: digits only, at most 18 — anything else is **400**         |
+|                                         | `limit`  | 1 to 500, default 100 — anything else is **400**                                         |
+| `GET /api/crawls/:id/pages/:page/log`   | `page`   | a page id: digits only, at most 18 — anything else is **400**, before authorization runs |
+| `GET /api/crawls/:id/pages/:page/trace` | `page`   | the same                                                                                 |
 
 `before` is a cursor: pass the `capturedAt` (or, for crawls, the `startedAt`) of the
 last row you were given.
@@ -734,6 +735,46 @@ the second attempt's `taskId` is recorded, so the first attempt's log is in the 
 reached from here. And the gate is `maySubmit`, which does not look at organizations: whoever may
 start crawls can read every crawl's lines — what the scripts reported and what the captured pages
 printed — just as with `GET /api/crawls/:id`.
+
+### One capture's trace
+
+One route returns what happened, and when, during a single capture. The "trace" view of
+[capture-workbench](https://github.com/uraitakahito/capture-workbench) reads it.
+
+```sh
+curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
+# → { "page": { …same shape as the list…, "submittedAt": "2026-11-04T05:12:00.012Z", "finishedAt": "2026-11-04T05:12:15.201Z" },
+#     "archive": { "id": "a1b2…", "objectKey": "…/….wacz" },
+#     "capture": { "status": "success", "timestamp": "2026-11-04T05:12:15.108Z", "captureProcessingTimeMs": 14873,
+#                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … } },
+#     "log": { …the same object the log route returns… },
+#     "trace": null,
+#     "reason": null }
+```
+
+**capture-ledger keeps none of this.** As with the log, each call reads the capture's `.result.json` from the store.
+
+- `page` is the list's shape plus the submit and finish times the flow measured (`submitted_at` and `finished_at` of
+  `crawl_pages`).
+- `capture` picks the members of `.result.json` a timeline needs: `status`, `timestamp`, `captureProcessingTimeMs`,
+  `httpStatusCode`, `errorDetails`, `settle`, `waczStats`, `completeness`, `document` and `windowsNotOpened`. Nested
+  objects are passed through as written, and a member the capture does not have is absent. `timestamp` is when the
+  capture ended, so `timestamp − captureProcessingTimeMs` is when it began. That can differ by tens of milliseconds
+  from the origin of the log's `ms` (the first line's `at − ms`).
+- `archive` is the WACZ's id and its key in the store. **The key is returned only when the caller may view that
+  WACZ (`can_view`)**; otherwise `objectKey` is `null`. A capture without a WACZ (a timeout or a failure) has
+  `archive: null`.
+- A `.result.json` without a `log` (BrowserHive before v24.0.0) only makes `log` `null`; `capture` is still returned.
+- `trace` is each request's start, end and timing. BrowserHive writes it into `.result.json` from v30.0.0; for
+  earlier captures it is `null`.
+
+When it cannot be read the answer is still 200, with `capture`, `log` and `trace` `null` and a `reason`. The reasons
+are the first four of the log route (`not-captured`, `no-manifest`, `manifest-missing`, `manifest-invalid`); there is
+no `no-log`. A store that cannot be reached is a 502.
+
+The gate is `maySubmit`, as for the log: whoever may start crawls can read any crawl's trace. That is wider than
+the permission to read a WACZ (`can_view`), so only the WACZ's key is narrowed by `can_view`. **This answer is not
+covered by a signature.** For evidence, the records inside the WACZ are the source.
 
 ## Full-text search
 

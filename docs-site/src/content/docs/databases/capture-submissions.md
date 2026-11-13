@@ -69,7 +69,7 @@ again, hence `onConflict … doNothing()`.
 
 ## How it is read
 
-There are two readers.
+There are three readers.
 
 **Reconcile** (`reconcile.ts`) reads the rows that carry a `manifest_key` and have no archive yet:
 
@@ -85,6 +85,10 @@ to this table's `manifest_key` and returns the `log` of that `.result.json`
 ([Pages and their capture logs](/capture-ledger/archive-ledger/#pages-and-their-capture-logs)).
 `crawl_pages.task_id` is text and this table's `task_id` is a uuid, so the uuid side is cast to text —
 the other way round, a single value that is not uuid-shaped fails the whole query.
+
+**The trace route for one capture** (`GET /api/crawls/:id/pages/:page/trace`) follows the same path to
+`manifest_key` and returns that `.result.json`'s capture members, `log` and `trace`
+([One capture's trace](/capture-ledger/archive-ledger/#one-captures-trace)).
 
 ## Column notes
 

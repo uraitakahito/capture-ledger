@@ -12,7 +12,8 @@
  * 照らさずに型だけ名乗ると、v11 の manifest や壊れた物が `status` の比較を素通りして
  * capture-ledger に入りうる。通らなければ、どの項目が駄目かを添えて投げる。呼ぶ側 (段の登録・
  * reconcile) は 1 件の失敗で止まらず、飛ばしてそう言う。1 ページのログのエンドポイント
- * (`GET /api/crawls/:id/pages/:page/log`) は、投げたら `manifest-invalid` と答える。
+ * (`GET /api/crawls/:id/pages/:page/log`) と経緯のエンドポイント (`GET /api/crawls/:id/pages/:page/trace`) は、
+ * 投げたら `manifest-invalid` と答える。
  *
  * 契約に無い項目は通す。BrowserHive が項目を足す版上げで capture-ledger が止まらないため。
  *
