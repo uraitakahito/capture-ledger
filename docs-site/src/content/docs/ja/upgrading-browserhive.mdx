@@ -102,7 +102,9 @@ API の追加だけの変更 (オプショナルなリクエストフィール�
 ここで次のことが効きます。
 
 - **写しが知らない項目は通します。** 新しい BrowserHive の manifest も読めるので、写しを上げる前に
-  BrowserHive の版が上がっても、capture-ledger は止まりません。
+  BrowserHive の版が上がっても、capture-ledger は止まりません。写しが知らない enum の値は通しません。
+  写しを上げるまで、段の登録と reconcile はその manifest を飛ばし、1 ページのログのエンドポイントと
+  取り込みの経緯のエンドポイントは `manifest-invalid` と答えます。
 - **契約が既定値を持つ項目は、欠けていれば補います**（`useDefaults`）。後から `@default`
   つきで必須になった項目は、古い manifest を落としません。既定値の無い必須の項目が増えたときと、enum
   の値が消えたときは落とします —— 上げる前に、新旧の `openapi.json` どうしで `required` と `enum`

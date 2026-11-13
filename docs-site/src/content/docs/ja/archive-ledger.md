@@ -150,7 +150,7 @@ curl http://localhost:7070/api/archives
 `before` はカーソルで、直前に受け取った最後の行の `capturedAt`（クロールなら
 `startedAt`）を渡します。
 知らないクエリパラメータは、拒否も削除もされず、そのまま残って無視されます（全文検索の `GET /api/search`
-だけは 400 で断ります）。
+と `GET /api/changes` だけは 400 で断ります）。
 
 クロールの一覧は `maySubmit` で絞ります —— アーカイブのように 1 行ずつ `can_view` を
 訊く形ではありません。認可モデルに `crawl` という型が無いためです。`maySubmit` は、呼び出し元の組織のどれか 1 つで
@@ -166,8 +166,8 @@ curl http://localhost:7070/api/archives
 最初の理由: …」と書きます。一部だけ取れなかったクロールは `succeeded` のままで、取れなかった数は `pagesFailed`
 で言います。理由は `GET /api/crawls/:id` の `failures` です（新しい 5 件）。
 
-`waczCount` は、そのクロールから出た WACZ の数です。`archives` に `crawl_id` は無く、
-`crawl_pages` の `task_id` を挟んで数えています（列を足さずに今日のまま届きます）。
+`waczCount` は、そのクロールから出た WACZ の数です。`archives.crawl_id` は、列を足すより前の行で
+空なので、`crawl_pages` の `task_id` を挟んで数えています。
 
 読んではいけない相手には **403 ではなく 404** を返します。403 は
 「その ID のアーカイブは実在する」ことを confirm してしまい、これは
@@ -607,6 +607,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/links/757
 curl 'http://localhost:7070/api/crawls/9072b625-…/pages?limit=100'
 # → { "pages": [{ "id": "1234", "url": "https://…", "depth": 0, "state": "captured", "reason": null,
 #                 "taskId": "6f1c…", "archiveId": "a1b2…",
+#                 "capturedAt": "2026-11-04T05:12:09.812Z", "bundledRev": 1,
 #                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 } }, …],
 #     "next": "1300" }
 

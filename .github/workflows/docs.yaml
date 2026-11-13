@@ -17,7 +17,8 @@ name: docs
 #     with Pages permissions. The read-only guard for PRs is site.yaml.
 #   - Permissions are split per job: build gets contents:read; deploy gets
 #     pages:write + id-token:write, required by deploy-pages' OIDC handshake.
-#   - No secrets are referenced.
+#   - One secret is referenced: SUBMODULE_APP_KEY, in the build job only, to mint
+#     a read-only token for the private BrowserHive submodule.
 
 on:
   push:

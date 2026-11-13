@@ -58,8 +58,10 @@ export const getJsonObject = async (
  *
  * **丸ごと読む。** WACZ の大半は WARC なので、`pages.jsonl` 1 本のために全部を
  * 落とすことになる。それを承知でこうしている: 現物は 1 本で数 MiB (2026-11 の 5 サイトの
- * トップで 3.8〜9.5 MiB) で、どの使い手も 1 本につき 1 回しか読まないので、範囲読みの
- * 複雑さに見合わない。規模が変わったときの直し方は既に書かれていて、
+ * トップで 3.8〜9.5 MiB) で、索引 (`search/index-archive.ts`) と検め (`replay-bundle/inspect.ts`) は
+ * 1 本につき 1 回しか読まず、前回からの変化の周回 (`changes/worker.ts`) が読み直すのも文字の違った
+ * 取り込みの WACZ だけ (同じ 1 本を、今の回として読んだ次の周回で前の回としてもう 1 度読むことがある)
+ * なので、範囲読みの複雑さに見合わない。規模が変わったときの直し方は既に書かれていて、
  * wacz-validator の packages/core/src/wacz/s3-range-reader.ts が `HeadObject` で大きさを
  * 訊いてから yauzl に Range で食わせる形を持っている。
  */
