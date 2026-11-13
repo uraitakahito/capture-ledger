@@ -761,10 +761,6 @@
                         "minimum": 0,
                         "description": "ページ操作 1 つごとに挟む遅延 (ms)。待ちの手段ではないので上限が要る。"
                     },
-                    "trace": {
-                        "type": "boolean",
-                        "description": "この取り込みに限り server の `--capture-trace` を上書きする。true なら、BrowserHive がページに\n何をしたか (viewport・バナー除去など) と、どの応答が archive に届かなかったかを、取り込み先の\nページ自身の console に `[bh]` 付きで書く (`chrome://inspect` で読むためのもの)。送られた\nスクリプトの判断は、スクリプトが自分で書かない限り出ない。成果物は変わらない。"
-                    },
                     "devicePixelRatios": {
                         "type": "array",
                         "items": {
@@ -842,7 +838,7 @@
                     },
                     "secretArchive": {
                         "$ref": "#/components/schemas/SecretArchive",
-                        "description": "シークレットのうち、値を WARC に残すものの名前 → `keep`。名前は `secrets` に在ること (無ければ 400)。\n残すのは通信の記録 (request・response・metadata のレコードと、それらの URL) だけで、DOM の写し・\nページの文字と題・ツリーの名前・ログからは、長さに依らず消える。8 字未満の値も通る。\n省略と空はどちらも「残す物は無い」で、効いた形は archive の `settings.secretArchive` に残る。"
+                        "description": "シークレットのうち、値を WARC に残すものの名前 → `keep`。名前は `secrets` に在ること (無ければ 400)。\n残すのは通信の記録 (request・response・metadata のレコードと、それらの URL) だけで、DOM の写し・\nページの文字と題・ツリーの名前・ログ・trace の行からは、長さに依らず消える。8 字未満の値も通る。\n省略と空はどちらも「残す物は無い」で、効いた形は archive の `settings.secretArchive` に残る。"
                     }
                 },
                 "required": [
@@ -944,6 +940,10 @@
                     "log": {
                         "$ref": "#/components/schemas/CaptureLog",
                         "description": "取り込みのログ。スクリプト (`__bh.log`・`__bh.report`・投げた例外)、取り込みのページ自身の console、\nBrowserHive の出来事の行を、届いた順に持つ。成功でも、時間切れ・失敗・cancel でも入る。\n無いのは、取り込みに入る前に browser に繋がらなかったときだけ。\n行は WACZ を組む直前 (WACZ を作らない取り込みでは、結果を組むとき) に閉じる。閉じた後の出来事\n(保管庫に置く・置いた後の止め損ねの検査) の行は入らない。後から足した欄で、必須にしていない\n(足す前の版が書いた `.result.json` には無い)。"
+                    },
+                    "trace": {
+                        "$ref": "#/components/schemas/CaptureTrace",
+                        "description": "取り込みの trace。取り込みの間の要求を、1 つの交信につき 1 行で持つ (始まり・応答・終わり・結末)。\n在るのは WACZ を求めた取り込みだけ (行は、通信を記録する所が作る)。成功でも、時間切れ・失敗・cancel でも入る。\n行は記録を止めた後 (時間切れ・失敗・cancel では、結果を組むとき) に閉じる。閉じた後に届いた出来事は入らない。\n後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。"
                     }
                 },
                 "required": [
@@ -962,6 +962,256 @@
                     "failed",
                     "timeout",
                     "http_error"
+                ]
+            },
+            "CaptureTrace": {
+                "type": "object",
+                "description": "取り込み 1 本の trace。行が上限 (取り込み 1 本で 2,000 行・512 KiB) を超えたら、頭と尻を残して間を捨てる。\n行の文字 (URL・呼び出し元の URL・失敗の文) では、シークレットの値を、WARC に残すと決めた物も含めて\n`***` に替えてある。答えと `.result.json` の行は、WACZ の署名の下に無い。",
+                "properties": {
+                    "lines": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/CaptureTraceLine"
+                        },
+                        "description": "行を作った順 (要求の始まりが届いた順)。時刻の順は約束しない。同じ `id` の行は `hop` の昇順。"
+                    },
+                    "counts": {
+                        "$ref": "#/components/schemas/CaptureTraceCounts",
+                        "description": "結末ごとの行の数。`lines` に無い行 (上限で捨てた) も数える。"
+                    },
+                    "dropped": {
+                        "type": "number",
+                        "description": "`lines` に無い行の数。"
+                    }
+                },
+                "required": [
+                    "counts",
+                    "dropped",
+                    "lines"
+                ]
+            },
+            "CaptureTraceCounts": {
+                "type": "object",
+                "description": "結末ごとの行の数。",
+                "properties": {
+                    "finished": {
+                        "type": "number",
+                        "description": "`finished` の行の数。"
+                    },
+                    "redirected": {
+                        "type": "number",
+                        "description": "`redirected` の行の数。"
+                    },
+                    "failed": {
+                        "type": "number",
+                        "description": "`failed` の行の数。"
+                    },
+                    "pending": {
+                        "type": "number",
+                        "description": "`pending` の行の数。"
+                    },
+                    "notArchived": {
+                        "type": "number",
+                        "description": "`not-archived` の行の数。"
+                    },
+                    "denied": {
+                        "type": "number",
+                        "description": "`denied` の行の数。"
+                    },
+                    "evicted": {
+                        "type": "number",
+                        "description": "`evicted` の行の数。"
+                    }
+                },
+                "required": [
+                    "denied",
+                    "evicted",
+                    "failed",
+                    "finished",
+                    "notArchived",
+                    "pending",
+                    "redirected"
+                ]
+            },
+            "CaptureTraceInitiator": {
+                "type": "object",
+                "description": "要求を出させた物。取り込みのページ (Chromium) が述べたまま。",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "description": "Chromium の `Initiator.type` (`parser`・`script`・`preload`・`other` など)。"
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "呼び出し元の URL。stack が在れば、いちばん上の枠の物。シークレットの値を替え、上限で切った後の字。"
+                    },
+                    "line": {
+                        "type": "number",
+                        "description": "呼び出し元の行 (1 から数える)。"
+                    }
+                },
+                "required": [
+                    "type"
+                ]
+            },
+            "CaptureTraceKind": {
+                "type": "string",
+                "description": "行の種類。いまは要求の 1 つだけ。",
+                "enum": [
+                    "request"
+                ]
+            },
+            "CaptureTraceLine": {
+                "type": "object",
+                "description": "trace の 1 行 = 1 つの交信。リダイレクトは段ごとに別の行で、同じ `id` と、0 から増える `hop` を持つ。\n方針で残さなかった要求 (`not-archived`) と止めた要求 (`denied`) の行は、`initiator`・`response`・`timing`・\n`durationMs`・`encodedBytes`・`record` を持たない。",
+                "properties": {
+                    "kind": {
+                        "$ref": "#/components/schemas/CaptureTraceKind"
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "要求の id (Chromium の Network の requestId)。リダイレクトの段は同じ値を持つ。"
+                    },
+                    "hop": {
+                        "type": "number",
+                        "description": "リダイレクトの段の番号。0 から。"
+                    },
+                    "dpr": {
+                        "type": "number",
+                        "description": "行が出た DPR の回の値。回の外の行には無い。"
+                    },
+                    "url": {
+                        "type": "string",
+                        "description": "要求の URL。シークレットの値を替え、2,048 字で切った後の字。`data:` の URL は、種類までと長さだけ。"
+                    },
+                    "urlCut": {
+                        "type": "boolean",
+                        "description": "`url` を上限で切った、または `data:` の URL を種類と長さにした。していなければ欄ごと無い。"
+                    },
+                    "method": {
+                        "type": "string"
+                    },
+                    "resourceType": {
+                        "type": "string",
+                        "description": "Chromium の resourceType (`Document`・`Image`・`Fetch` など)。"
+                    },
+                    "initiator": {
+                        "$ref": "#/components/schemas/CaptureTraceInitiator"
+                    },
+                    "startedAt": {
+                        "type": "string",
+                        "description": "browser が要求を送り出した時刻 (ISO 8601、browser の壁時計)。`record` を持つ行では、そのレコードの\n`WARC-Date` と同じ字。止めた要求 (`denied`) の行だけは、BrowserHive が止めた時刻。"
+                    },
+                    "ms": {
+                        "type": "number",
+                        "description": "取り込みの始まりからの ms (ログの行の `ms` と同じ軸)。"
+                    },
+                    "response": {
+                        "$ref": "#/components/schemas/CaptureTraceResponse"
+                    },
+                    "timing": {
+                        "$ref": "#/components/schemas/CaptureTraceTiming"
+                    },
+                    "durationMs": {
+                        "type": "number",
+                        "description": "始まりから終わりまでの ms。終わりを見た行だけが持つ。Chromium の単調時計の差で、BrowserHive が要求と\n応答を止めて調べていた時間を含む。"
+                    },
+                    "encodedBytes": {
+                        "type": "number",
+                        "description": "通信路の上のバイト数 (見出しを含む)。読み終えた行だけが持つ。"
+                    },
+                    "outcome": {
+                        "$ref": "#/components/schemas/CaptureTraceOutcome"
+                    },
+                    "error": {
+                        "type": "string",
+                        "description": "失敗の文。`failed` の行だけが持つ。Chromium の文 (`net::ERR_…`) か、応答なしで読み終えた要求の\n`loadingFinished-without-response`。"
+                    },
+                    "endUnobservable": {
+                        "type": "boolean",
+                        "description": "終わりの出来事が、BrowserHive の聞く範囲に届かない要求 (別サイトのフレームの文書など)。`pending` の行\nだけが持つ。持つ行は、終わらなかったのではなく、終わりを見られなかった。"
+                    },
+                    "record": {
+                        "type": "string",
+                        "description": "書けた response のレコードの `WARC-Record-ID` (山括弧なし)。レコードを書けた行だけが持つ。\nWACZ を置かなかった取り込み (失敗・時間切れなど) の行は持たない。"
+                    }
+                },
+                "required": [
+                    "hop",
+                    "id",
+                    "kind",
+                    "method",
+                    "ms",
+                    "outcome",
+                    "startedAt",
+                    "url"
+                ]
+            },
+            "CaptureTraceOutcome": {
+                "type": "string",
+                "description": "行の結末: `finished` は読み終えた、`redirected` はリダイレクトの途中の段、`failed` は失敗した、\n`pending` は取り込みを止めた時点で終わっていない、`not-archived` は方針で送ったが残さなかった、\n`denied` は方針で送る前に止めた、`evicted` は進行中の要求が多すぎて BrowserHive が追うのをやめた。",
+                "enum": [
+                    "finished",
+                    "redirected",
+                    "failed",
+                    "pending",
+                    "not-archived",
+                    "denied",
+                    "evicted"
+                ]
+            },
+            "CaptureTraceResponse": {
+                "type": "object",
+                "description": "応答の見出しまでに分かったこと。",
+                "properties": {
+                    "status": {
+                        "type": "number"
+                    },
+                    "protocol": {
+                        "type": "string",
+                        "description": "Chromium の `protocol` (`http/1.1`・`h2` など)。"
+                    },
+                    "fromCache": {
+                        "type": "boolean",
+                        "description": "browser の cache から答えた。そうでなければ欄ごと無い。"
+                    }
+                },
+                "required": [
+                    "status"
+                ]
+            },
+            "CaptureTraceTiming": {
+                "type": "object",
+                "description": "長さの内訳 (ms)。Chromium の `ResourceTiming` の差で、該当の無い区間は 0。",
+                "properties": {
+                    "dnsMs": {
+                        "type": "number"
+                    },
+                    "connectMs": {
+                        "type": "number"
+                    },
+                    "tlsMs": {
+                        "type": "number"
+                    },
+                    "sendMs": {
+                        "type": "number"
+                    },
+                    "waitMs": {
+                        "type": "number",
+                        "description": "送り終えてから、応答の見出しが届くまで。"
+                    },
+                    "receiveMs": {
+                        "type": "number",
+                        "description": "応答の見出しから、読み終えるまで。終わりを見ていなければ 0。"
+                    }
+                },
+                "required": [
+                    "connectMs",
+                    "dnsMs",
+                    "receiveMs",
+                    "sendMs",
+                    "tlsMs",
+                    "waitMs"
                 ]
             },
             "CheckOutcome": {

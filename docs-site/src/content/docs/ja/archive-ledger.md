@@ -667,7 +667,9 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 #     "capture": { "status": "success", "timestamp": "2026-11-04T05:12:15.108Z", "captureProcessingTimeMs": 14873,
 #                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … } },
 #     "log": { …ログのエンドポイントと同じ物… },
-#     "trace": null,
+#     "trace": { "lines": [ { "kind": "request", "id": "3246.2", "hop": 0, "url": "https://…/app.js", "ms": 670,
+#                              "durationMs": 97, "outcome": "finished", … }, … ],
+#                "counts": { "finished": 12, "pending": 1, … }, "dropped": 0 },
 #     "reason": null }
 ```
 
@@ -682,7 +684,11 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 - `archive` は WACZ の id と保管庫の鍵です。**鍵は、その WACZ を見てよいとき（`can_view`）だけ**で、見てよくなければ
   `objectKey` は `null` です。WACZ の無い取り込み（時間切れ・失敗）では `archive` ごと `null` です。
 - `log` を持たない `.result.json`（BrowserHive v24.0.0 より前）は、`log` が `null` になるだけで、`capture` は返ります。
-- `trace` は、要求ごとの始まり・終わり・内訳です。BrowserHive v30.0.0 から `.result.json` に載り、それより前の取り込みでは `null` です。
+- `trace` は、取り込みの間の要求の出来事です（1 行 = 1 つの交信。始まり・応答・内訳・長さ・結末）。BrowserHive v30.0.0 から、
+  WACZ を求めた取り込みの `.result.json` に載ります。時間切れ・失敗の取り込みにも在ります（そのときは WACZ が無いので、
+  行はレコードを名指しません）。capture-ledger は行の欄を選び直さず、書かれたまま返します —— 行の形は BrowserHive の契約
+  （写しの `src/rpc/generated/browserhive/openapi.json` の `CaptureTraceLine`）が決めます。それより前の取り込みと、
+  WACZ を求めなかった取り込みでは `null` です。
 
 読めないときも 200 で、`capture`・`log`・`trace` が `null` になり、理由（`reason`）が入ります。理由はログのエンドポイントの
 上の 4 つ（`not-captured`・`no-manifest`・`manifest-missing`・`manifest-invalid`）で、`no-log` はありません。保管庫に届かなければ 502 です。

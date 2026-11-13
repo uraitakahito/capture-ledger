@@ -274,6 +274,74 @@ describe("readManifest", () => {
     );
   });
 
+  /** BrowserHive v30.0.0 の `trace`。読み終えた行と、方針で残さなかった行（応答の事実を持たない）。 */
+  const v30Trace = {
+    lines: [
+      {
+        kind: "request",
+        id: "3246.2",
+        hop: 0,
+        dpr: 1,
+        url: "https://site.test/app.js",
+        method: "GET",
+        resourceType: "Script",
+        initiator: { type: "parser", url: "https://site.test/", line: 4 },
+        startedAt: "2026-11-13T07:33:10.457Z",
+        ms: 670,
+        response: { status: 200, protocol: "h2" },
+        timing: { dnsMs: 0, connectMs: 0, tlsMs: 0, sendMs: 0, waitMs: 46, receiveMs: 1 },
+        durationMs: 97,
+        encodedBytes: 185,
+        outcome: "finished",
+        record: "urn:uuid:172f0c84-7c13-431e-92a7-2151d4525de2",
+      },
+      {
+        kind: "request",
+        id: "3246.5",
+        hop: 0,
+        url: "https://ads.test/pixel.gif",
+        method: "GET",
+        startedAt: "2026-11-13T07:33:10.900Z",
+        ms: 1113,
+        outcome: "not-archived",
+      },
+    ],
+    counts: {
+      finished: 1,
+      redirected: 0,
+      failed: 0,
+      pending: 0,
+      notArchived: 1,
+      denied: 0,
+      evicted: 0,
+    },
+    dropped: 0,
+  };
+
+  it("v30.0.0 の manifest（trace が在る）を読み、trace は書かれたまま", () => {
+    const report = readManifest({ ...v12Manifest, trace: structuredClone(v30Trace) });
+    expect(report.trace).toEqual(v30Trace);
+  });
+
+  it("v30.0.0 より前の manifest（trace が無い）も読み、trace は無いまま（既定で補わない）", () => {
+    const report = readManifest(structuredClone(v12Manifest));
+    expect("trace" in report).toBe(false);
+  });
+
+  it("trace の行の outcome が契約に無い綴りなら、場所を挙げて断る", () => {
+    const line = { ...v30Trace.lines[0], outcome: "half-done" };
+    expect(() => readManifest({ ...v12Manifest, trace: { ...v30Trace, lines: [line] } })).toThrow(
+      /data\/trace\/lines\/0\/outcome must be equal to one of the allowed values/,
+    );
+  });
+
+  it("trace の counts に欠けた結末があれば断る（数は 7 つとも必ず在る）", () => {
+    const six = { finished: 1, redirected: 0, failed: 0, pending: 0, notArchived: 1, denied: 0 };
+    expect(() => readManifest({ ...v12Manifest, trace: { ...v30Trace, counts: six } })).toThrow(
+      /data\/trace\/counts must have required property 'evicted'/,
+    );
+  });
+
   /** BrowserHive が項目を足す版上げで、capture-ledger が止まらないため。 */
   it("契約に無い項目は通す", () => {
     expect(readManifest({ ...v12Manifest, addedInV13: 1 }).taskId).toBe("01J8Z0");

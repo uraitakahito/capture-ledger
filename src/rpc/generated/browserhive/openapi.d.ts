@@ -311,13 +311,6 @@ export interface components {
             /** @description ページ操作 1 つごとに挟む遅延 (ms)。待ちの手段ではないので上限が要る。 */
             operationDelayMs?: number;
             /**
-             * @description この取り込みに限り server の `--capture-trace` を上書きする。true なら、BrowserHive がページに
-             *     何をしたか (viewport・バナー除去など) と、どの応答が archive に届かなかったかを、取り込み先の
-             *     ページ自身の console に `[bh]` 付きで書く (`chrome://inspect` で読むためのもの)。送られた
-             *     スクリプトの判断は、スクリプトが自分で書かない限り出ない。成果物は変わらない。
-             */
-            trace?: boolean;
-            /**
              * @description 読み込む device pixel ratio を、読み込む順に。各要素は 1–3 の整数で、同じ値を 2 度置くことはできない。
              *
              *     要素数がそのまま読み込みの回数になる。PNG / WebP は **最後の要素**の倍率になる。
@@ -389,7 +382,7 @@ export interface components {
             /**
              * @description シークレットのうち、値を WARC に残すものの名前 → `keep`。名前は `secrets` に在ること (無ければ 400)。
              *     残すのは通信の記録 (request・response・metadata のレコードと、それらの URL) だけで、DOM の写し・
-             *     ページの文字と題・ツリーの名前・ログからは、長さに依らず消える。8 字未満の値も通る。
+             *     ページの文字と題・ツリーの名前・ログ・trace の行からは、長さに依らず消える。8 字未満の値も通る。
              *     省略と空はどちらも「残す物は無い」で、効いた形は archive の `settings.secretArchive` に残る。
              */
             secretArchive?: components["schemas"]["SecretArchive"];
@@ -470,6 +463,13 @@ export interface components {
              *     (足す前の版が書いた `.result.json` には無い)。
              */
             log?: components["schemas"]["CaptureLog"];
+            /**
+             * @description 取り込みの trace。取り込みの間の要求を、1 つの交信につき 1 行で持つ (始まり・応答・終わり・結末)。
+             *     在るのは WACZ を求めた取り込みだけ (行は、通信を記録する所が作る)。成功でも、時間切れ・失敗・cancel でも入る。
+             *     行は記録を止めた後 (時間切れ・失敗・cancel では、結果を組むとき) に閉じる。閉じた後に届いた出来事は入らない。
+             *     後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。
+             */
+            trace?: components["schemas"]["CaptureTrace"];
         };
         /**
          * @description capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が
@@ -490,6 +490,130 @@ export interface components {
          * @enum {string}
          */
         CaptureStatus: "success" | "failed" | "timeout" | "http_error";
+        /**
+         * @description 取り込み 1 本の trace。行が上限 (取り込み 1 本で 2,000 行・512 KiB) を超えたら、頭と尻を残して間を捨てる。
+         *     行の文字 (URL・呼び出し元の URL・失敗の文) では、シークレットの値を、WARC に残すと決めた物も含めて
+         *     `***` に替えてある。答えと `.result.json` の行は、WACZ の署名の下に無い。
+         */
+        CaptureTrace: {
+            /** @description 行を作った順 (要求の始まりが届いた順)。時刻の順は約束しない。同じ `id` の行は `hop` の昇順。 */
+            lines: components["schemas"]["CaptureTraceLine"][];
+            /** @description 結末ごとの行の数。`lines` に無い行 (上限で捨てた) も数える。 */
+            counts: components["schemas"]["CaptureTraceCounts"];
+            /** @description `lines` に無い行の数。 */
+            dropped: number;
+        };
+        /** @description 結末ごとの行の数。 */
+        CaptureTraceCounts: {
+            /** @description `finished` の行の数。 */
+            finished: number;
+            /** @description `redirected` の行の数。 */
+            redirected: number;
+            /** @description `failed` の行の数。 */
+            failed: number;
+            /** @description `pending` の行の数。 */
+            pending: number;
+            /** @description `not-archived` の行の数。 */
+            notArchived: number;
+            /** @description `denied` の行の数。 */
+            denied: number;
+            /** @description `evicted` の行の数。 */
+            evicted: number;
+        };
+        /** @description 要求を出させた物。取り込みのページ (Chromium) が述べたまま。 */
+        CaptureTraceInitiator: {
+            /** @description Chromium の `Initiator.type` (`parser`・`script`・`preload`・`other` など)。 */
+            type: string;
+            /** @description 呼び出し元の URL。stack が在れば、いちばん上の枠の物。シークレットの値を替え、上限で切った後の字。 */
+            url?: string;
+            /** @description 呼び出し元の行 (1 から数える)。 */
+            line?: number;
+        };
+        /**
+         * @description 行の種類。いまは要求の 1 つだけ。
+         * @enum {string}
+         */
+        CaptureTraceKind: "request";
+        /**
+         * @description trace の 1 行 = 1 つの交信。リダイレクトは段ごとに別の行で、同じ `id` と、0 から増える `hop` を持つ。
+         *     方針で残さなかった要求 (`not-archived`) と止めた要求 (`denied`) の行は、`initiator`・`response`・`timing`・
+         *     `durationMs`・`encodedBytes`・`record` を持たない。
+         */
+        CaptureTraceLine: {
+            kind: components["schemas"]["CaptureTraceKind"];
+            /** @description 要求の id (Chromium の Network の requestId)。リダイレクトの段は同じ値を持つ。 */
+            id: string;
+            /** @description リダイレクトの段の番号。0 から。 */
+            hop: number;
+            /** @description 行が出た DPR の回の値。回の外の行には無い。 */
+            dpr?: number;
+            /** @description 要求の URL。シークレットの値を替え、2,048 字で切った後の字。`data:` の URL は、種類までと長さだけ。 */
+            url: string;
+            /** @description `url` を上限で切った、または `data:` の URL を種類と長さにした。していなければ欄ごと無い。 */
+            urlCut?: boolean;
+            method: string;
+            /** @description Chromium の resourceType (`Document`・`Image`・`Fetch` など)。 */
+            resourceType?: string;
+            initiator?: components["schemas"]["CaptureTraceInitiator"];
+            /**
+             * @description browser が要求を送り出した時刻 (ISO 8601、browser の壁時計)。`record` を持つ行では、そのレコードの
+             *     `WARC-Date` と同じ字。止めた要求 (`denied`) の行だけは、BrowserHive が止めた時刻。
+             */
+            startedAt: string;
+            /** @description 取り込みの始まりからの ms (ログの行の `ms` と同じ軸)。 */
+            ms: number;
+            response?: components["schemas"]["CaptureTraceResponse"];
+            timing?: components["schemas"]["CaptureTraceTiming"];
+            /**
+             * @description 始まりから終わりまでの ms。終わりを見た行だけが持つ。Chromium の単調時計の差で、BrowserHive が要求と
+             *     応答を止めて調べていた時間を含む。
+             */
+            durationMs?: number;
+            /** @description 通信路の上のバイト数 (見出しを含む)。読み終えた行だけが持つ。 */
+            encodedBytes?: number;
+            outcome: components["schemas"]["CaptureTraceOutcome"];
+            /**
+             * @description 失敗の文。`failed` の行だけが持つ。Chromium の文 (`net::ERR_…`) か、応答なしで読み終えた要求の
+             *     `loadingFinished-without-response`。
+             */
+            error?: string;
+            /**
+             * @description 終わりの出来事が、BrowserHive の聞く範囲に届かない要求 (別サイトのフレームの文書など)。`pending` の行
+             *     だけが持つ。持つ行は、終わらなかったのではなく、終わりを見られなかった。
+             */
+            endUnobservable?: boolean;
+            /**
+             * @description 書けた response のレコードの `WARC-Record-ID` (山括弧なし)。レコードを書けた行だけが持つ。
+             *     WACZ を置かなかった取り込み (失敗・時間切れなど) の行は持たない。
+             */
+            record?: string;
+        };
+        /**
+         * @description 行の結末: `finished` は読み終えた、`redirected` はリダイレクトの途中の段、`failed` は失敗した、
+         *     `pending` は取り込みを止めた時点で終わっていない、`not-archived` は方針で送ったが残さなかった、
+         *     `denied` は方針で送る前に止めた、`evicted` は進行中の要求が多すぎて BrowserHive が追うのをやめた。
+         * @enum {string}
+         */
+        CaptureTraceOutcome: "finished" | "redirected" | "failed" | "pending" | "not-archived" | "denied" | "evicted";
+        /** @description 応答の見出しまでに分かったこと。 */
+        CaptureTraceResponse: {
+            status: number;
+            /** @description Chromium の `protocol` (`http/1.1`・`h2` など)。 */
+            protocol?: string;
+            /** @description browser の cache から答えた。そうでなければ欄ごと無い。 */
+            fromCache?: boolean;
+        };
+        /** @description 長さの内訳 (ms)。Chromium の `ResourceTiming` の差で、該当の無い区間は 0。 */
+        CaptureTraceTiming: {
+            dnsMs: number;
+            connectMs: number;
+            tlsMs: number;
+            sendMs: number;
+            /** @description 送り終えてから、応答の見出しが届くまで。 */
+            waitMs: number;
+            /** @description 応答の見出しから、読み終えるまで。終わりを見ていなければ 0。 */
+            receiveMs: number;
+        };
         /**
          * @description 署名の検査 1 つぶんの結果。
          *
