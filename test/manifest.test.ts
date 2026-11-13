@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readManifest } from "../src/archive/manifest.js";
+import { failureScreenshotKey, readManifest } from "../src/archive/manifest.js";
 
 /**
  * BrowserHive v12 が書くとおりの `.result.json`: `POST /captures` の応答の `report` を
@@ -342,8 +342,83 @@ describe("readManifest", () => {
     );
   });
 
+  /** BrowserHive v30.2.0 の `screenshots`。絵を残した時点と、残さなかった時点（理由だけを持つ）。 */
+  const v30Screenshots = [
+    {
+      stage: "after-load",
+      url: "urn:browserhive:screenshot:after-load:https://site.test/",
+      date: "2026-11-13T07:33:14.120Z",
+      record: "urn:uuid:5b0c3f0e-2f0f-4a43-9d58-5c2f4c1f7a10",
+      bytes: 48213,
+    },
+    { stage: "after-behaviors", skipped: "task-budget" },
+  ];
+
+  it("v30.2.0 の manifest（screenshots が在る）を読み、screenshots は書かれたまま", () => {
+    const report = readManifest({ ...v12Manifest, screenshots: structuredClone(v30Screenshots) });
+    expect(report.screenshots).toEqual(v30Screenshots);
+  });
+
+  it("v30.2.0 より前の manifest（screenshots も failureScreenshot も無い）も読み、どちらも無いまま（既定で補わない）", () => {
+    const report = readManifest(structuredClone(v12Manifest));
+    expect("screenshots" in report).toBe(false);
+    expect("failureScreenshot" in report).toBe(false);
+  });
+
+  it("screenshots の stage と skipped が契約に無い綴りなら、場所を挙げて断る", () => {
+    expect(() =>
+      readManifest({ ...v12Manifest, screenshots: [{ stage: "after-load", skipped: "blurred" }] }),
+    ).toThrow(/data\/screenshots\/0\/skipped must be equal to one of the allowed values/);
+    expect(() =>
+      readManifest({
+        ...v12Manifest,
+        screenshots: [{ stage: "before-load", skipped: "disabled" }],
+      }),
+    ).toThrow(/data\/screenshots\/0\/stage must be equal to one of the allowed values/);
+  });
+
+  it("v30.2.0 の manifest（失敗した取り込みが、失敗の時点の絵の場所を言う）を読む", () => {
+    const report = readManifest({
+      taskId: "01J8Z0",
+      url: "https://site.test/missing",
+      status: "http_error",
+      timestamp: "2026-11-13T07:33:14.000Z",
+      captureProcessingTimeMs: 2710,
+      httpStatusCode: 404,
+      errorDetails: { type: "http", message: "HTTP 404 Not Found", httpStatusCode: 404 },
+      failureScreenshot: "s3://archives/01J8Z0.failure.webp",
+    });
+    expect(report.failureScreenshot).toBe("s3://archives/01J8Z0.failure.webp");
+  });
+
   /** BrowserHive が項目を足す版上げで、capture-ledger が止まらないため。 */
   it("契約に無い項目は通す", () => {
     expect(readManifest({ ...v12Manifest, addedInV13: 1 }).taskId).toBe("01J8Z0");
+  });
+});
+
+describe("failureScreenshotKey", () => {
+  it("設定の bucket の中の場所なら、bucket を外した残りをそのまま鍵にする（組み直さない）", () => {
+    expect(
+      failureScreenshotKey(
+        { failureScreenshot: "s3://archives/org/acme/2026-11/x y+z.failure.webp" },
+        "archives",
+      ),
+    ).toBe("org/acme/2026-11/x y+z.failure.webp");
+  });
+
+  it("欄が無い・別の bucket・s3:// でない場所は null（読みに行く先を、.result.json に選ばせない）", () => {
+    expect(failureScreenshotKey({}, "archives")).toBeNull();
+    for (const location of [
+      "s3://elsewhere/01J8Z0.failure.webp",
+      "https://store.test/archives/01J8Z0.failure.webp",
+      "s3://archives",
+      "",
+    ]) {
+      expect(
+        failureScreenshotKey({ failureScreenshot: location }, "archives"),
+        location,
+      ).toBeNull();
+    }
   });
 });

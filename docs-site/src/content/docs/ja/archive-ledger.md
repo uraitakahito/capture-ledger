@@ -136,16 +136,17 @@ curl http://localhost:7070/api/archives
 どちらのリクエストも形は route の JSON Schema で決まっています。説明ではなく
 検査そのものが契約です。
 
-|                                         |          |                                                                         |
-| --------------------------------------- | -------- | ----------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`            | `id`     | UUID。違えば **400**（認可より前に落ちる）                              |
-| `GET /api/archives`                     | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
-| `GET /api/crawls`                       | `state`  | `running` / `succeeded` / `failed`。違えば **400**                      |
-|                                         | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
-| `GET /api/crawls/:id/pages`             | `after`  | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                 |
-|                                         | `limit`  | 1〜500。既定 100。外れは **400**                                        |
-| `GET /api/crawls/:id/pages/:page/log`   | `page`   | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる） |
-| `GET /api/crawls/:id/pages/:page/trace` | `page`   | 同じ                                                                    |
+|                                                            |          |                                                                         |
+| ---------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`                               | `id`     | UUID。違えば **400**（認可より前に落ちる）                              |
+| `GET /api/archives`                                        | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
+| `GET /api/crawls`                                          | `state`  | `running` / `succeeded` / `failed`。違えば **400**                      |
+|                                                            | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
+| `GET /api/crawls/:id/pages`                                | `after`  | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                 |
+|                                                            | `limit`  | 1〜500。既定 100。外れは **400**                                        |
+| `GET /api/crawls/:id/pages/:page/log`                      | `page`   | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる） |
+| `GET /api/crawls/:id/pages/:page/trace`                    | `page`   | 同じ                                                                    |
+| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`   | 同じ                                                                    |
 
 `before` はカーソルで、直前に受け取った最後の行の `capturedAt`（クロールなら
 `startedAt`）を渡します。
@@ -665,7 +666,11 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 # → { "page": { …一覧と同じ形…, "submittedAt": "2026-11-04T05:12:00.012Z", "finishedAt": "2026-11-04T05:12:15.201Z" },
 #     "archive": { "id": "a1b2…", "objectKey": "…/….wacz" },
 #     "capture": { "status": "success", "timestamp": "2026-11-04T05:12:15.108Z", "captureProcessingTimeMs": 14873,
-#                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … } },
+#                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … },
+#                  "screenshots": [ { "stage": "after-load", "url": "urn:browserhive:screenshot:after-load:https://…/",
+#                                     "date": "2026-11-04T05:12:09.120Z", "record": "urn:uuid:5b0c…", "bytes": 48213 },
+#                                   { "stage": "after-behaviors", "skipped": "task-budget" } ],
+#                  "failureScreenshot": false },
 #     "log": { …ログのエンドポイントと同じ物… },
 #     "trace": { "lines": [ { "kind": "request", "id": "3246.2", "hop": 0, "url": "https://…/app.js", "ms": 670,
 #                              "durationMs": 97, "outcome": "finished", … }, … ],
@@ -678,7 +683,8 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 - `page` は一覧と同じ形に、flow が測った投入と完了（`crawl_pages` の `submitted_at`・`finished_at`）を足した物です。
 - `capture` は `.result.json` から、時間軸を組むのに要る欄を選んだ物です: `status`・`timestamp`・
   `captureProcessingTimeMs`・`httpStatusCode`・`errorDetails`・`settle`・`waczStats`・`completeness`・`document`・
-  `windowsNotOpened`。下位の object は書かれたままで、取り込みに無い欄は鍵ごとありません。`timestamp` は取り込みが
+  `windowsNotOpened`・`screenshots`。下位の object は書かれたままで、取り込みに無い欄は鍵ごとありません（`failureScreenshot`
+  だけは別で、下に書きます）。`timestamp` は取り込みが
   終わった時刻で、`timestamp − captureProcessingTimeMs` が始まりです。ログの行の `ms` の起点（最初の行の
   `at − ms`）とは、数十 ms ずれることがあります。
 - `archive` は WACZ の id と保管庫の鍵です。**鍵は、その WACZ を見てよいとき（`can_view`）だけ**で、見てよくなければ
@@ -691,6 +697,22 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   WACZ を求めなかった取り込みでは `null` です。BrowserHive v30.1.0 からは、同じ行が WACZ の中の `trace/events.jsonl` にも
   在ります（各行の頭に `profile` が付くだけ。WACZ Profile 1.23.0）。**署名の下に在るのは WACZ の中の行で、この答えの行は
   その写しです。**
+- `capture.screenshots` は、節目のスクリーンショット（取り込みのページの viewport の絵。WebP）の、時点ごとの成り行きです。
+  BrowserHive v30.2.0 から、成功して WACZ を作った取り込みの `.result.json` に載ります（WACZ Profile 1.24.0）。絵を残した
+  時点は WACZ の中のレコードを名指し（`url`・`date`・`record`・`bytes`）、残さなかった時点は理由（`skipped`）だけを
+  持ちます。capture-ledger は項目を選び直さず、書かれたまま返します —— 形は BrowserHive の契約（写しの `StageScreenshot`）が
+  決めます。**絵そのものは、この答えには入りません。** WACZ の中に在り、WACZ を見てよい者（`can_view`）が WACZ から読みます。
+  それより前の取り込みと、成功しなかった取り込みでは、鍵ごとありません。
+- `capture.failureScreenshot` は、**呼び出し元が受け取れる**失敗の時点の絵が在るかどうかの真偽です。`.result.json`
+  の同じ名前の欄は保管庫の場所（`s3://…`）ですが、**場所は返しません**。絵は[下のエンドポイント](#失敗の時点の絵)が返します。
+  `true` になるのは、`.result.json` が設定の bucket の中の場所を言い、かつ呼び出し元が取り込みを出した組織に属している
+  ときだけです（下のエンドポイントと同じ判定）。欄の無い取り込み・設定の bucket の外や `s3://` でない場所を言う取り込みと、
+  **別の組織の呼び出し元**には `false` です —— 経緯のほかの欄は、今までどおり返ります。
+
+絵を撮るのは、BrowserHive の配備がそう設定したときだけです（`BROWSERHIVE_STAGE_SCREENSHOTS`。既定は切）。切の配備では、
+`screenshots` のどの項目も `skipped: "disabled"` で、失敗の時点の絵はありません。この repo の開発スタックは入にしています
+（`docker-compose.yml` の BrowserHive の環境変数）。入でも、シークレットを渡した取り込みと、方針（`no-archive`・`no-body`・
+content-type の方針）が文書や画像やメディアに当たった取り込みは、絵を残しません。
 
 読めないときも 200 で、`capture`・`log`・`trace` が `null` になり、理由（`reason`）が入ります。理由はログのエンドポイントの
 上の 4 つ（`not-captured`・`no-manifest`・`manifest-missing`・`manifest-invalid`）で、`no-log` はありません。保管庫に届かなければ 502 です。
@@ -698,6 +720,50 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 認可はログと同じ `maySubmit` です。クロールを始められる者は、どのクロールの経緯も読めます。WACZ の中身を読む許可
 （`can_view`）より広いので、WACZ の鍵だけを `can_view` で絞っています。**この答えは署名の下にありません。**
 示すための正は、WACZ の中の記録です。
+
+### 失敗の時点の絵
+
+失敗した取り込みが、失敗の時点に取り込みのページの viewport に見せていた絵（WebP）を返すエンドポイントです。
+BrowserHive v30.2.0 から、絵を撮る設定の配備が、成果物と同じ名前の `.failure.webp` として保管庫に置きます。
+
+```sh
+curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace/failure-screenshot
+# → { "contentType": "image/webp", "base64": "UklGR…" }
+```
+
+答えは JSON で、絵は base64 です —— capture-workbench の `/api/*` の中継が、文字の答えだけを通すためです。
+
+**絵が在るのは、取り込みのページを触っている間の失敗だけです。** 文書が 4xx・5xx だった取り込みと、文書が届いた後に
+失敗した取り込み（操作ごとの時間切れ・スクリプトの失敗）で、取り込み全体の予算が残っているときに置かれます。
+**文書が取り込みのページに届く前に読み込みが時間切れになった取り込みには、ありません**（どの文書の絵かを言えないため）。
+取り込み全体の時間切れ・途中で切られた呼び出し・renderer の crash・方針の失敗と、絵を残さない取り込み（上の条件）にも
+ありません。経緯の答えの `capture.failureScreenshot` が `true` のときにだけ、ここを読んでください。
+
+capture-ledger は絵を持ちません。経緯と同じ道で `.result.json` を読み、その `failureScreenshot` が言う場所を読みます。
+
+- 鍵は組みません。`.result.json` が言う場所から bucket を外した残りが鍵です。**bucket は設定と照らし**、違えば読みません
+  （`.result.json` に読み先を選ばせないため）。
+- 読む前に保管庫に大きさを訊き、**1 MiB を超える物は読みません**。
+- 読んだ物が WebP の頭（`RIFF`…`WEBP`）を持たなければ、返しません。
+
+| 答え                                                        | いつ                                                                                                                                                                                                                                 |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 200 `{ "contentType": "image/webp", "base64": "…" }`        | 絵を返せた                                                                                                                                                                                                                           |
+| 400                                                         | `id` が UUID でない・`page` が数字だけで 18 桁までの綴りでない（認可より前に落ちる）                                                                                                                                                 |
+| 401 `{ "error": "unauthenticated" }`                        | 身元が無い                                                                                                                                                                                                                           |
+| 404 `{ "error": "not found" }`                              | 絵を返せる取り込みが無い: 認可が通らない・ページが無い・取り込みの答えが無い・`.result.json` が読めない・絵を言っていない・場所が設定の bucket の外か `s3://` でない・保管庫のその場所に無い。**理由は分けません**（ログに書きます） |
+| 502 `{ "error": "storage unreachable" }`                    | 保管庫に届かない                                                                                                                                                                                                                     |
+| 502 `{ "error": "failure screenshot too large" }`           | その場所の物が 1 MiB を超える                                                                                                                                                                                                        |
+| 502 `{ "error": "failure screenshot is not a WebP image" }` | その場所の物が WebP でない                                                                                                                                                                                                           |
+
+**認可は、経緯より狭い線です。** 絵は取り込みのページが見せていた物そのものなので、WACZ の中身と同じ広さに置きます。
+WACZ は `can_view` で絞りますが、失敗した取り込みには WACZ が無く、訊く相手の archive がありません。だから
+`maySubmit` に加えて、**取り込みを出した組織（[`capture_submissions`](/capture-ledger/ja/databases/capture-submissions/)
+の `org_id`）に、呼び出し元が属しているか**を見ます。組織を決めるのは capture-ledger が記録した行で、呼び出し元は選べません。
+属していなければ、無いページと同じ 404 です —— 「在るが見せない」と「無い」を区別させません。経緯の答えの
+`capture.failureScreenshot` も同じ線で決めるので、属していない呼び出し元には `false` が返ります。
+
+**絵は WACZ の外のファイルで、署名の下にありません。** 取り込みのページが見せていた物をそのまま持ち、後から何も消せません。
 
 ## 全文検索
 

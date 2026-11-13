@@ -68,7 +68,7 @@ submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
 
 ## 読まれ方
 
-読み手は 3 つです。
+読み手は次のとおりです。
 
 **reconcile**（`reconcile.ts`）が、`manifest_key` を持ち、まだアーカイブの無い行を引きます。
 
@@ -87,6 +87,10 @@ manifest_key を持ち、archives に行の無い capture_submissions の行
 
 **取り込みの経緯のエンドポイント**（`GET /api/crawls/:id/pages/:page/trace`）も、同じ道で `manifest_key` を引き、
 その `.result.json` から取り込みの欄・`log`・`trace` を返します（[取り込みの経緯](/capture-ledger/ja/archive-ledger/#取り込みの経緯)）。
+
+**失敗の時点の絵のエンドポイント**（`GET /api/crawls/:id/pages/:page/trace/failure-screenshot`）は、同じ道で `manifest_key` と
+`org_id` を引きます。`org_id` は認可に使います —— 失敗した取り込みには WACZ が無いので、絵を見てよいかを、呼び出し元が
+この組織に属しているかで決めます（[失敗の時点の絵](/capture-ledger/ja/archive-ledger/#失敗の時点の絵)）。
 
 ## 列の要点
 

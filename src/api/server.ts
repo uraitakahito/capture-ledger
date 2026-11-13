@@ -324,7 +324,7 @@ const start = async (options: ServerOptions): Promise<void> => {
     resolveIdentity,
   });
 
-  // 取り込み 1 回の経緯 (CAPTURE-270)。保管庫の `.result.json` を読むだけなので、webhook の無い配備でも出す
+  // 取り込み 1 回の経緯と、失敗の時点の絵 (CAPTURE-270)。保管庫の `.result.json` と絵を読むだけなので、webhook の無い配備でも出す
   registerTraceRoutes(app, { db, fga, s3, bucket: storage.bucket, resolveIdentity });
 
   // 前回からの変化 (CAPTURE-167)。予定の回を前の回と比べ、違えば Claude に要約させる。鍵が無ければ比べるだけ。

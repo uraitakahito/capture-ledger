@@ -98,15 +98,15 @@ After bumping, read the upstream release notes for anything that touches
 
 ### What the manifest check accepts
 
-The level handler, reconcile, the log route and the trace route read every `.result.json` through
-`readManifest` (`src/archive/manifest.ts`), which checks it with Ajv against the copy of
+The level handler, reconcile, the log route, the trace route and the route for the screenshot of a failure read
+every `.result.json` through `readManifest` (`src/archive/manifest.ts`), which checks it with Ajv against the copy of
 `CaptureResultReport`. What a bump changes there:
 
 - **Members the copy does not know pass.** A manifest from a newer BrowserHive is still
   read, so a BrowserHive release does not stop the ledger before the copy is bumped.
   An enum value the copy does not know does not pass: until the copy is bumped, the level
-  handler and reconcile skip that manifest, and the log and trace routes answer
-  `manifest-invalid`.
+  handler and reconcile skip that manifest, the log and trace routes answer
+  `manifest-invalid`, and the route for the screenshot of a failure answers 404.
 - **A member the contract gives a default is filled in when missing** (`useDefaults`), so
   a member that later became required with an `@default` does not fail old manifests. One
   that became required _without_ a default, or an enum value that was removed, does —

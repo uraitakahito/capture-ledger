@@ -97,14 +97,14 @@ API の追加だけの変更 (オプショナルなリクエストフィール�
 
 ### manifest の照合が通すもの
 
-段の登録・reconcile・1 ページのログのエンドポイント・取り込みの経緯のエンドポイントは、どれも `.result.json` を `readManifest`
+段の登録・reconcile・1 ページのログのエンドポイント・取り込みの経緯のエンドポイント・失敗の時点の絵のエンドポイントは、どれも `.result.json` を `readManifest`
 （`src/archive/manifest.ts`）で読み、写した `CaptureResultReport` に Ajv で照らします。版を上げると、
 ここで次のことが効きます。
 
 - **写しが知らない項目は通します。** 新しい BrowserHive の manifest も読めるので、写しを上げる前に
   BrowserHive の版が上がっても、capture-ledger は止まりません。写しが知らない enum の値は通しません。
   写しを上げるまで、段の登録と reconcile はその manifest を飛ばし、1 ページのログのエンドポイントと
-  取り込みの経緯のエンドポイントは `manifest-invalid` と答えます。
+  取り込みの経緯のエンドポイントは `manifest-invalid` と答え、失敗の時点の絵のエンドポイントは 404 と答えます。
 - **契約が既定値を持つ項目は、欠けていれば補います**（`useDefaults`）。後から `@default`
   つきで必須になった項目は、古い manifest を落としません。既定値の無い必須の項目が増えたときと、enum
   の値が消えたときは落とします —— 上げる前に、新旧の `openapi.json` どうしで `required` と `enum`
