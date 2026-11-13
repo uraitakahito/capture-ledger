@@ -92,7 +92,7 @@ const parseParams = (raw: string): ScriptParam[] => {
     throw new InvalidArgumentError("JSON として読めない");
   }
   const params = readParams(parsed, { summaryRequired: true });
-  if (typeof params === "string") throw new InvalidArgumentError(params);
+  if ("refused" in params) throw new InvalidArgumentError(params.refused.text);
   return params;
 };
 
@@ -302,7 +302,7 @@ const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
     if (typeof isDefault !== "boolean") return `${path}: ${id} の default が真偽値ではない`;
     // 宣言は capture-scripts の check と同じ決まりで読む。1 つでも悪ければ何も足さない
     const params = readParams(entry["params"] ?? [], { summaryRequired: true });
-    if (typeof params === "string") return `${path}: ${id} の ${params}`;
+    if ("refused" in params) return `${path}: ${id} の ${params.refused.text}`;
     out.push({
       id,
       phase,

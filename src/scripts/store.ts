@@ -47,6 +47,7 @@ import type {
   ScriptPhase,
 } from "../db/database.js";
 import { HOSTNAME } from "../crawl/scope.js";
+import { quoted, refusal, type Refused } from "../types/hint.js";
 
 /** `scripts` の 1 行 (source は含めない —— 一覧で読むものではない)。 */
 export interface ScriptRow {
@@ -116,19 +117,39 @@ const isLength = (value: unknown): boolean =>
   value === undefined || (typeof value === "number" && Number.isInteger(value) && value >= 0);
 
 /**
- * 変数の値の形 (`schema`) を読む。読めれば返し、読めなければその文を返す。鍵は 4 つだけで、値は文字列だけ ——
+ * 変数の値の形 (`schema`) を読む。読めれば返し、読めなければその文を組 (`Hint`) で返す。鍵は 4 つだけで、値は文字列だけ ——
  * 正規表現は読まない (利用者の式を capture-ledger で走らせることになる)。
  */
-const readSchema = (name: string, raw: unknown): ParamSchema | string => {
+const readSchema = (name: string, raw: unknown): ParamSchema | Refused => {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    return `params の ${name} の schema が無い (kind: variable は値の形を持つ)`;
+    return refusal(
+      "params.schemaMissing",
+      `params の ${name} の schema が無い (kind: variable は値の形を持つ)`,
+      { name },
+    );
   }
   const { type, minLength, maxLength, enum: values, ...rest } = raw as Record<string, unknown>;
   const unknown = Object.keys(rest);
-  if (unknown.length > 0) return `params の ${name} の schema に知らない鍵: ${unknown.join(", ")}`;
-  if (type !== "string") return `params の ${name} の schema の type は string だけ`;
+  if (unknown.length > 0) {
+    return refusal(
+      "params.schemaUnknownKeys",
+      `params の ${name} の schema に知らない鍵: ${unknown.join(", ")}`,
+      { name, keys: unknown },
+    );
+  }
+  if (type !== "string") {
+    return refusal(
+      "params.schemaTypeNotString",
+      `params の ${name} の schema の type は string だけ`,
+      { name },
+    );
+  }
   if (!isLength(minLength) || !isLength(maxLength)) {
-    return `params の ${name} の minLength と maxLength は 0 以上の整数`;
+    return refusal(
+      "params.schemaInvalidLength",
+      `params の ${name} の minLength と maxLength は 0 以上の整数`,
+      { name },
+    );
   }
   if (
     values !== undefined &&
@@ -136,7 +157,7 @@ const readSchema = (name: string, raw: unknown): ParamSchema | string => {
       values.length === 0 ||
       !values.every((value) => typeof value === "string"))
   ) {
-    return `params の ${name} の enum は文字列の列`;
+    return refusal("params.schemaInvalidEnum", `params の ${name} の enum は文字列の列`, { name });
   }
   return {
     type,
@@ -147,7 +168,7 @@ const readSchema = (name: string, raw: unknown): ParamSchema | string => {
 };
 
 /**
- * 宣言の列 (`params`) として読めれば返し、読めなければその文を返す。capture-scripts の tools/check.mjs と
+ * 宣言の列 (`params`) として読めれば返し、読めなければその文を組 (`{ refused: Hint }`) で返す。capture-scripts の tools/check.mjs と
  * 同じ決まり —— 配列・`name` の綴りと長さ・`kind` は variable か secret・`required` は真偽値 (省けば false)・
  * `summary` は空でない・`archive` は kind: secret だけで `"keep"` だけ・名前の重複なし。catalog の `import` と
  * CLI の `--params` と、その場の TS の `params` が同じ関数を通る。`summary` を求めるのは catalog だけ (その場の TS は
@@ -158,47 +179,90 @@ const readSchema = (name: string, raw: unknown): ParamSchema | string => {
 export const readParams = (
   raw: unknown,
   { summaryRequired }: { summaryRequired: boolean },
-): ScriptParam[] | string => {
-  if (!Array.isArray(raw)) return "params は宣言の配列";
-  if (raw.length > VALUES_MAX) return `params は ${String(VALUES_MAX)} 個まで`;
+): ScriptParam[] | Refused => {
+  if (!Array.isArray(raw)) return refusal("params.notArray", "params は宣言の配列");
+  if (raw.length > VALUES_MAX) {
+    return refusal("params.tooMany", `params は ${String(VALUES_MAX)} 個まで`, { max: VALUES_MAX });
+  }
   const out: ScriptParam[] = [];
   for (const entry of raw as unknown[]) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-      return "params の要素は { name, kind, required?, summary } の object";
+      return refusal(
+        "params.entryNotObject",
+        "params の要素は { name, kind, required?, summary } の object",
+      );
     }
     const { name, kind, required, summary, schema, archive, ...rest } = entry as Record<
       string,
       unknown
     >;
     if (typeof name !== "string" || !VALUE_NAME.test(name) || name.length > VALUE_NAME_MAX) {
-      return `params の name ${JSON.stringify(name)} は ^[a-z][a-z0-9_]*$ で ${String(VALUE_NAME_MAX)} 字まで`;
+      return refusal(
+        "params.invalidName",
+        `params の name ${JSON.stringify(name)} は ^[a-z][a-z0-9_]*$ で ${String(VALUE_NAME_MAX)} 字まで`,
+        { name: quoted(name), max: VALUE_NAME_MAX },
+      );
     }
     if (typeof kind !== "string" || !(PARAM_KINDS as readonly string[]).includes(kind)) {
-      return `params の ${name} の kind は variable か secret (いまは ${String(kind)})`;
+      return refusal(
+        "params.invalidKind",
+        `params の ${name} の kind は variable か secret (いまは ${String(kind)})`,
+        { name, kind: String(kind) },
+      );
     }
     if (required !== undefined && typeof required !== "boolean") {
-      return `params の ${name} の required は true か false (省けば false)`;
+      return refusal(
+        "params.requiredNotBoolean",
+        `params の ${name} の required は true か false (省けば false)`,
+        { name },
+      );
     }
     if (summary !== undefined && typeof summary !== "string") {
-      return `params の ${name} の summary は文字列`;
+      return refusal("params.summaryNotString", `params の ${name} の summary は文字列`, { name });
     }
     if (summaryRequired && (summary === undefined || summary === "")) {
-      return `params の ${name} の summary が空 —— 一覧で何の値か分からなくなる`;
+      return refusal(
+        "params.summaryEmpty",
+        `params の ${name} の summary が空 —— 一覧で何の値か分からなくなる`,
+        { name },
+      );
     }
     const unknown = Object.keys(rest);
-    if (unknown.length > 0) return `params の ${name} に知らない鍵: ${unknown.join(", ")}`;
-    if (out.some((p) => p.name === name)) return `params に ${name} が 2 度ある`;
+    if (unknown.length > 0) {
+      return refusal(
+        "params.unknownKeys",
+        `params の ${name} に知らない鍵: ${unknown.join(", ")}`,
+        { name, keys: unknown },
+      );
+    }
+    if (out.some((p) => p.name === name)) {
+      return refusal("params.duplicateName", `params に ${name} が 2 度ある`, { name });
+    }
     const shape = kind === "variable" ? readSchema(name, schema) : undefined;
-    if (typeof shape === "string") return shape;
+    if (shape !== undefined && "refused" in shape) return shape;
     if (kind !== "variable" && schema !== undefined) {
-      return `params の ${name} に schema を書けるのは kind: variable だけ`;
+      return refusal(
+        "params.schemaOnlyForVariable",
+        `params の ${name} に schema を書けるのは kind: variable だけ`,
+        { name },
+      );
     }
     // シークレットの値を WARC に残すか。省けば BrowserHive が隠す。変数は値が settings.variables に必ず残るので、
     // 選ぶ物が無い。**読んだら写す** —— 写し忘れると、keep と書いた宣言が黙って隠す側に倒れる
     if (archive !== undefined) {
-      if (kind !== "secret") return `params の ${name} に archive を書けるのは kind: secret だけ`;
+      if (kind !== "secret") {
+        return refusal(
+          "params.archiveOnlyForSecret",
+          `params の ${name} に archive を書けるのは kind: secret だけ`,
+          { name },
+        );
+      }
       if (archive !== "keep") {
-        return `params の ${name} の archive は "keep" だけ (省けば WARC から隠す。いまは ${JSON.stringify(archive)})`;
+        return refusal(
+          "params.invalidArchive",
+          `params の ${name} の archive は "keep" だけ (省けば WARC から隠す。いまは ${JSON.stringify(archive)})`,
+          { name, value: quoted(archive) },
+        );
       }
     }
     out.push({

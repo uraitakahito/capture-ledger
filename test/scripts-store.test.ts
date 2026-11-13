@@ -388,6 +388,10 @@ describe("有効な各 id の最新版（既定が空のときの 400 が使う�
 });
 
 describe("宣言の形（capture-scripts の check と同じ決まり）", () => {
+  /** 断りの文 (`refused.text`)。読めたなら undefined */
+  const refusedText = (result: ReturnType<typeof readParams>): string | undefined =>
+    "refused" in result ? result.refused.text : undefined;
+
   it("name の綴りと長さ・kind・required の既定・summary を読み、required を埋めて返す", () => {
     expect(
       readParams(
@@ -410,7 +414,7 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
   });
 
   it("配列でない・name の綴り・kind・required・知らない鍵・重複は、その文で断る", () => {
-    const bad = (raw: unknown) => readParams(raw, { summaryRequired: false });
+    const bad = (raw: unknown) => refusedText(readParams(raw, { summaryRequired: false }));
     expect(bad({ name: "x" })).toContain("配列");
     expect(bad([{ name: "Query", kind: "variable" }])).toContain('"Query"');
     expect(bad([{ name: "a-b", kind: "variable" }])).toContain('"a-b"');
@@ -430,9 +434,9 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
   });
 
   it("summary は catalog では空にできず、その場の TS では省ける", () => {
-    expect(readParams([{ name: "q", kind: "variable" }], { summaryRequired: true })).toContain(
-      "summary が空",
-    );
+    expect(
+      refusedText(readParams([{ name: "q", kind: "variable" }], { summaryRequired: true })),
+    ).toContain("summary が空");
     expect(
       readParams([{ name: "q", kind: "variable", schema: { type: "string" } }], {
         summaryRequired: false,
@@ -459,14 +463,15 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
         schema: { type: "string", enum: ["a", "b"] },
       },
     ]);
-    expect(one(undefined)).toContain("schema が無い");
-    expect(one({ type: "number" })).toContain("type は string だけ");
-    expect(one({ type: "string", pattern: "x" })).toContain("知らない鍵: pattern");
-    expect(one({ type: "string", minLength: -1 })).toContain("0 以上の整数");
-    expect(one({ type: "string", maxLength: 1.5 })).toContain("0 以上の整数");
-    expect(one({ type: "string", enum: [] })).toContain("enum は文字列の列");
-    expect(one({ type: "string", enum: [1] })).toContain("enum は文字列の列");
-    expect(one({ type: "string" }, "secret")).toContain("kind: variable だけ");
+    const refused = (schema: unknown, kind?: string) => refusedText(one(schema, kind));
+    expect(refused(undefined)).toContain("schema が無い");
+    expect(refused({ type: "number" })).toContain("type は string だけ");
+    expect(refused({ type: "string", pattern: "x" })).toContain("知らない鍵: pattern");
+    expect(refused({ type: "string", minLength: -1 })).toContain("0 以上の整数");
+    expect(refused({ type: "string", maxLength: 1.5 })).toContain("0 以上の整数");
+    expect(refused({ type: "string", enum: [] })).toContain("enum は文字列の列");
+    expect(refused({ type: "string", enum: [1] })).toContain("enum は文字列の列");
+    expect(refused({ type: "string" }, "secret")).toContain("kind: variable だけ");
   });
 
   it("archive は kind: secret の宣言だけが持ち、keep なら写す（写さないと、残すつもりの値が黙って隠れる）", () => {
@@ -486,7 +491,7 @@ describe("宣言の形（capture-scripts の check と同じ決まり）", () =>
 
   it("archive の値は keep だけ、変数には書けない。どちらもその文で断る", () => {
     const one = (entry: Record<string, unknown>) =>
-      readParams([{ name: "q", ...entry }], { summaryRequired: false });
+      refusedText(readParams([{ name: "q", ...entry }], { summaryRequired: false }));
     expect(one({ kind: "secret", archive: "hide" })).toContain('archive は "keep" だけ');
     expect(one({ kind: "secret", archive: "hide" })).toContain('"hide"');
     expect(one({ kind: "secret", archive: true })).toContain('archive は "keep" だけ');

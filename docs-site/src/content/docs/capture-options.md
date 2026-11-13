@@ -175,8 +175,8 @@ Windmill variable each name was bound to and whether its value stays in the WARC
 | `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]`    | The script you wrote, as `inline-x` version 1; never registered (below)                                                                       |
 | `[]`                                                                 | Nothing. "Use the default" and "run nothing" are different intents                                                                            |
 | an unknown id, or the same id twice                                  | **400**, naming them (`ids`); no crawl is started                                                                                             |
-| a site script whose `sites` include no seed's hostname               | **400** `site scripts need a seed on their site`, naming them (`ids`, with their sites in `hint`); no crawl is started                        |
-| omitted, while every enabled script is a site script for other hosts | **400** `no default scripts for these seeds` (`hint` lists them), not `no scripts are registered`                                             |
+| a site script whose `sites` include no seed's hostname               | **400** `site scripts need a seed on their site`, naming them (`ids`, with their sites in `hint` and `hints`); no crawl is started            |
+| omitted, while every enabled script is a site script for other hosts | **400** `no default scripts for these seeds` (`hint` and `hints` list them), not `no scripts are registered`                                  |
 
 Each element is an object with exactly one key, `catalog` or `inline`.
 
@@ -213,15 +213,15 @@ A failed check goes back to Claude once more (two rounds at most), appended to t
 Nothing else is sent: no page text, no variable values, no secrets. Only types are checked; whether the
 script still does what it did is for you to read in the diff.
 
-| Answer                                                  | When                                                                             | Claude called |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------- |
-| 200 `{ rounds, source, edits, notes, compiled, usage }` | a fix passed the check (`edits` holds each replaced range, `before` and `after`) | yes           |
-| 409 `scripts compile`                                   | the scripts type-check now — nothing to fix                                      | no            |
-| 422 `no errors in this inline script`                   | the errors are elsewhere (another script or a lib file)                          | no            |
-| 429 `claude budget exhausted`                           | the organization reached this month's limit                                      | no            |
-| 422 `no fix passed the checks`                          | two rounds did not pass (with the last errors and the refusals)                  | yes           |
-| 422 `claude refused`                                    | the request was declined for safety reasons                                      | yes           |
-| 502 `claude failed` / 503 `ts-compile unreachable`      | the API or ts-compile-service did not answer                                     | maybe         |
+| Answer                                                  | When                                                                                              | Claude called |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------- |
+| 200 `{ rounds, source, edits, notes, compiled, usage }` | a fix passed the check (`edits` holds each replaced range, `before` and `after`)                  | yes           |
+| 409 `scripts compile`                                   | the scripts type-check now — nothing to fix                                                       | no            |
+| 422 `no errors in this inline script`                   | the errors are elsewhere (another script or a lib file)                                           | no            |
+| 429 `claude budget exhausted`                           | the organization reached this month's limit                                                       | no            |
+| 422 `no fix passed the checks`                          | two rounds did not pass (with the last errors, and the refusals in `refusals` and `refusalHints`) | yes           |
+| 422 `claude refused`                                    | the request was declined for safety reasons                                                       | yes           |
+| 502 `claude failed` / 503 `ts-compile unreachable`      | the API or ts-compile-service did not answer                                                      | maybe         |
 
 Each request that called Claude leaves one row in the `derivations` table (input digest, model, prompt
 version, effort, rounds, output, usage and cost), never in the WACZ. The monthly limit per organization
@@ -391,24 +391,57 @@ Names match `^[a-z][a-z0-9_]*$` and are at most 64 characters; a crawl takes at 
 is a string of at most 4,096 characters. A declaration never carries a default: an optional variable or a
 secret is `undefined` when nothing was passed, and the script falls back in its own source.
 
-| Answer                                                                  | When                                                                                                                                        |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `400 missing variables` (`names`, `diagnostics`)                        | A required variable was not passed (`diagnostics` holds the `BH0001` lines and columns)                                                     |
-| `400 invalid variables` (`names`, `hint`)                               | A value does not fit the declaration (too short for `.min`, not in `z.enum`, and so on)                                                     |
-| `400 unknown variables` (`names`)                                       | A passed name that no script declares (not checked while a script whose declaration cannot be read is in the list)                          |
-| `400 secrets cannot be passed as variables` (`names`)                   | A passed name is declared as a secret — it would end up in the archive                                                                      |
-| `400 conflicting params` (`names`)                                      | Two scripts declare the same name as different kinds or different shapes, or one keeps a secret's value (`archive`) and the other hides it  |
-| `400 invalid params` (`script`, `hint`)                                 | An inline script's `params` break the declaration rules (the same rules `import` applies); variables cannot be written there                |
-| `503 ts-compile unreachable`                                            | ts-compile-service could not be asked (its 400 and 409 count too; the log has the body, which shows a version mismatch). Nothing is started |
-| `400 unknown secrets` (`secrets: [{ name, path, declaredBy }]`, `hint`) | A `required` secret is not in Windmill. A non-required one that is missing is simply not passed                                             |
-| `400 not a secret variable` (`secrets`)                                 | The Windmill variable exists but is not marked secret                                                                                       |
-| `400 secrets need the windmill webhook` (`names`)                       | A script declares a secret but this deployment's webhook URL is not a flow webhook                                                          |
-| `503 windmill unreachable`                                              | Windmill could not be asked; nothing is started                                                                                             |
-| `400 formats that cannot hide secrets` (`formats`, `names`, `hint`)     | A secret the crawl would send is hidden, and this deployment's formats include `png`, `webp`, `html` or `mhtml`                             |
+| Answer                                                                           | When                                                                                                                                        |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `400 missing variables` (`names`, `diagnostics`)                                 | A required variable was not passed (`diagnostics` holds the `BH0001` lines and columns)                                                     |
+| `400 invalid variables` (`names`, `hint`, `hints`)                               | A value does not fit the declaration (too short for `.min`, not in `z.enum`, and so on)                                                     |
+| `400 unknown variables` (`names`)                                                | A passed name that no script declares (not checked while a script whose declaration cannot be read is in the list)                          |
+| `400 secrets cannot be passed as variables` (`names`)                            | A passed name is declared as a secret — it would end up in the archive                                                                      |
+| `400 conflicting params` (`names`)                                               | Two scripts declare the same name as different kinds or different shapes, or one keeps a secret's value (`archive`) and the other hides it  |
+| `400 invalid params` (`script`, `hint`, `hints`)                                 | An inline script's `params` break the declaration rules (the same rules `import` applies); variables cannot be written there                |
+| `503 ts-compile unreachable`                                                     | ts-compile-service could not be asked (its 400 and 409 count too; the log has the body, which shows a version mismatch). Nothing is started |
+| `400 unknown secrets` (`secrets: [{ name, path, declaredBy }]`, `hint`, `hints`) | A `required` secret is not in Windmill. A non-required one that is missing is simply not passed                                             |
+| `400 not a secret variable` (`secrets`)                                          | The Windmill variable exists but is not marked secret                                                                                       |
+| `400 secrets need the windmill webhook` (`names`)                                | A script declares a secret but this deployment's webhook URL is not a flow webhook                                                          |
+| `503 windmill unreachable`                                                       | Windmill could not be asked; nothing is started                                                                                             |
+| `400 formats that cannot hide secrets` (`formats`, `names`, `hint`, `hints`)     | A secret the crawl would send is hidden, and this deployment's formats include `png`, `webp`, `html` or `mhtml`                             |
 
 None of these starts a crawl. `GET /api/crawls/:id` returns `variables` (with values) and `secrets`
 (`[{ name, path, editedAt, rotated, archive }]`, in name order; `archive` is `"keep"` when the value stays in
 the WARC and `null` when it is hidden).
+
+### A refusal's sentence, for people and for programs (`hint`, `hints`)
+
+A refusal that has a `hint` has `hints` as well. `hint` is the sentence to show a person, in Japanese, and
+it is the same string it has always been. `hints` holds the same content one sentence at a time, as
+`[{ key, params, text }]`, so that a client (capture-workbench, for one) can write the sentence in its own
+language instead of recognizing the Japanese text.
+
+| Field    | What it holds                                                                                                                                                                                                             |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`   | The sentence as it appears in `hint`. Where `hint` joins several with `/`, each one has its own entry                                                                                                                     |
+| `key`    | The kind of sentence, as `<group>.<meaning>` (`params.duplicateName`, `variables.tooShort`). Absent when the entry is not a sentence to translate: a command to run, a script id with its sites, a message from a library |
+| `params` | Every value written into the sentence, by name: strings, numbers and arrays of strings (a value the sentence shows in quotes is the quoted string). Absent when the sentence has none                                     |
+
+```json
+{
+  "error": "invalid variables",
+  "names": ["query"],
+  "hint": "query は 1 字以上",
+  "hints": [
+    {
+      "key": "variables.tooShort",
+      "params": { "name": "query", "min": 1 },
+      "text": "query は 1 字以上"
+    }
+  ]
+}
+```
+
+The keys, and the value names each key takes, are one table in the code: `HINT_KEYS` in `src/types/hint.ts`.
+They are a promise to whoever reads them — a published key and its value names do not change, while the
+wording of `text` may. The fix route's 422 `no fix passed the checks` gives its reasons the same way:
+`refusals` holds the sentences and `refusalHints` the same entries, in the same order.
 
 ## What capture-ledger still does not decide
 

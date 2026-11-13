@@ -1048,7 +1048,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         case "fixed":
           return { kind: r.kind, hunks: r.hunks, notes: r.notes, compiled: r.compiled };
         case "failed":
-          return { kind: r.kind, diagnostics: r.diagnostics, refusals: r.refusals };
+          // `refusalHints` は後から足した欄 (CAPTURE-294)。それより前の行の output には無い
+          return {
+            kind: r.kind,
+            diagnostics: r.diagnostics,
+            refusals: r.refusals,
+            refusalHints: r.refusalHints,
+          };
         case "refused":
           return { kind: r.kind };
         case "unreachable":
@@ -1185,6 +1191,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               rounds: result.rounds,
               diagnostics: result.diagnostics,
               refusals: result.refusals,
+              refusalHints: result.refusalHints,
               usage: usageOf(result),
             });
           case "refused":

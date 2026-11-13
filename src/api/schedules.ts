@@ -15,6 +15,7 @@ import type { ScheduleRecipe } from "../db/database.js";
 import { createChildLogger } from "../logger.js";
 import { checkCron, nextRunAfter } from "../schedules/cron.js";
 import { scheduleHealth } from "../schedules/health.js";
+import type { Hint } from "../types/hint.js";
 import type {
   LatestVersions,
   ScheduleRow,
@@ -176,7 +177,9 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
       const cron = request.body.cron.trim();
       const checked = checkCron(cron, TIMEZONE, now, deps.minIntervalMinutes);
       if (checked.kind === "invalid") {
-        return reply.code(400).send({ error: "invalid cron", hint: checked.reason });
+        // 理由は cron の library の文か、英語の決まった文。訳す鍵は付けない (`types/hint.ts`)
+        const hints: Hint[] = [{ text: checked.reason }];
+        return reply.code(400).send({ error: "invalid cron", hint: checked.reason, hints });
       }
       if (checked.kind === "too-often") {
         return reply.code(400).send({

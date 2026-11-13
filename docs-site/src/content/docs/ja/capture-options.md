@@ -155,15 +155,15 @@ source・sha256・options・対象サイト・宣言 —— をクロールの�
 変わりません。[クロールごとの値](#クロールごとの値)も同じように固定します。`variables` は値ごと、
 `secrets` は名前を結んだ Windmill の変数の path と、値を WARC に残すかを。
 
-| `scripts`                                                         | 走るもの                                                                                                    |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| 省く                                                              | **有効な**各 id の最新版のうち、対象サイトの無い物と、対象サイトが起点のホスト名を含む物を、カタログの順で  |
-| `[{"catalog": "b"}, {"catalog": "a"}]`                            | そのとおり、**その並びで** —— 並びは指示の一部                                                              |
-| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた TS を `inline-x`・版 1 で。登録はされない（下記）                                                    |
-| `[]`                                                              | 何も走らない。「既定でよい」と「何も走らせない」は別の意思                                                  |
-| 登録されていない id・同じ id の重ね                               | **400** で名指し（`ids`）。クロールは立たない                                                               |
-| 対象サイトが起点のどのホスト名も含まないサイト用のスクリプト      | **400** `site scripts need a seed on their site` で名指し（`ids`、対象サイトは `hint`）。クロールは立たない |
-| 省いたのに、有効なスクリプトが全部ほかのホスト用                  | **400** `no default scripts for these seeds`（`hint` に並べる）。「スクリプトが無い」とは言わない           |
+| `scripts`                                                         | 走るもの                                                                                                               |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 省く                                                              | **有効な**各 id の最新版のうち、対象サイトの無い物と、対象サイトが起点のホスト名を含む物を、カタログの順で             |
+| `[{"catalog": "b"}, {"catalog": "a"}]`                            | そのとおり、**その並びで** —— 並びは指示の一部                                                                         |
+| `[{"inline": {"name": "x", "phase": "behavior", "source": "…"}}]` | 書いた TS を `inline-x`・版 1 で。登録はされない（下記）                                                               |
+| `[]`                                                              | 何も走らない。「既定でよい」と「何も走らせない」は別の意思                                                             |
+| 登録されていない id・同じ id の重ね                               | **400** で名指し（`ids`）。クロールは立たない                                                                          |
+| 対象サイトが起点のどのホスト名も含まないサイト用のスクリプト      | **400** `site scripts need a seed on their site` で名指し（`ids`、対象サイトは `hint` と `hints`）。クロールは立たない |
+| 省いたのに、有効なスクリプトが全部ほかのホスト用                  | **400** `no default scripts for these seeds`（`hint` と `hints` に並べる）。「スクリプトが無い」とは言わない           |
 
 要素は、鍵が 1 つの object です（`catalog` か `inline` のどちらか）。
 
@@ -196,15 +196,15 @@ ts-compile-service しか呼ばないので GET で、許可はクロールの�
 （2 回まで）。ほかには何も送りません（頁の文字・変数の値・シークレットは送らない）。確かめるのは型だけで、
 動きが変わっていないかは差分を読んで確かめてください。
 
-| 答え                                                    | いつ                                                                         | Claude を呼んだか  |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------ |
-| 200 `{ rounds, source, edits, notes, compiled, usage }` | 検査に通った直しがある（`edits` は置き換えた範囲ごとの `before` と `after`） | 呼んだ             |
-| 409 `scripts compile`                                   | いまの組み合わせが型を通る（直す物が無い）                                   | 呼ばない           |
-| 422 `no errors in this inline script`                   | 誤りがこのスクリプトに無い（ほかのスクリプトか lib に在る）                  | 呼ばない           |
-| 429 `claude budget exhausted`                           | 組織がこの月の上限に届いた                                                   | 呼ばない           |
-| 422 `no fix passed the checks`                          | 2 回で通らなかった（最後の誤りと断った理由つき）                             | 呼んだ             |
-| 422 `claude refused`                                    | 安全の判定で断られた                                                         | 呼んだ             |
-| 502 `claude failed`・503 `ts-compile unreachable`       | API か ts-compile-service が答えなかった                                     | 呼んだかもしれない |
+| 答え                                                    | いつ                                                                             | Claude を呼んだか  |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------ |
+| 200 `{ rounds, source, edits, notes, compiled, usage }` | 検査に通った直しがある（`edits` は置き換えた範囲ごとの `before` と `after`）     | 呼んだ             |
+| 409 `scripts compile`                                   | いまの組み合わせが型を通る（直す物が無い）                                       | 呼ばない           |
+| 422 `no errors in this inline script`                   | 誤りがこのスクリプトに無い（ほかのスクリプトか lib に在る）                      | 呼ばない           |
+| 429 `claude budget exhausted`                           | 組織がこの月の上限に届いた                                                       | 呼ばない           |
+| 422 `no fix passed the checks`                          | 2 回で通らなかった（最後の誤りと、断った理由の `refusals`・`refusalHints` つき） | 呼んだ             |
+| 422 `claude refused`                                    | 安全の判定で断られた                                                             | 呼んだ             |
+| 502 `claude failed`・503 `ts-compile unreachable`       | API か ts-compile-service が答えなかった                                         | 呼んだかもしれない |
 
 Claude を呼んだ頼みは、1 回ごとに表 `derivations` に 1 行残します（入力の digest・model・prompt の版・
 effort・回数・出力・usage・費用）。WACZ には書きません。組織ごとの月の上限は、その費用を足して数えます
@@ -358,23 +358,55 @@ WARC に残したい宣言は、そう書きます。
 名前は `^[a-z][a-z0-9_]*$` で 64 字まで、1 クロールの変数は 32 個まで、値は 4,096 字までの文字列です。
 宣言に既定値は書けません。任意の変数とシークレットは、渡されなければ `undefined` で、スクリプトが自分のソースの既定に倒します。
 
-| 答え                                                                     | いつ                                                                                                                |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `400 missing variables`（`names`・`diagnostics`）                        | 必須の変数が渡されていない（`diagnostics` は `BH0001` の行と列）                                                    |
-| `400 invalid variables`（`names`・`hint`）                               | 値が宣言の形に合わない（`.min` に足りない字数、`z.enum` に無い字など）                                              |
-| `400 unknown variables`（`names`）                                       | どのスクリプトも宣言していない名前を渡した（宣言を読めないスクリプトが在れば見ない）                                |
-| `400 secrets cannot be passed as variables`（`names`）                   | シークレットとして宣言された名前を変数で渡した —— アーカイブに値が残ってしまう                                      |
-| `400 conflicting params`（`names`）                                      | 同じ名前を、別々のスクリプトが別の種類か別の形で宣言している。シークレットの値を片方は残し（`archive`）、片方は隠す |
-| `400 invalid params`（`script`・`hint`）                                 | その場の TS の `params` が宣言の決まり（`import` と同じ）に合わない。変数は書けない                                 |
-| `503 ts-compile unreachable`                                             | ts-compile-service に訊けない（400・409 の答えも含む。版のずれはログの本文で分かる）。何も始めない                  |
-| `400 unknown secrets`（`secrets: [{ name, path, declaredBy }]`・`hint`） | `required` のシークレットが Windmill に無い。`required` でない物が無ければ渡さないだけ                              |
-| `400 not a secret variable`（`secrets`）                                 | Windmill に在るが secret の印が無い                                                                                 |
-| `400 secrets need the windmill webhook`（`names`）                       | シークレットを宣言したスクリプトが在るのに、この配備の webhook の URL が flow の物でない                            |
-| `503 windmill unreachable`                                               | Windmill に訊けなかった。何も始めない                                                                               |
-| `400 formats that cannot hide secrets`（`formats`・`names`・`hint`）     | クロールが送るシークレットに隠す物が在り、この配備の形式に `png`・`webp`・`html`・`mhtml` がある                    |
+| 答え                                                                              | いつ                                                                                                                |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `400 missing variables`（`names`・`diagnostics`）                                 | 必須の変数が渡されていない（`diagnostics` は `BH0001` の行と列）                                                    |
+| `400 invalid variables`（`names`・`hint`・`hints`）                               | 値が宣言の形に合わない（`.min` に足りない字数、`z.enum` に無い字など）                                              |
+| `400 unknown variables`（`names`）                                                | どのスクリプトも宣言していない名前を渡した（宣言を読めないスクリプトが在れば見ない）                                |
+| `400 secrets cannot be passed as variables`（`names`）                            | シークレットとして宣言された名前を変数で渡した —— アーカイブに値が残ってしまう                                      |
+| `400 conflicting params`（`names`）                                               | 同じ名前を、別々のスクリプトが別の種類か別の形で宣言している。シークレットの値を片方は残し（`archive`）、片方は隠す |
+| `400 invalid params`（`script`・`hint`・`hints`）                                 | その場の TS の `params` が宣言の決まり（`import` と同じ）に合わない。変数は書けない                                 |
+| `503 ts-compile unreachable`                                                      | ts-compile-service に訊けない（400・409 の答えも含む。版のずれはログの本文で分かる）。何も始めない                  |
+| `400 unknown secrets`（`secrets: [{ name, path, declaredBy }]`・`hint`・`hints`） | `required` のシークレットが Windmill に無い。`required` でない物が無ければ渡さないだけ                              |
+| `400 not a secret variable`（`secrets`）                                          | Windmill に在るが secret の印が無い                                                                                 |
+| `400 secrets need the windmill webhook`（`names`）                                | シークレットを宣言したスクリプトが在るのに、この配備の webhook の URL が flow の物でない                            |
+| `503 windmill unreachable`                                                        | Windmill に訊けなかった。何も始めない                                                                               |
+| `400 formats that cannot hide secrets`（`formats`・`names`・`hint`・`hints`）     | クロールが送るシークレットに隠す物が在り、この配備の形式に `png`・`webp`・`html`・`mhtml` がある                    |
 
 どれもクロールは立ちません。`GET /api/crawls/:id` は `variables`（値ごと）と `secrets`
 （`[{ name, path, editedAt, rotated, archive }]`。名前順。`archive` は値を WARC に残すなら `"keep"`、隠すなら `null`）を返します。
+
+### 断りの文を、人にもプログラムにも（`hint`・`hints`）
+
+`hint` のある断りには、`hints` も付きます。`hint` は人に見せる日本語の文で、字は今までと変わりません。
+`hints` は同じ内容を文ごとに分けた `[{ key, params, text }]` です。クライアント（capture-workbench など）が、
+日本語の字を見分けずに、自分の言語で同じ文を書けるようにするための欄です。
+
+| 欄       | 入る物                                                                                                                                                                                 |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`   | `hint` に出ているとおりの文。`hint` が複数の文を `/` で繋いでいるときは、文ごとに 1 つ                                                                                                 |
+| `key`    | 文の種類の名前。`<まとまり>.<意味>` の形（`params.duplicateName`・`variables.tooShort`）。訳す物でない文（打つ命令の例・スクリプトの id と対象サイト・library が書いた文）には付かない |
+| `params` | 文に埋めた値の全部を、名前ごとに。文字列・数・文字列の配列（引用符つきで埋めた値は、引用符ごとの文字列）。埋めた値の無い文には付かない                                                 |
+
+```json
+{
+  "error": "invalid variables",
+  "names": ["query"],
+  "hint": "query は 1 字以上",
+  "hints": [
+    {
+      "key": "variables.tooShort",
+      "params": { "name": "query", "min": 1 },
+      "text": "query は 1 字以上"
+    }
+  ]
+}
+```
+
+鍵と、鍵ごとの値の名前の一覧は、コードの中の 1 つの表（`src/types/hint.ts` の `HINT_KEYS`）です。
+これは読む側との約束で、一度出した鍵と値の名前は変えません（`text` の字は直すことがあります）。
+直し方のエンドポイントの 422 `no fix passed the checks` も、断った理由を同じ形で返します。`refusals` が文、
+`refusalHints` が同じ並びの組です。
 
 ## capture-ledger がいまも決めないもの
 

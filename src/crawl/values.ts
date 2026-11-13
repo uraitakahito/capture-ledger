@@ -30,6 +30,7 @@ import type { CaptureFormats } from "../config/capture-formats.js";
 import type { CrawlScript, CrawlSecret, ParamKind, ParamSchema } from "../db/database.js";
 import { VALUES_MAX } from "../scripts/store.js";
 import type { DeclaredScript } from "../scripts/ts-compile.js";
+import { hint, type Hint } from "../types/hint.js";
 
 /**
  * シークレットの置き場。Windmill のいちばん上のフォルダ (サブフォルダは権限を継がない)。capture-scheduler の
@@ -84,17 +85,26 @@ export const pinDeclarations = (
       : { ...script, params: [...variables, ...secrets] };
   });
 
-/** 値が形に合わないなら、人に見せる文。JSON Schema の長さは code point で数える。 */
-const shapeProblem = (name: string, value: string, schema: ParamSchema): string | undefined => {
+/** 値が形に合わないなら、人に見せる文 (鍵と値の組)。JSON Schema の長さは code point で数える。 */
+const shapeProblem = (name: string, value: string, schema: ParamSchema): Hint | undefined => {
   const length = [...value].length;
   if (schema.enum !== undefined && !schema.enum.includes(value)) {
-    return `${name} は ${schema.enum.join("・")} のどれか`;
+    return hint("variables.notInEnum", `${name} は ${schema.enum.join("・")} のどれか`, {
+      name,
+      values: schema.enum,
+    });
   }
   if (schema.minLength !== undefined && length < schema.minLength) {
-    return `${name} は ${String(schema.minLength)} 字以上`;
+    return hint("variables.tooShort", `${name} は ${String(schema.minLength)} 字以上`, {
+      name,
+      min: schema.minLength,
+    });
   }
   if (schema.maxLength !== undefined && length > schema.maxLength) {
-    return `${name} は ${String(schema.maxLength)} 字まで`;
+    return hint("variables.tooLong", `${name} は ${String(schema.maxLength)} 字まで`, {
+      name,
+      max: schema.maxLength,
+    });
   }
   return undefined;
 };
@@ -104,7 +114,8 @@ const shapeProblem = (name: string, value: string, schema: ParamSchema): string 
  *
  * 断る順: 同じ名前を別の種類か別の形か、残すかどうかを違えて宣言している (どちらにも渡せない) → シークレットの名前を
  * 変数で渡している (記録に値が残る) → 知らない変数の名前 (宣言を読めなかったスクリプトが在れば見ない) → 値が宣言の形に
- * 合わない → シークレットが多すぎる。文は route がそのまま 400 の本文にする。
+ * 合わない → シークレットが多すぎる。文は route がそのまま 400 の本文にする。人に見せる文 (`hint`) には、
+ * 文ごとの鍵と値の組 (`hints`。`types/hint.ts`) を並べる。
  */
 export const checkValues = (
   scripts: readonly CrawlScript[],
@@ -165,7 +176,8 @@ export const checkValues = (
     return refuse({
       error: "invalid variables",
       names: misfits.map(({ name }) => name),
-      hint: misfits.map(({ problem }) => problem).join(" / "),
+      hint: misfits.map(({ problem }) => problem.text).join(" / "),
+      hints: misfits.map(({ problem }) => problem),
     });
   }
 
@@ -210,12 +222,17 @@ export const formatsRefusal = (
     .sort();
   const asked = FORMATS_WITHOUT_REPLACEMENT.filter((format) => formats[format]);
   if (hidden.length === 0 || asked.length === 0) return undefined;
+  const withheld = hint(
+    "formats.cannotHideSecrets",
+    `CAPTURE_LEDGER_CAPTURE_FORMATS の ${asked.join("・")} は値を置き換えられない (BrowserHive が断る)。` +
+      `形式から外すか、値を WARC に残すなら宣言に archive: "keep" と書く`,
+    { formats: asked },
+  );
   return {
     error: "formats that cannot hide secrets",
     formats: asked,
     names: hidden,
-    hint:
-      `CAPTURE_LEDGER_CAPTURE_FORMATS の ${asked.join("・")} は値を置き換えられない (BrowserHive が断る)。` +
-      `形式から外すか、値を WARC に残すなら宣言に archive: "keep" と書く`,
+    hint: withheld.text,
+    hints: [withheld],
   };
 };

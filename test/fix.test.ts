@@ -185,17 +185,17 @@ describe("断る形", () => {
   ];
 
   it("@ts-nocheck・@ts-ignore・as any・: any を足した案は断る", () => {
-    expect(refusalOf(hunk("x;", "// @ts-nocheck\nx;".split("\n")[0]!), 10)).toContain(
+    expect(refusalOf(hunk("x;", "// @ts-nocheck\nx;".split("\n")[0]!), 10)?.text).toContain(
       "型の検査を外す",
     );
-    expect(refusalOf(hunk("f(el);", "f(el as any);"), 10)).toContain("any");
-    expect(refusalOf(hunk("const f = (el) => 1;", "const f = (el: any) => 1;"), 10)).toContain(
-      "any",
-    );
+    expect(refusalOf(hunk("f(el);", "f(el as any);"), 10)?.text).toContain("any");
+    expect(
+      refusalOf(hunk("const f = (el) => 1;", "const f = (el: any) => 1;"), 10)?.text,
+    ).toContain("any");
   });
 
   it("import か export を足した案は断る (TS1375 の文が勧める export {} も)", () => {
-    expect(refusalOf(hunk("await f();", "export {};"), 10)).toContain("export");
+    expect(refusalOf(hunk("await f();", "export {};"), 10)?.text).toContain("export");
   });
 
   it("元から在った any は断らない (増えたときだけ)", () => {
@@ -207,7 +207,7 @@ describe("断る形", () => {
   it("書き換えた行が元の半分 (少なくとも 3 行) を超える案は断る", () => {
     const lines = (n: number): string[] => Array.from({ length: n }, () => "x");
     const many = [{ from: 1, to: 6, before: lines(6), after: ["y"] }];
-    expect(refusalOf(many, 10)).toContain("多すぎる");
+    expect(refusalOf(many, 10)?.text).toContain("多すぎる");
     expect(refusalOf([{ from: 1, to: 3, before: lines(3), after: ["y"] }], 4)).toBeUndefined();
   });
 });
@@ -279,6 +279,11 @@ describe("直し方を訊く輪", () => {
     // 黙らせる案は検査に回さない (検査は 2 回目の 1 度だけ)
     expect(asked).toHaveLength(1);
     expect(result.kind === "failed" && result.refusals[0]).toContain("型の検査を外す");
+    // 同じ並びの、鍵と値の組。文 (`refusals`) は組の text
+    expect(result.kind === "failed" && result.refusalHints).toEqual([
+      { key: "fix.suppressedCheck", text: "型の検査を外す注記を足した" },
+    ]);
+    expect(result.kind === "failed" && result.refusals).toEqual(["型の検査を外す注記を足した"]);
     expect(result.kind === "failed" && result.diagnostics[0]).toMatchObject({
       script: "inline-press",
       code: "TS2451",

@@ -21,6 +21,7 @@ import {
   type RequestedScript,
 } from "../scripts/store.js";
 import { TsCompileUnreachable, type TsCompile } from "../scripts/ts-compile.js";
+import { hint, type Hint } from "../types/hint.js";
 import { checkRules, DEFAULT_RULES, ruleOf } from "./rules.js";
 import { parseHttpUrl, type ParsedUrl } from "./scope.js";
 import { toDispatched } from "./launch.js";
@@ -247,6 +248,26 @@ const refused = (status: number, body: Record<string, unknown>): RefusedCrawl =>
   body,
 });
 
+/**
+ * 人に見せる文つきの断り。本文の `hint` は文を ` / ` で繋いだ字 (今までと同じ)、`hints` は文ごとの組
+ * (`types/hint.ts`)。命令の例やスクリプトの id の並びのように、訳す物でない文は鍵なし (`{ text }` だけ)。
+ */
+const refusedWithHints = (
+  status: number,
+  body: Record<string, unknown>,
+  text: string,
+  hints: Hint[],
+): RefusedCrawl => refused(status, { ...body, hint: text, hints });
+
+/** その場の TS の `params` に、変数の宣言が書いてあるときの文。 */
+export const INLINE_PARAMS_SECRETS_ONLY: Hint = hint(
+  "inlineParams.secretsOnly",
+  "params に書けるのはシークレットだけ。変数は source の defineParams で宣言する",
+);
+
+/** スクリプトを省いた頼みを断る文の終わりに添える案内。何も走らせないのは、明示の `scripts: []`。 */
+const RUN_NOTHING_ON_PURPOSE = "(run nothing on purpose: send scripts: [])";
+
 export type ResolvedSecrets =
   { kind: "resolved"; secrets: Record<string, CrawlSecret> } | RefusedCrawl;
 
@@ -306,14 +327,16 @@ export const resolveSecrets = async (
     const named = (list: DeclaredSecret[]) =>
       list.map(({ name, path, declaredBy }) => ({ name, path, declaredBy }));
     if (unknown.length > 0) {
-      return refused(400, {
-        error: "unknown secrets",
-        secrets: named(unknown),
-        // wmill CLI の綴り (値が先、path が後)。置き場は capture-scheduler の docs が案内する
-        hint: unknown
-          .map((secret) => `wmill variable add <value> ${secret.path} --secret`)
-          .join(" / "),
-      });
+      // wmill CLI の綴り (値が先、path が後)。置き場は capture-scheduler の docs が案内する
+      const commands = unknown.map(
+        (secret) => `wmill variable add <value> ${secret.path} --secret`,
+      );
+      return refusedWithHints(
+        400,
+        { error: "unknown secrets", secrets: named(unknown) },
+        commands.join(" / "),
+        commands.map((text) => ({ text })),
+      );
     }
     if (notSecret.length > 0) {
       return refused(400, { error: "not a secret variable", secrets: named(notSecret) });
@@ -380,19 +403,21 @@ export const prepareCrawl = async (
     }
     // 変数の宣言の正は source の `defineParams`。ここにも書けると、宣言が 2 か所になって片方が腐る
     if (element.inline.params.some((param) => param.kind === "variable")) {
-      return refused(400, {
-        error: "invalid params",
-        script: INLINE_PREFIX + element.inline.name,
-        hint: "params に書けるのはシークレットだけ。変数は source の defineParams で宣言する",
-      });
+      return refusedWithHints(
+        400,
+        { error: "invalid params", script: INLINE_PREFIX + element.inline.name },
+        INLINE_PARAMS_SECRETS_ONLY.text,
+        [INLINE_PARAMS_SECRETS_ONLY],
+      );
     }
     const params = readParams(element.inline.params, { summaryRequired: false });
-    if (typeof params === "string") {
-      return refused(400, {
-        error: "invalid params",
-        script: INLINE_PREFIX + element.inline.name,
-        hint: params,
-      });
+    if ("refused" in params) {
+      return refusedWithHints(
+        400,
+        { error: "invalid params", script: INLINE_PREFIX + element.inline.name },
+        params.refused.text,
+        [params.refused],
+      );
     }
     requested.push({ inline: { ...element.inline, params } });
   }
@@ -412,11 +437,13 @@ export const prepareCrawl = async (
   // 冒頭の見分けで何もせずに終わるスクリプトを、走らせたと記録することになる。外す (名指さない) のは自由
   const offsite = offsiteScripts(resolved.scripts, seedHosts);
   if (offsite.length > 0) {
-    return refused(400, {
-      error: "site scripts need a seed on their site",
-      ids: offsite.map((script) => script.id),
-      hint: offsite.map((script) => `${script.id}: ${script.sites.join(", ")}`).join(" / "),
-    });
+    const theirSites = offsite.map((script) => `${script.id}: ${script.sites.join(", ")}`);
+    return refusedWithHints(
+      400,
+      { error: "site scripts need a seed on their site", ids: offsite.map((script) => script.id) },
+      theirSites.join(" / "),
+      theirSites.map((text) => ({ text })),
+    );
   }
 
   // **既定を頼まれたのに、既定が空。** スクリプトを登録し忘れた配備はここで止まる ——
@@ -429,19 +456,21 @@ export const prepareCrawl = async (
     // スクリプトは在るのに、全部が別のサイト用 —— 「スクリプトが無い」とは言わない (取り込み直しても直らない)
     const enabled = await enabledLatest(db);
     if (enabled.length > 0) {
-      return refused(400, {
-        error: "no default scripts for these seeds",
-        hint:
-          enabled.map((script) => `${script.id}: ${script.sites.join(", ")}`).join(" / ") +
-          " (run nothing on purpose: send scripts: [])",
-      });
+      const theirSites = enabled.map((script) => `${script.id}: ${script.sites.join(", ")}`);
+      return refusedWithHints(
+        400,
+        { error: "no default scripts for these seeds" },
+        `${theirSites.join(" / ")} ${RUN_NOTHING_ON_PURPOSE}`,
+        [...theirSites, RUN_NOTHING_ON_PURPOSE].map((text) => ({ text })),
+      );
     }
-    return refused(400, {
-      error: "no scripts are registered",
-      hint:
-        "pnpm run scripts import .upstream/capture-scripts " +
-        "(run nothing on purpose: send scripts: [])",
-    });
+    const command = "pnpm run scripts import .upstream/capture-scripts";
+    return refusedWithHints(
+      400,
+      { error: "no scripts are registered" },
+      `${command} ${RUN_NOTHING_ON_PURPOSE}`,
+      [command, RUN_NOTHING_ON_PURPOSE].map((text) => ({ text })),
+    );
   }
 
   // **クロールごとの値を、宣言に照らす。** 変数は頼みの物 (無ければ空)、シークレットは宣言から集める
