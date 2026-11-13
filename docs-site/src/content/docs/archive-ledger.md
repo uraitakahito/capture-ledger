@@ -773,7 +773,9 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   a timed-out or failed capture has it too (with no WACZ, so no line names a record). capture-ledger does not pick
   members of a line; it passes the lines through as written, and their shape is BrowserHive's contract
   (`CaptureTraceLine` in the copy at `src/rpc/generated/browserhive/openapi.json`). For earlier captures, and for
-  captures that did not ask for a WACZ, it is `null`.
+  captures that did not ask for a WACZ, it is `null`. From BrowserHive v30.1.0 the same lines are also inside the WACZ,
+  in `trace/events.jsonl` (each line gains a leading `profile`; WACZ Profile 1.23.0). **The lines inside the WACZ are
+  the ones under the signature; the lines in this answer are a copy of them.**
 
 When it cannot be read the answer is still 200, with `capture`, `log` and `trace` `null` and a `reason`. The reasons
 are the first four of the log route (`not-captured`, `no-manifest`, `manifest-missing`, `manifest-invalid`); there is

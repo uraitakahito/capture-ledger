@@ -688,7 +688,9 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   WACZ を求めた取り込みの `.result.json` に載ります。時間切れ・失敗の取り込みにも在ります（そのときは WACZ が無いので、
   行はレコードを名指しません）。capture-ledger は行の欄を選び直さず、書かれたまま返します —— 行の形は BrowserHive の契約
   （写しの `src/rpc/generated/browserhive/openapi.json` の `CaptureTraceLine`）が決めます。それより前の取り込みと、
-  WACZ を求めなかった取り込みでは `null` です。
+  WACZ を求めなかった取り込みでは `null` です。BrowserHive v30.1.0 からは、同じ行が WACZ の中の `trace/events.jsonl` にも
+  在ります（各行の頭に `profile` が付くだけ。WACZ Profile 1.23.0）。**署名の下に在るのは WACZ の中の行で、この答えの行は
+  その写しです。**
 
 読めないときも 200 で、`capture`・`log`・`trace` が `null` になり、理由（`reason`）が入ります。理由はログのエンドポイントの
 上の 4 つ（`not-captured`・`no-manifest`・`manifest-missing`・`manifest-invalid`）で、`no-log` はありません。保管庫に届かなければ 502 です。
