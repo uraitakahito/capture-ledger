@@ -159,8 +159,8 @@ const STEPS: Step[] = [
     id: "bootstrap",
     run: "pnpm run windmill:bootstrap",
     cwd: SCHEDULER,
-    // **冷えた Windmill は 60 秒では足りない。** `container-compose up -d` は既に
-    // 動いているコンテナも作り直すので、2 度目の dev:up でも毎回冷える (実測)。
+    // **冷えた Windmill は 60 秒では足りない。** 冷えるのは、上の段が `container-compose up -d` を
+    // 打った回 (既に答えていれば `skipIf` で飛ばすので、2 度目の dev:up では冷えない)。
     // bootstrap 自身の待ちは 60 秒で切れるため、ここで先に待つ。
     waitFor: { label: "windmill", url: `${WINDMILL}/api/version`, timeoutMs: 300_000 },
   },

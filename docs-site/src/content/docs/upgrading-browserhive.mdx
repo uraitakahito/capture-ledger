@@ -104,6 +104,9 @@ The level handler, reconcile, the log route and the trace route read every `.res
 
 - **Members the copy does not know pass.** A manifest from a newer BrowserHive is still
   read, so a BrowserHive release does not stop the ledger before the copy is bumped.
+  An enum value the copy does not know does not pass: until the copy is bumped, the level
+  handler and reconcile skip that manifest, and the log and trace routes answer
+  `manifest-invalid`.
 - **A member the contract gives a default is filled in when missing** (`useDefaults`), so
   a member that later became required with an `@default` does not fail old manifests. One
   that became required _without_ a default, or an enum value that was removed, does —

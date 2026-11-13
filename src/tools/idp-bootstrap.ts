@@ -120,8 +120,9 @@ const ensureGroup = async (pool: string, group: string) => {
 };
 
 /**
- * 利用者を用意し、`sub` を返す。パスワードは引き渡しファイルに在ればそれを使い続け、
- * 無ければ作る（Floci には読み出す API が無いので、知らなければ決め直す）。
+ * 利用者を用意し、`sub` を返す。パスワードは、利用者が既に居て引き渡しファイルに在ればそれを使い続け、
+ * 利用者をいま作ったとき（`idp` を作り直した後など）とファイルに無いときは決め直す
+ * （Floci には読み出す API が無いので、知らなければ決め直す）。
  */
 const ensureUser = async (pool: string, name: string, known: string | undefined) => {
   let created = false;

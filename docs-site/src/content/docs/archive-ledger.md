@@ -159,7 +159,7 @@ the contract rather than a description of it:
 `before` is a cursor: pass the `capturedAt` (or, for crawls, the `startedAt`) of the
 last row you were given.
 Unknown query parameters are neither rejected nor dropped: they stay and are ignored
-(only the full-text `GET /api/search` refuses them with a 400).
+(only `GET /api/search`, the full-text search, and `GET /api/changes` refuse them with a 400).
 
 The crawl list is gated on `maySubmit`, not on a per-row `can_view` the way archives
 are: the authorization model has no `crawl` type. `maySubmit` lets a caller through when
@@ -178,8 +178,8 @@ saying how many pages failed and were skipped, and the first reason. A crawl tha
 some pages stays `succeeded`, and `pagesFailed` says how many; `failures` on
 `GET /api/crawls/:id` gives the reasons (the latest 5).
 
-`waczCount` is how many WACZ that crawl produced. `archives` has no `crawl_id`, so
-the count goes through `crawl_pages.task_id` — no column had to be added.
+`waczCount` is how many WACZ that crawl produced. `archives.crawl_id` is empty on rows
+from before the column was added, so the count goes through `crawl_pages.task_id`.
 
 A caller who may not read an archive gets **404, not 403**. A 403 would confirm
 that the id names a real archive — the enumeration leak OWASP API1:2023
@@ -687,6 +687,7 @@ with a 404 for a caller without it, as for a crawl or a page that does not exist
 curl 'http://localhost:7070/api/crawls/9072b625-…/pages?limit=100'
 # → { "pages": [{ "id": "1234", "url": "https://…", "depth": 0, "state": "captured", "reason": null,
 #                 "taskId": "6f1c…", "archiveId": "a1b2…",
+#                 "capturedAt": "2026-11-04T05:12:09.812Z", "bundledRev": 1,
 #                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 } }, …],
 #     "next": "1300" }
 

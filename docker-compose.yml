@@ -339,7 +339,7 @@ services:
   #
   # **コンテナ側からは今までどおり名前で引く** —— 取り込むのは browserhive なので、
   # 起点の URL は capture-fixtures.capture-ledger:8080 のままでなければならない。
-  # つまりこの面は 2 つの宛先を持つ: 中からは名前、外からは 127.0.0.1:18080。
+  # つまり capture-fixtures は 2 つの宛先を持つ: 中からは名前、外からは 127.0.0.1:18085。
   #
   # 取り込み対象がここに居るので、browserhive 側に
   # BROWSERHIVE_ALLOW_PRIVATE_TARGETS=true が要る (上に入れてある)。

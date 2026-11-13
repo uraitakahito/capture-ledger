@@ -27,7 +27,8 @@
  * 持たない古い manifest も、そのまま読めるようにするため。いま該当するのは、v12.2.0 で
  * required（既定 0）になった `waczStats.totalSkippedUrlPolicy`（それより前の server が書いた
  * manifest はこの欄を持たない。2026-09-26 に共有の保管庫で数えると、1677 本のうち 384 本）と、
- * v20.0.0 で同じく足した `waczStats.totalNotIntercepted`（本文をバイト列で読めなかった応答の数）。
+ * v20.0.0 で同じく足した `waczStats.totalNotIntercepted`（本文をバイト列で読めなかった応答の数）と、
+ * v29.0.0 で同じく足した `waczStats.totalSkippedSecret`（隠す値を含むので本文を落として記録した応答の数）。
  */
 import { Ajv2020 } from "ajv/dist/2020.js";
 import openapi from "../rpc/generated/browserhive/openapi.json" with { type: "json" };

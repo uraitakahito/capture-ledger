@@ -548,7 +548,7 @@ export interface CrawlLinksTable {
 }
 
 /**
- * 派生の層 (`026`)。Claude が作った物を、証拠と分けて残す。いまの `kind` は `fix` だけ。
+ * 派生の層 (`026`)。Claude が作った物を、証拠と分けて残す。いまの `kind` は `fix` と `change` (`034`)。
  * `usd` は numeric なので、node-pg は文字列で返す。
  */
 export interface DerivationsTable {

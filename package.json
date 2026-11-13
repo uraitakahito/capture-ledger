@@ -16,7 +16,7 @@
     "ので dependencies。openapi-typescript は契約から型を作るだけなので devDependencies。",
     "",
     "## 名前から用途が分かりにくい依存",
-    "yauzl-promise: 全文検索の索引を作るときに、WACZ (中身は zip) から本文を取り出す。",
+    "yauzl-promise: WACZ (中身は zip) の中を読む (src/archive/wacz.ts)。全文検索の索引・合本の検め・前回からの変化が、ここを通して読む。",
     "@aws-sdk/s3-request-presigner: アーカイブの署名付き URL を発行する (POST /api/archives/:id/url)。",
     "jose: JWT の検証 (本番の身元の経路)。手元の IdP は compose の Floci (Cognito の代役) で、道具は SDK を使わず JSON の API を叩く (src/tools/idp.ts)。",
     "croner: 定期実行の cron の式を読む (`src/schedules/cron.ts`)。タイマーには使わず、周回は `src/schedules/tick.ts` の setInterval。",
