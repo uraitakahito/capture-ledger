@@ -18,7 +18,9 @@
  * ログが運ぶ物 (取り込みのページの console の字) と同じ広さに置く。WACZ の中身 (`can_view`) より広いので、
  * 鍵だけを `can_view` で絞る。
  *
- * `trace` は BrowserHive v30.0.0 から `.result.json` に載る。それより前の取り込みと、契約の写しが古い間は null。
+ * `trace` (要求の出来事の行) は BrowserHive v30.0.0 から、WACZ を求めた取り込みの `.result.json` に載る。
+ * 契約で任意の欄なので、在れば書かれたまま返し、無ければ (それより前の取り込み・WACZ を求めなかった取り込み) null。
+ * 行の欄は選び直さない —— 行の形は BrowserHive の契約 (`CaptureTraceLine`) が決め、画面はそれを読む。
  */
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { OpenFgaClient } from "@openfga/sdk";
@@ -161,8 +163,8 @@ export const registerTraceRoutes = (app: FastifyInstance, deps: TraceRouteDeps):
         capture: captureOf(report),
         // `log` は契約で任意の欄 (BrowserHive v24.0.0 より前の取り込みには無い)。在れば、書かれたまま返す
         log: report.log ?? null,
-        // BrowserHive v30.0.0 から載る。契約の写しがその版になるまでは、いつも null
-        trace: null,
+        // `trace` も契約で任意の欄 (BrowserHive v30.0.0 より前の取り込みと、WACZ を求めなかった取り込みには無い)
+        trace: report.trace ?? null,
         reason: null,
       });
     },

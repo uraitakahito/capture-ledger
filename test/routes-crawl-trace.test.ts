@@ -157,6 +157,70 @@ const log = {
   dropped: 0,
 };
 
+/**
+ * BrowserHive v30.0.0 の `.result.json` の `trace`。行の形は、本物の取り込み (e2e) の行を写した物 ——
+ * 読み終えた行・終わりを観測できない行 (別サイトのフレームの文書)・方針で残さなかった行。
+ */
+const trace = {
+  lines: [
+    {
+      kind: "request",
+      id: "3246.2",
+      hop: 0,
+      dpr: 1,
+      url: "https://site.test/slow-response?delayMs=1537",
+      method: "GET",
+      resourceType: "Fetch",
+      initiator: { type: "script", url: "https://site.test/", line: 4 },
+      startedAt: "2026-11-04T00:00:01.457Z",
+      ms: 670,
+      response: { status: 200, protocol: "http/1.1" },
+      timing: { dnsMs: 0, connectMs: 0, tlsMs: 0, sendMs: 0, waitMs: 1546, receiveMs: 1 },
+      durationMs: 1597,
+      encodedBytes: 185,
+      outcome: "finished",
+      record: "urn:uuid:172f0c84-7c13-431e-92a7-2151d4525de2",
+    },
+    {
+      kind: "request",
+      id: "E058663D9B8F34876C0B61EE874AF177",
+      hop: 0,
+      dpr: 1,
+      url: "https://other.test/frame",
+      method: "GET",
+      resourceType: "Document",
+      initiator: { type: "parser", url: "https://site.test/", line: 3 },
+      startedAt: "2026-11-04T00:00:01.093Z",
+      ms: 334,
+      response: { status: 200, protocol: "http/1.1" },
+      outcome: "pending",
+      endUnobservable: true,
+    },
+    {
+      kind: "request",
+      id: "3246.5",
+      hop: 0,
+      dpr: 1,
+      url: "https://ads.test/pixel.gif",
+      method: "GET",
+      resourceType: "Image",
+      startedAt: "2026-11-04T00:00:01.200Z",
+      ms: 441,
+      outcome: "not-archived",
+    },
+  ],
+  counts: {
+    finished: 1,
+    redirected: 0,
+    failed: 0,
+    pending: 1,
+    notArchived: 1,
+    denied: 0,
+    evicted: 0,
+  },
+  dropped: 0,
+};
+
 /** 成功した取り込みの `.result.json`。 */
 const success = {
   taskId: TASK,
@@ -190,7 +254,7 @@ const timedOut = {
 const url = `/api/crawls/${CRAWL}/pages/42/trace`;
 
 describe("取り込み 1 回の経緯を読む", () => {
-  it("成功した取り込みは、ページ・WACZ の在り処・取り込みの欄・ログを返す（trace と reason は null）", async () => {
+  it("trace を持たない .result.json（BrowserHive v30.0.0 より前）は、ページ・WACZ の在り処・取り込みの欄・ログを返し、trace は null", async () => {
     const { res, read } = await get(url, { results: [[row()]], store: { [KEY]: success } });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
@@ -210,6 +274,65 @@ describe("取り込み 1 回の経緯を読む", () => {
     });
     // 鍵は組まない。設定の bucket の、記録した鍵を 1 度だけ読む (ラベルが綴りに入っていても)
     expect(read).toEqual([`b/${KEY}`]);
+  });
+
+  it("trace を持つ .result.json（BrowserHive v30.0.0 から）なら、trace を書かれたまま返す", async () => {
+    const { res } = await get(url, { results: [[row()]], store: { [KEY]: { ...success, trace } } });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ trace: unknown; log: unknown; reason: unknown }>();
+    // 行の欄を選び直さない。無い欄は、鍵ごと無いまま
+    expect(body.trace).toEqual(trace);
+    expect(body.log).toEqual(log);
+    expect(body.reason).toBeNull();
+  });
+
+  it("時間切れの取り込みも、trace が在れば返す（WACZ は無く、行はレコードを名指さない）", async () => {
+    const pending = {
+      lines: [
+        {
+          kind: "request",
+          id: "A1",
+          hop: 0,
+          url: "https://site.test/slow",
+          method: "GET",
+          resourceType: "Document",
+          startedAt: "2026-11-04T00:00:00.500Z",
+          ms: 12,
+          outcome: "pending",
+        },
+      ],
+      counts: {
+        finished: 0,
+        redirected: 0,
+        failed: 0,
+        pending: 1,
+        notArchived: 0,
+        denied: 0,
+        evicted: 0,
+      },
+      dropped: 0,
+    };
+    const { res } = await get(url, {
+      results: [[row({ archiveId: null, objectKey: null, capturedAt: null, bundledRev: null })]],
+      store: { [KEY]: { ...timedOut, trace: pending } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ archive: null, trace: pending, reason: null });
+  });
+
+  it("trace の行の outcome が契約に無い綴りなら、読めない物として答える（manifest-invalid）", async () => {
+    const odd = { ...trace, lines: [{ ...trace.lines[0], outcome: "half-done" }] };
+    const { res } = await get(url, {
+      results: [[row()]],
+      store: { [KEY]: { ...success, trace: odd } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      capture: null,
+      log: null,
+      trace: null,
+      reason: "manifest-invalid",
+    });
   });
 
   it("ページはクロールとの組で引き、capture_submissions は task_id の uuid 側を text に倒して繋ぐ", async () => {

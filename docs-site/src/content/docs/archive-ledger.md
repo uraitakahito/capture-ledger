@@ -749,7 +749,9 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 #     "capture": { "status": "success", "timestamp": "2026-11-04T05:12:15.108Z", "captureProcessingTimeMs": 14873,
 #                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … } },
 #     "log": { …the same object the log route returns… },
-#     "trace": null,
+#     "trace": { "lines": [ { "kind": "request", "id": "3246.2", "hop": 0, "url": "https://…/app.js", "ms": 670,
+#                              "durationMs": 97, "outcome": "finished", … }, … ],
+#                "counts": { "finished": 12, "pending": 1, … }, "dropped": 0 },
 #     "reason": null }
 ```
 
@@ -766,8 +768,12 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   WACZ (`can_view`)**; otherwise `objectKey` is `null`. A capture without a WACZ (a timeout or a failure) has
   `archive: null`.
 - A `.result.json` without a `log` (BrowserHive before v24.0.0) only makes `log` `null`; `capture` is still returned.
-- `trace` is each request's start, end and timing. BrowserHive writes it into `.result.json` from v30.0.0; for
-  earlier captures it is `null`.
+- `trace` is what happened to each request during the capture (one line per exchange: its start, response, timing,
+  duration and outcome). BrowserHive writes it into `.result.json` from v30.0.0, for a capture that asked for a WACZ —
+  a timed-out or failed capture has it too (with no WACZ, so no line names a record). capture-ledger does not pick
+  members of a line; it passes the lines through as written, and their shape is BrowserHive's contract
+  (`CaptureTraceLine` in the copy at `src/rpc/generated/browserhive/openapi.json`). For earlier captures, and for
+  captures that did not ask for a WACZ, it is `null`.
 
 When it cannot be read the answer is still 200, with `capture`, `log` and `trace` `null` and a `reason`. The reasons
 are the first four of the log route (`not-captured`, `no-manifest`, `manifest-missing`, `manifest-invalid`); there is
