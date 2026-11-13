@@ -13,7 +13,7 @@
  * capture-ledger に入りうる。通らなければ、どの項目が駄目かを添えて投げる。呼ぶ側 (段の登録・
  * reconcile) は 1 件の失敗で止まらず、飛ばしてそう言う。1 ページのログのエンドポイント
  * (`GET /api/crawls/:id/pages/:page/log`) と経緯のエンドポイント (`GET /api/crawls/:id/pages/:page/trace`) は、
- * 投げたら `manifest-invalid` と答える。
+ * 投げたら `manifest-invalid` と答える。失敗の時点の絵のエンドポイント (`…/trace/failure-screenshot`) は 404 と答える。
  *
  * 契約に無い項目は通す。BrowserHive が項目を足す版上げで capture-ledger が止まらないため。
  *
@@ -68,6 +68,28 @@ export const logCountsOf = (report: CaptureResultReport): LogCounts | undefined 
   if (report.log === undefined) return undefined;
   const { debug, info, warn, error } = report.log.counts;
   return { debug, info, warn, error, dropped: report.log.dropped };
+};
+
+/**
+ * 失敗の時点の絵 (`failureScreenshot`。BrowserHive v30.2.0 から) の鍵。**capture-ledger が読める場所のときだけ。**
+ * 欄が無い取り込みと、設定の bucket の外・`s3://` でない場所は null。
+ *
+ * 鍵は組まない (下の `manifestOutcome` と同じ)。`.result.json` が言う場所から bucket を外し、残りをそのまま鍵にする。
+ * **bucket は設定と照らす** —— `.result.json` の言う bucket を信じると、書いた側が読み先を選べる。経緯のエンドポイント
+ * (`api/trace.ts`) が「絵が在るか」を答えるのにも、絵を返すのにも、この 1 つを通す (在ると答えた絵は、場所の上では読める)。
+ */
+export const failureScreenshotKey = (
+  report: Pick<CaptureResultReport, "failureScreenshot">,
+  bucket: string,
+): string | null => {
+  if (report.failureScreenshot === undefined) return null;
+  let parsed: S3Location;
+  try {
+    parsed = parseS3Uri(report.failureScreenshot);
+  } catch {
+    return null;
+  }
+  return parsed.bucket === bucket ? parsed.key : null;
 };
 
 /** capture-ledger に書く manifest の結末。どちらか一方だけが値を持つ。 */

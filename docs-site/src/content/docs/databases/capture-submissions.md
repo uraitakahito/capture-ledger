@@ -69,7 +69,7 @@ again, hence `onConflict … doNothing()`.
 
 ## How it is read
 
-There are three readers.
+These are the readers.
 
 **Reconcile** (`reconcile.ts`) reads the rows that carry a `manifest_key` and have no archive yet:
 
@@ -89,6 +89,11 @@ the other way round, a single value that is not uuid-shaped fails the whole quer
 **The trace route for one capture** (`GET /api/crawls/:id/pages/:page/trace`) follows the same path to
 `manifest_key` and returns that `.result.json`'s capture members, `log` and `trace`
 ([One capture's trace](/capture-ledger/archive-ledger/#one-captures-trace)).
+
+**The route for the screenshot of a failure** (`GET /api/crawls/:id/pages/:page/trace/failure-screenshot`) follows the
+same path to `manifest_key` and `org_id`. `org_id` is used for authorization: a failed capture has no WACZ, so
+whether the caller may see the picture is decided by whether the caller belongs to this organization
+([The screenshot of a failure](/capture-ledger/archive-ledger/#the-screenshot-of-a-failure)).
 
 ## Column notes
 

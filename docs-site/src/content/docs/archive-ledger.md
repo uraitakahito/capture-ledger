@@ -145,16 +145,17 @@ curl http://localhost:7070/api/archives
 The shape of both requests is a JSON Schema on the route, so the checking is
 the contract rather than a description of it:
 
-|                                         |          |                                                                                          |
-| --------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`            | `id`     | a UUID — anything else is **400**, before authorization runs                             |
-| `GET /api/archives`                     | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
-| `GET /api/crawls`                       | `state`  | `running` / `succeeded` / `failed` — anything else is **400**                            |
-|                                         | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
-| `GET /api/crawls/:id/pages`             | `after`  | the previous answer's `next`: digits only, at most 18 — anything else is **400**         |
-|                                         | `limit`  | 1 to 500, default 100 — anything else is **400**                                         |
-| `GET /api/crawls/:id/pages/:page/log`   | `page`   | a page id: digits only, at most 18 — anything else is **400**, before authorization runs |
-| `GET /api/crawls/:id/pages/:page/trace` | `page`   | the same                                                                                 |
+|                                                            |          |                                                                                          |
+| ---------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`                               | `id`     | a UUID — anything else is **400**, before authorization runs                             |
+| `GET /api/archives`                                        | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
+| `GET /api/crawls`                                          | `state`  | `running` / `succeeded` / `failed` — anything else is **400**                            |
+|                                                            | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
+| `GET /api/crawls/:id/pages`                                | `after`  | the previous answer's `next`: digits only, at most 18 — anything else is **400**         |
+|                                                            | `limit`  | 1 to 500, default 100 — anything else is **400**                                         |
+| `GET /api/crawls/:id/pages/:page/log`                      | `page`   | a page id: digits only, at most 18 — anything else is **400**, before authorization runs |
+| `GET /api/crawls/:id/pages/:page/trace`                    | `page`   | the same                                                                                 |
+| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`   | the same                                                                                 |
 
 `before` is a cursor: pass the `capturedAt` (or, for crawls, the `startedAt`) of the
 last row you were given.
@@ -747,7 +748,11 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 # → { "page": { …same shape as the list…, "submittedAt": "2026-11-04T05:12:00.012Z", "finishedAt": "2026-11-04T05:12:15.201Z" },
 #     "archive": { "id": "a1b2…", "objectKey": "…/….wacz" },
 #     "capture": { "status": "success", "timestamp": "2026-11-04T05:12:15.108Z", "captureProcessingTimeMs": 14873,
-#                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … } },
+#                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … },
+#                  "screenshots": [ { "stage": "after-load", "url": "urn:browserhive:screenshot:after-load:https://…/",
+#                                     "date": "2026-11-04T05:12:09.120Z", "record": "urn:uuid:5b0c…", "bytes": 48213 },
+#                                   { "stage": "after-behaviors", "skipped": "task-budget" } ],
+#                  "failureScreenshot": false },
 #     "log": { …the same object the log route returns… },
 #     "trace": { "lines": [ { "kind": "request", "id": "3246.2", "hop": 0, "url": "https://…/app.js", "ms": 670,
 #                              "durationMs": 97, "outcome": "finished", … }, … ],
@@ -760,8 +765,9 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 - `page` is the list's shape plus the submit and finish times the flow measured (`submitted_at` and `finished_at` of
   `crawl_pages`).
 - `capture` picks the members of `.result.json` a timeline needs: `status`, `timestamp`, `captureProcessingTimeMs`,
-  `httpStatusCode`, `errorDetails`, `settle`, `waczStats`, `completeness`, `document` and `windowsNotOpened`. Nested
-  objects are passed through as written, and a member the capture does not have is absent. `timestamp` is when the
+  `httpStatusCode`, `errorDetails`, `settle`, `waczStats`, `completeness`, `document`, `windowsNotOpened` and
+  `screenshots`. Nested objects are passed through as written, and a member the capture does not have is absent
+  (`failureScreenshot` is the one exception, described below). `timestamp` is when the
   capture ended, so `timestamp − captureProcessingTimeMs` is when it began. That can differ by tens of milliseconds
   from the origin of the log's `ms` (the first line's `at − ms`).
 - `archive` is the WACZ's id and its key in the store. **The key is returned only when the caller may view that
@@ -776,6 +782,26 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   captures that did not ask for a WACZ, it is `null`. From BrowserHive v30.1.0 the same lines are also inside the WACZ,
   in `trace/events.jsonl` (each line gains a leading `profile`; WACZ Profile 1.23.0). **The lines inside the WACZ are
   the ones under the signature; the lines in this answer are a copy of them.**
+- `capture.screenshots` says what became of each stage screenshot (a WebP picture of the captured page's viewport).
+  BrowserHive writes it into `.result.json` from v30.2.0, for a capture that succeeded and built a WACZ (WACZ Profile
+  1.24.0). A stage whose picture was kept names its record inside the WACZ (`url`, `date`, `record`, `bytes`); a stage
+  whose picture was not kept carries only the reason (`skipped`). capture-ledger does not pick members of an entry; it
+  passes the entries through as written, and their shape is BrowserHive's contract (`StageScreenshot` in the copy).
+  **The pictures themselves are not in this answer.** They are inside the WACZ, and whoever may view the WACZ
+  (`can_view`) reads them from it. For earlier captures, and for captures that did not succeed, the member is absent.
+- `capture.failureScreenshot` is a boolean: whether there is a screenshot of the capture's failure **that the caller
+  can be given**. The member of the same name in `.result.json` is a location in the store (`s3://…`), and
+  **the location is never returned**. The picture comes from [the route below](#the-screenshot-of-a-failure). It is
+  `true` only when `.result.json` names a location inside the configured bucket and the caller belongs to the
+  organization the capture was submitted for (the same decision the route below makes). It is `false` for a capture
+  without the member, for one that names a location outside the configured bucket or one that is not `s3://`, and
+  **for a caller from another organization** — who is still given the rest of the trace as before.
+
+BrowserHive takes pictures only when its deployment says so (`BROWSERHIVE_STAGE_SCREENSHOTS`, off by default). With it
+off, every entry of `screenshots` is `skipped: "disabled"` and no capture has a screenshot of its failure. This
+repository's development stack turns it on (BrowserHive's environment in `docker-compose.yml`). Even when on, a capture
+that was given a secret, or whose policies (`no-archive`, `no-body`, a content-type policy) matched a document, an image
+or media, keeps no picture.
 
 When it cannot be read the answer is still 200, with `capture`, `log` and `trace` `null` and a `reason`. The reasons
 are the first four of the log route (`not-captured`, `no-manifest`, `manifest-missing`, `manifest-invalid`); there is
@@ -784,6 +810,56 @@ no `no-log`. A store that cannot be reached is a 502.
 The gate is `maySubmit`, as for the log: whoever may start crawls can read any crawl's trace. That is wider than
 the permission to read a WACZ (`can_view`), so only the WACZ's key is narrowed by `can_view`. **This answer is not
 covered by a signature.** For evidence, the records inside the WACZ are the source.
+
+### The screenshot of a failure
+
+One route returns the picture (WebP) a failed capture's page was showing in its viewport when it failed. From
+BrowserHive v30.2.0, a deployment that takes pictures puts it in the store next to the capture's other files, as
+`.failure.webp`.
+
+```sh
+curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace/failure-screenshot
+# → { "contentType": "image/webp", "base64": "UklGR…" }
+```
+
+The answer is JSON and the picture is base64, because capture-workbench's `/api/*` relay passes only text answers.
+
+**Only a capture that failed while it was working on the page has one.** The picture is put when the document came
+back 4xx or 5xx, and when the capture failed after the document had arrived (a per-operation timeout, a failing
+script), provided the capture's overall budget had time left. **A capture whose load timed out before the document
+reached the page has none** (there is no saying which document the picture would be of). Neither has a capture that ran
+out of its overall budget, was cancelled by its caller, lost its renderer or failed on a policy, nor one that keeps
+no pictures (the conditions above). Ask this route only when the trace answer's `capture.failureScreenshot` is
+`true`.
+
+capture-ledger keeps no picture. It reads `.result.json` along the same path as the trace, then reads the location its
+`failureScreenshot` names.
+
+- It does not compose the key. The key is the named location with the bucket removed. **The bucket is checked against
+  the configured one**, and a different bucket is not read (so that `.result.json` cannot choose what is read).
+- It asks the store for the size before reading, and **does not read anything over 1 MiB**.
+- If what it read does not begin as a WebP (`RIFF`…`WEBP`), it is not returned.
+
+| Answer                                                      | When                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200 `{ "contentType": "image/webp", "base64": "…" }`        | the picture was returned                                                                                                                                                                                                                                                                                                         |
+| 400                                                         | `id` is not a UUID, or `page` is not digits only, at most 18 (before authorization runs)                                                                                                                                                                                                                                         |
+| 401 `{ "error": "unauthenticated" }`                        | no identity                                                                                                                                                                                                                                                                                                                      |
+| 404 `{ "error": "not found" }`                              | there is no capture whose picture can be returned: authorization fails, no such page, the page has no capture answer, `.result.json` cannot be read, it names no picture, the location is outside the configured bucket or is not `s3://`, or the store has nothing there. **The reasons are not told apart** (the log has them) |
+| 502 `{ "error": "storage unreachable" }`                    | the store cannot be reached                                                                                                                                                                                                                                                                                                      |
+| 502 `{ "error": "failure screenshot too large" }`           | what is at the location is over 1 MiB                                                                                                                                                                                                                                                                                            |
+| 502 `{ "error": "failure screenshot is not a WebP image" }` | what is at the location is not a WebP                                                                                                                                                                                                                                                                                            |
+
+**The gate is narrower than the trace's.** The picture is what the captured page showed, so it is held to the same
+line as the contents of a WACZ. A WACZ is narrowed by `can_view`, but a failed capture has no WACZ, so there is no
+archive to ask about. The route therefore requires `maySubmit` **and that the caller belongs to the organization the
+capture was submitted for** (`org_id` of [`capture_submissions`](/capture-ledger/databases/capture-submissions/)).
+The row capture-ledger recorded decides the organization; the caller cannot choose it. A caller outside it gets the
+same 404 as a page that does not exist, so "exists but not for you" cannot be told from "does not exist". The trace
+answer's `capture.failureScreenshot` is decided on the same line, so a caller outside the organization is told `false`.
+
+**The picture is a file outside the WACZ and is not covered by a signature.** It holds whatever the page showed, and
+nothing can be taken out of it afterwards.
 
 ## Full-text search
 

@@ -3,7 +3,7 @@
  * 受け取り先が受けた成果物と、クロールの合本 (`replay-bundle/write.ts`) を置くこと。
  *
  * **bucket は列挙しない。** 読むのは、書いた本人が答えた鍵 (段の報告が運び、
- * `capture_submissions` に書き留めたもの) だけ。以前は一覧を URL 符号化から戻して
+ * `capture_submissions` に書き留めたものと、その `.result.json` が言う成果物) だけ。以前は一覧を URL 符号化から戻して
  * 鍵を作り直していたが、戻し方が実装に依存し、空白を含む鍵を別の名前にした。
  *
  * 署名付き URL は `api/presign.ts` に在る —— この client は共有するが、関心は別
@@ -11,7 +11,12 @@
  */
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import type { StorageConfig } from "../config/env.js";
 
 export const createS3Client = (config: StorageConfig): S3Client =>
@@ -74,6 +79,29 @@ export const getObjectBytes = async (
     const result = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     const bytes = await result.Body?.transformToByteArray();
     return bytes === undefined ? undefined : Buffer.from(bytes);
+  } catch (cause) {
+    if (isNotFound(cause)) return undefined;
+    throw cause;
+  }
+};
+
+/**
+ * オブジェクトの大きさ (バイト) を、本文を読まずに訊く (`HeadObject`)。無ければ `undefined`。
+ *
+ * 丸ごと読む前に上限と比べるため。失敗の時点の絵 (`api/trace.ts`) が使う —— 読む鍵は `.result.json` が言った物で、
+ * そこに何が置いてあるかは読むまで分からない。大きさを言わない答えは、無いのではなく読めない物として投げる。
+ */
+export const objectSize = async (
+  s3: S3Client,
+  bucket: string,
+  key: string,
+): Promise<number | undefined> => {
+  try {
+    const result = await s3.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    if (result.ContentLength === undefined) {
+      throw new Error(`the store answered ${key} without a length`);
+    }
+    return result.ContentLength;
   } catch (cause) {
     if (isNotFound(cause)) return undefined;
     throw cause;

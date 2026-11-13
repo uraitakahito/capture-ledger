@@ -470,6 +470,26 @@ export interface components {
              *     後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。
              */
             trace?: components["schemas"]["CaptureTrace"];
+            /**
+             * @description 節目のスクリーンショット (取り込みのページの viewport の絵。WebP) の、時点ごとの成り行き。`status` が
+             *     `success` で WACZ を作ったときだけ入り、その WACZ の `datapackage.json` の
+             *     `browserhive:capture.screenshots` と同じ物。項目は `after-load` と、スクリプトを送った取り込みでは
+             *     その後に `after-behaviors`。絵を残した時点は WARC のレコードを名指し、残さなかった時点は理由 (`skipped`) を言う。
+             *     絵を撮らない server (`--stage-screenshots` が切。既定) では、どの項目も `skipped: "disabled"`。
+             *     後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。
+             */
+            screenshots?: components["schemas"]["StageScreenshot"][];
+            /**
+             * @description 失敗の時点の絵 (取り込みのページの viewport の WebP) の置き場所。成果物と同じ名前に `.failure.webp` を付けた
+             *     ファイルで、値は書き込み先が答えたもの。`status` が `success` 以外で、server が絵を撮る設定
+             *     (`--stage-screenshots`) のときにだけ入りうる —— 撮るのは、取り込みのページを触っている間の失敗
+             *     (読み込みや操作ごとの時間切れ・スクリプトの失敗・文書の 4xx と 5xx) で、取り込み全体の予算が 5 秒以上
+             *     残っているときだけ。全体の時間切れ・cancel・renderer の crash・方針の失敗では撮らない。シークレットを渡した
+             *     取り込み・content-type の方針を持つ取り込み・方針が文書や画像やメディアの要求に当たった取り込み・方針が
+             *     伏せる文書でも撮らない。`artifacts` には載らない (あちらは `success` のときだけ埋まる)。WACZ の外の
+             *     ファイルで、署名の下に無い。後から足した欄で、必須にしていない。
+             */
+            failureScreenshot?: string;
         };
         /**
          * @description capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が
@@ -811,6 +831,25 @@ export interface components {
             /** @description 書けなかった理由。書き込み先から始まる。 */
             error: string;
         };
+        /**
+         * @description 節目のスクリーンショットを残さなかった理由。2 つ以上が当たるときは、この並びで先の物。
+         *
+         *     - `disabled`: server が絵を撮る設定でない (`--stage-screenshots` が切)。
+         *     - `secret`: 取り込みにシークレットを渡した (隠す物でも、WARC に残す物でも)。絵の中の値は消せない。
+         *     - `withheld`: 方針か、文書の扱いが絵を残させない —— `contentTypePolicies` が空でない、`urlPolicies` の
+         *       `no-archive` か `no-body` が文書・画像・メディアの要求 (か、種類を記録が示せない要求) に最初に当たった、
+         *       文書を伏せた (`document.withheld`)、その時点の文書を伏せた、どの文書の絵かを言えない。
+         *     - `task-budget`: 絵を足すと、取り込みが残すバイトが `maxTaskBytes` を超える。
+         *     - `failed`: 撮れなかった (1 枚の予算は 2 秒)、または先の 1 枚を諦めた後で試さなかった。
+         * @enum {string}
+         */
+        ScreenshotSkipped: "disabled" | "secret" | "withheld" | "task-budget" | "failed";
+        /**
+         * @description 節目のスクリーンショットを撮る時点: `after-load` は読み込みと待ちの後・スクリプトの前、`after-behaviors` は
+         *     スクリプトの後 (スクリプトを送った取り込みだけ)。DOM の写しを撮る時点と同じ。
+         * @enum {string}
+         */
+        ScreenshotStage: "after-load" | "after-behaviors";
         /** @description 走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは差し込む時（phase）だけ。 */
         Script: {
             /** @description report と provenance に出る名前。サーバは中身を検査しない。 */
@@ -902,6 +941,25 @@ export interface components {
              *     `operationDelayMs` のために差し込んだ間は数えない。archive では満ちなければ `null`。
              */
             quietAtMs?: number;
+        };
+        /**
+         * @description 節目のスクリーンショット 1 つ。絵を残した時点は `url`・`date`・`record`・`bytes` を持ち、`skipped` を持たない。
+         *     残さなかった時点は `skipped` だけを持つ。絵は WARC の `resource` レコードで、WACZ の索引 (`indexes/index.cdxj`)
+         *     から `url` と `date` で引ける。ページ一覧 (`pages/pages.jsonl`) には載らない。
+         */
+        StageScreenshot: {
+            /** @description 撮る時点。 */
+            stage: components["schemas"]["ScreenshotStage"];
+            /** @description 絵のレコードの `WARC-Target-URI` (`urn:browserhive:screenshot:<時点>:<文書の URL>`)。 */
+            url?: string;
+            /** @description 絵のレコードの `WARC-Date` (撮り始めた時刻。RFC 3339 の文字列)。 */
+            date?: string;
+            /** @description 絵のレコードの `WARC-Record-ID` (山括弧を除いた `urn:uuid:…`)。 */
+            record?: string;
+            /** @description 絵の大きさ (バイト)。 */
+            bytes?: number;
+            /** @description 絵を残さなかった理由。残したときは無い。 */
+            skipped?: components["schemas"]["ScreenshotSkipped"];
         };
         /** @description URL への扱い。順序付きの一覧の 1 項目で、最初に当たったものが効く。 */
         UrlPolicy: {
