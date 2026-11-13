@@ -78,8 +78,7 @@ const readDeclarations = (raw: unknown): DeclaredScript[] | undefined => {
     const { id, params, unreadable } = entry;
     if (typeof id !== "string" || typeof unreadable !== "boolean") return undefined;
     const read = readParams(params, { summaryRequired: false });
-    if (typeof read === "string" || read.some((param) => param.kind !== "variable"))
-      return undefined;
+    if ("refused" in read || read.some((param) => param.kind !== "variable")) return undefined;
     out.push({ id, params: read, unreadable });
   }
   return out;

@@ -1662,6 +1662,11 @@ describe("走らせるものの解決", () => {
     expect(res.json()).toEqual({
       error: "no scripts are registered",
       hint: "pnpm run scripts import .upstream/capture-scripts (run nothing on purpose: send scripts: [])",
+      // 命令の例と英語の案内は、訳す物でない文。鍵は付かない
+      hints: [
+        { text: "pnpm run scripts import .upstream/capture-scripts" },
+        { text: "(run nothing on purpose: send scripts: [])" },
+      ],
     });
     // **行を立てない。** 立てると部分 unique index が以後のクロールを全部塞ぐ。
     expect(crawls).toEqual([]);
@@ -2263,6 +2268,24 @@ describe("直しのエンドポイント", () => {
     expect(f.rows[0]).toMatchObject({ rounds: 2, output: { kind: "failed" } });
   });
 
+  it("断った案の理由は、文 (refusals) と、同じ並びの鍵と値の組 (refusalHints) で返し、派生の層にも両方残す", async () => {
+    const crawls = await startWithInline();
+    // 1 回目は形で読めない答え、2 回目は置き換えの無い答え。どちらも検査に回さない (検査は始めの 1 度だけ)
+    const f = fakes({
+      compile: [BROKEN],
+      replies: [reply(null), reply({ edits: [], notes: [] })],
+    });
+    const res = await askFix(crawls, f);
+    expect(res.statusCode).toBe(422);
+    const refusals = ["答えが決めた形 (edits と notes) で読めなかった。", "置き換えが 1 つも無い"];
+    const refusalHints = [
+      { key: "fix.unreadableAnswer", text: refusals[0] },
+      { key: "fix.noEdits", text: refusals[1] },
+    ];
+    expect(res.json()).toMatchObject({ error: "no fix passed the checks", refusals, refusalHints });
+    expect(f.rows[0]?.output).toMatchObject({ kind: "failed", refusals, refusalHints });
+  });
+
   it("鍵が無い配備ではエンドポイントを作らない", async () => {
     const crawls = await startWithInline();
     const res = await askFix(crawls, undefined);
@@ -2578,6 +2601,7 @@ describe("対象サイト（サイト用のスクリプト）と起点", () => {
       error: "site scripts need a seed on their site",
       ids: ["google-results"],
       hint: "google-results: www.google.com",
+      hints: [{ text: "google-results: www.google.com" }],
     });
     expect(crawls).toHaveLength(0);
   });
@@ -2601,6 +2625,11 @@ describe("対象サイト（サイト用のスクリプト）と起点", () => {
     expect(res.json()).toEqual({
       error: "no default scripts for these seeds",
       hint: "example-title: site.test / google-results: www.google.com (run nothing on purpose: send scripts: [])",
+      hints: [
+        { text: "example-title: site.test" },
+        { text: "google-results: www.google.com" },
+        { text: "(run nothing on purpose: send scripts: [])" },
+      ],
     });
   });
 
@@ -3092,6 +3121,9 @@ describe("クロールごとの値（変数とシークレット）", () => {
       error: "invalid variables",
       names: ["query"],
       hint: "query は 1 字以上",
+      hints: [
+        { key: "variables.tooShort", params: { name: "query", min: 1 }, text: "query は 1 字以上" },
+      ],
     });
     expect(empty.crawls).toHaveLength(0);
   });
@@ -3125,6 +3157,8 @@ describe("クロールごとの値（変数とシークレット）", () => {
       error: "unknown secrets",
       secrets: [{ name: "api_token", path: PATH, declaredBy: ["members-only"] }],
       hint: `wmill variable add <value> ${PATH} --secret`,
+      // 命令の例には鍵が付かない
+      hints: [{ text: `wmill variable add <value> ${PATH} --secret` }],
     });
     expect(crawls).toEqual([]);
   });
@@ -3201,7 +3235,14 @@ describe("クロールごとの値（変数とシークレット）", () => {
       { windmill: windmillWith({}) },
     );
     expect(twice.res.statusCode).toBe(400);
-    expect(twice.res.json()).toMatchObject({ error: "invalid params", script: "inline-probe" });
+    expect(twice.res.json()).toEqual({
+      error: "invalid params",
+      script: "inline-probe",
+      hint: "params に t が 2 度ある",
+      hints: [
+        { key: "params.duplicateName", params: { name: "t" }, text: "params に t が 2 度ある" },
+      ],
+    });
 
     const { crawls } = await start(inline([{ name: "t", kind: "secret" }]), {
       windmill: windmillWith({}),
@@ -3224,10 +3265,16 @@ describe("クロールごとの値（変数とシークレット）", () => {
       ],
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toMatchObject({
+    expect(res.json()).toEqual({
       error: "invalid params",
       script: "inline-probe",
       hint: expect.stringContaining("defineParams") as string,
+      hints: [
+        {
+          key: "inlineParams.secretsOnly",
+          text: "params に書けるのはシークレットだけ。変数は source の defineParams で宣言する",
+        },
+      ],
     });
     expect(crawls).toHaveLength(0);
   });
@@ -3408,6 +3455,13 @@ describe("シークレットを WARC に残すか（宣言の archive）", () =>
       formats: ["png"],
       names: ["password"],
       hint: expect.stringContaining("CAPTURE_LEDGER_CAPTURE_FORMATS") as string,
+      hints: [
+        {
+          key: "formats.cannotHideSecrets",
+          params: { formats: ["png"] },
+          text: expect.stringContaining("CAPTURE_LEDGER_CAPTURE_FORMATS") as string,
+        },
+      ],
     });
     expect(crawls).toEqual([]);
     expect(sent).toEqual([]);

@@ -264,7 +264,12 @@ describe("定期実行のエンドポイント", () => {
     it("6 欄の cron は 400", async () => {
       const res = await post("/api/schedules", { ...VALID, cron: "0 0 4 * * *" });
       expect(res.statusCode).toBe(400);
-      expect(res.json()).toMatchObject({ error: "invalid cron" });
+      // 理由は訳す物でない文なので、hints の組に鍵は付かない
+      expect(res.json()).toEqual({
+        error: "invalid cron",
+        hint: "cron must have 5 fields",
+        hints: [{ text: "cron must have 5 fields" }],
+      });
     });
 
     it("周期の下限より短い cron は 400 で、間隔と下限を言う", async () => {

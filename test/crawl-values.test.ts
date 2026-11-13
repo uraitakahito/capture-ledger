@@ -96,24 +96,76 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
     expect(checkValues(min, { q: "ab" }).kind).toBe("ok");
     expect(checkValues(min, { q: "a" })).toEqual({
       kind: "refused",
-      body: { error: "invalid variables", names: ["q"], hint: "q は 2 字以上" },
+      body: {
+        error: "invalid variables",
+        names: ["q"],
+        hint: "q は 2 字以上",
+        hints: [
+          { key: "variables.tooShort", params: { name: "q", min: 2 }, text: "q は 2 字以上" },
+        ],
+      },
     });
     const max = shaped({ type: "string", maxLength: 1 });
     expect(checkValues(max, { q: "a" }).kind).toBe("ok");
     expect(checkValues(max, { q: "ab" })).toEqual({
       kind: "refused",
-      body: { error: "invalid variables", names: ["q"], hint: "q は 1 字まで" },
+      body: {
+        error: "invalid variables",
+        names: ["q"],
+        hint: "q は 1 字まで",
+        hints: [{ key: "variables.tooLong", params: { name: "q", max: 1 }, text: "q は 1 字まで" }],
+      },
     });
     const oneOf = shaped({ type: "string", enum: ["a", "b"] });
     expect(checkValues(oneOf, { q: "b" }).kind).toBe("ok");
     expect(checkValues(oneOf, { q: "c" })).toEqual({
       kind: "refused",
-      body: { error: "invalid variables", names: ["q"], hint: "q は a・b のどれか" },
+      body: {
+        error: "invalid variables",
+        names: ["q"],
+        hint: "q は a・b のどれか",
+        hints: [
+          {
+            key: "variables.notInEnum",
+            params: { name: "q", values: ["a", "b"] },
+            text: "q は a・b のどれか",
+          },
+        ],
+      },
     });
     // 長さは code point で数える (JSON Schema の決まり)。絵文字は 1 字
     expect(checkValues(max, { q: "😀" }).kind).toBe("ok");
     // 渡さなければ形は見ない (必須かどうかは compile の話)
     expect(checkValues(min, {}).kind).toBe("ok");
+  });
+
+  it("合わない値が 2 つなら、hint は文を / で繋ぎ、hints は文ごとに 1 つずつ並べる", () => {
+    const scripts = [
+      script("a", [
+        { ...variable("lang"), schema: { type: "string", enum: ["ja", "en"] } },
+        { ...variable("query"), schema: { type: "string", minLength: 1 } },
+      ]),
+    ];
+    expect(checkValues(scripts, { query: "", lang: "fr" })).toEqual({
+      kind: "refused",
+      body: {
+        error: "invalid variables",
+        names: ["lang", "query"],
+        hint: "lang は ja・en のどれか / query は 1 字以上",
+        hints: [
+          {
+            key: "variables.notInEnum",
+            params: { name: "lang", values: ["ja", "en"] },
+            text: "lang は ja・en のどれか",
+          },
+          {
+            key: "variables.tooShort",
+            params: { name: "query", min: 1 },
+            text: "query は 1 字以上",
+          },
+        ],
+      },
+    });
   });
 
   it("同じ名前を別の形で宣言していれば conflicting params", () => {
@@ -236,6 +288,13 @@ describe("隠すシークレットと、値を置き換えられない形式", (
         formats: [format],
         names: ["password"],
         hint: expect.stringContaining(format) as string,
+        hints: [
+          {
+            key: "formats.cannotHideSecrets",
+            params: { formats: [format] },
+            text: expect.stringContaining(format) as string,
+          },
+        ],
       });
     },
   );

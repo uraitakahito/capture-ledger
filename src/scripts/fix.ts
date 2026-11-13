@@ -27,6 +27,7 @@ import {
   type ClaudeMessage,
   type ClaudeReply,
 } from "../claude/types.js";
+import { hint, refusal, type Hint, type Refused } from "../types/hint.js";
 import { attributeDiagnostics, TsCompileUnreachable, type TsCompile } from "./ts-compile.js";
 
 /** 決まりの文の版。派生の層に残し、文を変えたら上げる。 */
@@ -133,7 +134,14 @@ export type FixResult =
       notes: FixNote[];
       compiled: { typescript: string; hostTypes: string };
     })
-  | (Common & { kind: "failed"; diagnostics: Attributed[]; refusals: string[] })
+  | (Common & {
+      kind: "failed";
+      diagnostics: Attributed[];
+      /** 案を断った理由の文。往復の順 */
+      refusals: string[];
+      /** `refusals` と同じ並びの、鍵と値の組 (`types/hint.ts`)。`refusals[i]` は `refusalHints[i].text` */
+      refusalHints: Hint[];
+    })
   | (Common & { kind: "refused" })
   | (Common & { kind: "unreachable"; message: string })
   | (Common & { kind: "unavailable"; message: string });
@@ -159,24 +167,32 @@ export const numbered = (source: string): string => {
 export const applyEdits = (
   source: string,
   edits: readonly FixEdit[],
-): { source: string; hunks: FixHunk[] } | { refused: string } => {
-  if (edits.length === 0) return { refused: "置き換えが 1 つも無い" };
+): { source: string; hunks: FixHunk[] } | Refused => {
+  if (edits.length === 0) return refusal("fix.noEdits", "置き換えが 1 つも無い");
   const { lines, trailingNewline } = linesOf(source);
   const sorted = [...edits].sort((a, b) => a.from - b.from);
   for (const [i, e] of sorted.entries()) {
     if (!Number.isInteger(e.from) || !Number.isInteger(e.to) || e.from < 1 || e.to < e.from) {
-      return { refused: `置き換えの範囲が読めない (${String(e.from)}〜${String(e.to)})` };
+      return refusal(
+        "fix.invalidRange",
+        `置き換えの範囲が読めない (${String(e.from)}〜${String(e.to)})`,
+        { from: e.from, to: e.to },
+      );
     }
     if (e.to > lines.length) {
-      return {
-        refused: `置き換えが source の外 (${String(e.to)} 行目。source は ${String(lines.length)} 行)`,
-      };
+      return refusal(
+        "fix.outOfRange",
+        `置き換えが source の外 (${String(e.to)} 行目。source は ${String(lines.length)} 行)`,
+        { line: e.to, lines: lines.length },
+      );
     }
     const prev = sorted[i - 1];
     if (prev !== undefined && prev.to >= e.from) {
-      return {
-        refused: `置き換えが重なっている (${String(prev.from)}〜${String(prev.to)} と ${String(e.from)}〜${String(e.to)})`,
-      };
+      return refusal(
+        "fix.overlappingEdits",
+        `置き換えが重なっている (${String(prev.from)}〜${String(prev.to)} と ${String(e.from)}〜${String(e.to)})`,
+        { firstFrom: prev.from, firstTo: prev.to, secondFrom: e.from, secondTo: e.to },
+      );
     }
   }
   const hunks = sorted.map((e) => ({
@@ -194,24 +210,43 @@ const count = (lines: readonly string[], pattern: RegExp): number =>
   lines.reduce((n, line) => n + (line.match(new RegExp(pattern.source, "g"))?.length ?? 0), 0);
 
 /** 黙らせる形と module の形。**置き換えの前より増えたときだけ**断る (元から在る物は Claude のせいではない)。 */
-const FORBIDDEN: readonly { pattern: RegExp; reason: string }[] = [
-  { pattern: /@ts-nocheck|@ts-ignore|@ts-expect-error/, reason: "型の検査を外す注記を足した" },
-  { pattern: /\bas\s+any\b|:\s*any\b|<any>/, reason: "any で型の誤りを黙らせた" },
+const FORBIDDEN: readonly { pattern: RegExp; reason: Hint }[] = [
+  {
+    pattern: /@ts-nocheck|@ts-ignore|@ts-expect-error/,
+    reason: hint("fix.suppressedCheck", "型の検査を外す注記を足した"),
+  },
+  {
+    pattern: /\bas\s+any\b|:\s*any\b|<any>/,
+    reason: hint("fix.usedAny", "any で型の誤りを黙らせた"),
+  },
   {
     pattern: /^\s*(?:import|export)\b/,
-    reason: "import か export を足した (module になり、BrowserHive では走らない)",
+    reason: hint(
+      "fix.addedModuleSyntax",
+      "import か export を足した (module になり、BrowserHive では走らない)",
+    ),
   },
 ];
 
+/** Claude の答えが、決めた形で読めなかったときの文。 */
+export const UNREADABLE_ANSWER: Hint = hint(
+  "fix.unreadableAnswer",
+  "答えが決めた形 (edits と notes) で読めなかった。",
+);
+
 /** 断る理由。無ければ undefined。書き換えた行が元の半分 (少なくとも 3 行) を超える案も断る。 */
-export const refusalOf = (hunks: readonly FixHunk[], lineCount: number): string | undefined => {
+export const refusalOf = (hunks: readonly FixHunk[], lineCount: number): Hint | undefined => {
   for (const { pattern, reason } of FORBIDDEN) {
     if (hunks.some((h) => count(h.after, pattern) > count(h.before, pattern))) return reason;
   }
   const changed = hunks.reduce((n, h) => n + (h.to - h.from + 1), 0);
   const limit = Math.max(3, Math.ceil(lineCount / 2));
   if (changed > limit) {
-    return `書き換えた行が多すぎる (${String(changed)} 行。上限は ${String(limit)} 行)`;
+    return hint(
+      "fix.tooManyLines",
+      `書き換えた行が多すぎる (${String(changed)} 行。上限は ${String(limit)} 行)`,
+      { lines: changed, max: limit },
+    );
   }
   return undefined;
 };
@@ -330,7 +365,7 @@ export const fixInline = async ({
   let usage = ZERO;
   let usd = 0;
   const models: string[] = [];
-  const refusals: string[] = [];
+  const refusalHints: Hint[] = [];
   let lastDiagnostics: Attributed[] = [...diagnostics];
   const common = (round: number): Common => ({
     rounds: round,
@@ -364,16 +399,15 @@ export const fixInline = async ({
 
     let feedback: string;
     if (reply.output === null) {
-      feedback = "答えが決めた形 (edits と notes) で読めなかった。";
-      refusals.push(feedback);
+      feedback = UNREADABLE_ANSWER.text;
+      refusalHints.push(UNREADABLE_ANSWER);
     } else {
-      const applied = applyEdits(inline.source, reply.output.edits);
-      const refused =
-        "refused" in applied ? applied.refused : refusalOf(applied.hunks, lines.length);
-      if ("refused" in applied || refused !== undefined) {
-        const reason = refused ?? "";
-        feedback = `置き換えを断った: ${reason}`;
-        refusals.push(reason);
+      const edited = applyEdits(inline.source, reply.output.edits);
+      const forbidden = "refused" in edited ? undefined : refusalOf(edited.hunks, lines.length);
+      const applied = forbidden === undefined ? edited : { refused: forbidden };
+      if ("refused" in applied) {
+        feedback = `置き換えを断った: ${applied.refused.text}`;
+        refusalHints.push(applied.refused);
       } else {
         const candidate = { ...inline, source: applied.source, sha256: sha256(applied.source) };
         let answer;
@@ -414,5 +448,11 @@ export const fixInline = async ({
       },
     );
   }
-  return { ...common(rounds), kind: "failed", diagnostics: lastDiagnostics, refusals };
+  return {
+    ...common(rounds),
+    kind: "failed",
+    diagnostics: lastDiagnostics,
+    refusals: refusalHints.map(({ text }) => text),
+    refusalHints,
+  };
 };
