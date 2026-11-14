@@ -68,6 +68,8 @@ const ONLY_IN_CI = {
     "同上。前回からの変化の store と読む SQL を本物の DB に当てる (src/tools/changes-smoke.ts)",
   "Links against Postgres":
     "同上。リンクを 1 本ずつ残す表の置き換え・生成列・CHECK を本物の DB に当てる (src/tools/links-smoke.ts)",
+  "Screenshots against Postgres":
+    "同上。節目のスクリーンショットの在り処の表の CHECK・印・確かめの SQL を本物の DB に当てる (src/tools/screenshots-smoke.ts)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

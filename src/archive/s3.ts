@@ -62,12 +62,15 @@ export const getJsonObject = async (
  * WACZ (zip) を開くのに使う。文字列に変換すると壊れる。
  *
  * **丸ごと読む。** WACZ の大半は WARC なので、`pages.jsonl` 1 本のために全部を
- * 落とすことになる。それを承知でこうしている: 現物は 1 本で数 MiB (2026-11 の 5 サイトの
- * トップで 3.8〜9.5 MiB) で、索引 (`search/index-archive.ts`) と検め (`replay-bundle/inspect.ts`) は
- * 1 本につき 1 回しか読まず、前回からの変化の周回 (`changes/worker.ts`) が読み直すのも文字の違った
- * 取り込みの WACZ だけ (同じ 1 本を、今の回として読んだ次の周回で前の回としてもう 1 度読むことがある)
- * なので、範囲読みの複雑さに見合わない。規模が変わったときの直し方は既に書かれていて、
- * wacz-validator の packages/core/src/wacz/s3-range-reader.ts が `HeadObject` で大きさを
+ * 落とすことになる。それを承知でこうしている: 索引 (`search/index-archive.ts`) と検め
+ * (`replay-bundle/inspect.ts`) は 1 本につき 1 回しか読まず、前回からの変化の周回 (`changes/worker.ts`) が
+ * 読み直すのも文字の違った取り込みの WACZ だけ (同じ 1 本を、今の回として読んだ次の周回で前の回として
+ * もう 1 度読むことがある)。大きさは 1 本で数 KB〜数十 MB (2026-11-15 の dev の 966 本で 6 KB〜49.5 MB・
+ * 中央 12 KB。実サイトのトップは数 MB〜数十 MB) で、1 本ずつなら丸ごと持てる。
+ *
+ * 同じ 1 本を何度も読む所は、丸ごと読まない: 節目のスクリーンショット (`archive/stage-screenshots.ts`) は、
+ * 検める時に位置だけを覚え、読む時は `getObjectRange` で 1 本の Range にする。zip の中を全部 Range で読む形が
+ * 要るなら、wacz-validator の packages/core/src/wacz/s3-range-reader.ts が `HeadObject` で大きさを
  * 訊いてから yauzl に Range で食わせる形を持っている。
  */
 export const getObjectBytes = async (
@@ -79,6 +82,51 @@ export const getObjectBytes = async (
     const result = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     const bytes = await result.Body?.transformToByteArray();
     return bytes === undefined ? undefined : Buffer.from(bytes);
+  } catch (cause) {
+    if (isNotFound(cause)) return undefined;
+    throw cause;
+  }
+};
+
+/**
+ * オブジェクトの `start` バイト目から `length` バイトを、Range の読み 1 本で取る。無ければ `undefined`。
+ *
+ * **返った長さを確かめる** —— Range を聞かない保管庫は 200 で全文を返す (WACZ なら数十 MB)。本文を読む前に
+ * `ContentLength` を見て、読んだ後も長さを見る。範囲が終わりを越えた時の答え (416) は、無いのでなく読めない物として投げる。
+ */
+export const getObjectRange = async (
+  s3: S3Client,
+  bucket: string,
+  key: string,
+  start: number,
+  length: number,
+): Promise<Buffer | undefined> => {
+  if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(length) || length <= 0) {
+    throw new Error(
+      `a range must start at 0 or later and be at least 1 byte (${String(start)}, ${String(length)})`,
+    );
+  }
+  try {
+    const result = await s3.send(
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Range: `bytes=${String(start)}-${String(start + length - 1)}`,
+      }),
+    );
+    if (result.ContentLength !== undefined && result.ContentLength !== length) {
+      throw new Error(
+        `the store answered ${String(result.ContentLength)} bytes of ${key}, not the ${String(length)} asked`,
+      );
+    }
+    const bytes = await result.Body?.transformToByteArray();
+    if (bytes === undefined) return undefined;
+    if (bytes.length !== length) {
+      throw new Error(
+        `the store sent ${String(bytes.length)} bytes of ${key}, not the ${String(length)} asked`,
+      );
+    }
+    return Buffer.from(bytes);
   } catch (cause) {
     if (isNotFound(cause)) return undefined;
     throw cause;

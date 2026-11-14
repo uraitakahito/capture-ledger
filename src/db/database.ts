@@ -48,6 +48,27 @@ export interface ArchivesTable {
   browserhiveVersion: ColumnType<string | null, never, string | null>;
   /** 撮った Chrome の版 (`035`。同じく `browser.product`)。 */
   browserVersion: ColumnType<string | null, never, string | null>;
+  /**
+   * 節目のスクリーンショットについて検めた時刻 (`041`)。NULL は「まだ」。検めたが `datapackage.json` に欄が
+   * 無い WACZ は、これが在って `archive_screenshots` の行が 0。
+   */
+  screenshotsRecordedAt: ColumnType<Date | null, never, string>;
+}
+
+/**
+ * 節目のスクリーンショット 1 つの在り処 (`041`。`archive/stage-screenshots.ts`)。主キーは (archiveId, stage)。
+ * 位置・理由・問題の 3 つの形のどれか 1 つ (CHECK)。
+ */
+export interface ArchiveScreenshotsTable {
+  archiveId: string;
+  stage: string;
+  skipped: string | null;
+  /** WACZ のオブジェクトの中の位置。bigint なので node-pg は文字列で返す。 */
+  waczOffset: ColumnType<string | null, number | null, never>;
+  waczLength: number | null;
+  bytes: number | null;
+  recordId: string | null;
+  problem: string | null;
 }
 
 /**
@@ -634,6 +655,7 @@ export interface Database {
   crawlSchedules: CrawlSchedulesTable;
   archives: ArchivesTable;
   archivePages: ArchivePagesTable;
+  archiveScreenshots: ArchiveScreenshotsTable;
   fgaOutbox: FgaOutboxTable;
   captureSubmissions: CaptureSubmissionsTable;
   crawls: CrawlsTable;

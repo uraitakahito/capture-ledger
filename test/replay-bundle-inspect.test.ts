@@ -4,6 +4,7 @@ import type { S3Client } from "@aws-sdk/client-s3";
 import { inspectArchive, readWaczFacts } from "../src/replay-bundle/inspect.js";
 import { recordingDb } from "./recording-db.js";
 import { storedZip } from "./zip.js";
+import { screenshotWacz, webpBytes } from "./stage-screenshot-wacz.js";
 
 /**
  * WACZ を検める道。zip は本物の読み手 (yauzl-promise) に通し (`zip.ts` で組む)、DB は組まれた SQL を記録する代役
@@ -117,10 +118,23 @@ const ARCHIVE_ROW = {
 
 const inspect = async (
   store: Record<string, Stored>,
-  opts: { claimed?: boolean; archive?: typeof ARCHIVE_ROW | { manifestKey: null } } = {},
+  opts: {
+    claimed?: boolean;
+    /** 絵の印を立てる UPDATE が当たったか (既定は当たる)。 */
+    shotsClaimed?: boolean;
+    archive?: typeof ARCHIVE_ROW | { manifestKey: null };
+  } = {},
 ) => {
-  // 立てる UPDATE が当たったか (先に検めた者が居なければ 1 行返る)
-  const { db, queries } = recordingDb([opts.claimed === false ? [] : [{ id: ARCHIVE }]]);
+  // 立てる UPDATE が当たったか (先に検めた者が居なければ 1 行返る)。絵の印の UPDATE は、並べた順でなく SQL で答える
+  // (頁の行の INSERT が並べた答えを 1 つ取るので、順に頼ると印の UPDATE が当たらず、試験が空振りする)
+  const { db, queries } = recordingDb([opts.claimed === false ? [] : [{ id: ARCHIVE }]], {
+    answer: (sql) =>
+      sql.includes('"screenshots_recorded_at" = $1')
+        ? opts.shotsClaimed === false
+          ? []
+          : [{ id: ARCHIVE }]
+        : undefined,
+  });
   const { s3, read } = fakeS3(store);
   await inspectArchive(
     { ...ARCHIVE_ROW, ...opts.archive },
@@ -167,6 +181,11 @@ describe("アーカイブ 1 本を検めて書く", () => {
       'insert into "archive_pages" ("archive_id", "ordinal", "page_id", "url", "ts", "title", "stage", "keys", ' +
         '"text_sha256", "text_chars", "text_withheld") ' +
         "values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11), ($12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)",
+      "commit",
+      // 節目のスクリーンショットは別のトランザクション。この WACZ には欄が無いので、印だけ
+      "begin",
+      'update "archives" set "screenshots_recorded_at" = $1 where "id" = $2 and "inspected_at" is not null ' +
+        'and "screenshots_recorded_at" is null returning "id"',
       "commit",
     ]);
     expect(queries[1]?.parameters).toEqual([
@@ -260,5 +279,73 @@ describe("アーカイブ 1 本を検めて書く", () => {
       { claimed: false },
     );
     expect(queries.map((query) => query.sql.split(" ")[0])).toEqual(["begin", "update", "commit"]);
+  });
+});
+
+describe("検める時に、節目のスクリーンショットの在り処も書く", () => {
+  const shot = {
+    stage: "after-load",
+    documentUrl: "http://site.test/a",
+    date: "2026-11-05T01:03:59.000Z",
+    record: "urn:uuid:33333333-3333-4333-8333-333333333333",
+    picture: webpBytes("S"),
+  };
+
+  it("席を取れた後に、絵の行と印を別のトランザクションで書く", async () => {
+    const { queries } = await inspect({
+      [`browserhive/${WACZ_KEY}`]: screenshotWacz([
+        shot,
+        { stage: "after-behaviors", skipped: "withheld" },
+      ]),
+    });
+    expect(queries.map((query) => query.sql.split(" ").slice(0, 3).join(" "))).toEqual([
+      "begin",
+      'update "archives" set',
+      "commit",
+      "begin",
+      'update "archives" set',
+      'insert into "archive_screenshots"',
+      "commit",
+    ]);
+    expect(queries[4]?.parameters).toEqual([NOW.toISOString(), ARCHIVE]);
+    const inserted = queries[5]?.parameters ?? [];
+    // 2 行: 位置の在る after-load と、理由だけの after-behaviors
+    expect(inserted).toContain("after-load");
+    expect(inserted).toContain(shot.record);
+    expect(inserted).toContain(shot.picture.length);
+    expect(inserted).toContain("after-behaviors");
+    expect(inserted).toContain("withheld");
+  });
+
+  it("欄の無い WACZ は、行を書かずに印だけ立てる", async () => {
+    const { queries } = await inspect({ [`browserhive/${WACZ_KEY}`]: wacz() });
+    expect(
+      queries.filter((query) => query.sql.startsWith('insert into "archive_screenshots"')),
+    ).toEqual([]);
+    expect(queries.some((query) => query.sql.includes('"screenshots_recorded_at" = $1'))).toBe(
+      true,
+    );
+  });
+
+  it("絵の記録で失敗しても、検めは成り立つ（投げず、絵のトランザクションだけ巻き戻す）", async () => {
+    const { db, queries } = recordingDb([[{ id: ARCHIVE }]], {
+      answer: (sql) => {
+        if (sql.includes('"screenshots_recorded_at" = $1')) throw new Error("connection reset");
+        return undefined;
+      },
+    });
+    const { s3 } = fakeS3({ [`browserhive/${WACZ_KEY}`]: screenshotWacz([shot]) });
+    await inspectArchive(
+      { ...ARCHIVE_ROW, manifestKey: null },
+      { db, s3, bucket: "browserhive", now: () => NOW },
+    );
+    expect(queries.map((query) => query.sql.split(" ")[0])).toEqual([
+      "begin",
+      "update",
+      "commit",
+      "begin",
+      "update",
+      "rollback",
+    ]);
   });
 });

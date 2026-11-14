@@ -60,14 +60,15 @@ already in the ledger, its tuples went out the first time.
 
 ## Column notes
 
-| Column                  | Note                                                                                            |
-| ----------------------- | ----------------------------------------------------------------------------------------------- |
-| `id`                    | `gen_random_uuid()`. Becomes `archive:<id>` in OpenFGA                                          |
-| `task_id`               | BrowserHive's task id                                                                           |
-| `correlation_id`        | The thread tying capture-ledger's log lines to artifact filenames (8 hex digits per submission) |
-| `bucket` / `object_key` | **Taken from the server's own report**, not reassembled from a filename                         |
-| `wacz_complete`         | `false` means a body is missing or a target's renderer crashed — see below                      |
-| `captured_at`           | Capture time; listings are ordered by this, descending                                          |
+| Column                    | Note                                                                                                                                                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                      | `gen_random_uuid()`. Becomes `archive:<id>` in OpenFGA                                                                                                                                                                       |
+| `task_id`                 | BrowserHive's task id                                                                                                                                                                                                        |
+| `correlation_id`          | The thread tying capture-ledger's log lines to artifact filenames (8 hex digits per submission)                                                                                                                              |
+| `bucket` / `object_key`   | **Taken from the server's own report**, not reassembled from a filename                                                                                                                                                      |
+| `wacz_complete`           | `false` means a body is missing or a target's renderer crashed — see below                                                                                                                                                   |
+| `captured_at`             | Capture time; listings are ordered by this, descending                                                                                                                                                                       |
+| `screenshots_recorded_at` | When the archive was inspected for stage screenshots (`041`). NULL means not yet; `pnpm run screenshots:backfill` picks it up. A WACZ inspected without the screenshots field has this set and no `archive_screenshots` rows |
 
 ### When `wacz_complete` is `false`
 
