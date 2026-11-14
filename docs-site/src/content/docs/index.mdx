@@ -47,7 +47,12 @@ what is in scope, and hands one level at a time to a Windmill flow that does the
 ## What is not capture-ledger's responsibility
 
 Driving a browser, taking screenshots, building a WACZ, writing to S3 — every
-one of those is **BrowserHive's responsibility**. BrowserHive's docs are not
+one of those is **BrowserHive's responsibility**, with two exceptions on the
+storage side. When the artifact sink is configured (`CAPTURE_LEDGER_SINK_ORIGIN`
+and `CAPTURE_LEDGER_SINK_SECRET` together), BrowserHive hands each artifact to
+capture-ledger, and capture-ledger writes it to the store. A crawl's replay
+bundle (`replay.json` and the files beside it) is always written by
+capture-ledger. BrowserHive's docs are not
 published on the web — build them from the BrowserHive checkout with
 `pnpm run docs:local`.
 
