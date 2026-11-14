@@ -141,6 +141,8 @@ pnpm run scripts import .upstream/capture-scripts  # ページの中で走らせ
 :::caution[スクリプトを入れ忘れない]
 BrowserHive は**走らせるものの顔ぶれを持ちません**。登録済みのスクリプトが無いと、クロールはページの中で
 何も走らせず —— スクロールも遅延読み込みも起きないまま、**成功したアーカイブが出ます**。
+BrowserHive が自分で入れるのは乱数を控えるスクリプトだけで（頁の JS より先）、それも
+[`recordRandom`](/capture-ledger/ja/capture-options/#乱数を控える) を渡したクロールに限ります。
 入っているかは `pnpm run scripts list` が言います。
 :::
 

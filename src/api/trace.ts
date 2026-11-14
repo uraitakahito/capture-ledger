@@ -128,6 +128,7 @@ const captureOf = (report: CaptureResultReport, bucket: string, mayViewPicture: 
   ...(report.document !== undefined && { document: report.document }),
   ...(report.windowsNotOpened !== undefined && { windowsNotOpened: report.windowsNotOpened }),
   ...(report.screenshots !== undefined && { screenshots: report.screenshots }),
+  ...(report.random !== undefined && { random: report.random }),
   failureScreenshot: mayViewPicture && failureScreenshotKey(report, bucket) !== null,
 });
 

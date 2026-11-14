@@ -51,6 +51,7 @@ const prepared: PreparedCrawl = {
     { name: "token", path: "f/waggle_secrets/token", required: true, declaredBy: ["x"] },
   ],
   userAgent: "",
+  recordRandom: false,
 };
 
 const recipe: ScheduleRecipe = {
@@ -64,6 +65,7 @@ const recipe: ScheduleRecipe = {
   variables: prepared.variables,
   declaredSecrets: prepared.declaredSecrets,
   userAgent: prepared.userAgent,
+  recordRandom: prepared.recordRandom,
 };
 
 const rowOf = (overrides: Partial<ScheduleRow> = {}): ScheduleRow => ({
@@ -244,6 +246,13 @@ describe("定期実行のエンドポイント", () => {
       // シークレットの更新時刻は回ごとに訊き直すので、行に残さない
       expect(created?.recipe).not.toHaveProperty("secrets");
       expect(created?.recipe).not.toHaveProperty("kind");
+    });
+
+    it("乱数の控えの頼みも、固定した撮り方に残す", async () => {
+      prepare.mockResolvedValueOnce({ ...prepared, recordRandom: true });
+      const res = await post("/api/schedules", VALID);
+      expect(res.statusCode).toBe(201);
+      expect(fake.created[0]?.recipe.recordRandom).toBe(true);
     });
 
     it("名前の前後の空白は落とし、空白だけなら 400", async () => {

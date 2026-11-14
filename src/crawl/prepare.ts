@@ -73,6 +73,12 @@ export interface CrawlBody {
    */
   userAgent?: string;
   /**
+   * 頁の JS が受け取った乱数を BrowserHive に控えさせ、BrowserHive WACZ の `random/values.jsonl` に残すか。省けば false。
+   * BrowserHive は WACZ の無い要求で true を断るので、配備の形式 (`config/capture-formats.ts`) に `wacz` が無ければ
+   * ここで断る —— 通すと、行が立ってから全部の取り込みが 400 で落ちる。
+   */
+  recordRandom?: boolean;
+  /**
    * どのリンクを撮って辿り、撮るだけにし、落とすか。**上から当て、最初に当たった規則が勝つ** (`crawl/rules.ts`)。
    * 省くと `[{ follow: "same-origin" }]` (起点と同じ origin を辿り、外は落とす)。
    */
@@ -134,6 +140,7 @@ export const CRAWL_BODY_SCHEMA = {
     hostParallelism: { type: "integer", minimum: 1, maximum: 32 },
     // 字の形は handler で見て、読める文で断る (`pattern` の 400 は読めない)。
     userAgent: { type: "string" },
+    recordRandom: { type: "boolean" },
     // クロールごとの変数。名前の綴りと長さ・数・値の長さは BrowserHive の契約 (ValueName・ValueText・
     // Values) と同じ。宣言に在るか・required が揃っているかは handler で見て 400 で名指す (`crawl/values.ts`)。
     variables: {
@@ -240,6 +247,8 @@ export interface PreparedCrawl {
   declaredSecrets: DeclaredSecret[];
   /** 打った字のまま (指定なしは `""`)。 */
   userAgent: string;
+  /** 頁の JS が受け取った乱数を控えるか (省いた頼みは false)。 */
+  recordRandom: boolean;
 }
 
 const refused = (status: number, body: Record<string, unknown>): RefusedCrawl => ({
@@ -364,6 +373,12 @@ export const prepareCrawl = async (
   const userAgent = body.userAgent?.trim() ?? "";
   if (userAgent !== "" && !USER_AGENT_FORM.test(userAgent)) {
     return refused(400, { error: "userAgent must be printable ASCII, at most 512 characters" });
+  }
+
+  // 控えを残す先は BrowserHive WACZ だけ。BrowserHive は wacz の無い要求の true を 400 で断るので、行を立てる前に断る
+  const recordRandom = body.recordRandom ?? false;
+  if (recordRandom && !deps.formats.wacz) {
+    return refused(400, { error: "recordRandom needs wacz in CAPTURE_LEDGER_CAPTURE_FORMATS" });
   }
 
   // 読めない起点の URL が 1 本でもあれば拒む。**黙って落とさない** ——
@@ -527,5 +542,6 @@ export const prepareCrawl = async (
     secrets: resolvedSecrets.secrets,
     declaredSecrets: values.secrets,
     userAgent,
+    recordRandom,
   };
 };

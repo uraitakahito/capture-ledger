@@ -78,7 +78,8 @@ zip を 1 つも開かずに答えられます。
 BrowserHive v11.0.0 から、サーバは**走らせるものの顔ぶれを持ちません**。組み込みの
 behavior も、サイト別の behavior もありません。送らなければページの中では何も走らず、
 受け皿すら注入されません。それでも取り込みは成功し、アーカイブも出ます ——
-スクロールも遅延読み込みも起きていない、というだけです。
+スクロールも遅延読み込みも起きていない、というだけです。BrowserHive が自分で入れるのは乱数を控えるスクリプトだけで、
+それも頼んだクロール（[`recordRandom`](#乱数を控える)）に限ります。入れるのは頁の JS より先です。
 
 **だからスクリプトがここに在ります。** 既定を持てるのは「このクロールは何を走らせるか」を
 決める側だけなので、capture-ledger が `scripts` 表を持ち、解決した結果をクロールの行に
@@ -414,7 +415,7 @@ BrowserHive WARC に残したい宣言は、そう書きます。
 （`--device-pixel-ratios` / `--operation-delay-ms` / `--dismiss-banners` /
 `--accept-language` / `--session`）。**これらはもう存在しません。** `captureFormats`・
 `signing`・上のスクリプトとそのクロールごとの値（`variables` と宣言したシークレット）・
-`userAgent` を除けば、capture-ledger はページの描き方について何も送りません
+`userAgent`・`recordRandom` を除けば、capture-ledger はページの描き方について何も送りません
 —— 送らないものはすべて、その BrowserHive サーバの設定どおりになります（意味は
 BrowserHive 自身のドキュメントが定義します）。
 
@@ -433,6 +434,7 @@ BrowserHive 自身のドキュメントが定義します）。
 | `scripts`         | 有効な各 id の最新版（ほかのホスト用のサイト用のスクリプトを除く） | ページの中で走らせるもの（上記）                                          |
 | `variables`       | 無し                                                               | 選んだスクリプトが宣言した、クロールごとの値（[上記](#クロールごとの値)） |
 | `userAgent`       | 無し（ブラウザの字のまま）                                         | 送る `User-Agent`（[下記](#クロールごとの-user-agent)）                   |
+| `recordRandom`    | `false`                                                            | 頁の JS が受け取った乱数を控えて残すか（[下記](#乱数を控える)）           |
 
 知らないキーは黙って落とさず **400** で返します。
 
@@ -445,3 +447,21 @@ BrowserHive 自身のドキュメントが定義します）。
 形は BrowserHive の契約と同じです。合わなければ `400 userAgent must be printable ASCII, at most 512 characters` で断ります。字の中身は頼む人が決めます。
 
 `BrowserHive` の語は 2 つのことを変えます。相手のサイトが BrowserHive が撮ったと分かるのは、字にこの語があるときだけです（`{chrome}` だけなら普通の Chrome と同じ字です）。robots.txt の読み方も決まります。語として含めば `BrowserHive` の名前で（その組が先で、無ければ `*`）、含まなければ `*` で照らします（`NotBrowserHiveAtAll` は語として含みません）。
+
+### 乱数を控える
+
+`recordRandom: true` を渡すと、BrowserHive は頁の JS が受け取った乱数（`Math.random`・`crypto.getRandomValues`・
+`crypto.randomUUID` の値）を値を変えずに控え、BrowserHive WACZ の `random/values.jsonl` に残します
+（[BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.26.0/ja/) 1.26.0）。省けば `false` で、
+BrowserHive は控えるための物を頁に入れません。`true` なら、控えるスクリプトを頁の JS より先に（上のスクリプトよりも先に）入れます。
+
+控えを残す先は BrowserHive WACZ だけです。`CAPTURE_LEDGER_CAPTURE_FORMATS` に `wacz` の無い配備では、
+`400 recordRandom needs wacz in CAPTURE_LEDGER_CAPTURE_FORMATS` で断り、行を作りません。頼んだかはクロールの行
+（`crawls.record_random`）に残り、`GET /api/crawls/:id` が返します。定期実行の予定も、固定した撮り方の一部として持ちます
+（この欄より前に作った予定は `false` と読みます）。取り込みごとに控えた数は、その取り込みの経緯（`capture.random`。
+[アーカイブの記録](/capture-ledger/ja/archive-ledger/#取り込みの経緯)を参照）に在ります。
+
+BrowserHive へは flow の入力 `record_random` で届きます。読むのは capture-scheduler v0.41.0 からの flow です。古い flow は
+黙って捨て、頁は控えずに撮られます。
+
+前回からの変化で回どうしを組にする撮り方の digest には入れません。控えても頁は変わらないので、控え始めた回も前の回と比べます。

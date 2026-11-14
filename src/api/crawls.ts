@@ -778,6 +778,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         secrets: secretsOf(crawl.secrets),
         // 打った字のまま。指定なしは null。解いた字は BrowserHive WACZ の settings.userAgent に在る
         userAgent: crawl.userAgent,
+        // 頼んだか。控えた数は取り込みごとの経緯 (`…/trace` の capture.random) に在る
+        recordRandom: crawl.recordRandom,
       });
     },
   );
@@ -2161,6 +2163,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               variables: crawl.variables,
               ...secretsForFlow(secrets),
               userAgent: crawl.userAgent ?? "",
+              recordRandom: crawl.recordRandom,
               ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
             };
             await insertLevel(trx, nextLevel);

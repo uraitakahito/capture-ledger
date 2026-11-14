@@ -289,6 +289,8 @@ interface FakeCrawl {
   secrets: Record<string, CrawlSecret>;
   /** 頼まれた User-Agent (`031`)。本物の行は必ず持つ (nullable なだけ)。 */
   userAgent: string | null;
+  /** 乱数を控えるか (`040`)。本物の行は必ず持つ (NOT NULL DEFAULT false)。 */
+  recordRandom: boolean;
   /** 撮り方の digest (`035`)。始めた行は必ず持つ。古い行は NULL。 */
   recipeSha256?: string | null;
   /** 定期の回の欄 (`032`)。本物の行は必ず持つ。手で始めたクロールは null と 0 */
@@ -1133,6 +1135,7 @@ describe("クロール route の認可と単一実行", () => {
     ],
     variables: {},
     userAgent: null,
+    recordRandom: false,
     secrets: {},
   };
 
@@ -1255,6 +1258,7 @@ describe("クロール route の認可と単一実行", () => {
       scripts: [],
       variables: {},
       userAgent: null,
+      recordRandom: false,
       secrets: {},
     } satisfies FakeCrawl;
     const app = await buildApp(depsWith({ crawls: [crawl], allowed: true }));
@@ -1295,6 +1299,7 @@ describe("クロール route の認可と単一実行", () => {
       scripts: [],
       variables: {},
       userAgent: null,
+      recordRandom: false,
       secrets: {},
     } satisfies FakeCrawl;
     const app = await buildApp(depsWith({ crawls: [crawl], allowed: true }));
@@ -2346,6 +2351,7 @@ describe("クロールの一覧", () => {
     scripts: [],
     variables: {},
     userAgent: null,
+    recordRandom: false,
     secrets: {},
     ...over,
   });
@@ -2971,6 +2977,45 @@ describe("クロールごとの値（変数とシークレット）", () => {
     const { res, crawls } = await start({ seeds: [SEED], userAgent });
     expect(res.statusCode).toBe(202);
     expect(crawls[0]?.userAgent).toBe(userAgent);
+  });
+
+  it("乱数の控えを頼めば、行と段の本文に true が載り、GET が返す", async () => {
+    const { res, crawls, sent } = await start({ seeds: [SEED], recordRandom: true });
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.recordRandom).toBe(true);
+    expect(sent[0]).toMatchObject({ recordRandom: true });
+    expect(await read(crawls)).toMatchObject({ recordRandom: true });
+  });
+
+  it("乱数の控えを省けば、行は false で、段の本文にも false を載せる", async () => {
+    const { res, crawls, sent } = await start({ seeds: [SEED] });
+    expect(res.statusCode).toBe(202);
+    expect(crawls[0]?.recordRandom).toBe(false);
+    expect(sent[0]).toMatchObject({ recordRandom: false });
+    expect(await read(crawls)).toMatchObject({ recordRandom: false });
+  });
+
+  it("形式に wacz の無い配備で乱数の控えを頼めば 400。行を作らず flow を呼ばない（false なら通す）", async () => {
+    const { res, crawls, sent } = await start(
+      { seeds: [SEED], recordRandom: true },
+      { formats: "png" },
+    );
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({
+      error: "recordRandom needs wacz in CAPTURE_LEDGER_CAPTURE_FORMATS",
+    });
+    expect(crawls).toEqual([]);
+    expect(sent).toEqual([]);
+
+    const off = await start({ seeds: [SEED], recordRandom: false }, { formats: "png" });
+    expect(off.res.statusCode).toBe(202);
+    expect(off.crawls[0]?.recordRandom).toBe(false);
+  });
+
+  it("recordRandom が真偽でなければ schema の 400", async () => {
+    const { res, crawls } = await start({ seeds: [SEED], recordRandom: "yes" });
+    expect(res.statusCode).toBe(400);
+    expect(crawls).toEqual([]);
   });
 
   it("宣言の無い名前は 400 unknown variables で名指し、行は立たない", async () => {

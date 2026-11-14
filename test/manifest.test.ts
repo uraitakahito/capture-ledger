@@ -377,6 +377,29 @@ describe("readManifest", () => {
     ).toThrow(/data\/screenshots\/0\/stage must be equal to one of the allowed values/);
   });
 
+  it.each([
+    [{ recorded: true, documents: 2, draws: 731, truncated: false }],
+    [{ recorded: false, skipped: "not-requested" }],
+    [{ recorded: false, skipped: "withheld" }],
+    [{ recorded: false, skipped: "failed" }],
+  ])(
+    "v31.1.0 の manifest（乱数の控えの要約 random が在る）を読み、random は書かれたまま: %o",
+    (random) => {
+      const report = readManifest({ ...v12Manifest, random: structuredClone(random) });
+      expect(report.random).toEqual(random);
+    },
+  );
+
+  it("v31.1.0 より前の manifest（random が無い）も読み、無いまま（既定で補わない）", () => {
+    expect("random" in readManifest(structuredClone(v12Manifest))).toBe(false);
+  });
+
+  it("random の skipped が契約に無い綴りなら、場所を挙げて断る", () => {
+    expect(() =>
+      readManifest({ ...v12Manifest, random: { recorded: false, skipped: "blurred" } }),
+    ).toThrow(/data\/random\/skipped must be equal to one of the allowed values/);
+  });
+
   it("v30.2.0 の manifest（失敗した取り込みが、失敗の時点の絵の場所を言う）を読む", () => {
     const report = readManifest({
       taskId: "01J8Z0",

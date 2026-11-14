@@ -40,6 +40,7 @@ const recipe = (overrides: Partial<ScheduleRecipe> = {}): ScheduleRecipe => ({
   variables: {},
   declaredSecrets: [],
   userAgent: "",
+  recordRandom: false,
   ...overrides,
 });
 
@@ -268,6 +269,25 @@ describe("定期実行の周回", () => {
     expect(levels[0]?.scripts.map((script) => script.sha256)).toEqual(["a".repeat(64)]);
     expect(fake.fired[0]?.prepared.scripts).toEqual([SCRIPT]);
     expect(fake.fired[0]?.who).toEqual({ orgId: "acme", subject: "alice" });
+  });
+
+  it("固定した撮り方の乱数の控えの頼みを、そのまま配る", async () => {
+    const fake = fakeStore([schedule({ recipe: recipe({ recordRandom: true }) })]);
+    const { deps, levels } = depsOf(fake.store);
+    await tickSchedules(deps);
+    expect(fake.fired[0]?.prepared.recordRandom).toBe(true);
+    expect(levels[0]?.recordRandom).toBe(true);
+  });
+
+  it("recordRandom の無い古い撮り方（040 より前に作った予定）は、頼んでいない（false）として配る", async () => {
+    const old = recipe();
+    delete old.recordRandom;
+    expect(old).not.toHaveProperty("recordRandom");
+    const fake = fakeStore([schedule({ recipe: old })]);
+    const { deps, levels } = depsOf(fake.store);
+    await tickSchedules(deps);
+    expect(fake.fired[0]?.prepared.recordRandom).toBe(false);
+    expect(levels[0]?.recordRandom).toBe(false);
   });
 
   describe("シークレット", () => {

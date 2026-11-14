@@ -196,6 +196,11 @@ export interface CrawlsTable {
    */
   userAgent: ColumnType<string | null, string | null, never>;
   /**
+   * 頁の JS が受け取った乱数を BrowserHive に控えさせるか (`040`)。段ごとに flow へ運ばれる。既に在った行は false。
+   * 後から書き換えない。
+   */
+  recordRandom: ColumnType<boolean, boolean | undefined, never>;
+  /**
    * 宣言で結んだシークレット (名前 → path と `edited_at`。`024`)。**値は持たない** —— 解くのは flow の
    * `crawl_host` で、capture-ledger が持つのは Windmill の変数の path と、始めたときの更新時刻と、値を BrowserHive WARC に残すか
    * (宣言の `archive`) だけ。段を送るたびに読み直し、変わっていれば `rotated` を書き足す (`CrawlSecret`)。
@@ -278,7 +283,10 @@ export interface CrawlsTable {
 }
 
 /** 解決して固定した撮り方 (`032`)。シークレットは宣言だけを持ち、回ごとに Windmill へ訊き直す。 */
-export type ScheduleRecipe = Omit<PreparedCrawl, "kind" | "secrets">;
+export type ScheduleRecipe = Omit<PreparedCrawl, "kind" | "secrets" | "recordRandom"> & {
+  /** `040` より前に作った予定の行には無い。読むときは false (`schedules/tick.ts`)。 */
+  recordRandom?: boolean;
+};
 
 /** 定期実行の予定 (`032`)。回は `crawls` の行そのもので、回だけの表は無い。 */
 export interface CrawlSchedulesTable {
