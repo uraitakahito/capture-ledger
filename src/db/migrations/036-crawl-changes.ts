@@ -7,7 +7,8 @@
  *
  * - `comparing`: 比べている (Claude なし)。`lease_until` を過ぎていれば、次の周回が拾い直す (API が落ちた後)
  * - `no_previous`: 同じ予定・同じ撮り方 (`recipe_sha256`) の前の回が無い。終わり
- * - `unchanged`: どのページも文字の digest が同じ。保管庫も Claude も呼ばない。終わり
+ * - `unchanged`: 差分の在るページが無い (どの組も、文字の digest が同じか、digest は違うが空行と字下げだけの違い)。
+ *   Claude は呼ばない。保管庫を読むのは digest の違う組だけ。終わり
  * - `diffed`: 違うページがあり、差分を `page_changes` に残した。鍵が無ければここで終わり、在れば要約へ
  * - `summarizing`: Claude を待っている。`lease_until` を過ぎていれば拾い直す
  * - `summarized`: 要約を派生の層 (`derivations`) に残した。終わり
