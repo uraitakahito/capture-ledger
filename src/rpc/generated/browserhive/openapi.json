@@ -119,7 +119,7 @@
                                                 "captureProcessingTimeMs": 4210,
                                                 "artifacts": {
                                                     "png": "s3://browserhive/2b9e63ec-06e6-47cc-ab37-cb8495993cd6_.png",
-                                                    "wacz": "s3://browserhive/2b9e63ec-06e6-47cc-ab37-cb8495993cd6_.wacz"
+                                                    "wacz": "s3://browserhive/2b9e63ec-06e6-47cc-ab37-cb8495993cd6_.browserhive.wacz"
                                                 },
                                                 "document": {
                                                     "url": "https://example.com/"
@@ -259,7 +259,7 @@
                                                 "timestamp": "2026-09-26T00:00:03.870Z",
                                                 "captureProcessingTimeMs": 3870,
                                                 "artifacts": {
-                                                    "wacz": "s3://browserhive/7c1f0a52-3d4e-4f7a-9b61-0e2d8c5a4b17_.wacz"
+                                                    "wacz": "s3://browserhive/7c1f0a52-3d4e-4f7a-9b61-0e2d8c5a4b17_.browserhive.wacz"
                                                 },
                                                 "document": {
                                                     "url": "https://example.com/private/",
@@ -463,7 +463,7 @@
             },
             "BuildInfo": {
                 "type": "object",
-                "description": "この server の build の指紋。build のときに焼き込んだ値で、実行時に git には訊かない。3 つとも\nWACZ の `datapackage.json` (`browserhive:capture.build`) にも書かれ、署名されるバイト列に入る。\n`version` が `unknown` か `revision` が `dev` の build は、明示しない限り起動を拒む。",
+                "description": "この server の build の指紋。build のときに焼き込んだ値で、実行時に git には訊かない。3 つとも\nBrowserHive WACZ の `datapackage.json` (`browserhive:capture.build`) にも書かれ、署名されるバイト列に入る。\n`version` が `unknown` か `revision` が `dev` の build は、明示しない限り起動を拒む。",
                 "properties": {
                     "version": {
                         "type": "string",
@@ -735,7 +735,7 @@
                         "items": {
                             "type": "string"
                         },
-                        "description": "成果物のファイル名に入るラベル。制限は合計の長さだけで、\n`{taskId}_{correlationId}[_{labels}].result.json` が 255 UTF-8 バイトを超える要求は server が拒む。"
+                        "description": "成果物のファイル名に入るラベル。制限は合計の長さだけで、いちばん長い拡張子を付けた\n`{taskId}_{correlationId}[_{labels}].{拡張子}` が 255 UTF-8 バイトを超える要求は server が拒む\n(いちばん長い拡張子は WACZ の `.browserhive.wacz`)。"
                     },
                     "correlationId": {
                         "type": "string",
@@ -834,7 +834,7 @@
                     },
                     "secrets": {
                         "$ref": "#/components/schemas/Values",
-                        "description": "この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。\narchive の `settings.secrets` には名前だけ (名前順) が残り、受け皿のコード (`behaviors/runtime.js`) は\n値を含まない。`secretArchive` に名前の無いシークレットは **隠す**: スクリプトが通信に載せた値も、サイトが\n返した値も、WARC と WACZ と答えの中では `***` に置き換わる。隠す値は 8 字以上で、短い値は 400。\n隠す値のある要求は、PNG・WebP・HTML・MHTML と web storage の値を一緒に頼めず、取り込む URL に値を書けない\n(どれも 400)。隠せるのは記録からだけで、頁の JS からは読めるし、値を受け取ったサイトには届いている。\n値から作った物 (ハッシュ・署名) と、サイトが本文で返した token は追わない。"
+                        "description": "この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。\narchive の `settings.secrets` には名前だけ (名前順) が残り、受け皿のコード (`behaviors/runtime.js`) は\n値を含まない。`secretArchive` に名前の無いシークレットは **隠す**: スクリプトが通信に載せた値も、サイトが\n返した値も、BrowserHive WARC と BrowserHive WACZ と答えの中では `***` に置き換わる。隠す値は 8 字以上で、短い値は 400。\n隠す値のある要求は、PNG・WebP・HTML・MHTML と web storage の値を一緒に頼めず、取り込む URL に値を書けない\n(どれも 400)。隠せるのは記録からだけで、頁の JS からは読めるし、値を受け取ったサイトには届いている。\n値から作った物 (ハッシュ・署名) と、サイトが本文で返した token は追わない。"
                     },
                     "userAgent": {
                         "type": "string",
@@ -937,11 +937,11 @@
                     },
                     "document": {
                         "$ref": "#/components/schemas/DocumentRecord",
-                        "description": "ページから作るもの (PNG・WebP・HTML・links・MHTML と、WACZ の文字・題・ツリー) を、\nどの文書から作ったか。`status` が `success` のときだけ入る。\n`withheld` があれば、`artifacts` にはページから作る形式の欄が無い (在るのは `wacz` だけ)。\n最初の読み込みの文書を `deny` が止めたなら、`wacz` も無い。"
+                        "description": "ページから作るもの (PNG・WebP・HTML・links・MHTML と、BrowserHive WACZ の文字・題・ツリー) を、\nどの文書から作ったか。`status` が `success` のときだけ入る。\n`withheld` があれば、`artifacts` にはページから作る形式の欄が無い (在るのは `wacz` だけ)。\n最初の読み込みの文書を `deny` が止めたなら、`wacz` も無い。"
                     },
                     "windowsNotOpened": {
                         "type": "number",
-                        "description": "頁が開こうとして、開かせなかったウィンドウの数。`status` が `success` のときだけ入る (0 のことがある)。\n取り込みは、頁にウィンドウを開かせない (頁にユーザー操作の印を渡さないので、browser が断る)。\nWACZ を求めたなら、開こうとした先は WARC に `window: not-opened` の metadata として 1 つずつ在り、数は一致する。\nWACZ を求めない取り込みでも数える。"
+                        "description": "頁が開こうとして、開かせなかったウィンドウの数。`status` が `success` のときだけ入る (0 のことがある)。\n取り込みは、頁にウィンドウを開かせない (頁にユーザー操作の印を渡さないので、browser が断る)。\nWACZ を求めたなら、開こうとした先は BrowserHive WARC に `window: not-opened` の metadata として 1 つずつ在り、数は一致する。\nWACZ を求めない取り込みでも数える。"
                     },
                     "log": {
                         "$ref": "#/components/schemas/CaptureLog",
@@ -956,7 +956,7 @@
                         "items": {
                             "$ref": "#/components/schemas/StageScreenshot"
                         },
-                        "description": "節目のスクリーンショット (取り込みのページの viewport の絵。WebP) の、時点ごとの成り行き。`status` が\n`success` で WACZ を作ったときだけ入り、その WACZ の `datapackage.json` の\n`browserhive:capture.screenshots` と同じ物。項目は `after-load` と、スクリプトを送った取り込みでは\nその後に `after-behaviors`。絵を残した時点は WARC のレコードを名指し、残さなかった時点は理由 (`skipped`) を言う。\n絵を撮らない server (`--stage-screenshots` が切。既定) では、どの項目も `skipped: \"disabled\"`。\n後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。"
+                        "description": "節目のスクリーンショット (取り込みのページの viewport の絵。WebP) の、時点ごとの成り行き。`status` が\n`success` で WACZ を作ったときだけ入り、その BrowserHive WACZ の `datapackage.json` の\n`browserhive:capture.screenshots` と同じ物。項目は `after-load` と、スクリプトを送った取り込みでは\nその後に `after-behaviors`。絵を残した時点は BrowserHive WARC のレコードを名指し、残さなかった時点は理由 (`skipped`) を言う。\n絵を撮らない server (`--stage-screenshots` が切。既定) では、どの項目も `skipped: \"disabled\"`。\n後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。"
                     },
                     "failureScreenshot": {
                         "type": "string",
@@ -1363,7 +1363,7 @@
             },
             "DocumentRecord": {
                 "type": "object",
-                "description": "ページから作るものを、どの文書から作ったか。WACZ の `datapackage.json` の\n`browserhive:capture.document` と同じ形・同じ値 (WACZ を求めなくても結果には入る)。\n\n文書は、撮る時点で主フレームに確定していた文書。要求の URL の文書とは限らない ——\nサーバのリダイレクトやページ自身の遷移が文書を置き換える。撮る前後で文書を読み比べ、\n撮っている間に替われば、替わった先の文書から撮り直す。",
+                "description": "ページから作るものを、どの文書から作ったか。BrowserHive WACZ の `datapackage.json` の\n`browserhive:capture.document` と同じ形・同じ値 (WACZ を求めなくても結果には入る)。\n\n文書は、撮る時点で主フレームに確定していた文書。要求の URL の文書とは限らない ——\nサーバのリダイレクトやページ自身の遷移が文書を置き換える。撮る前後で文書を読み比べ、\n撮っている間に替われば、替わった先の文書から撮り直す。",
                 "properties": {
                     "url": {
                         "type": "string",
@@ -1591,7 +1591,7 @@
                     "maxWarcBytes": {
                         "type": "number",
                         "default": 1000000000,
-                        "description": "WARC 1 本の上限。組を書く前に、いまの本がこれ以上なら次の本 (archive/data-NNN.warc.gz) を開く。本文の上限ではない。\n後から足した欄なので最後に置き、`@default(1000000000)` (既定の 1 GB) で Smithy の互換の規則に沿わせてある。"
+                        "description": "WARC 1 本の上限。組を書く前に、いまの本がこれ以上なら次の本 (archive/data-NNN.browserhive.warc.gz) を開く。本文の上限ではない。\n後から足した欄なので最後に置き、`@default(1000000000)` (既定の 1 GB) で Smithy の互換の規則に沿わせてある。"
                     }
                 },
                 "required": [
@@ -1707,7 +1707,7 @@
             },
             "StageScreenshot": {
                 "type": "object",
-                "description": "節目のスクリーンショット 1 つ。絵を残した時点は `url`・`date`・`record`・`bytes` を持ち、`skipped` を持たない。\n残さなかった時点は `skipped` だけを持つ。絵は WARC の `resource` レコードで、WACZ の索引 (`indexes/index.cdxj`)\nから `url` と `date` で引ける。ページ一覧 (`pages/pages.jsonl`) には載らない。",
+                "description": "節目のスクリーンショット 1 つ。絵を残した時点は `url`・`date`・`record`・`bytes` を持ち、`skipped` を持たない。\n残さなかった時点は `skipped` だけを持つ。絵は BrowserHive WARC の `resource` レコードで、BrowserHive WACZ の索引 (`indexes/index.cdxj`)\nから `url` と `date` で引ける。ページ一覧 (`pages/pages.jsonl`) には載らない。",
                 "properties": {
                     "stage": {
                         "$ref": "#/components/schemas/ScreenshotStage",
@@ -1748,7 +1748,7 @@
                     },
                     "action": {
                         "type": "string",
-                        "description": "当たった URL をどう扱うか。綴りの検査は server が行い、知らない値は 400。\n\n- `deny`: リクエストを送らない。相手のサーバは取り込みを知らない。\n  主フレームの遷移 (直接・リダイレクトの先・ページの JS) と iframe の文書にも当てる\n  (ページはウィンドウを開かないので、ウィンドウの文書は無い。開こうとしたことは `windowsNotOpened` と WARC に残る)。\n  WebSocket の handshake だけは止められず、当たる WebSocket を開いた取り込みは `policy` で失敗する。\n- `no-archive`: 送るが、request / response のレコードを書かない。\n- `no-body`: 送ってレコードも書くが、本文は入れない。\n\n主文書 (ページを読む時点で主フレームに確定している文書) に方針が当たると、\nページから作る形式 (PNG・WebP・HTML・links・MHTML) を 1 つも作らない (`deny`・`no-archive`・`no-body` のどれでも)。\nWACZ の中の文字・題・アクセシビリティツリーも入れない。\nリダイレクトの中継や、遷移で去った文書にだけ当たった方針は、何も伏せない。\n\n`deny` と `no-archive` は、落としたことを WARC の metadata レコード (action と当たった\npattern) に残し、`waczStats.totalBlocked` に数える。`no-body` で省いた本文は\n`waczStats.totalSkippedUrlPolicy` に数え、大きさに関係なく上限による切り詰めとは記録しない\n(`completeness.truncatedUrls` に載らない)。"
+                        "description": "当たった URL をどう扱うか。綴りの検査は server が行い、知らない値は 400。\n\n- `deny`: リクエストを送らない。相手のサーバは取り込みを知らない。\n  主フレームの遷移 (直接・リダイレクトの先・ページの JS) と iframe の文書にも当てる\n  (ページはウィンドウを開かないので、ウィンドウの文書は無い。開こうとしたことは `windowsNotOpened` と BrowserHive WARC に残る)。\n  WebSocket の handshake だけは止められず、当たる WebSocket を開いた取り込みは `policy` で失敗する。\n- `no-archive`: 送るが、request / response のレコードを書かない。\n- `no-body`: 送ってレコードも書くが、本文は入れない。\n\n主文書 (ページを読む時点で主フレームに確定している文書) に方針が当たると、\nページから作る形式 (PNG・WebP・HTML・links・MHTML) を 1 つも作らない (`deny`・`no-archive`・`no-body` のどれでも)。\nBrowserHive WACZ の中の文字・題・アクセシビリティツリーも入れない。\nリダイレクトの中継や、遷移で去った文書にだけ当たった方針は、何も伏せない。\n\n`deny` と `no-archive` は、落としたことを BrowserHive WARC の metadata レコード (action と当たった\npattern) に残し、`waczStats.totalBlocked` に数える。`no-body` で省いた本文は\n`waczStats.totalSkippedUrlPolicy` に数え、大きさに関係なく上限による切り詰めとは記録しない\n(`completeness.truncatedUrls` に載らない)。"
                     }
                 },
                 "required": [
@@ -1957,7 +1957,7 @@
                     },
                     "totalIncomplete": {
                         "type": "number",
-                        "description": "記録を止めた時点でまだ終わっていなかった要求 (長く開いたままの接続など) と、\nbrowser が読み終えたのに、本文を取りに行っている最中で、待つ上限までに戻らなかった応答。\nどちらも WARC には未完了の metadata として 1 つずつ残る (`incomplete: true`。\n`reason` は `stop-while-pending` か `stop-while-fetching-body`)。"
+                        "description": "記録を止めた時点でまだ終わっていなかった要求 (長く開いたままの接続など) と、\nbrowser が読み終えたのに、本文を取りに行っている最中で、待つ上限までに戻らなかった応答。\nどちらも BrowserHive WARC には未完了の metadata として 1 つずつ残る (`incomplete: true`。\n`reason` は `stop-while-pending` か `stop-while-fetching-body`)。"
                     },
                     "totalBodyBytes": {
                         "type": "number",
@@ -1975,12 +1975,12 @@
                     "totalNotIntercepted": {
                         "type": "number",
                         "default": 0,
-                        "description": "本文は届いたのに、バイト列として得られなかったので、本文を持たずに記録した応答 (要求の関所が\n応答の段で読めなかった・読み取りが失敗した)。WARC には `truncated: not-intercepted` の metadata が\n1 つずつ残り、URL は `completeness.uninterceptedUrls` に載る。上限を上げても戻らない。\n後から足した欄なので最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。"
+                        "description": "本文は届いたのに、バイト列として得られなかったので、本文を持たずに記録した応答 (要求の関所が\n応答の段で読めなかった・読み取りが失敗した)。BrowserHive WARC には `truncated: not-intercepted` の metadata が\n1 つずつ残り、URL は `completeness.uninterceptedUrls` に載る。上限を上げても戻らない。\n後から足した欄なので最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。"
                     },
                     "totalSkippedSecret": {
                         "type": "number",
                         "default": 0,
-                        "description": "隠す値を含む文字でない本文を落として記録した応答。WARC には `truncated: secret` の metadata が\n1 つずつ残る。値を隠すと決めた結果なので、`completeness` のどの一覧にも載らない。\n後から足した欄なので最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。"
+                        "description": "隠す値を含む文字でない本文を落として記録した応答。BrowserHive WARC には `truncated: secret` の metadata が\n1 つずつ残る。値を隠すと決めた結果なので、`completeness` のどの一覧にも載らない。\n後から足した欄なので最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。"
                     }
                 },
                 "required": [

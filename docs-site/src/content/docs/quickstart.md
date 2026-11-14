@@ -306,8 +306,8 @@ open http://127.0.0.1:7080/
 captured, how many WACZ, and links out to the run (Windmill) and to two viewers (“ReplayWeb.page ↗” on
 [replayweb-server](https://github.com/uraitakahito/replayweb-server) and “Web Capture ↗” on
 [capture-player](https://github.com/uraitakahito/capture-player)). On the archives
-face, each row's 検証 (Validate) button reports **whether what was captured matches the WACZ
-spec** — answered by [wacz-validator](https://github.com/uraitakahito/wacz-validator), which is
+face, each row's 検証 (Validate) button reports **whether what was captured conforms to WACZ 1.1.1 and the
+[BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.25.0/)** — answered by [wacz-validator](https://github.com/uraitakahito/wacz-validator), which is
 handed a URL the ledger signed, so **no store credentials are added anywhere**. The row's
 **開く** (open) shows the archive's contents too — the file tree, lines, one line split into
 fields, the WARC records and images; the records BrowserHive wrote for what it did not or could
@@ -361,8 +361,8 @@ curl -fsS http://localhost:50051/status | jq '{busy, browser: .browser.url}'
 `"busy": true` means that browser is in the middle of a page; `localhost:50052`
 is the other one.
 
-Artifacts land in the bundled SeaweedFS bucket (`browserhive`). Naming and WACZ
-contents are on BrowserHive's storage page.
+Artifacts land in the bundled SeaweedFS bucket (`browserhive`). Naming and the
+contents of a BrowserHive WACZ are on BrowserHive's storage page.
 
 ### When every crawl gets 409
 

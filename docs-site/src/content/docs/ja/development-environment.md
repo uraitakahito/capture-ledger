@@ -579,7 +579,7 @@ origin を誤ると、取り込みは受け取り先の URL で始まる誤り�
 **そのうえで、成果物がどこに置かれたかを見てください。**この経路は、音も無く素通りされることも
 あります。受け取り先を立てて始めたクロールは `crawls.artifact_key_prefix`（`org/<orgId>/<YYYY-MM>/`）
 を記録し、そのアーカイブの `object_key` はこれで始まるはずです。平らな
-`<taskId>_<crawlId>.wacz` は BrowserHive が自前の bucket へ書いた印で、クロールは成功し、
+`<taskId>_<crawlId>.browserhive.wacz`（BrowserHive v30 までは `.wacz`）は BrowserHive が自前の bucket へ書いた印で、クロールは成功し、
 ほかに何も教えてくれません。受け取り先が足されてから一度も使われなかったのはこのためです ——
 `src/crawl/dispatch.ts` の webhook の本文は手で書き並べられていて、`artifact_sink` を一度も
 運んでいませんでした。いまは型が網羅を保つ対応表から組み立てます。capture-scheduler の e2e も、

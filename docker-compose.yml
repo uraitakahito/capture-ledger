@@ -225,12 +225,13 @@ services:
       # 開発スタック限定で、本番の既定は off (SSRF 対策)。browserhive の compose にも
       # 同じ設定が同じ理由で入っている。
       BROWSERHIVE_ALLOW_PRIVATE_TARGETS: "true"
-      # WARC の本を 1 MiB で切り替える（BrowserHive v21・profile 1.14.0）。本番の既定は 1 GB。dev で
-      # 多本の WACZ（archive/data-000・001…）を毎日作り、capture-workbench と validator がそれを読む所を踏ませる。
+      # WARC の本を 1 MiB で切り替える（BrowserHive v21・BrowserHive WACZ Profile 1.14.0）。本番の既定は 1 GB。dev で
+      # 多本の WACZ（archive/data-000.browserhive.warc.gz・001…。BrowserHive v30 までは印の無い
+      # data-000.warc.gz）を毎日作り、capture-workbench と validator がそれを読む所を踏ませる。
       # fixtures の /warc/rollover（8 × 250,000 バイト）がちょうど 2 本に分かれる大きさ。
       BROWSERHIVE_WACZ_MAX_WARC_BYTES: "1048576"
-      # 節目のスクリーンショットを撮る（BrowserHive v30.2.0・profile 1.24.0）。本番の既定は切 —— 絵は取り込みのページが
-      # 見せた物をそのまま持ち、後から何も消せない。dev では入にして、WACZ の中の絵のレコードと、失敗した取り込みの
+      # 節目のスクリーンショットを撮る（BrowserHive v30.2.0・WACZ Profile 1.24.0）。本番の既定は切 —— 絵は取り込みのページが
+      # 見せた物をそのまま持ち、後から何も消せない。dev では入にして、BrowserHive WACZ の中の絵のレコードと、失敗した取り込みの
       # 絵（`.failure.webp`）を毎日作り、経緯のエンドポイントと capture-workbench がそれを読む所を踏ませる。
       # 入でも、シークレットを渡した取り込みと、方針が文書や画像に当たった取り込みは絵を残さない。
       BROWSERHIVE_STAGE_SCREENSHOTS: "true"

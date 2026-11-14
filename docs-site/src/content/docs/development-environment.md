@@ -607,7 +607,7 @@ the sink URL (`http://…/api/sink/…: …`).
 **Then check where the artifacts landed**, because this path can also be skipped
 without a sound. A crawl started with the sink on records
 `crawls.artifact_key_prefix` (`org/<orgId>/<YYYY-MM>/`), and the `object_key` of
-each of its archives must start with it. A flat `<taskId>_<crawlId>.wacz` means
+each of its archives must start with it. A flat `<taskId>_<crawlId>.browserhive.wacz` (plain `.wacz` up to BrowserHive v30) means
 BrowserHive wrote into its own bucket: the crawl still succeeds, and nothing else
 says so. That is how the sink went unused from the day it was added — the webhook
 body in `src/crawl/dispatch.ts` was written out by hand and never carried

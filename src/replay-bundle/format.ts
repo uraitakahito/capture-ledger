@@ -19,7 +19,7 @@
  * ## 行の id は必ず文字列
 
 replayweb-server は `id` を文字列に限って読む (null の行が 1 つでもあると `/q/` が 502)。BrowserHive の
-pages.jsonl の行は id を持つが、契約の外の WACZ では欠けうる (`archive_pages.page_id` が null)。そのときは
+pages.jsonl の行は id を持つが、BrowserHive WACZ でない WACZ では欠けうる (`archive_pages.page_id` が null)。そのときは
 `<filename>#<ordinal>` を振る —— filename はクロールの中で一意、ordinal は WACZ の中で一意なので、合本の中で一意。
 
 ## 記録が 0 の WACZ は外す
@@ -243,7 +243,7 @@ export const waczKeyOf = (path: string): string | undefined => {
   }
 };
 
-/** WACZ の鍵の最後の区切り (ファイル名。`<taskId>_<crawlId>.wacz` で、クロールの中で一意)。 */
+/** WACZ の鍵の最後の区切り (ファイル名。`<taskId>_<crawlId>.browserhive.wacz`（BrowserHive v30 までは `.wacz`）で、クロールの中で一意)。 */
 export const waczName = (objectKey: string): string =>
   objectKey.slice(objectKey.lastIndexOf("/") + 1);
 

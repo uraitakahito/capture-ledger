@@ -104,7 +104,7 @@ const sitesNote = (sites: readonly string[]): string =>
   sites.length === 0 ? "" : `  対象サイト:${sites.join(",")}`;
 
 /**
- * 読む値の宣言を 1 行の終わりに添える (`query`・`token(秘)!` のように、シークレットには `(秘)`、値を WARC に残す物は
+ * 読む値の宣言を 1 行の終わりに添える (`query`・`token(秘)!` のように、シークレットには `(秘)`、値を BrowserHive WARC に残す物は
  * `(秘・keep)`、required には `!`)。宣言が無ければ何も添えない
  */
 const paramsNote = (params: readonly ScriptParam[]): string =>
@@ -249,7 +249,7 @@ interface CatalogEntry {
 }
 
 /**
- * 読む形。`/6` (capture-scripts v0.13.0) はシークレットの宣言に `archive` (値を WARC に残すか) を足した形で、それより前は
+ * 読む形。`/6` (capture-scripts v0.13.0) はシークレットの宣言に `archive` (値を BrowserHive WARC に残すか) を足した形で、それより前は
  * 断る —— 宣言 (`params`) を知らない catalog を読むと、宣言の無いスクリプトとして取り込み、変数を渡すクロールが
  * 「知らない名前」で止まる。`archive` を知らない形を読んでも、取り込んだ物は隠す側に倒れるが、どちらの形かを
  * 黙って取り違えない。
