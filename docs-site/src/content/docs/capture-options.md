@@ -448,7 +448,8 @@ wording of `text` may. The fix route's 422 `no fix passed the checks` gives its 
 The old CLI mapped a flag onto every field of BrowserHive's `CaptureRequest`:
 `--device-pixel-ratios`, `--operation-delay-ms`, `--dismiss-banners`,
 `--accept-language`, `--session`. **None of those exist any more.** Beyond
-`captureFormats`, `signing` and the scripts above, capture-ledger sends nothing
+`captureFormats`, `signing`, the scripts above with their per-crawl values
+(`variables` and declared secrets) and `userAgent`, capture-ledger sends nothing
 about how a page is rendered — everything unsent falls to whatever that BrowserHive
 server is configured to do, which is what BrowserHive's own documentation describes.
 
