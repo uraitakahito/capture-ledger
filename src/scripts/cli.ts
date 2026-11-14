@@ -4,10 +4,10 @@
  * 開発用の CLI。
  *
  *   pnpm run scripts import .upstream/capture-scripts               # catalog.json と受け皿の型
- *   pnpm run scripts add autoscroll --file ./autoscroll.js
- *   pnpm run scripts add autoscroll --file - < ./autoscroll.js      # 標準入力から
- *   pnpm run scripts add hide-webdriver --file ./x.js --phase preload
- *   pnpm run scripts add autoscroll --file ./x.js --options '{"maxSteps":60}'
+ *   pnpm run scripts add autoscroll --file ./autoscroll.ts
+ *   pnpm run scripts add autoscroll --file - < ./autoscroll.ts      # 標準入力から
+ *   pnpm run scripts add hide-webdriver --file ./x.ts --phase preload
+ *   pnpm run scripts add autoscroll --file ./x.ts --options '{"maxSteps":60}'
  *   pnpm run scripts add my-search --file ./x.ts --site www.example.com   # サイト用 (対象サイト)。--site は何度でも
  *   pnpm run scripts add my-search --file ./x.ts --params '[{"name":"query","kind":"variable","summary":"検索語"}]'   # 読む値の宣言
  *   pnpm run scripts list                                           # 各 id の最新版
@@ -150,7 +150,10 @@ program
   .command("add")
   .description("スクリプトを 1 本足す。版は自動で採番する (中身が同じなら足さない)")
   .argument("<id>", "報告と archive に出る名前 (例: autoscroll)")
-  .requiredOption("--file <path>", "読む JS ファイル。`-` なら標準入力から")
+  .requiredOption(
+    "--file <path>",
+    "読む TypeScript のファイル (capture-scripts の .ts。ts-compile-service が JS にする)。`-` なら標準入力から",
+  )
   .addOption(
     new Option("--phase <phase>", "どちらの phase で入れるか")
       .choices(["behavior", "preload"])
