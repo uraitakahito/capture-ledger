@@ -111,9 +111,11 @@ describe("route の入力検証", () => {
     expect(res.json()).toEqual({ status: "ok" });
   });
 
-  // Fastify は既定で未知のキーを **削除** する。拒否ではない。
-  // 「知らないキーは弾かれる」と誤解しないための杭。
-  it("drops unknown query parameters rather than rejecting them", async () => {
+  // `/api/archives` の query の schema は、知らない鍵を閉じていない (`additionalProperties: false` が無い)。
+  // だから知らない鍵は、拒まれも削られもせず handler へ届く —— 500 は、検証を通って deps に触れた印。
+  // 「知らないキーは弾かれる」と誤解しないための杭。本番 (`src/api/server.ts`) は ajv の `removeAdditional` も
+  // 切っているので、鍵を閉じた schema でも「黙って削る」は起きず、拒む。
+  it("知らない query の鍵は拒まれず、handler まで届く", async () => {
     const res = await app.inject({ method: "GET", url: "/api/archives?bogus=1", headers: SUBJECT });
     expect(res.statusCode).toBe(500);
   });
