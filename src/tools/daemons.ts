@@ -78,11 +78,12 @@ export const HOST_PROCESSES: HostProcess[] = [
     entry: "packages/daemon/dist/cli.js",
     // **鍵を渡さない。** 読むのは capture-ledger が署名した URL だけなので、`AWS_*` は要らない ——
     // 渡した瞬間に「鍵を持つ相手を増やさない」という、この経路を選んだ理由が消える。
-    // build を挟むのは、clone した直後でも 1 本で立つようにするため (数秒)。
-    // `daemon...`（末尾の 3 点）で依存（contract・core・protocol）ごと建てる。daemon だけを
-    // 建てると、core を変えたあとに古い core/dist の上で新しい daemon が黙って立つ（実際に
-    // そうなっていた。気づかなかったのは、毎回 pnpm run check を先に打っていたから）。
-    run: "pnpm --filter @wacz-validator/daemon... build && node packages/daemon/dist/cli.js --port 7180",
+    // build を挟むのは、clone した直後でも 1 本で立つようにするため。
+    // **全部のパッケージを建てる（`pnpm -r build`）。** daemon とその依存（`daemon...`）だけを建てると、
+    // 同じ checkout の validate-cli・tui の dist が古いまま残り、本体で CLI を打つと前の版の報告になる
+    // （2026-11-14 に v0.49.0 の checkout で CLI が 0.44.0 と名乗った。CAPTURE-387）。その前は daemon だけを
+    // 建てていて、古い core/dist の上で新しい daemon が黙って立っていた。
+    run: "pnpm -r build && node packages/daemon/dist/cli.js --port 7180",
     // **動いている build が名乗るエンドポイント。** daemon は自分で建て直らない —— wacz-validator を
     // 出しても、:7180 は起こした時の build のまま動き続ける (2026-09-26 に見たとき、
     // v0.28.1 が 2 日動いていて、その間に出た v0.29.0・v0.30.0 の rule はどれも workbench に

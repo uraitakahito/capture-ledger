@@ -47,7 +47,7 @@ export const replaywebServerOriginFromEnv = (): string =>
 /**
  * 行のリンク。object_key で WACZ を開き、取り込んだ URL を撮った時刻で直に開く（`#view=replay&url=…&ts=…`。
  * ts は UTC の 14 桁）。replay（ReplayWeb.page）は mainPageURL を読まず、`?source=` だけではページ一覧を
- * 新しい順に出す —— 取り込んだ文書の行（WACZ Profile 1.18.0 の 1 行目）は、いちばん下になる。
+ * 新しい順に出す —— 取り込んだ文書の行（BrowserHive WACZ Profile 1.18.0 の 1 行目）は、いちばん下になる。
  *
  * url は capture-ledger の sourceUrl のまま渡す。replay は、path が空の URL（末尾の `/` が無い）も断片の付いた URL も、
  * 記録した文書に当てる（2026-11-04 に replaywebpage 2.5.0 で確かめた）。URL か時刻が無ければ、一覧を開く形のまま。
