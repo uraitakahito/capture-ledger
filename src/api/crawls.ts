@@ -47,6 +47,7 @@ import type {
   LogCounts,
 } from "../db/database.js";
 import { readHostTypes, INLINE_PREFIX, isInlineId } from "../scripts/store.js";
+import { onListedScreenshot, SCREENSHOT_COLUMNS, screenshotOf } from "./stage-screenshot.js";
 import type { IdentityResolver } from "./identity.js";
 import { admitLevel } from "../crawl/admit-level.js";
 import { randomUUID } from "node:crypto";
@@ -312,6 +313,7 @@ export const pageRows = (db: Kysely<Database>, crawlId: string) =>
     .leftJoin("archives as a", (join) =>
       join.onRef("p.taskId", "=", sql<string>`${sql.ref("a.taskId")}::text`),
     )
+    .leftJoin("archiveScreenshots as sh", onListedScreenshot("a.id"))
     .select([
       "p.id",
       "p.url",
@@ -323,6 +325,7 @@ export const pageRows = (db: Kysely<Database>, crawlId: string) =>
       "a.id as archiveId",
       "a.capturedAt",
       "a.replayBundleRev as bundledRev",
+      ...SCREENSHOT_COLUMNS,
     ])
     .where("p.crawlId", "=", crawlId)
     .distinctOn("p.id")
@@ -340,6 +343,10 @@ interface PageRow {
   archiveId: string | null;
   capturedAt: Date | null;
   bundledRev: number | null;
+  shotStage: string | null;
+  shotSkipped: string | null;
+  shotBytes: number | null;
+  shotProblem: string | null;
 }
 
 /**
@@ -349,7 +356,8 @@ interface PageRow {
  *
  * `capturedAt` と `bundledRev` は WACZ の物 (無ければ null)。`bundledRev` はその WACZ が最初に入った合本の版で、
  * `bundledRev ≤ replayBundle.rev` なら、そのページは capture-ledger が指す合本の中で開ける (workbench が replay の
- * `#view=replay&url=…&ts=…` を組むのに使う)。
+ * `#view=replay&url=…&ts=…` を組むのに使う)。`screenshot` は読み込みの後の節目のスクリーンショット
+ * (`api/stage-screenshot.ts`)。
  */
 export const pageOf = (row: PageRow) => ({
   id: row.id,
@@ -362,6 +370,7 @@ export const pageOf = (row: PageRow) => ({
   capturedAt: row.capturedAt,
   bundledRev: row.bundledRev,
   logCounts: row.logCounts,
+  screenshot: screenshotOf(row),
 });
 
 /**

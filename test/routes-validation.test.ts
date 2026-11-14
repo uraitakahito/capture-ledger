@@ -105,6 +105,27 @@ describe("route の入力検証", () => {
     expect(res.statusCode).toBe(500);
   });
 
+  // 節目のスクリーンショット (CAPTURE-432)。id と時点の形は、認可と DB より前に見る。
+  it("uuid でない id と知らない時点の絵は、認可より前に 400", async () => {
+    for (const url of [
+      "/api/archives/not-a-uuid/screenshots/after-load",
+      `/api/archives/${UUID}/screenshots/before-load`,
+      `/api/archives/${UUID}/screenshots/thumbnail`,
+    ]) {
+      const res = await app.inject({ method: "GET", url, headers: SUBJECT });
+      expect(res.statusCode, url).toBe(400);
+    }
+  });
+
+  it("形の合う絵の要求は、認可まで通る", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/archives/${UUID}/screenshots/after-behaviors`,
+      headers: SUBJECT,
+    });
+    expect(res.statusCode).toBe(500);
+  });
+
   it("leaves /healthz untouched", async () => {
     const res = await app.inject({ method: "GET", url: "/healthz" });
     expect(res.statusCode).toBe(200);

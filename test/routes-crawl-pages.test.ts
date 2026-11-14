@@ -94,6 +94,11 @@ const row = (over: Record<string, unknown> = {}) => ({
   archiveId: ARCHIVE,
   capturedAt: new Date(CAPTURED_AT),
   bundledRev: 2,
+  // 読み込みの後の節目のスクリーンショット (`archive_screenshots` を left join した列)
+  shotStage: "after-load",
+  shotSkipped: null,
+  shotBytes: 47692,
+  shotProblem: null,
   ...over,
 });
 
@@ -163,6 +168,7 @@ describe("クロールのページを読む", () => {
       archiveId: null,
       capturedAt: null,
       bundledRev: null,
+      shotStage: null,
     });
     const failed = row({
       id: "44",
@@ -173,6 +179,7 @@ describe("クロールのページを読む", () => {
       archiveId: null,
       capturedAt: null,
       bundledRev: null,
+      shotStage: null,
     });
     const { res, queries } = await get(url, {
       results: [[{ id: CRAWL }], [row(), pending, failed]],
@@ -192,6 +199,8 @@ describe("クロールのページを読む", () => {
           capturedAt: CAPTURED_AT,
           bundledRev: 2,
           logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
+          // 読み込みの後の節目のスクリーンショット (`api/stage-screenshot.ts`)
+          screenshot: { stage: "after-load", bytes: 47692 },
         },
         {
           id: "43",
@@ -204,6 +213,7 @@ describe("クロールのページを読む", () => {
           capturedAt: null,
           bundledRev: null,
           logCounts: null,
+          screenshot: null,
         },
         {
           id: "44",
@@ -216,6 +226,7 @@ describe("クロールのページを読む", () => {
           capturedAt: null,
           bundledRev: null,
           logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
+          screenshot: null,
         },
       ],
       next: null,
@@ -225,8 +236,11 @@ describe("クロールのページを読む", () => {
     expect(queries[1]?.sql).toBe(
       'select distinct on ("p"."id") "p"."id", "p"."url", "p"."depth", "p"."state", "p"."skip_reason", ' +
         '"p"."task_id", "p"."log_counts", "a"."id" as "archive_id", "a"."captured_at", ' +
-        '"a"."replay_bundle_rev" as "bundled_rev" from "crawl_pages" as "p" ' +
+        '"a"."replay_bundle_rev" as "bundled_rev", "sh"."stage" as "shot_stage", "sh"."skipped" as "shot_skipped", ' +
+        '"sh"."bytes" as "shot_bytes", "sh"."problem" as "shot_problem" from "crawl_pages" as "p" ' +
         'left join "archives" as "a" on "p"."task_id" = "a"."task_id"::text ' +
+        // 絵は読み込みの後の 1 枚。時点は字で埋める (引数の番号をずらさない)
+        'left join "archive_screenshots" as "sh" on "sh"."archive_id" = "a"."id" and "sh"."stage" = \'after-load\' ' +
         'where "p"."crawl_id" = $1 order by "p"."id", "a"."created_at" limit $2',
     );
     // 既定の 100 本より 1 本多く引く (続きが在るかを言うため)
@@ -303,6 +317,7 @@ describe("1 ページの取り込みのログを読む", () => {
       capturedAt: CAPTURED_AT,
       bundledRev: 2,
       logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
+      screenshot: { stage: "after-load", bytes: 47692 },
       ...over,
     },
     log: null,
@@ -315,9 +330,11 @@ describe("1 ページの取り込みのログを読む", () => {
     expect(queries[0]?.sql).toBe(
       'select distinct on ("p"."id") "p"."id", "p"."url", "p"."depth", "p"."state", "p"."skip_reason", ' +
         '"p"."task_id", "p"."log_counts", "a"."id" as "archive_id", "a"."captured_at", ' +
-        '"a"."replay_bundle_rev" as "bundled_rev", "s"."manifest_key" ' +
+        '"a"."replay_bundle_rev" as "bundled_rev", "sh"."stage" as "shot_stage", "sh"."skipped" as "shot_skipped", ' +
+        '"sh"."bytes" as "shot_bytes", "sh"."problem" as "shot_problem", "s"."manifest_key" ' +
         'from "crawl_pages" as "p" ' +
         'left join "archives" as "a" on "p"."task_id" = "a"."task_id"::text ' +
+        'left join "archive_screenshots" as "sh" on "sh"."archive_id" = "a"."id" and "sh"."stage" = \'after-load\' ' +
         'left join "capture_submissions" as "s" on "p"."task_id" = "s"."task_id"::text ' +
         'where "p"."crawl_id" = $1 and "p"."id" = $2 order by "p"."id", "a"."created_at"',
     );
@@ -335,6 +352,7 @@ describe("1 ページの取り込みのログを読む", () => {
             archiveId: null,
             capturedAt: null,
             bundledRev: null,
+            shotStage: null,
             manifestKey: null,
           }),
         ],
@@ -349,6 +367,7 @@ describe("1 ページの取り込みのログを読む", () => {
         capturedAt: null,
         bundledRev: null,
         logCounts: null,
+        screenshot: null,
       }),
     );
     expect(read).toEqual([]);

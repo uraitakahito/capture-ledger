@@ -122,31 +122,35 @@ capture を投げた人が破ります**。
 
 ## URL を発行する
 
-`capture-api` は、アーカイブのエンドポイントを 2 つ提供します。どちらも身元が必要です。
+`capture-api` は、アーカイブのエンドポイントを 3 つ提供します。どれも身元が必要です。
 
 ```sh
 # 1 本のアーカイブ
 curl -X POST http://localhost:7070/api/archives/<id>/url
 # → { "url": "http://…?X-Amz-Signature=…", "expiresIn": 300 }
 
-# 見てよいものを新しい順に
+# 見てよいものを新しい順に（行ごとに、読み込みの後の絵の手がかり screenshot）
 curl http://localhost:7070/api/archives
+
+# 1 本のアーカイブの、節目のスクリーンショット（WebP。下の「節目のスクリーンショット」）
+curl -o after-load.webp http://localhost:7070/api/archives/<id>/screenshots/after-load
 ```
 
-どちらのリクエストも形は route の JSON Schema で決まっています。説明ではなく
+どのリクエストも形は route の JSON Schema で決まっています。説明ではなく
 検査そのものが契約です。
 
-|                                                            |          |                                                                         |
-| ---------------------------------------------------------- | -------- | ----------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`                               | `id`     | UUID。違えば **400**（認可より前に落ちる）                              |
-| `GET /api/archives`                                        | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
-| `GET /api/crawls`                                          | `state`  | `running` / `succeeded` / `failed`。違えば **400**                      |
-|                                                            | `before` | ISO 8601 の日時。違えば **400**。省略すると最新から                     |
-| `GET /api/crawls/:id/pages`                                | `after`  | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                 |
-|                                                            | `limit`  | 1〜500。既定 100。外れは **400**                                        |
-| `GET /api/crawls/:id/pages/:page/log`                      | `page`   | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる） |
-| `GET /api/crawls/:id/pages/:page/trace`                    | `page`   | 同じ                                                                    |
-| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`   | 同じ                                                                    |
+|                                                            |               |                                                                                  |
+| ---------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`                               | `id`          | UUID。違えば **400**（認可より前に落ちる）                                       |
+| `GET /api/archives`                                        | `before`      | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
+| `GET /api/archives/:id/screenshots/:stage`                 | `id`・`stage` | UUID と、`after-load` か `after-behaviors`。違えば **400**（認可より前に落ちる） |
+| `GET /api/crawls`                                          | `state`       | `running` / `succeeded` / `failed`。違えば **400**                               |
+|                                                            | `before`      | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
+| `GET /api/crawls/:id/pages`                                | `after`       | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                          |
+|                                                            | `limit`       | 1〜500。既定 100。外れは **400**                                                 |
+| `GET /api/crawls/:id/pages/:page/log`                      | `page`        | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる）          |
+| `GET /api/crawls/:id/pages/:page/trace`                    | `page`        | 同じ                                                                             |
+| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`        | 同じ                                                                             |
 
 `before` はカーソルで、直前に受け取った最後の行の `capturedAt`（クロールなら
 `startedAt`）を渡します。
@@ -187,6 +191,48 @@ S3 は署名しか見ないので、URL を署名した瞬間に判断は確定�
 「許可」を返すと、寿命いっぱい有効な URL を渡してしまうからです。
 一覧はそうしません。一覧に出ること自体は何の権限も与えず、
 実際に取得するには上の強整合な Check を通る必要があるからです。
+
+### 節目のスクリーンショット
+
+アーカイブ 1 本の、節目のスクリーンショット（取り込みのページの viewport の絵。WebP）を返すエンドポイントです
+（CAPTURE-8）。絵は BrowserHive WACZ の中の WARC の `resource` レコードで、BrowserHive v30.2.0 から、絵を撮る設定の
+配備が入れます。時点は `after-load`（読み込みの後）と `after-behaviors`（スクリプトの後）です。
+
+```sh
+curl -o after-load.webp http://localhost:7070/api/archives/<id>/screenshots/after-load
+# → 200 image/webp（本文が絵そのもの）
+```
+
+**capture-ledger は絵を持ちません。** WACZ を検める時（[合本](#何が入るか)）に、`datapackage.json` の
+`browserhive:capture.screenshots[]` と索引の行から、絵のレコード（gzip の member 1 つ）の WACZ の中の位置を求めて
+`archive_screenshots`（`041`）に書きます。求めた位置はその場で解いて、名指しの絵かを確かめます。このエンドポイントは、
+その位置を**保管庫への Range の読み 1 本**で取り、gzip を解き、もう 1 度確かめて（Record-ID・時点・`image/webp`・
+大きさ・WebP の頭）から返します。返すバイト列は、BrowserHive が撮ったときのままです。
+
+アーカイブの一覧（`GET /api/archives`）と、クロールのページの行（`GET /api/crawls/:id/pages` ほか）には、読み込みの
+後の 1 枚の手がかり `screenshot` が載ります。
+
+| `screenshot`                                | 意味                                                                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `{ "stage": "after-load", "bytes": 47692 }` | 絵が在る。このエンドポイントで読める                                                                                  |
+| `{ "stage": "after-load", "skipped": "…" }` | BrowserHive が残さなかった。理由は WACZ のまま（`secret`・`withheld`・`disabled`・`task-budget`・`failed`）           |
+| `{ "stage": "after-load", "problem": "…" }` | 欄は在るのに、位置を引けなかった（`no-index-line`・`warc-not-stored`・`record-mismatch` など）                        |
+| `null`                                      | 記録が無い: 絵の欄の無い WACZ（v30.2.0 より前など）・まだ検めていない WACZ・クロールの外の取り込み・WACZ の無いページ |
+
+認可は WACZ と同じ `can_view`（強整合）です。断る理由は分けません。
+
+| 答え                                              | いつ                                                                                                                                         |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200 `image/webp`                                  | 絵を返せた。`x-content-type-options: nosniff`・`content-security-policy: sandbox`・`cache-control: private, max-age=300, immutable` を付ける |
+| 400                                               | `id` が UUID でない・知らない時点（認可より前に落ちる）                                                                                      |
+| 401 `{ "error": "unauthenticated" }`              | 身元が無い                                                                                                                                   |
+| 404 `{ "error": "not found" }`                    | 見てよくない・行が無い・残さなかった時点・位置を引けなかった時点・WACZ が保管庫に無い。前の 4 つは保管庫を読みません                         |
+| 502 `{ "error": "storage unreachable" }`          | 保管庫に届かない・返った長さが頼んだ長さと違う                                                                                               |
+| 502 `{ "error": "screenshot too large" }`         | 記録した長さが上限（絵 1 MiB）を超える。保管庫を読みません                                                                                   |
+| 502 `{ "error": "screenshot record unreadable" }` | 読んだ物が名指しの絵でない                                                                                                                   |
+
+`max-age=300` は署名付き URL の寿命と同じです —— 見る許可を外した後も、この秒数だけはブラウザに残ります。WACZ は
+書き換わらないので、同じ URL の絵は変わりません（`immutable`）。**絵は WACZ の中の記録で、署名した WACZ では署名の下に在ります。**
 
 ## クロールを始める
 
@@ -609,7 +655,8 @@ curl 'http://localhost:7070/api/crawls/9072b625-…/pages?limit=100'
 # → { "pages": [{ "id": "1234", "url": "https://…", "depth": 0, "state": "captured", "reason": null,
 #                 "taskId": "6f1c…", "archiveId": "a1b2…",
 #                 "capturedAt": "2026-11-04T05:12:09.812Z", "bundledRev": 1,
-#                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 } }, …],
+#                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 },
+#                 "screenshot": { "stage": "after-load", "bytes": 47692 } }, …],
 #     "next": "1300" }
 
 curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/log
@@ -701,7 +748,8 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   BrowserHive v30.2.0 から、成功して WACZ を作った取り込みの `.result.json` に載ります（WACZ Profile 1.24.0）。絵を残した
   時点は BrowserHive WACZ の中のレコードを名指し（`url`・`date`・`record`・`bytes`）、残さなかった時点は理由（`skipped`）だけを
   持ちます。capture-ledger は項目を選び直さず、書かれたまま返します —— 形は BrowserHive の契約（写しの `StageScreenshot`）が
-  決めます。**絵そのものは、この答えには入りません。** BrowserHive WACZ の中に在り、WACZ を見てよい者（`can_view`）が WACZ から読みます。
+  決めます。**絵そのものは、この答えには入りません。** BrowserHive WACZ の中に在り、WACZ を見てよい者（`can_view`）が
+  [節目のスクリーンショットのエンドポイント](#節目のスクリーンショット)で読みます。
   それより前の取り込みと、成功しなかった取り込みでは、鍵ごとありません。
 - `capture.random` は、BrowserHive が頁の JS の乱数を控えたか（クロールの
   [`recordRandom`](/capture-ledger/ja/capture-options/#乱数を控える)）の要約です。BrowserHive v31.1.0 から、成功して WACZ を作った
@@ -933,6 +981,11 @@ UUID でない・本文が `{depth}` でない）は索引のエンドポイン�
 `browserhive:capture.build.version` と `browserhive:capture.browser.product` から撮った BrowserHive と Chrome の版を `archives` に入れます（`035`）。前回からの変化（[定期実行](/capture-ledger/ja/schedules/)）は、
 digest が同じページの WACZ を開かずに「同じ」と言えます。文字そのものは capture-ledger の DB に持ちません。
 `035` より前の行は `pnpm run changes:backfill` が埋めます。
+
+同じ検めで、節目のスクリーンショットの在り処も `archive_screenshots`（`041`）に書きます（[節目のスクリーンショット](#節目のスクリーンショット)）。
+検めの後の別のトランザクションで書くので、絵の記録で失敗しても検めは巻き戻りません。印（`archives.screenshots_recorded_at`）が
+立たないまま残り、`041` より前に検めた行と一緒に `pnpm run screenshots:backfill` が埋めます（`--verify` は書かずに、
+書いた位置を保管庫への Range の読みで確かめます）。
 
 記録が 0 の WACZ（索引が空か、`waczStats.totalRecorded` が 0）は外します（`skipped`。名前と sha256 は
 `replayBundle.skippedResources` に残ります）。replay が
