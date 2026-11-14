@@ -92,8 +92,9 @@ Withheld pages are not compared.
 
 1. **Compare (no Claude).** A page whose text digest (`archive_pages.text_sha256`) is the same is not opened.
    Only for a page that differs are both WACZ files read back from the store, and the line diff (with two
-   lines of context) is kept in `page_changes`. The diff can be rebuilt from the two WACZ files. If every
-   page is the same the run is `unchanged` and costs nothing.
+   lines of context) is kept in `page_changes`. The diff can be rebuilt from the two WACZ files. If no
+   page is left with a diff the run is `unchanged` and costs nothing (a pair whose digests differ only by
+   blank lines and indentation leaves no diff).
 2. **Summarize (one Claude call).** The diffs of the pages that differ are read together, and a weight per
    page (`none`, `minor`, `content`), a line per page and a line for the run are kept in the derived layer
    (`derivations`, `kind = 'change'`). Claude reads only the diff and two lines around it — never the whole
@@ -103,7 +104,7 @@ Withheld pages are not compared.
 | State         | Meaning                                                                                   |
 | ------------- | ----------------------------------------------------------------------------------------- |
 | `no_previous` | No earlier run of the same schedule with the same recipe                                  |
-| `unchanged`   | Every page's text is the same (no WACZ read, no Claude)                                   |
+| `unchanged`   | No page has a diff (no Claude; a WACZ is read only for a page whose digest differs)       |
 | `diffed`      | The diff is kept. Without the key (`CAPTURE_LEDGER_ANTHROPIC_API_KEY`) the run stops here |
 | `summarized`  | The summary is kept                                                                       |
 | `budget_wait` | The organization's monthly limit (shared with the fixer) is reached; rechecked hourly     |
