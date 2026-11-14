@@ -47,7 +47,11 @@ capture-ledger は辿る範囲を判断し、1 段ずつ Windmill の flow に�
 ## capture-ledger の責務ではないこと
 
 ブラウザの操作、スクリーンショットの撮影、WACZ の生成、S3 への保存 — これらは
-**すべて BrowserHive の責務**です。BrowserHive の docs は web に公開されていないので、
+**すべて BrowserHive の責務**です。ただし保管庫への書き込みには例外が 2 つあります。
+受け取り先を設定した配備（`CAPTURE_LEDGER_SINK_ORIGIN` と `CAPTURE_LEDGER_SINK_SECRET` の両方）では、
+BrowserHive は成果物を capture-ledger に渡し、保管庫へ書くのは capture-ledger です。
+クロールの合本（`replay.json` とその隣のファイル）は、いつも capture-ledger が書きます。
+BrowserHive の docs は web に公開されていないので、
 BrowserHive のチェックアウトで `pnpm run docs:local` を実行して読んでください。
 
 **投げることも、もう capture-ledger の仕事ではありません。**
