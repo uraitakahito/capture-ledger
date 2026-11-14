@@ -433,6 +433,30 @@ describe("取り込み 1 回の経緯を読む", () => {
     expect(body.capture.failureScreenshot).toBe(false);
   });
 
+  it("乱数の控えの要約（BrowserHive v31.1.0 から）を、書かれたまま返す。無い取り込みでは鍵ごと無い", async () => {
+    const random = { recorded: true, documents: 2, draws: 731, truncated: false };
+    const recorded = await get(url, {
+      results: [[row()]],
+      store: { [KEY]: { ...success, random } },
+    });
+    expect(recorded.res.statusCode).toBe(200);
+    expect(recorded.res.json<{ capture: { random: unknown } }>().capture.random).toEqual(random);
+
+    const skipped = await get(url, {
+      results: [[row()]],
+      store: { [KEY]: { ...success, random: { recorded: false, skipped: "not-requested" } } },
+    });
+    expect(skipped.res.json<{ capture: { random: unknown } }>().capture.random).toEqual({
+      recorded: false,
+      skipped: "not-requested",
+    });
+
+    const absent = await get(url, { results: [[row()]], store: { [KEY]: success } });
+    expect(absent.res.json<{ capture: Record<string, unknown> }>().capture).not.toHaveProperty(
+      "random",
+    );
+  });
+
   it("失敗の時点の絵は、在るかどうかだけを真偽で返し、保管庫の場所を返さない", async () => {
     const { res, read, sized } = await get(url, {
       results: [

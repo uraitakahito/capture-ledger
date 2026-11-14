@@ -72,6 +72,7 @@ const recipe = (): ScheduleRecipe => ({
   variables: { api_token_name: "値" },
   declaredSecrets: [],
   userAgent: "",
+  recordRandom: false,
 });
 
 const create = async (name: string, nextRunAt: Date, now: Date): Promise<ScheduleRow> => {
@@ -119,6 +120,7 @@ const preparedOf = (row: ScheduleRow): PreparedCrawl => ({
   ...row.recipe,
   kind: "prepared",
   secrets: {},
+  recordRandom: row.recipe.recordRandom ?? false,
 });
 const planOf = (row: ScheduleRow, now: Date, overrides: Partial<FirePlan> = {}): FirePlan => ({
   scheduleId: row.id,

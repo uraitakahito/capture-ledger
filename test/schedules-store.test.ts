@@ -33,6 +33,7 @@ const prepared: PreparedCrawl = {
   secrets: {},
   declaredSecrets: [],
   userAgent: "",
+  recordRandom: false,
 };
 
 const plan = (overrides: Partial<FirePlan> = {}): FirePlan => ({

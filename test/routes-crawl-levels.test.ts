@@ -44,6 +44,7 @@ const crawlRow = (overrides: Record<string, unknown> = {}) => ({
   variables: {},
   secrets: {},
   userAgent: null,
+  recordRandom: false,
   ...overrides,
 });
 

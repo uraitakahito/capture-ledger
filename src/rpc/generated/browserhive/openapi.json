@@ -721,6 +721,35 @@
                     "browserhive"
                 ]
             },
+            "CaptureRandom": {
+                "type": "object",
+                "description": "乱数の控えの要約。`recorded` が true なら `documents`・`draws`・`truncated` を持ち、`skipped` を持たない。\nfalse なら `skipped` だけを持つ。控えそのものは BrowserHive WACZ の `random/values.jsonl` に在る。",
+                "properties": {
+                    "recorded": {
+                        "type": "boolean",
+                        "description": "控えを WACZ に残したか。"
+                    },
+                    "documents": {
+                        "type": "number",
+                        "description": "`random/values.jsonl` の文書の行 (控えた文書 1 つにつき 1 行) の数。"
+                    },
+                    "draws": {
+                        "type": "number",
+                        "description": "`random/values.jsonl` の乱数の行 (頁の JS が受け取った値 1 つにつき 1 行) の数。"
+                    },
+                    "truncated": {
+                        "type": "boolean",
+                        "description": "行が欠けうるか。上限 (同じ JS のファイル・同じ関数は 1 文書で 1,000 回・1 文書で 50,000 回・ファイルは 2 MiB) で\n行を入れなかったか、控えるのをやめたか、頁から届いた行が全部揃ったと言えないとき true。"
+                    },
+                    "skipped": {
+                        "$ref": "#/components/schemas/RandomSkipped",
+                        "description": "控えなかった理由。2 つ以上が当たるときは、この並びで先の物。"
+                    }
+                },
+                "required": [
+                    "recorded"
+                ]
+            },
             "CaptureRequestContent": {
                 "type": "object",
                 "description": "Capture の要求。取り込みの中身を全部ここで決める —— 応答は結果そのもので、受理の印は無い。",
@@ -845,6 +874,10 @@
                     "secretArchive": {
                         "$ref": "#/components/schemas/SecretArchive",
                         "description": "シークレットのうち、値を WARC に残すものの名前 → `keep`。名前は `secrets` に在ること (無ければ 400)。\n残すのは通信の記録 (request・response・metadata のレコードと、それらの URL) だけで、DOM の写し・\nページの文字と題・ツリーの名前・ログ・trace の行からは、長さに依らず消える。8 字未満の値も通る。\n省略と空はどちらも「残す物は無い」で、効いた形は archive の `settings.secretArchive` に残る。"
+                    },
+                    "recordRandom": {
+                        "type": "boolean",
+                        "description": "頁の JS が受け取った乱数 (`Math.random`・`crypto.getRandomValues`・`crypto.randomUUID` の値) を、値を変えずに\n控え、BrowserHive WACZ の `random/values.jsonl` に残す。省略は false で、控えるための物を頁に 1 つも入れない。\ntrue なら、頁の JS より先に控えるスクリプト (BrowserHive WACZ の `random/recorder.js` にそのまま残る) を、\n取り込みのページと同じ process の枠 (別サイトの iframe は除く) に入れる。控えた数は答えの `random` と\n`datapackage.json` の `browserhive:capture.random` に在る。`captureFormats.wacz` と一緒のときだけ有効で、\nwacz の無い要求で true なら 400。シークレットを渡した取り込みでは、`crypto` の 2 つの値を控えない (呼んだことと長さだけ)。"
                     }
                 },
                 "required": [
@@ -961,6 +994,10 @@
                     "failureScreenshot": {
                         "type": "string",
                         "description": "失敗の時点の絵 (取り込みのページの viewport の WebP) の置き場所。成果物と同じ名前に `.failure.webp` を付けた\nファイルで、値は書き込み先が答えたもの。`status` が `success` 以外で、server が絵を撮る設定\n(`--stage-screenshots`) のときにだけ入りうる —— 撮るのは、取り込みのページを触っている間の失敗\n(読み込みや操作ごとの時間切れ・スクリプトの失敗・文書の 4xx と 5xx) で、取り込み全体の予算が 5 秒以上\n残っているときだけ。全体の時間切れ・cancel・renderer の crash・方針の失敗では撮らない。シークレットを渡した\n取り込み・content-type の方針を持つ取り込み・方針が文書や画像やメディアの要求に当たった取り込み・方針が\n伏せる文書でも撮らない。`artifacts` には載らない (あちらは `success` のときだけ埋まる)。WACZ の外の\nファイルで、署名の下に無い。後から足した欄で、必須にしていない。"
+                    },
+                    "random": {
+                        "$ref": "#/components/schemas/CaptureRandom",
+                        "description": "頁の JS が受け取った乱数の控え (`recordRandom`) の要約。`status` が `success` で WACZ を作ったときだけ入り、\nその BrowserHive WACZ の `datapackage.json` の `browserhive:capture.random` と同じ物。控えた取り込みは\n`recorded: true` と行の数、控えなかった取り込みは `recorded: false` と理由 (`skipped`)。\n後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。"
                     }
                 },
                 "required": [
@@ -1500,6 +1537,15 @@
                             "error"
                         ]
                     }
+                ]
+            },
+            "RandomSkipped": {
+                "type": "string",
+                "description": "乱数を控えなかった理由。\n\n- `not-requested`: 要求が `recordRandom` を頼まなかった。\n- `withheld`: 方針が主文書を伏せた (`document.withheld`)。控えは頁から読んだ物なので残さない。\n- `failed`: 頼まれたが、控える仕組みを頁に入れられなかった。",
+                "enum": [
+                    "not-requested",
+                    "withheld",
+                    "failed"
                 ]
             },
             "ScreenshotSkipped": {

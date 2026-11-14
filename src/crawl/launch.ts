@@ -107,6 +107,10 @@ export interface DispatchedCrawl {
    * flow が省いた入力は `null` で届くので、`""` と分ければ `crawl_host` が取り違えに気づける。
    */
   userAgent: string;
+  /**
+   * 頁の JS が受け取った乱数を BrowserHive に控えさせるか。**必ず載せる** (頼まなければ false)。行に固定した物を段ごとに配る。
+   */
+  recordRandom: boolean;
 }
 
 /**
@@ -520,6 +524,8 @@ export const crawlValues = (
     secrets: JSON.stringify(prepared.secrets),
     // 打った字のまま。解いた字は BrowserHive WACZ の settings.userAgent に残る
     userAgent: prepared.userAgent === "" ? null : prepared.userAgent,
+    // 控えは BrowserHive WACZ の random/values.jsonl に、数は .result.json の random に残る
+    recordRandom: prepared.recordRandom,
     // 撮り方の digest (`035`)。前回からの変化が「同じ撮り方の前の回」を引く鍵。行の列から埋め直す道具と同じ関数
     recipeSha256: recipeDigestOf({
       scripts: prepared.scripts,
@@ -615,6 +621,7 @@ export const firstLevel = (
   variables: prepared.variables,
   ...secretsForFlow(prepared.secrets),
   userAgent: prepared.userAgent,
+  recordRandom: prepared.recordRandom,
   ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
 });
 

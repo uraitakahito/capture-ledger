@@ -276,6 +276,25 @@ export interface components {
          * @enum {string}
          */
         CaptureLogSource: "script" | "page" | "browserhive";
+        /**
+         * @description 乱数の控えの要約。`recorded` が true なら `documents`・`draws`・`truncated` を持ち、`skipped` を持たない。
+         *     false なら `skipped` だけを持つ。控えそのものは BrowserHive WACZ の `random/values.jsonl` に在る。
+         */
+        CaptureRandom: {
+            /** @description 控えを WACZ に残したか。 */
+            recorded: boolean;
+            /** @description `random/values.jsonl` の文書の行 (控えた文書 1 つにつき 1 行) の数。 */
+            documents?: number;
+            /** @description `random/values.jsonl` の乱数の行 (頁の JS が受け取った値 1 つにつき 1 行) の数。 */
+            draws?: number;
+            /**
+             * @description 行が欠けうるか。上限 (同じ JS のファイル・同じ関数は 1 文書で 1,000 回・1 文書で 50,000 回・ファイルは 2 MiB) で
+             *     行を入れなかったか、控えるのをやめたか、頁から届いた行が全部揃ったと言えないとき true。
+             */
+            truncated?: boolean;
+            /** @description 控えなかった理由。2 つ以上が当たるときは、この並びで先の物。 */
+            skipped?: components["schemas"]["RandomSkipped"];
+        };
         /** @description Capture の要求。取り込みの中身を全部ここで決める —— 応答は結果そのもので、受理の印は無い。 */
         CaptureRequestContent: {
             /**
@@ -387,6 +406,15 @@ export interface components {
              *     省略と空はどちらも「残す物は無い」で、効いた形は archive の `settings.secretArchive` に残る。
              */
             secretArchive?: components["schemas"]["SecretArchive"];
+            /**
+             * @description 頁の JS が受け取った乱数 (`Math.random`・`crypto.getRandomValues`・`crypto.randomUUID` の値) を、値を変えずに
+             *     控え、BrowserHive WACZ の `random/values.jsonl` に残す。省略は false で、控えるための物を頁に 1 つも入れない。
+             *     true なら、頁の JS より先に控えるスクリプト (BrowserHive WACZ の `random/recorder.js` にそのまま残る) を、
+             *     取り込みのページと同じ process の枠 (別サイトの iframe は除く) に入れる。控えた数は答えの `random` と
+             *     `datapackage.json` の `browserhive:capture.random` に在る。`captureFormats.wacz` と一緒のときだけ有効で、
+             *     wacz の無い要求で true なら 400。シークレットを渡した取り込みでは、`crypto` の 2 つの値を控えない (呼んだことと長さだけ)。
+             */
+            recordRandom?: boolean;
         };
         /** @description Capture の応答。結果そのものと、それを記録できたか。 */
         CaptureResponseContent: {
@@ -491,6 +519,13 @@ export interface components {
              *     ファイルで、署名の下に無い。後から足した欄で、必須にしていない。
              */
             failureScreenshot?: string;
+            /**
+             * @description 頁の JS が受け取った乱数の控え (`recordRandom`) の要約。`status` が `success` で WACZ を作ったときだけ入り、
+             *     その BrowserHive WACZ の `datapackage.json` の `browserhive:capture.random` と同じ物。控えた取り込みは
+             *     `recorded: true` と行の数、控えなかった取り込みは `recorded: false` と理由 (`skipped`)。
+             *     後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。
+             */
+            random?: components["schemas"]["CaptureRandom"];
         };
         /**
          * @description capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が
@@ -832,6 +867,15 @@ export interface components {
             /** @description 書けなかった理由。書き込み先から始まる。 */
             error: string;
         };
+        /**
+         * @description 乱数を控えなかった理由。
+         *
+         *     - `not-requested`: 要求が `recordRandom` を頼まなかった。
+         *     - `withheld`: 方針が主文書を伏せた (`document.withheld`)。控えは頁から読んだ物なので残さない。
+         *     - `failed`: 頼まれたが、控える仕組みを頁に入れられなかった。
+         * @enum {string}
+         */
+        RandomSkipped: "not-requested" | "withheld" | "failed";
         /**
          * @description 節目のスクリーンショットを残さなかった理由。2 つ以上が当たるときは、この並びで先の物。
          *

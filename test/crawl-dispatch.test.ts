@@ -47,6 +47,7 @@ const CRAWL: DispatchedCrawl = {
   secrets: { api_token: "f/waggle_secrets/api_token" },
   secretArchive: { api_token: "keep" },
   userAgent: "{chrome} BrowserHive",
+  recordRandom: true,
 };
 
 const SINK = {
@@ -88,6 +89,7 @@ describe("webhook の本文", () => {
       secrets: CRAWL.secrets,
       secret_archive: CRAWL.secretArchive,
       user_agent: CRAWL.userAgent,
+      record_random: true,
     });
   });
 
@@ -106,6 +108,10 @@ describe("webhook の本文", () => {
    */
   it("頼まれた User-Agent が無ければ、空の字を鍵ごと送る（省くと crawl_host が null を受けて投げる）", () => {
     expect(flowArgs({ ...CRAWL, userAgent: "" })).toMatchObject({ user_agent: "" });
+  });
+
+  it("乱数の控えを頼まなければ、false を鍵ごと送る（省くと flow が null を受ける）", () => {
+    expect(flowArgs({ ...CRAWL, recordRandom: false })).toMatchObject({ record_random: false });
   });
 
   it("変数もシークレットも空なら、空の object を鍵ごと送る", () => {

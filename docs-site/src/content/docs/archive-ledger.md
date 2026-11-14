@@ -362,7 +362,7 @@ the crawl as finished half-way.
 `rules`, `maxDepth`, `maxPages`, `perHostDelayMs`,
 `hostParallelism`, `scripts` (what runs in the page), `variables` (per-crawl values the
 scripts declared — see [Capture options](/capture-ledger/capture-options/#per-crawl-values)) and
-`userAgent` (see the same page).
+`userAgent` and `recordRandom` (see the same page).
 An unknown key is **400**, not silently dropped.
 
 Capture formats are deliberately not accepted from the caller: they are part of
@@ -765,8 +765,8 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 - `page` is the list's shape plus the submit and finish times the flow measured (`submitted_at` and `finished_at` of
   `crawl_pages`).
 - `capture` picks the members of `.result.json` a timeline needs: `status`, `timestamp`, `captureProcessingTimeMs`,
-  `httpStatusCode`, `errorDetails`, `settle`, `waczStats`, `completeness`, `document`, `windowsNotOpened` and
-  `screenshots`. Nested objects are passed through as written, and a member the capture does not have is absent
+  `httpStatusCode`, `errorDetails`, `settle`, `waczStats`, `completeness`, `document`, `windowsNotOpened`,
+  `screenshots` and `random`. Nested objects are passed through as written, and a member the capture does not have is absent
   (`failureScreenshot` is the one exception, described below). `timestamp` is when the
   capture ended, so `timestamp − captureProcessingTimeMs` is when it began. That can differ by tens of milliseconds
   from the origin of the log's `ms` (the first line's `at − ms`).
@@ -789,6 +789,14 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   passes the entries through as written, and their shape is BrowserHive's contract (`StageScreenshot` in the copy).
   **The pictures themselves are not in this answer.** They are inside the BrowserHive WACZ, and whoever may view the WACZ
   (`can_view`) reads them from it. For earlier captures, and for captures that did not succeed, the member is absent.
+- `capture.random` sums up the random values BrowserHive noted for the page's JS (the crawl's
+  [`recordRandom`](/capture-ledger/capture-options/#recording-random-values)). BrowserHive writes it into `.result.json` from
+  v31.1.0, for a capture that succeeded and built a WACZ, whether or not the crawl asked: a capture that recorded has
+  `recorded: true` with `documents`, `draws` and `truncated`; one that did not has `recorded: false` and the reason
+  (`skipped`: `not-requested`, `withheld` or `failed`). capture-ledger passes it through as written; its shape is
+  BrowserHive's contract (`CaptureRandom` in the copy). The values themselves are inside the BrowserHive WACZ, in
+  `random/values.jsonl`, and the same summary is in its `datapackage.json` as `browserhive:capture.random` (WACZ Profile
+  1.26.0). For earlier captures, and for captures that did not succeed, the member is absent.
 - `capture.failureScreenshot` is a boolean: whether there is a screenshot of the capture's failure **that the caller
   can be given**. The member of the same name in `.result.json` is a location in the store (`s3://…`), and
   **the location is never returned**. The picture comes from [the route below](#the-screenshot-of-a-failure). It is

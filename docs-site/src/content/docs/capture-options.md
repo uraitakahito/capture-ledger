@@ -82,7 +82,9 @@ evidence-grade archives" is answerable without opening a single zip.
 From BrowserHive v11.0.0 the server has **no roster of its own**: there are no
 built-in behaviors and no site-specific ones. Send nothing and nothing runs inside
 the page — not even the receptacle. A capture still succeeds and still produces an
-archive; it just never scrolled and never triggered lazy loading.
+archive; it just never scrolled and never triggered lazy loading. The one thing BrowserHive
+puts in on its own is its recorder of random values, and only for a crawl that asks for it
+([`recordRandom`](#recording-random-values)): it goes in before the page's JS.
 
 **That is why the scripts live here.** The only place that can hold a default is
 the side that decides what a crawl runs, so capture-ledger keeps a `scripts` table
@@ -449,7 +451,7 @@ The old CLI mapped a flag onto every field of BrowserHive's `CaptureRequest`:
 `--device-pixel-ratios`, `--operation-delay-ms`, `--dismiss-banners`,
 `--accept-language`, `--session`. **None of those exist any more.** Beyond
 `captureFormats`, `signing`, the scripts above with their per-crawl values
-(`variables` and declared secrets) and `userAgent`, capture-ledger sends nothing
+(`variables` and declared secrets), `userAgent` and `recordRandom`, capture-ledger sends nothing
 about how a page is rendered — everything unsent falls to whatever that BrowserHive
 server is configured to do, which is what BrowserHive's own documentation describes.
 
@@ -458,16 +460,17 @@ server is configured to do, which is what BrowserHive's own documentation descri
 Pacing and reach, in the `POST /api/crawls` body — see
 [Archive ledger](/capture-ledger/archive-ledger/#following-links):
 
-| Field             | Default                                                                       | Meaning                                                                   |
-| ----------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `rules`           | `[{ "follow": "same-origin" }]`                                               | Which links to follow, capture or skip                                    |
-| `maxDepth`        | 2                                                                             | How far to follow                                                         |
-| `maxPages`        | 30, never below the number of seeds                                           | Total pages                                                               |
-| `perHostDelayMs`  | 2000                                                                          | Gap between pages on one host                                             |
-| `hostParallelism` | 4                                                                             | Distinct hosts touched at once                                            |
-| `scripts`         | every enabled id, newest version, unless it is a site script for another host | What runs in the page (above)                                             |
-| `variables`       | none                                                                          | Per-crawl values the chosen scripts declared ([above](#per-crawl-values)) |
-| `userAgent`       | none (the browser's own value)                                                | The `User-Agent` to send ([below](#per-crawl-user-agent))                 |
+| Field             | Default                                                                       | Meaning                                                                           |
+| ----------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `rules`           | `[{ "follow": "same-origin" }]`                                               | Which links to follow, capture or skip                                            |
+| `maxDepth`        | 2                                                                             | How far to follow                                                                 |
+| `maxPages`        | 30, never below the number of seeds                                           | Total pages                                                                       |
+| `perHostDelayMs`  | 2000                                                                          | Gap between pages on one host                                                     |
+| `hostParallelism` | 4                                                                             | Distinct hosts touched at once                                                    |
+| `scripts`         | every enabled id, newest version, unless it is a site script for another host | What runs in the page (above)                                                     |
+| `variables`       | none                                                                          | Per-crawl values the chosen scripts declared ([above](#per-crawl-values))         |
+| `userAgent`       | none (the browser's own value)                                                | The `User-Agent` to send ([below](#per-crawl-user-agent))                         |
+| `recordRandom`    | `false`                                                                       | Keep the random values the page's JS received ([below](#recording-random-values)) |
 
 An unknown key is **400**, not silently dropped.
 
@@ -482,3 +485,23 @@ is in the archive's `settings.userAgent`.
 The form is the same as BrowserHive's contract: anything else is refused with `400 userAgent must be printable ASCII, at most 512 characters`. What the text says is up to whoever asks for it.
 
 The word `BrowserHive` changes two things. A site can only tell that BrowserHive took the page when the text has it: `{chrome}` alone reads like an ordinary Chrome. It also decides how robots.txt is read: under `BrowserHive` (its group first, then `*`) when present as a word (`NotBrowserHiveAtAll` does not count), and under `*` otherwise.
+
+### Recording random values
+
+`recordRandom: true` asks BrowserHive to note the random values the page's JS received (`Math.random`,
+`crypto.getRandomValues` and `crypto.randomUUID`) without changing them, and to keep them in the BrowserHive WACZ as
+`random/values.jsonl` ([BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.26.0/) 1.26.0).
+Left out, it is `false`, and BrowserHive puts nothing for it in the page. With it, BrowserHive puts its recorder in
+before the page's JS, and before the scripts above.
+
+The notes go only into the BrowserHive WACZ, so a deployment whose `CAPTURE_LEDGER_CAPTURE_FORMATS` has no `wacz` refuses it
+with `400 recordRandom needs wacz in CAPTURE_LEDGER_CAPTURE_FORMATS`, before any row is made. The crawl row keeps it
+(`crawls.record_random`), `GET /api/crawls/:id` returns it, and a schedule keeps it with the rest of what it pinned (a
+schedule made before it existed reads as `false`). How many values each capture kept is in that capture's trace
+(`capture.random`, see [Archive ledger](/capture-ledger/archive-ledger/#one-captures-trace)).
+
+It reaches BrowserHive through the flow's `record_random` input, which capture-scheduler reads from v0.41.0. An older flow
+drops it without a word and the pages are captured without recording.
+
+It does not change the recipe digest that pairs the runs of a schedule for change detection: recording leaves the page
+as it was, so the first run that records is still compared with the run before.

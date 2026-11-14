@@ -109,7 +109,13 @@ export const tickSchedules = async (deps: TickDeps): Promise<TickResult> => {
   } catch (err) {
     failure = `could not ask about secrets: ${messageOf(err)}`;
   }
-  const prepared: PreparedCrawl = { ...row.recipe, kind: "prepared", secrets };
+  // `040` より前に作った予定の撮り方には `recordRandom` が無い。頼んでいないので false
+  const prepared: PreparedCrawl = {
+    ...row.recipe,
+    kind: "prepared",
+    secrets,
+    recordRandom: row.recipe.recordRandom ?? false,
+  };
 
   const plan: FirePlan = {
     scheduleId: row.id,

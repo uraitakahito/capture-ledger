@@ -31,6 +31,7 @@ const crawlRow = (
     variables?: Record<string, string>;
     secrets?: Record<string, CrawlSecret>;
     userAgent?: string;
+    recordRandom?: boolean;
   } = {},
 ) => ({
   id: CRAWL,
@@ -52,6 +53,8 @@ const crawlRow = (
   variables: values.variables ?? {},
   secrets: values.secrets ?? {},
   userAgent: values.userAgent ?? null,
+  // 本物の行は必ず持つ (040 の NOT NULL DEFAULT false)
+  recordRandom: values.recordRandom ?? false,
 });
 
 interface Built {
@@ -463,6 +466,26 @@ describe("次の段を送る前に、シークレットの更新時刻を読み�
     expect((await report(none)).statusCode).toBe(200);
     await none.app.close();
     expect(none.dispatched[0]).toMatchObject({ depth: 1, userAgent: "" });
+  });
+
+  it("次の段にも、行に固定した乱数の控えの頼みを配る。頼まなかった行は false", async () => {
+    const asked = await build({
+      results: results(crawlRow(rules, [seed], { recordRandom: true })),
+      links,
+      windmill: windmillAnswering(LATER),
+    });
+    expect((await report(asked)).statusCode).toBe(200);
+    await asked.app.close();
+    expect(asked.dispatched[0]).toMatchObject({ depth: 1, recordRandom: true });
+
+    const none = await build({
+      results: results(crawlRow(rules, [seed])),
+      links,
+      windmill: windmillAnswering(LATER),
+    });
+    expect((await report(none)).statusCode).toBe(200);
+    await none.app.close();
+    expect(none.dispatched[0]).toMatchObject({ depth: 1, recordRandom: false });
   });
 
   it("同じ時刻なら何も書かない。前に気づいた時刻と同じでも書き直さない", async () => {

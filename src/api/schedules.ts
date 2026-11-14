@@ -62,6 +62,7 @@ const recipeOf = (prepared: PreparedCrawl): ScheduleRecipe => ({
   variables: prepared.variables,
   declaredSecrets: prepared.declaredSecrets,
   userAgent: prepared.userAgent,
+  recordRandom: prepared.recordRandom,
 });
 
 /** 予定 1 つの答え。一覧と 1 本で同じ形にする。 */

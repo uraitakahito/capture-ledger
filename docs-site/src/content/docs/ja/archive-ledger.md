@@ -314,7 +314,7 @@ Windmill の job の id を乱数で決めて持ちます。この id が **段�
 `seeds`（1 本以上の配列）は必須で、無ければ **400**。ほかに
 `rules` / `maxDepth` / `maxPages` / `perHostDelayMs` / `hostParallelism` / `scripts`（ページで
 走らせるもの）/ `variables`（スクリプトが宣言した、クロールごとの値。
-[キャプチャオプション](/capture-ledger/ja/capture-options/#クロールごとの値)を参照）/ `userAgent`（同じ頁を参照）。
+[キャプチャオプション](/capture-ledger/ja/capture-options/#クロールごとの値)を参照）/ `userAgent` / `recordRandom`（同じ頁を参照）。
 知らない鍵は**黙って落とさず** **400**。
 
 取り込む形式は意図して受けない —— それは「この配備が何をするか」の一部であって、
@@ -683,7 +683,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 - `page` は一覧と同じ形に、flow が測った投入と完了（`crawl_pages` の `submitted_at`・`finished_at`）を足した物です。
 - `capture` は `.result.json` から、時間軸を組むのに要る欄を選んだ物です: `status`・`timestamp`・
   `captureProcessingTimeMs`・`httpStatusCode`・`errorDetails`・`settle`・`waczStats`・`completeness`・`document`・
-  `windowsNotOpened`・`screenshots`。下位の object は書かれたままで、取り込みに無い欄は鍵ごとありません（`failureScreenshot`
+  `windowsNotOpened`・`screenshots`・`random`。下位の object は書かれたままで、取り込みに無い欄は鍵ごとありません（`failureScreenshot`
   だけは別で、下に書きます）。`timestamp` は取り込みが
   終わった時刻で、`timestamp − captureProcessingTimeMs` が始まりです。ログの行の `ms` の起点（最初の行の
   `at − ms`）とは、数十 ms ずれることがあります。
@@ -703,6 +703,13 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   持ちます。capture-ledger は項目を選び直さず、書かれたまま返します —— 形は BrowserHive の契約（写しの `StageScreenshot`）が
   決めます。**絵そのものは、この答えには入りません。** BrowserHive WACZ の中に在り、WACZ を見てよい者（`can_view`）が WACZ から読みます。
   それより前の取り込みと、成功しなかった取り込みでは、鍵ごとありません。
+- `capture.random` は、BrowserHive が頁の JS の乱数を控えたか（クロールの
+  [`recordRandom`](/capture-ledger/ja/capture-options/#乱数を控える)）の要約です。BrowserHive v31.1.0 から、成功して WACZ を作った
+  取り込みの `.result.json` に、頼んだかどうかに関わらず載ります。控えた取り込みは `recorded: true` と `documents`・`draws`・
+  `truncated`、控えなかった取り込みは `recorded: false` と理由（`skipped`: `not-requested`・`withheld`・`failed`）を持ちます。
+  capture-ledger は書かれたまま返します —— 形は BrowserHive の契約（写しの `CaptureRandom`）が決めます。控えた値そのものは
+  BrowserHive WACZ の中の `random/values.jsonl` に在り、同じ要約が `datapackage.json` の `browserhive:capture.random` にも在ります
+  （WACZ Profile 1.26.0）。それより前の取り込みと、成功しなかった取り込みでは、鍵ごとありません。
 - `capture.failureScreenshot` は、**呼び出し元が受け取れる**失敗の時点の絵が在るかどうかの真偽です。`.result.json`
   の同じ名前の欄は保管庫の場所（`s3://…`）ですが、**場所は返しません**。絵は[下のエンドポイント](#失敗の時点の絵)が返します。
   `true` になるのは、`.result.json` が設定の bucket の中の場所を言い、かつ呼び出し元が取り込みを出した組織に属している
