@@ -413,7 +413,8 @@ BrowserHive WARC に残したい宣言は、そう書きます。
 以前の CLI は BrowserHive の `CaptureRequest` のフィールドそれぞれに旗を対応させていました
 （`--device-pixel-ratios` / `--operation-delay-ms` / `--dismiss-banners` /
 `--accept-language` / `--session`）。**これらはもう存在しません。** `captureFormats`・
-`signing`・上のスクリプトを除けば、capture-ledger はページの描き方について何も送りません
+`signing`・上のスクリプトとそのクロールごとの値（`variables` と宣言したシークレット）・
+`userAgent` を除けば、capture-ledger はページの描き方について何も送りません
 —— 送らないものはすべて、その BrowserHive サーバの設定どおりになります（意味は
 BrowserHive 自身のドキュメントが定義します）。
 
