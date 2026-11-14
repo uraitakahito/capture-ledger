@@ -1,5 +1,5 @@
 /**
- * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 11 個。
+ * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 12 個。
  *
  * ## なぜ要るのか
  *
@@ -11,7 +11,7 @@
  *   起こす）は別の意味で、見ない
  * - **ページで走らせる物は「スクリプト」と書く。** 2026-10 に「目録」「台本」から
  *   そろえた（docs・コメント・試験の名前で 194 か所）。「目録」は browserhive と
- *   wacz-validator では WACZ の中の storage の目録を、「台本」は capture-workbench では代役の台本を指す。
+ *   wacz-validator では BrowserHive WACZ の中の storage/ の目録を、「台本」は capture-workbench では代役の台本を指す。
  *   capture-ledger はどちらも持たないので、両方とも全部見る（capture-workbench と capture-scheduler も見張っている）。
  *   置き場の呼び名は 2026-11 に「台帳」から「登録済みのスクリプト」へ替えた（下の「台帳」の項）
  * - **network は「通信」と書く。** 2026-11 に「網」から「通信」へそろえた（browserhive の docs・
@@ -65,6 +65,10 @@
  *   DB に入ったことは「capture-ledger に載る」、docs のページの題は「アーカイブの記録」。2 字がシステム・DB の行・
  *   置き場を兼ね、帳簿の語なのに「台帳が 400 で断る」と動く主語になっていた。許す語は無い。capture-workbench・
  *   capture-scheduler・browserhive も見張っている
+ * - **BrowserHive WACZ Profile に適合する WACZ は「BrowserHive WACZ」、WARC は「BrowserHive WARC」と書く。** 2026-11 に
+ *   （Jira CAPTURE-341）、別名を決めた。「BrowserHive の WACZ」「BrowserHive's WARC」は、作り手を言うだけの句と
+ *   Profile に適合することを言う句の区別が付かない。仕様の名前（「BrowserHive の WACZ Profile」）は当てない。
+ *   形の並びで見る（BH_ARTIFACT）
  *
  * ## 見ないもの
  *
@@ -91,6 +95,11 @@ const OKOSU =
 
 /** 「網」のうち許す熟語。足すときは、その形が network の意味を持ちえないことを確かめる。 */
 const AMI_ALLOWED = /安全網|網羅/gu;
+/**
+ * BrowserHive の成果物の、別名でない呼び方（CAPTURE-341）。「BrowserHive WACZ」「BrowserHive の WACZ Profile」には当たらない。
+ * 足すときは、その 2 つに当たらないことを確かめる。
+ */
+const BH_ARTIFACT = /BrowserHive\s*(?:の|['’]s)\s*WA(?:RC|CZ)(?!\s*Profile)/u;
 /** 「口」を、エンドポイント・ポート・phase・受け取り先の意味に取れない語。「注入口」は「入口」を含むので先に止める。 */
 const NOT_KUCHI = /切り口|入口|出口|窓口|口座/gu;
 
@@ -181,6 +190,13 @@ const RULES: Rule[] = [
     say:
       "「台帳」が残っています。システムは capture-ledger、置き場は「登録済みのスクリプト」（登録する・登録されていない）、" +
       "DB に入ったことは「capture-ledger に載る」と書きます（CAPTURE-186）。",
+  },
+  {
+    find: (line) => BH_ARTIFACT.test(line),
+    say:
+      "「BrowserHive の WACZ」の形が残っています。BrowserHive WACZ Profile に適合する物は「BrowserHive WACZ」" +
+      "「BrowserHive WARC」（英語は a BrowserHive WACZ）、作り手を言うだけなら「BrowserHive が作った WACZ」と書きます" +
+      "（CAPTURE-341）。",
   },
 ];
 

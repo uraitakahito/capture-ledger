@@ -134,7 +134,7 @@ scheme・`*` は書けません。対象サイトのあるスクリプトは**�
 あるときだけ走ります。照らすのは起点のホスト名との完全一致で、ポートは見ません。`example.com` と
 `www.example.com` は別のホストです。対象サイトの無いスクリプトは、今までどおりどこでも走ります。対象サイトは版の一部で、
 `options` と同じく、変えたら版が足されます。`import` が読む `catalog.json` の形は `capture-scripts/6`
-（capture-scripts v0.13.0 で、[クロールごとの値](#クロールごとの値)のシークレットの宣言に、値を WARC に残すかの `archive` が
+（capture-scripts v0.13.0 で、[クロールごとの値](#クロールごとの値)のシークレットの宣言に、値を BrowserHive WARC に残すかの `archive` が
 入った）で、`import` はそれより前の形を断ります。形の悪いホスト名や宣言も、DB に触る前に断ります。
 
 capture-scripts のサイト用のスクリプトの見本は `egov-law-search`（対象サイト `laws.e-gov.go.jp`・v0.4.0 から）です。
@@ -153,7 +153,7 @@ capture-scripts のサイト用のスクリプトの見本は `egov-law-search`�
 source・sha256・options・対象サイト・宣言 —— をクロールの行に書きます。以後の段はそれをそのまま使い、
 登録済みのスクリプトを引き直しません。長いクロールの途中で版を足しても、後半のページで走るものは
 変わりません。[クロールごとの値](#クロールごとの値)も同じように固定します。`variables` は値ごと、
-`secrets` は名前を結んだ Windmill の変数の path と、値を WARC に残すかを。
+`secrets` は名前を結んだ Windmill の変数の path と、値を BrowserHive WARC に残すかを。
 
 | `scripts`                                                         | 走るもの                                                                                                               |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
@@ -267,7 +267,7 @@ ts-compile-service が答え、flow が報告（`POST /api/crawls/:id/pages` の
   （構文は見ます）。
 - **[Zod](https://zod.dev/) を読めます。** 先頭の文に `import { z } from "zod"` か `import * as z from "zod/mini"`
   を書きます。ts-compile-service が使う名前だけを JS に束ねるので、スクリプトごとに 85 KB ほど増え（`zod/mini` は
-  15 KB）、WACZ の `behaviors/custom.jsonl` にもその大きさで残ります。形が合わなくてもクロールは成功のままなので、
+  15 KB）、BrowserHive WACZ の `behaviors/custom.jsonl` にもその大きさで残ります。形が合わなくてもクロールは成功のままなので、
   `parse` より `safeParse` と `__bh.log.error` を使います。`preload` では使えません（`BH0004`）。
   書き方は capture-scripts の README の「Zod」。
 - **`POST /api/crawls` の本文は、全体で 1 MiB までです。** 超えると、何かを検査する前に 413 で断ります。
@@ -324,10 +324,10 @@ Windmill に「在るか・secret か」を訊き、**値は読まずに**（`va
 隠せるのは記録からだけで、ページの JS からは読めますし、値を受け取ったサイトには届いています。次の段を送る前に capture-ledger は
 `editedAt` を読み直し、変わっていてもクロールは止めず、`rotated`（気づいた段と新しい時刻）に残します。
 
-**WARC の中でも、値は既定で隠れます**（BrowserHive v29.0.0）。スクリプトが値を通信に載せても（URL・見出し・本文）、
+**BrowserHive WARC の中でも、値は既定で隠れます**（BrowserHive v29.0.0）。スクリプトが値を通信に載せても（URL・見出し・本文）、
 サイトが値を返しても、BrowserHive が WARC のレコードの中と外（文書の URL・ページの文字と題・写し・ツリー・`.links.json`）で
 `***` に置き換えます。置き換えるのは値と、その符号化した形だけで、値から作った物（ハッシュ・暗号文）は追いません。値を
-WARC に残したい宣言は、そう書きます。
+BrowserHive WARC に残したい宣言は、そう書きます。
 
 ```json
 {
@@ -374,7 +374,7 @@ WARC に残したい宣言は、そう書きます。
 | `400 formats that cannot hide secrets`（`formats`・`names`・`hint`・`hints`）     | クロールが送るシークレットに隠す物が在り、この配備の形式に `png`・`webp`・`html`・`mhtml` がある                    |
 
 どれもクロールは立ちません。`GET /api/crawls/:id` は `variables`（値ごと）と `secrets`
-（`[{ name, path, editedAt, rotated, archive }]`。名前順。`archive` は値を WARC に残すなら `"keep"`、隠すなら `null`）を返します。
+（`[{ name, path, editedAt, rotated, archive }]`。名前順。`archive` は値を BrowserHive WARC に残すなら `"keep"`、隠すなら `null`）を返します。
 
 ### 断りの文を、人にもプログラムにも（`hint`・`hints`）
 

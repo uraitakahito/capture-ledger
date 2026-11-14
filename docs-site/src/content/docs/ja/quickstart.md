@@ -299,11 +299,11 @@ open http://127.0.0.1:7080/
 [capture-workbench](https://github.com/uraitakahito/capture-workbench) は **1 行 = 1 本のクロール**で、
 状態・撮れた数・WACZ の数と、run（Windmill）と 2 つの再生（[replayweb-server](https://github.com/uraitakahito/replayweb-server) の「ReplayWeb.page ↗」と
 [capture-player](https://github.com/uraitakahito/capture-player) の「Web Capture ↗」）への行き先が並びます。
-アーカイブの画面では、行の「検証」から **撮れたものが WACZ の仕様どおりか**を見られます
+アーカイブの画面では、行の「検証」から **撮れたものが WACZ 1.1.1 と [BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.25.0/ja/) に適合するか**を見られます
 （[wacz-validator](https://github.com/uraitakahito/wacz-validator) が答えます。
 capture-ledger が署名した URL を渡すので、**store の鍵はどこにも増えません**）。
 行の「開く」で **WACZ の中身**も見られます —— ファイルの木、行、field に割った 1 行、
-WARC のレコードと画像。撮らなかった・撮れなかった記録（`WARC-Type: metadata`）も、そこに出ます。
+WARC のレコードと画像。撮らなかった・撮れなかった物について BrowserHive が書いた記録（`WARC-Type: metadata`）も、そこに出ます。
 **トークンを貼る必要はありません** —— あちらが自分の app client `workbench` で手元の IdP にサインインします
 （手元では境界ではありません。Floci の管理の API は、届くものなら誰にでも利用者を作らせ、トークンを出します）。
 
@@ -352,7 +352,7 @@ curl -fsS http://localhost:50051/status | jq '{busy, browser: .browser.url}'
 `"busy": true` ならその browser はページの途中です。もう 1 つは `localhost:50052`。
 
 成果物は同梱の SeaweedFS バケット (`browserhive`) に置かれます。命名規則や
-WACZ の中身は BrowserHive のストレージのページにあります。
+BrowserHive WACZ の中身は BrowserHive のストレージのページにあります。
 
 ### 409 が続くとき
 

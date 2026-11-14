@@ -395,7 +395,7 @@ try {
   writeFileSync(join(withParams, "scripts", "x.ts"), A);
   run = cli(["import", withParams]);
   check(
-    "024: import は宣言を版に入れ、読む値を言う（WARC に残すシークレットは keep と添える）",
+    "024: import は宣言を版に入れ、読む値を言う（BrowserHive WARC に残すシークレットは keep と添える）",
     run.status === 0 && run.stdout.includes("値:query,api_token(秘・keep)!"),
     why(run),
   );
@@ -438,7 +438,7 @@ try {
         ],
       }),
     );
-  // archive だけを外す (残す → 隠す)。版を足さないと、既定に残った古い版が値を WARC に残し続ける
+  // archive だけを外す (残す → 隠す)。版を足さないと、既定に残った古い版が値を BrowserHive WARC に残し続ける
   declare([declared[0], { name: "api_token", kind: "secret", required: true, summary: "鍵" }]);
   run = cli(["import", withParams]);
   check(

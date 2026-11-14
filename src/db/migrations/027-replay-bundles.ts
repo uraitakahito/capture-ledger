@@ -28,7 +28,7 @@
  * (リダイレクトの後) を正規化した物 (`crawl/scope.ts` の `parseHttpUrl` と同じ)。写しの行は空。
  *
  * **主キーは (archive_id, ordinal)。** `ordinal` は pages.jsonl の中の何番目の頁の行か (0 から)。行の `id` は
- * BrowserHive が WACZ の中で一意に振るが、契約の外の WACZ では欠けうるので、鍵にしない —— 一意の制約にすると、
+ * BrowserHive が WACZ の中で一意に振るが、BrowserHive WACZ でない WACZ では欠けうるので、鍵にしない —— 一意の制約にすると、
  * 重複した 1 本のために検めが落ち続ける。WACZ は書き換わらないので、何番目かは変わらない。
  *
  * `ts` を text で持つのは、行のまま写すため (合本の約束)。timestamptz に通すと `…57Z` が `…57.000Z` に変わる。

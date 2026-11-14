@@ -7,9 +7,9 @@
  *
  * ## 2 種類の値
  *
- * - **変数** はクロールの頼み (`variables`) で渡され、記録に値が残る (WACZ の `settings.variables`)。
+ * - **変数** はクロールの頼み (`variables`) で渡され、記録に値が残る (BrowserHive WACZ の `settings.variables`)。
  * - **シークレット** は頼みに欄が無い。スクリプトが宣言した名前を、Windmill の secret 変数
- *   `f/waggle_secrets/<名前>` に結ぶ。capture-ledger は在るかを訊くだけで、値は flow の `crawl_host` が解く。値を WARC に
+ *   `f/waggle_secrets/<名前>` に結ぶ。capture-ledger は在るかを訊くだけで、値は flow の `crawl_host` が解く。値を BrowserHive WARC に
  *   残すかも宣言が決める (`archive: "keep"`。省けば BrowserHive が隠す)。
  *
  * ## 宣言が決める
@@ -49,7 +49,7 @@ export interface DeclaredSecret {
   required: boolean;
   /** 宣言したスクリプトの id (その場の TS は `inline-<名前>`)。 */
   declaredBy: string[];
-  /** 値を WARC に残すなら `"keep"`。無ければ隠す。宣言どうしで食い違えば、ここまで来ない (conflicting params)。 */
+  /** 値を BrowserHive WARC に残すなら `"keep"`。無ければ隠す。宣言どうしで食い違えば、ここまで来ない (conflicting params)。 */
   archive?: "keep";
 }
 
@@ -62,7 +62,7 @@ interface Declaration {
   schemas: Map<string, ParamSchema>;
   /**
    * 宣言された `archive` (省いた宣言は `"hide"`)。2 つ在れば、残すか隠すかを決められない —— 片方に倒すと、
-   * 残すつもりの値が消えるか、隠すつもりの値が WARC に残る。
+   * 残すつもりの値が消えるか、隠すつもりの値が BrowserHive WARC に残る。
    */
   archives: Set<"keep" | "hide">;
   required: boolean;
@@ -225,7 +225,7 @@ export const formatsRefusal = (
   const withheld = hint(
     "formats.cannotHideSecrets",
     `CAPTURE_LEDGER_CAPTURE_FORMATS の ${asked.join("・")} は値を置き換えられない (BrowserHive が断る)。` +
-      `形式から外すか、値を WARC に残すなら宣言に archive: "keep" と書く`,
+      `形式から外すか、値を BrowserHive WARC に残すなら宣言に archive: "keep" と書く`,
     { formats: asked },
   );
   return {

@@ -746,7 +746,7 @@ One route returns what happened, and when, during a single capture. The "trace" 
 ```sh
 curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 # → { "page": { …same shape as the list…, "submittedAt": "2026-11-04T05:12:00.012Z", "finishedAt": "2026-11-04T05:12:15.201Z" },
-#     "archive": { "id": "a1b2…", "objectKey": "…/….wacz" },
+#     "archive": { "id": "a1b2…", "objectKey": "…/….browserhive.wacz" },
 #     "capture": { "status": "success", "timestamp": "2026-11-04T05:12:15.108Z", "captureProcessingTimeMs": 14873,
 #                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … },
 #                  "screenshots": [ { "stage": "after-load", "url": "urn:browserhive:screenshot:after-load:https://…/",
@@ -779,15 +779,15 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   a timed-out or failed capture has it too (with no WACZ, so no line names a record). capture-ledger does not pick
   members of a line; it passes the lines through as written, and their shape is BrowserHive's contract
   (`CaptureTraceLine` in the copy at `src/rpc/generated/browserhive/openapi.json`). For earlier captures, and for
-  captures that did not ask for a WACZ, it is `null`. From BrowserHive v30.1.0 the same lines are also inside the WACZ,
-  in `trace/events.jsonl` (each line gains a leading `profile`; WACZ Profile 1.23.0). **The lines inside the WACZ are
+  captures that did not ask for a WACZ, it is `null`. From BrowserHive v30.1.0 the same lines are also inside the BrowserHive WACZ,
+  in `trace/events.jsonl` (each line gains a leading `profile`; [BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.23.0/) 1.23.0). **The lines inside the BrowserHive WACZ are
   the ones under the signature; the lines in this answer are a copy of them.**
 - `capture.screenshots` says what became of each stage screenshot (a WebP picture of the captured page's viewport).
   BrowserHive writes it into `.result.json` from v30.2.0, for a capture that succeeded and built a WACZ (WACZ Profile
-  1.24.0). A stage whose picture was kept names its record inside the WACZ (`url`, `date`, `record`, `bytes`); a stage
+  1.24.0). A stage whose picture was kept names its record inside the BrowserHive WACZ (`url`, `date`, `record`, `bytes`); a stage
   whose picture was not kept carries only the reason (`skipped`). capture-ledger does not pick members of an entry; it
   passes the entries through as written, and their shape is BrowserHive's contract (`StageScreenshot` in the copy).
-  **The pictures themselves are not in this answer.** They are inside the WACZ, and whoever may view the WACZ
+  **The pictures themselves are not in this answer.** They are inside the BrowserHive WACZ, and whoever may view the WACZ
   (`can_view`) reads them from it. For earlier captures, and for captures that did not succeed, the member is absent.
 - `capture.failureScreenshot` is a boolean: whether there is a screenshot of the capture's failure **that the caller
   can be given**. The member of the same name in `.result.json` is a location in the store (`s3://…`), and
@@ -809,7 +809,7 @@ no `no-log`. A store that cannot be reached is a 502.
 
 The gate is `maySubmit`, as for the log: whoever may start crawls can read any crawl's trace. That is wider than
 the permission to read a WACZ (`can_view`), so only the WACZ's key is narrowed by `can_view`. **This answer is not
-covered by a signature.** For evidence, the records inside the WACZ are the source.
+covered by a signature.** For evidence, the records inside the BrowserHive WACZ are the source.
 
 ### The screenshot of a failure
 
@@ -1032,7 +1032,8 @@ read the WACZ again. A document line also gets `keys` — the requested URL and 
 `parseHttpUrl` does — which is what replayweb-server looks a page up by. Snapshot lines have none.
 
 Each line also gets the sha256 and length of its `text` and the reason it was withheld
-(`textWithheld`), and the archive gets the BrowserHive and Chrome versions from `datapackage.json`
+(`textWithheld`), and the archive gets the BrowserHive and Chrome versions from `browserhive:capture.build.version` and
+`browserhive:capture.browser.product` in `datapackage.json`
 (`035`). Changes since last time ([scheduled crawls](/capture-ledger/schedules/)) can then call a page
 unchanged without opening its WACZ. The text itself is not kept in capture-ledger's database.
 `pnpm run changes:backfill` fills rows older than `035`.
@@ -1042,7 +1043,7 @@ A WACZ that recorded nothing — an empty index, or `waczStats.totalRecorded` of
 answer, a 416. `resources` starts with the seeds' WACZs, then goes by depth and capture time — a
 fixed order, not a hint: the three WACZs replay tries for something a page does not hold are picked
 by name, not by this order. `initialPages`, the list replay shows first, holds document lines,
-seeds first. A line without an `id` (a WACZ from outside the contract) gets
+seeds first. A line without an `id` (in a WACZ that is not a BrowserHive WACZ) gets
 `<filename>#<its position>`, because replayweb-server cannot read a line whose `id` is not a string.
 
 ### Reading it back

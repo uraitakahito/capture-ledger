@@ -31,7 +31,7 @@
  * （`urn:browserhive:snapshot:<stage>:<文書の URL>`）。題と本文はその時点で読んだ物なので、
  * 検索前と検索後は別の 1 件として載せる。
  *
- * WACZ Profile 1.18.0 から、1 行目はいつでも取り込んだ文書の行（`stage` が無く、`url` は要求の URL）。
+ * BrowserHive WACZ Profile 1.18.0 から、1 行目はいつでも取り込んだ文書の行（`stage` が無く、`url` は要求の URL）。
  * 題と本文はスクリプトの後に読んだ物なので、after-behaviors の写しの行とほぼ同じ文になり、両方を載せると
  * 同じ語が 1 アーカイブで 2 回当たる。そこで、写しの行がある WACZ では文書の行を載せない
  * （{@link pagesToIndex}）。写しが 1 つも無い取り込み（本文を伏せた文書など）は、文書の行の 1 件だけ。
@@ -115,7 +115,7 @@ export const parsePagesJsonl = (raw: string): PageLine[] => {
  * 索引に載せる行を選ぶ。写しの行（`stage` を持つ行）があれば、それだけを載せ、文書の行（`stage` の無い行）は
  * 載せない。写しの行が無ければ、全部（文書の行の 1 件）を載せる。
  *
- * 写しの行だけの WACZ（Profile 1.17.0 まで）も、写しの無い WACZ も、載せる件数は前と変わらない。
+ * 写しの行だけの BrowserHive WACZ（WACZ Profile 1.17.0 まで）も、写しの無い WACZ も、載せる件数は前と変わらない。
  */
 export const pagesToIndex = (pages: readonly PageLine[]): PageLine[] => {
   const staged = pages.filter((page) => typeof page.stage === "string" && page.stage !== "");

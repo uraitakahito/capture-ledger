@@ -63,7 +63,7 @@ export interface CrawlBody {
   seeds?: string[];
   /**
    * クロールごとの変数 (名前 → 文字列)。スクリプトが宣言した名前 (`params` の `variable`) だけを渡せ、
-   * 行に固定されて段ごとに配られ、WACZ の `settings.variables` に**値が残る**。シークレットには欄が無い ——
+   * 行に固定されて段ごとに配られ、BrowserHive WACZ の `settings.variables` に**値が残る**。シークレットには欄が無い ——
    * 宣言した名前を Windmill の変数に結ぶ (`crawl/values.ts`)。
    */
   variables?: Record<string, string>;
@@ -189,7 +189,7 @@ export const CRAWL_BODY_SCHEMA = {
                     kind: { type: "string", enum: ["variable", "secret"] },
                     required: { type: "boolean" },
                     summary: { type: "string" },
-                    // 値を WARC に残すか (capture-scripts の `/6`)。省けば BrowserHive が隠す
+                    // 値を BrowserHive WARC に残すか (capture-scripts の `/6`)。省けば BrowserHive が隠す
                     archive: { type: "string", enum: ["keep"] },
                   },
                 },

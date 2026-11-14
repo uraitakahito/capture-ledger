@@ -275,7 +275,7 @@ interface LevelBody {
 
 /**
  * `GET /api/crawls/:id` が返すシークレットの形。名前順の列で、値は無い。`archive` は宣言の写しで、`"keep"` なら
- * 値を WARC に残し、`null` なら BrowserHive が隠す (v29.0.0 から)。
+ * 値を BrowserHive WARC に残し、`null` なら BrowserHive が隠す (v29.0.0 から)。
  */
 const secretsOf = (
   secrets: Readonly<Record<string, CrawlSecret>>,
@@ -549,7 +549,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           // id だけだと、後から登録済みのスクリプトを書き換えたときに「何が走ったのか」を
           // このログから言えなくなる。
           scripts: prepared.scripts.map((script) => `${script.id}@${String(script.version)}`),
-          // 値は出さない。変数は行と WACZ に在り、シークレットの値は capture-ledger を通らない
+          // 値は出さない。変数は行と BrowserHive WACZ の settings.variables に在り、シークレットの値は capture-ledger を通らない
           variables: Object.keys(prepared.variables),
           secrets: Object.keys(prepared.secrets),
         },
@@ -772,11 +772,11 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           depth: page.depth,
           reason: page.skipReason,
         })),
-        // クロールごとの値。変数は値ごと (WACZ の settings.variables にも残る)。シークレットは名前・path・
-        // 始めたときの更新時刻と、途中で替わったなら気づいた段と新しい時刻と、WARC に残すか (archive)。値は無い
+        // クロールごとの値。変数は値ごと (BrowserHive WACZ の settings.variables にも残る)。シークレットは名前・path・
+        // 始めたときの更新時刻と、途中で替わったなら気づいた段と新しい時刻と、BrowserHive WARC に残すか (archive)。値は無い
         variables: crawl.variables,
         secrets: secretsOf(crawl.secrets),
-        // 打った字のまま。指定なしは null。解いた字は WACZ の settings.userAgent に在る
+        // 打った字のまま。指定なしは null。解いた字は BrowserHive WACZ の settings.userAgent に在る
         userAgent: crawl.userAgent,
       });
     },

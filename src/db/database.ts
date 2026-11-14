@@ -44,7 +44,7 @@ export interface ArchivesTable {
   inspectedAt: ColumnType<Date | null, never, string>;
   /** その WACZ が最初に入った合本の版 (`027`)。 */
   replayBundleRev: ColumnType<number | null, never, number>;
-  /** 撮った BrowserHive の版 (`035`。WACZ の `datapackage.json` の `browserhive:capture.build.version`)。検めたときに入る。 */
+  /** 撮った BrowserHive の版 (`035`。BrowserHive WACZ の `datapackage.json` の `browserhive:capture.build.version`)。検めたときに入る。 */
   browserhiveVersion: ColumnType<string | null, never, string | null>;
   /** 撮った Chrome の版 (`035`。同じく `browser.product`)。 */
   browserVersion: ColumnType<string | null, never, string | null>;
@@ -185,7 +185,7 @@ export interface CrawlsTable {
   scripts: ColumnType<CrawlScript[], string | undefined, string>;
   /**
    * 頼みで渡された変数 (名前 → 文字列。`024`)。スクリプトの宣言 (`params`) に照らして受け、行に固定する。
-   * 段ごとに flow へ運ばれ、BrowserHive が WACZ の `settings.variables` に**値を書く**。
+   * 段ごとに flow へ運ばれ、BrowserHive が `datapackage.json` の `browserhive:capture.settings.variables` に**値を書く**。
    *
    * 書くときは JSON の文字列 (`scripts` と同じ扱い)。後から書き換えない。
    */
@@ -197,7 +197,7 @@ export interface CrawlsTable {
   userAgent: ColumnType<string | null, string | null, never>;
   /**
    * 宣言で結んだシークレット (名前 → path と `edited_at`。`024`)。**値は持たない** —— 解くのは flow の
-   * `crawl_host` で、capture-ledger が持つのは Windmill の変数の path と、始めたときの更新時刻と、値を WARC に残すか
+   * `crawl_host` で、capture-ledger が持つのは Windmill の変数の path と、始めたときの更新時刻と、値を BrowserHive WARC に残すか
    * (宣言の `archive`) だけ。段を送るたびに読み直し、変わっていれば `rotated` を書き足す (`CrawlSecret`)。
    *
    * 書くときは JSON の文字列。
@@ -339,7 +339,7 @@ export interface CrawlScript {
 }
 
 /**
- * クロールごとの値の種類。`variable` は記録に値が残る (WACZ の `settings.variables`)。`secret` は WACZ の settings に
+ * クロールごとの値の種類。`variable` は記録に値が残る (BrowserHive WACZ の `settings.variables`)。`secret` は BrowserHive WACZ の settings に
  * 名前しか残らず、値は BrowserHive が WARC からも既定で隠す (`ScriptParam.archive`)。
  */
 export type ParamKind = "variable" | "secret";
@@ -367,7 +367,7 @@ export interface ScriptParam {
   /** 値の形。`variable` だけが持つ (シークレットの値を capture-ledger は見ない)。 */
   schema?: ParamSchema;
   /**
-   * 値を WARC に残すか。`secret` だけが持ち、書けるのは `"keep"` だけ (capture-scripts の `/6`)。**省けば隠す**:
+   * 値を BrowserHive WARC に残すか。`secret` だけが持ち、書けるのは `"keep"` だけ (capture-scripts の `/6`)。**省けば隠す**:
    * BrowserHive (v29.0.0 から) が、スクリプトが通信に載せた値もサイトが返した値も `***` に置き換える。`keep` なら
    * 通信の記録に値のまま残る。capture-ledger は行に写し (`CrawlSecret.archive`)、段ごとに BrowserHive の `secretArchive` へ運ぶ。
    */
@@ -385,7 +385,7 @@ export interface CrawlSecret {
   editedAt: string | null;
   rotated: { depth: number; editedAt: string | null } | null;
   /**
-   * 宣言の `archive` の写し (`ScriptParam.archive`)。`"keep"` なら値を WARC に残し、無ければ隠す。段ごとに
+   * 宣言の `archive` の写し (`ScriptParam.archive`)。`"keep"` なら値を BrowserHive WARC に残し、無ければ隠す。段ごとに
    * BrowserHive の `secretArchive` に組む (`crawl/launch.ts` の `secretsForFlow`)。行に在る名前だけが flow へ行くので、
    * 任意で Windmill に無いシークレットの `keep` は、ここに無く、送られもしない。
    */

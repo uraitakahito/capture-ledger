@@ -88,7 +88,7 @@ export interface components {
         };
         /**
          * @description この server の build の指紋。build のときに焼き込んだ値で、実行時に git には訊かない。3 つとも
-         *     WACZ の `datapackage.json` (`browserhive:capture.build`) にも書かれ、署名されるバイト列に入る。
+         *     BrowserHive WACZ の `datapackage.json` (`browserhive:capture.build`) にも書かれ、署名されるバイト列に入る。
          *     `version` が `unknown` か `revision` が `dev` の build は、明示しない限り起動を拒む。
          */
         BuildInfo: {
@@ -285,8 +285,9 @@ export interface components {
              */
             url: string;
             /**
-             * @description 成果物のファイル名に入るラベル。制限は合計の長さだけで、
-             *     `{taskId}_{correlationId}[_{labels}].result.json` が 255 UTF-8 バイトを超える要求は server が拒む。
+             * @description 成果物のファイル名に入るラベル。制限は合計の長さだけで、いちばん長い拡張子を付けた
+             *     `{taskId}_{correlationId}[_{labels}].{拡張子}` が 255 UTF-8 バイトを超える要求は server が拒む
+             *     (いちばん長い拡張子は WACZ の `.browserhive.wacz`)。
              */
             labels?: string[];
             /** @description client 側の相関キー。labels と同じ規則でファイル名に入る。 */
@@ -366,7 +367,7 @@ export interface components {
              * @description この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。
              *     archive の `settings.secrets` には名前だけ (名前順) が残り、受け皿のコード (`behaviors/runtime.js`) は
              *     値を含まない。`secretArchive` に名前の無いシークレットは **隠す**: スクリプトが通信に載せた値も、サイトが
-             *     返した値も、WARC と WACZ と答えの中では `***` に置き換わる。隠す値は 8 字以上で、短い値は 400。
+             *     返した値も、BrowserHive WARC と BrowserHive WACZ と答えの中では `***` に置き換わる。隠す値は 8 字以上で、短い値は 400。
              *     隠す値のある要求は、PNG・WebP・HTML・MHTML と web storage の値を一緒に頼めず、取り込む URL に値を書けない
              *     (どれも 400)。隠せるのは記録からだけで、頁の JS からは読めるし、値を受け取ったサイトには届いている。
              *     値から作った物 (ハッシュ・署名) と、サイトが本文で返した token は追わない。
@@ -441,7 +442,7 @@ export interface components {
              */
             settle?: components["schemas"]["Settle"];
             /**
-             * @description ページから作るもの (PNG・WebP・HTML・links・MHTML と、WACZ の文字・題・ツリー) を、
+             * @description ページから作るもの (PNG・WebP・HTML・links・MHTML と、BrowserHive WACZ の文字・題・ツリー) を、
              *     どの文書から作ったか。`status` が `success` のときだけ入る。
              *     `withheld` があれば、`artifacts` にはページから作る形式の欄が無い (在るのは `wacz` だけ)。
              *     最初の読み込みの文書を `deny` が止めたなら、`wacz` も無い。
@@ -450,7 +451,7 @@ export interface components {
             /**
              * @description 頁が開こうとして、開かせなかったウィンドウの数。`status` が `success` のときだけ入る (0 のことがある)。
              *     取り込みは、頁にウィンドウを開かせない (頁にユーザー操作の印を渡さないので、browser が断る)。
-             *     WACZ を求めたなら、開こうとした先は WARC に `window: not-opened` の metadata として 1 つずつ在り、数は一致する。
+             *     WACZ を求めたなら、開こうとした先は BrowserHive WARC に `window: not-opened` の metadata として 1 つずつ在り、数は一致する。
              *     WACZ を求めない取り込みでも数える。
              */
             windowsNotOpened?: number;
@@ -472,9 +473,9 @@ export interface components {
             trace?: components["schemas"]["CaptureTrace"];
             /**
              * @description 節目のスクリーンショット (取り込みのページの viewport の絵。WebP) の、時点ごとの成り行き。`status` が
-             *     `success` で WACZ を作ったときだけ入り、その WACZ の `datapackage.json` の
+             *     `success` で WACZ を作ったときだけ入り、その BrowserHive WACZ の `datapackage.json` の
              *     `browserhive:capture.screenshots` と同じ物。項目は `after-load` と、スクリプトを送った取り込みでは
-             *     その後に `after-behaviors`。絵を残した時点は WARC のレコードを名指し、残さなかった時点は理由 (`skipped`) を言う。
+             *     その後に `after-behaviors`。絵を残した時点は BrowserHive WARC のレコードを名指し、残さなかった時点は理由 (`skipped`) を言う。
              *     絵を撮らない server (`--stage-screenshots` が切。既定) では、どの項目も `skipped: "disabled"`。
              *     後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。
              */
@@ -723,7 +724,7 @@ export interface components {
             failOnError?: boolean;
         };
         /**
-         * @description ページから作るものを、どの文書から作ったか。WACZ の `datapackage.json` の
+         * @description ページから作るものを、どの文書から作ったか。BrowserHive WACZ の `datapackage.json` の
          *     `browserhive:capture.document` と同じ形・同じ値 (WACZ を求めなくても結果には入る)。
          *
          *     文書は、撮る時点で主フレームに確定していた文書。要求の URL の文書とは限らない ——
@@ -882,7 +883,7 @@ export interface components {
             /** @description 1 タスクが同時に抱える保留リクエストの上限。 */
             maxPendingRequests: number;
             /**
-             * @description WARC 1 本の上限。組を書く前に、いまの本がこれ以上なら次の本 (archive/data-NNN.warc.gz) を開く。本文の上限ではない。
+             * @description WARC 1 本の上限。組を書く前に、いまの本がこれ以上なら次の本 (archive/data-NNN.browserhive.warc.gz) を開く。本文の上限ではない。
              *     後から足した欄なので最後に置き、`@default(1000000000)` (既定の 1 GB) で Smithy の互換の規則に沿わせてある。
              * @default 1000000000
              */
@@ -944,7 +945,7 @@ export interface components {
         };
         /**
          * @description 節目のスクリーンショット 1 つ。絵を残した時点は `url`・`date`・`record`・`bytes` を持ち、`skipped` を持たない。
-         *     残さなかった時点は `skipped` だけを持つ。絵は WARC の `resource` レコードで、WACZ の索引 (`indexes/index.cdxj`)
+         *     残さなかった時点は `skipped` だけを持つ。絵は BrowserHive WARC の `resource` レコードで、BrowserHive WACZ の索引 (`indexes/index.cdxj`)
          *     から `url` と `date` で引ける。ページ一覧 (`pages/pages.jsonl`) には載らない。
          */
         StageScreenshot: {
@@ -970,17 +971,17 @@ export interface components {
              *
              *     - `deny`: リクエストを送らない。相手のサーバは取り込みを知らない。
              *       主フレームの遷移 (直接・リダイレクトの先・ページの JS) と iframe の文書にも当てる
-             *       (ページはウィンドウを開かないので、ウィンドウの文書は無い。開こうとしたことは `windowsNotOpened` と WARC に残る)。
+             *       (ページはウィンドウを開かないので、ウィンドウの文書は無い。開こうとしたことは `windowsNotOpened` と BrowserHive WARC に残る)。
              *       WebSocket の handshake だけは止められず、当たる WebSocket を開いた取り込みは `policy` で失敗する。
              *     - `no-archive`: 送るが、request / response のレコードを書かない。
              *     - `no-body`: 送ってレコードも書くが、本文は入れない。
              *
              *     主文書 (ページを読む時点で主フレームに確定している文書) に方針が当たると、
              *     ページから作る形式 (PNG・WebP・HTML・links・MHTML) を 1 つも作らない (`deny`・`no-archive`・`no-body` のどれでも)。
-             *     WACZ の中の文字・題・アクセシビリティツリーも入れない。
+             *     BrowserHive WACZ の中の文字・題・アクセシビリティツリーも入れない。
              *     リダイレクトの中継や、遷移で去った文書にだけ当たった方針は、何も伏せない。
              *
-             *     `deny` と `no-archive` は、落としたことを WARC の metadata レコード (action と当たった
+             *     `deny` と `no-archive` は、落としたことを BrowserHive WARC の metadata レコード (action と当たった
              *     pattern) に残し、`waczStats.totalBlocked` に数える。`no-body` で省いた本文は
              *     `waczStats.totalSkippedUrlPolicy` に数え、大きさに関係なく上限による切り詰めとは記録しない
              *     (`completeness.truncatedUrls` に載らない)。
@@ -1129,7 +1130,7 @@ export interface components {
             /**
              * @description 記録を止めた時点でまだ終わっていなかった要求 (長く開いたままの接続など) と、
              *     browser が読み終えたのに、本文を取りに行っている最中で、待つ上限までに戻らなかった応答。
-             *     どちらも WARC には未完了の metadata として 1 つずつ残る (`incomplete: true`。
+             *     どちらも BrowserHive WARC には未完了の metadata として 1 つずつ残る (`incomplete: true`。
              *     `reason` は `stop-while-pending` か `stop-while-fetching-body`)。
              */
             totalIncomplete: number;
@@ -1147,14 +1148,14 @@ export interface components {
             totalSkippedUrlPolicy: number;
             /**
              * @description 本文は届いたのに、バイト列として得られなかったので、本文を持たずに記録した応答 (要求の関所が
-             *     応答の段で読めなかった・読み取りが失敗した)。WARC には `truncated: not-intercepted` の metadata が
+             *     応答の段で読めなかった・読み取りが失敗した)。BrowserHive WARC には `truncated: not-intercepted` の metadata が
              *     1 つずつ残り、URL は `completeness.uninterceptedUrls` に載る。上限を上げても戻らない。
              *     後から足した欄なので最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。
              * @default 0
              */
             totalNotIntercepted: number;
             /**
-             * @description 隠す値を含む文字でない本文を落として記録した応答。WARC には `truncated: secret` の metadata が
+             * @description 隠す値を含む文字でない本文を落として記録した応答。BrowserHive WARC には `truncated: secret` の metadata が
              *     1 つずつ残る。値を隠すと決めた結果なので、`completeness` のどの一覧にも載らない。
              *     後から足した欄なので最後に置き、`@default(0)` で Smithy の互換の規則に沿わせてある。
              * @default 0

@@ -247,7 +247,7 @@ export const readParams = (
         { name },
       );
     }
-    // シークレットの値を WARC に残すか。省けば BrowserHive が隠す。変数は値が settings.variables に必ず残るので、
+    // シークレットの値を BrowserHive WARC に残すか。省けば BrowserHive が隠す。変数は値が settings.variables に必ず残るので、
     // 選ぶ物が無い。**読んだら写す** —— 写し忘れると、keep と書いた宣言が黙って隠す側に倒れる
     if (archive !== undefined) {
       if (kind !== "secret") {
@@ -260,7 +260,7 @@ export const readParams = (
       if (archive !== "keep") {
         return refusal(
           "params.invalidArchive",
-          `params の ${name} の archive は "keep" だけ (省けば WARC から隠す。いまは ${JSON.stringify(archive)})`,
+          `params の ${name} の archive は "keep" だけ (省けば BrowserHive WARC から隠す。いまは ${JSON.stringify(archive)})`,
           { name, value: quoted(archive) },
         );
       }

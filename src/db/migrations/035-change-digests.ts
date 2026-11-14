@@ -6,7 +6,7 @@
  * - `archive_pages.text_sha256`・`text_chars`・`text_withheld`: 検めるときに `pages.jsonl` の行から入れる
  *   (`replay-bundle/inspect.ts`。もう読んでいる物なので、読み込みは増えない)。digest が同じページは WACZ を開かずに
  *   「同じ」と言える。**文字そのものは持たない** —— 文字は WACZ に在り、全文検索の索引も写しにすぎない
- * - `archives.browserhive_version`・`browser_version`: 撮った BrowserHive と Chrome の版 (WACZ の `datapackage.json`)。
+ * - `archives.browserhive_version`・`browser_version`: 撮った BrowserHive と Chrome の版 (BrowserHive WACZ の `datapackage.json` の `browserhive:capture`)。
  *   組の鍵には入れず、前と今で違えば差分の見出しに出す
  * - `crawls.recipe_sha256`: 撮り方の digest (`crawl/recipe-digest.ts`)。新しい行は `crawlValues` が入れ、古い行は
  *   `changes:backfill` が行の列から埋める。索引は「同じ予定・同じ撮り方の前の回」を引くため

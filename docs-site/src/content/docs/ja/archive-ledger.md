@@ -664,7 +664,7 @@ capture-ledger が持つのは 2 回目の `taskId` だけなので、1 回目�
 ```sh
 curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 # → { "page": { …一覧と同じ形…, "submittedAt": "2026-11-04T05:12:00.012Z", "finishedAt": "2026-11-04T05:12:15.201Z" },
-#     "archive": { "id": "a1b2…", "objectKey": "…/….wacz" },
+#     "archive": { "id": "a1b2…", "objectKey": "…/….browserhive.wacz" },
 #     "capture": { "status": "success", "timestamp": "2026-11-04T05:12:15.108Z", "captureProcessingTimeMs": 14873,
 #                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … },
 #                  "screenshots": [ { "stage": "after-load", "url": "urn:browserhive:screenshot:after-load:https://…/",
@@ -694,14 +694,14 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   WACZ を求めた取り込みの `.result.json` に載ります。時間切れ・失敗の取り込みにも在ります（そのときは WACZ が無いので、
   行はレコードを名指しません）。capture-ledger は行の欄を選び直さず、書かれたまま返します —— 行の形は BrowserHive の契約
   （写しの `src/rpc/generated/browserhive/openapi.json` の `CaptureTraceLine`）が決めます。それより前の取り込みと、
-  WACZ を求めなかった取り込みでは `null` です。BrowserHive v30.1.0 からは、同じ行が WACZ の中の `trace/events.jsonl` にも
-  在ります（各行の頭に `profile` が付くだけ。WACZ Profile 1.23.0）。**署名の下に在るのは WACZ の中の行で、この答えの行は
+  WACZ を求めなかった取り込みでは `null` です。BrowserHive v30.1.0 からは、同じ行が BrowserHive WACZ の中の `trace/events.jsonl` にも
+  在ります（各行の頭に `profile` が付くだけ。[BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.23.0/ja/) 1.23.0）。**署名の下に在るのは BrowserHive WACZ の中の行で、この答えの行は
   その写しです。**
 - `capture.screenshots` は、節目のスクリーンショット（取り込みのページの viewport の絵。WebP）の、時点ごとの成り行きです。
   BrowserHive v30.2.0 から、成功して WACZ を作った取り込みの `.result.json` に載ります（WACZ Profile 1.24.0）。絵を残した
-  時点は WACZ の中のレコードを名指し（`url`・`date`・`record`・`bytes`）、残さなかった時点は理由（`skipped`）だけを
+  時点は BrowserHive WACZ の中のレコードを名指し（`url`・`date`・`record`・`bytes`）、残さなかった時点は理由（`skipped`）だけを
   持ちます。capture-ledger は項目を選び直さず、書かれたまま返します —— 形は BrowserHive の契約（写しの `StageScreenshot`）が
-  決めます。**絵そのものは、この答えには入りません。** WACZ の中に在り、WACZ を見てよい者（`can_view`）が WACZ から読みます。
+  決めます。**絵そのものは、この答えには入りません。** BrowserHive WACZ の中に在り、WACZ を見てよい者（`can_view`）が WACZ から読みます。
   それより前の取り込みと、成功しなかった取り込みでは、鍵ごとありません。
 - `capture.failureScreenshot` は、**呼び出し元が受け取れる**失敗の時点の絵が在るかどうかの真偽です。`.result.json`
   の同じ名前の欄は保管庫の場所（`s3://…`）ですが、**場所は返しません**。絵は[下のエンドポイント](#失敗の時点の絵)が返します。
@@ -719,7 +719,7 @@ content-type の方針）が文書や画像やメディアに当たった取り�
 
 認可はログと同じ `maySubmit` です。クロールを始められる者は、どのクロールの経緯も読めます。WACZ の中身を読む許可
 （`can_view`）より広いので、WACZ の鍵だけを `can_view` で絞っています。**この答えは署名の下にありません。**
-示すための正は、WACZ の中の記録です。
+示すための正は、BrowserHive WACZ の中の記録です。
 
 ### 失敗の時点の絵
 
@@ -922,8 +922,8 @@ UUID でない・本文が `{depth}` でない）は索引のエンドポイン�
 `document.url`（リダイレクトの後）を `parseHttpUrl` と同じ形に正規化した物で、replayweb-server が
 頁を引く鍵です。写しの行には付けません。
 
-各行には、文字（`text`）の sha256 と長さ、伏せた理由（`textWithheld`）も入れ、`datapackage.json` から
-撮った BrowserHive と Chrome の版を `archives` に入れます（`035`）。前回からの変化（[定期実行](/capture-ledger/ja/schedules/)）は、
+各行には、文字（`text`）の sha256 と長さ、伏せた理由（`textWithheld`）も入れ、`datapackage.json` の
+`browserhive:capture.build.version` と `browserhive:capture.browser.product` から撮った BrowserHive と Chrome の版を `archives` に入れます（`035`）。前回からの変化（[定期実行](/capture-ledger/ja/schedules/)）は、
 digest が同じページの WACZ を開かずに「同じ」と言えます。文字そのものは capture-ledger の DB に持ちません。
 `035` より前の行は `pnpm run changes:backfill` が埋めます。
 
@@ -933,7 +933,7 @@ digest が同じページの WACZ を開かずに「同じ」と言えます。�
 先頭に、続けて深さ・撮った時刻の順です（決まった順にするためです。replay が、頁が持たない物を探す
 3 本は、この並びではなく WACZ の名前の順で選ばれます）。
 `initialPages`（replay が最初に見せる一覧）は文書の行で、起点が先頭です。
-行に `id` が無ければ（契約の外の WACZ）、`<filename>#<何番目の行か>` を振ります。replayweb-server は
+行に `id` が無ければ（BrowserHive WACZ でない WACZ）、`<filename>#<何番目の行か>` を振ります。replayweb-server は
 `id` が文字列でない行を読めないからです。
 
 ### 読み返す

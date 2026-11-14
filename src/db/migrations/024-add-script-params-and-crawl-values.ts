@@ -14,14 +14,14 @@
  * ## `crawls.variables` —— 頼みで渡された値
  *
  * 名前 → 文字列。`POST /api/crawls` が宣言に照らして受け、行に固定する。段ごとに flow へ運ばれ、BrowserHive が
- * WACZ の `settings.variables` に値を書く。
+ * BrowserHive WACZ の `settings.variables` に値を書く。
  *
  * ## `crawls.secrets` —— 結んだ先
  *
  * 名前 → `{ path, editedAt, rotated }`。値は無い。在るのは Windmill の変数の path と、始めたときの `edited_at`
  * (Windmill が答える更新時刻)。段を送るたびに読み直し、変わっていれば `rotated` に気づいた段の深さと新しい時刻を
  * 書く —— クロールの途中で鍵が替わったことを、後から行で読めるように。値を解くのは flow の `crawl_host`
- * (capture-scheduler) で、capture-ledger・webhook・WACZ・画面が持つのは名前と path だけ。
+ * (capture-scheduler) で、capture-ledger・webhook・BrowserHive WACZ（settings.secrets）・画面が持つのは名前と path だけ。
  *
  * ## 既定は空
  *

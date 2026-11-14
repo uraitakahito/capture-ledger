@@ -144,7 +144,7 @@ crawl's seeds is on one of those hosts. The seed's hostname is compared exactly 
 ignored, so `example.com` and `www.example.com` are different hosts. A script without `sites`
 runs anywhere, as before. `sites` is part of a version, like `options`: changing it adds a
 version. The `catalog.json` format `import` reads is `capture-scripts/6` (capture-scripts v0.13.0, which
-added `archive`, whether a secret's value stays in the WARC, to the declaration of
+added `archive`, whether a secret's value stays in the BrowserHive WARC, to the declaration of
 [per-crawl values](#per-crawl-values)); `import` refuses older formats, and refuses a malformed hostname or
 declaration before touching the database.
 
@@ -166,7 +166,7 @@ the result — id, version, phase, source, sha256, options, sites, params — on
 levels reuse that; the registered scripts are never consulted again. Adding a version halfway
 through a long crawl therefore cannot change what its later pages run. The crawl pins its
 [per-crawl values](#per-crawl-values) the same way: `variables` with their values, `secrets` with the
-Windmill variable each name was bound to and whether its value stays in the WARC.
+Windmill variable each name was bound to and whether its value stays in the BrowserHive WARC.
 
 | `scripts`                                                            | What runs                                                                                                                                     |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -288,7 +288,7 @@ Besides naming registered scripts, a `scripts` element can carry a script writte
 - **It can read [Zod](https://zod.dev/).** Start with `import { z } from "zod"` or
   `import * as z from "zod/mini"`. ts-compile-service bundles only the names in use into the
   JavaScript, which adds about 85 KB per script (15 KB for `zod/mini`), and `behaviors/custom.jsonl`
-  in the WACZ keeps it at that size. A crawl still succeeds when a value has the wrong shape, so use
+  in the BrowserHive WACZ keeps it at that size. A crawl still succeeds when a value has the wrong shape, so use
   `safeParse` and `__bh.log.error` rather than `parse`. `preload` cannot use it (`BH0004`).
   capture-scripts' README has the details under "Zod".
 - **The whole `POST /api/crawls` body is at most 1 MiB.** A larger one is a 413 before
@@ -353,11 +353,11 @@ or the log route for the page. Only the records are covered — the page's own J
 and the site that receives it has it. Before each later level the ledger re-reads `editedAt`; a change does not
 stop the crawl, but is recorded as `rotated` (the depth that noticed it and the new time).
 
-**In the WARC the value is hidden by default** (BrowserHive v29.0.0). When a script sends it over the network
+**In the BrowserHive WARC the value is hidden by default** (BrowserHive v29.0.0). When a script sends it over the network
 (in a URL, a header, a body) or the site sends it back, BrowserHive replaces it with `***` in the WARC records
 and outside them (the document URL, the page's text and title, the snapshots, the tree, `.links.json`). It
 replaces the value and its encoded forms only, not anything derived from it (a hash, a ciphertext). A
-declaration that should keep the value in the WARC says so:
+declaration that should keep the value in the BrowserHive WARC says so:
 
 ```json
 {
@@ -408,7 +408,7 @@ secret is `undefined` when nothing was passed, and the script falls back in its 
 
 None of these starts a crawl. `GET /api/crawls/:id` returns `variables` (with values) and `secrets`
 (`[{ name, path, editedAt, rotated, archive }]`, in name order; `archive` is `"keep"` when the value stays in
-the WARC and `null` when it is hidden).
+the BrowserHive WARC and `null` when it is hidden).
 
 ### A refusal's sentence, for people and for programs (`hint`, `hints`)
 

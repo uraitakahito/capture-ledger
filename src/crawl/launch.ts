@@ -87,16 +87,16 @@ export interface DispatchedCrawl {
   scripts: CrawlScript[];
   /**
    * クロールごとの変数 (名前 → 文字列)。**必ず載せる** (空なら `{}`)。行に固定した物を段ごとにそのまま配る。
-   * flow は運ぶだけで、BrowserHive が頁に渡して WACZ の `settings.variables` に値を書く。
+   * flow は運ぶだけで、BrowserHive が頁に渡して BrowserHive WACZ の `settings.variables` に値を書く。
    */
   variables: Record<string, string>;
   /**
    * 宣言で結んだシークレット (名前 → Windmill の変数の path)。**必ず載せる** (空なら `{}`)。値は無い ——
-   * 解くのは flow の `crawl_host` で、BrowserHive に送る直前に読む。capture-ledger・webhook・WACZ が持つのは名前と path だけ。
+   * 解くのは flow の `crawl_host` で、BrowserHive に送る直前に読む。capture-ledger・webhook・BrowserHive WACZ（settings.secrets）が持つのは名前と path だけ。
    */
   secrets: Record<string, string>;
   /**
-   * 値を WARC に残すシークレット (名前 → `"keep"`。宣言の `archive`)。**必ず載せる** (空なら `{}`)。BrowserHive の
+   * 値を BrowserHive WARC に残すシークレット (名前 → `"keep"`。宣言の `archive`)。**必ず載せる** (空なら `{}`)。BrowserHive の
    * `secretArchive` になり、無い名前の値は BrowserHive が隠す。**名前は `secrets` の部分集合** —— BrowserHive は
    * `secrets` に無い名前を 400 で断るので、行の同じ写しから組む (`secretsForFlow`)。`crawl_host` も、実際に解いた
    * 名前だけを残してから送る (二重の守り)。
@@ -139,7 +139,7 @@ export const toDispatched = ({
 });
 
 /**
- * flow へ渡すシークレットの 2 つの欄を、行の**同じ写し**から組む: 名前 → Windmill の変数の path と、値を WARC に残す
+ * flow へ渡すシークレットの 2 つの欄を、行の**同じ写し**から組む: 名前 → Windmill の変数の path と、値を BrowserHive WARC に残す
  * 名前 → `"keep"`。行が持つ更新時刻は渡さない (flow には要らない)。
  *
  * **2 つを別々に組まない。** `secretArchive` を宣言から組むと、任意で Windmill に無いシークレットの `keep` が
@@ -518,7 +518,7 @@ export const crawlValues = (
     // クロールごとの値。変数は値ごと、シークレットは path と更新時刻だけ (値は capture-ledger を通らない)
     variables: JSON.stringify(prepared.variables),
     secrets: JSON.stringify(prepared.secrets),
-    // 打った字のまま。解いた字は WACZ の settings.userAgent に残る
+    // 打った字のまま。解いた字は BrowserHive WACZ の settings.userAgent に残る
     userAgent: prepared.userAgent === "" ? null : prepared.userAgent,
     // 撮り方の digest (`035`)。前回からの変化が「同じ撮り方の前の回」を引く鍵。行の列から埋め直す道具と同じ関数
     recipeSha256: recipeDigestOf({
