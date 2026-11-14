@@ -315,8 +315,10 @@ export interface CrawlSchedulesTable {
  * 走らせるもの 1 本。**`scripts` の行から解決した写し**で、`crawls.scripts` と、そこから
  * flow へ渡す本文に、同じ形で出る。
  *
- * `sha256` は `scripts` の生成列をそのまま運ぶ。BrowserHive が `source` と照合して、
- * 食い違えば `INVALID_ARGUMENT` で拒む —— 運ぶ途中で入れ替わっていないか、だけを見る。
+ * `source` は TypeScript で、`sha256` は `scripts` の生成列 (その TS の hash) をそのまま運ぶ。
+ * これと `source` を照合するのは ts-compile-service で、食い違えば 409 で拒む —— 運ぶ途中で
+ * 入れ替わっていないか、だけを見る。BrowserHive が照らすのは変換後の JS とその hash で、
+ * この欄ではない (capture-ledger には段の報告から `jsSha256` として写る)。
  */
 export interface CrawlScript {
   id: string;

@@ -17,7 +17,9 @@
  * 制約で表せないので、どのみち解決はアプリ側の仕事になる。それなら解決した結果を
  * 書き残すほうが、後から読む側にも親切になる。
  *
- * 中身は `[{ id, version, phase, source, sha256, options }]` で、**並びが実行順**。
+ * この migration の時点の中身は `[{ id, version, phase, source, sha256, options }]` で、**並びが実行順**。
+ * 後から `sites` (`021`)・`params` (`024`)・`jsSha256` と `compiledWith` (段の報告から写す) が
+ * 増えた。いまの形は `db/database.ts` の `CrawlScript` を見ること。
  * `source` は TypeScript で、`sha256` は `scripts` の生成列 (その TS の hash) をそのまま写したもの。
  * これと `source` を照合するのは ts-compile-service で、BrowserHive が照らすのは変換後の JS の
  * hash —— capture-ledger には段の報告から `jsSha256` として写る (`crawl/compiled.ts`)。
