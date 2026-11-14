@@ -23,9 +23,11 @@
  * ## `sha256` は DB が数える
  *
  * 生成列にした (`capture_targets.url_hash` と同じ手)。**書く側が数えた値を信じない**
- * —— BrowserHive は受け取った `source` と `sha256` を照合して、食い違えば
- * `INVALID_ARGUMENT` で拒む。ここに人の手が入る余地を残すと、拒まれた理由が
+ * —— ts-compile-service は受け取った `source` (TS) と `sha256` を照合して、食い違えば
+ * 409 で拒む。ここに人の手が入る余地を残すと、拒まれた理由が
  * 「capture-ledger の数え間違い」でありうることになり、あの照合が何も言わなくなる。
+ * BrowserHive が照らすのは変換後の JS とその hash で、この列ではない
+ * (capture-ledger には `crawls.scripts` の `jsSha256` として写る)。
  *
  * ## `phase` は 2 つだけ
  *
@@ -58,9 +60,11 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     .addColumn("id", "text", (col) => col.notNull().check(sql`id <> '' AND id = btrim(id)`))
     .addColumn("version", "integer", (col) => col.notNull().check(sql`version > 0`))
     .addColumn("phase", "text", (col) => col.notNull().check(sql`phase IN ('preload', 'behavior')`))
-    // そのまま評価される JS。BrowserHive はテキストとして受け取る。
+    // TypeScript (capture-scripts の .ts)。flow の compile の段で ts-compile-service が JS にし、
+    // BrowserHive が受け取るのはその JS。
     .addColumn("source", "text", (col) => col.notNull().check(sql`source <> ''`))
-    // GENERATED —— 書く側は触れない。BrowserHive の照合の相手がこれ。
+    // GENERATED —— 書く側は触れない。TS の hash で、ts-compile-service の照合の相手がこれ。
+    // BrowserHive が照らすのは変換後の JS の hash (`crawls.scripts` の `jsSha256`)。
     .addColumn("sha256", "text", (col) =>
       col.generatedAlwaysAs(sql`encode(digest(source, 'sha256'), 'hex')`).stored(),
     )

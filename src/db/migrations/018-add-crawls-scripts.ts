@@ -18,8 +18,9 @@
  * 書き残すほうが、後から読む側にも親切になる。
  *
  * 中身は `[{ id, version, phase, source, sha256, options }]` で、**並びが実行順**。
- * `sha256` は `scripts` の生成列をそのまま写したもので、BrowserHive がこれと `source` を
- * 照合する。
+ * `source` は TypeScript で、`sha256` は `scripts` の生成列 (その TS の hash) をそのまま写したもの。
+ * これと `source` を照合するのは ts-compile-service で、BrowserHive が照らすのは変換後の JS の
+ * hash —— capture-ledger には段の報告から `jsSha256` として写る (`crawl/compiled.ts`)。
  *
  * ## 既定は空ではない
  *

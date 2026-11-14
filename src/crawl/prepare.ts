@@ -51,7 +51,9 @@ export const RULES_MAX = 32;
 /**
  * `POST /api/crawls` が受ける本文の上限。**capture-workbench の門（その src/lib.mjs の WRITE_LIMIT）と
  * 同じ 1 MiB** —— 片方だけを変えると、workbench が通すのに capture-ledger が 413、の形になる。Fastify の既定と同じ値だが、
- * 既定に頼らずにこのエンドポイントに書く。その先の BrowserHive は 4 MiB で、変換後の JS と登録済みのスクリプトを足しても収まる。
+ * 既定に頼らずにこのエンドポイントに書く。その先の BrowserHive の本文の上限は 4 MiB だが、収まる保証は無い ——
+ * この 1 MiB が見るのは頼みの本文 (その場の TS を含む) だけで、登録済みのスクリプト (`scripts` 表) には
+ * 大きさの検査が無く、変換 (tsc の印字し直し) で JS は大きくなりうる。
  */
 export const CRAWL_BODY_LIMIT = 1024 * 1024;
 
