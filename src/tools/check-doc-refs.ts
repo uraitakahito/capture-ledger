@@ -81,7 +81,7 @@ for (const page of ja) {
   }
 }
 
-// ─── 2. コードスパンに書かれたソースのパス ─────────────────────────────────
+// ─── 2・3. `#region` の抜粋と、コードスパンに書かれたソースのパス ──────────
 const walk = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const p = join(dir, entry.name);
@@ -129,7 +129,7 @@ for (const file of walk(DOCS).filter((f) => isPage(f))) {
   }
 }
 
-// ─── 3. 画面の絵 (picker) ──────────────────────────────────────────────────
+// ─── 4. 画面の絵 (picker) ──────────────────────────────────────────────────
 const SHOTS_DIR = resolve(ROOT, "docs-site/src/assets/picker");
 const manifestPath = join(SHOTS_DIR, "shots-manifest.json");
 
@@ -188,7 +188,7 @@ if (!existsSync(manifestPath)) {
   }
 }
 
-// ─── 4. 画面から docs へのリンク ───────────────────────────────────────────
+// ─── 5. 画面から docs へのリンク ───────────────────────────────────────────
 const PUBLISHED = "https://uraitakahito.github.io/capture-ledger/";
 const pickerSource = readFileSync(resolve(ROOT, "src/api/picker.ts"), "utf8");
 const docsUrl = /PICKER_DOCS_URL\s*=\s*"([^"]+)"/.exec(pickerSource)?.[1];
