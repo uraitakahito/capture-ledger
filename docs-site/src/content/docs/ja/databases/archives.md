@@ -58,14 +58,15 @@ if (report.status !== CaptureStatus.CAPTURE_STATUS_SUCCESS ||
 
 ## 列の要点
 
-| 列                      | 要点                                                                                |
-| ----------------------- | ----------------------------------------------------------------------------------- |
-| `id`                    | `gen_random_uuid()`。OpenFGA の `archive:<id>` になる                               |
-| `task_id`               | BrowserHive のタスク id                                                             |
-| `correlation_id`        | capture-ledger のログ行と成果物のファイル名を結ぶ糸（送信ごとの 16 進 8 桁）        |
-| `bucket` / `object_key` | **server 自身の報告から取る。** ファイル名を組み直したものではない                  |
-| `wacz_complete`         | `false` は本文が欠けているか、renderer の落ちた target があるという意味。詳細は下記 |
-| `captured_at`           | 取り込みの時刻。一覧はこれの降順                                                    |
+| 列                        | 要点                                                                                                                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                      | `gen_random_uuid()`。OpenFGA の `archive:<id>` になる                                                                                                                                     |
+| `task_id`                 | BrowserHive のタスク id                                                                                                                                                                   |
+| `correlation_id`          | capture-ledger のログ行と成果物のファイル名を結ぶ糸（送信ごとの 16 進 8 桁）                                                                                                              |
+| `bucket` / `object_key`   | **server 自身の報告から取る。** ファイル名を組み直したものではない                                                                                                                        |
+| `wacz_complete`           | `false` は本文が欠けているか、renderer の落ちた target があるという意味。詳細は下記                                                                                                       |
+| `captured_at`             | 取り込みの時刻。一覧はこれの降順                                                                                                                                                          |
+| `screenshots_recorded_at` | 節目のスクリーンショットについて検めた時刻（`041`）。NULL は「まだ」で、`pnpm run screenshots:backfill` が拾う。検めたが絵の欄の無い WACZ は、これが在って `archive_screenshots` の行が 0 |
 
 ### `wacz_complete` が `false` になるとき
 

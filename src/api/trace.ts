@@ -48,6 +48,7 @@ import {
   readManifest,
   type CaptureResultReport,
 } from "../archive/manifest.js";
+import { isWebp, PICTURE_MAX_BYTES } from "../archive/webp.js";
 import { getJsonObject, getObjectBytes, objectSize } from "../archive/s3.js";
 import type { Database } from "../db/database.js";
 import { createChildLogger } from "../logger.js";
@@ -78,16 +79,10 @@ export interface TraceRouteDeps {
 type TraceUnreadable = "not-captured" | "no-manifest" | "manifest-missing" | "manifest-invalid";
 
 /**
- * 失敗の時点の絵として返す大きさの上限。viewport 1 枚の WebP は数十〜数百 KiB で、答えは base64 の JSON なので
- * 丸ごとメモリに載る。読む鍵は `.result.json` が言った物なので、そこに何が在っても、これより大きい物は読まない。
+ * 失敗の時点の絵として返す大きさの上限 (`archive/webp.ts`)。答えは base64 の JSON なので丸ごとメモリに載る。読む鍵は
+ * `.result.json` が言った物なので、そこに何が在っても、これより大きい物は読まない。
  */
-const FAILURE_SCREENSHOT_MAX_BYTES = 1024 * 1024;
-
-/** WebP の頭 (RIFF の入れ物の `RIFF`・4 バイトの長さ・`WEBP`)。 */
-const isWebp = (bytes: Buffer): boolean =>
-  bytes.length >= 12 &&
-  bytes.toString("latin1", 0, 4) === "RIFF" &&
-  bytes.toString("latin1", 8, 12) === "WEBP";
+const FAILURE_SCREENSHOT_MAX_BYTES = PICTURE_MAX_BYTES;
 
 const PAGE_PARAMS = {
   type: "object",

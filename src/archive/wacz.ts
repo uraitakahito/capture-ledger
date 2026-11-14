@@ -48,3 +48,48 @@ export const entrySize = async (zip: Buffer, path: string): Promise<number | und
     await file.close();
   }
 };
+
+/** zip の entry の中身が、zip のどこに在るか (`storedEntryRange`)。 */
+export interface EntryRange {
+  /** 中身の最初のバイトの、zip の頭からの位置。 */
+  start: number;
+  /** 中身の長さ (zip に入っているままのバイト数。stored なら伸長した後と同じ)。 */
+  size: number;
+  /** 圧縮の方式 (0 は stored、8 は deflate)。 */
+  method: number;
+}
+
+/** local header の印 (`PK\x03\x04`)。 */
+const LOCAL_HEADER_SIGNATURE = 0x04034b50;
+
+/**
+ * entry 1 つの中身の在り処。無ければ `undefined`。**中身は読まない。**
+ *
+ * yauzl の `fileDataOffset` は `openReadStream()` を呼ぶまで null なので、local header を直に読む: 中身は
+ * local header の 30 バイトと、名前と、extra の後ろから始まる。**名前と extra の長さは local header の値を使う** ——
+ * 中央ディレクトリの extra とは長さが違いうる。大きさは中央ディレクトリの値を使う (stream で書いた zip の
+ * local header は大きさの欄が 0 で、後ろに data descriptor が付く)。
+ */
+export const storedEntryRange = async (
+  zip: Buffer,
+  path: string,
+): Promise<EntryRange | undefined> => {
+  const file = await fromBuffer(zip);
+  try {
+    for await (const entry of file) {
+      if (entry.filename !== path) continue;
+      const at = entry.fileHeaderOffset;
+      if (at + 30 > zip.length || zip.readUInt32LE(at) !== LOCAL_HEADER_SIGNATURE) {
+        throw new Error(`no local header for ${path} at ${String(at)}`);
+      }
+      const start = at + 30 + zip.readUInt16LE(at + 26) + zip.readUInt16LE(at + 28);
+      if (start + entry.compressedSize > zip.length) {
+        throw new Error(`${path} runs past the end of the zip`);
+      }
+      return { start, size: entry.compressedSize, method: entry.compressionMethod };
+    }
+    return undefined;
+  } finally {
+    await file.close();
+  }
+};

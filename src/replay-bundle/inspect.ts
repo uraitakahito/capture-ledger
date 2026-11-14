@@ -13,6 +13,10 @@
  *   `waczStats.totalRecorded` (0 なら記録が 0)。**無くても検める** —— 鍵が無い・保管庫に無い・契約に合わない
  *   答えは、頼んだ URL だけを `keys` にする。保管庫に届かないときだけ投げる (次に拾い直す)
  *
+ * 節目のスクリーンショットの在り処 (`041`。`archive/stage-screenshots.ts`) も、同じバイト列から求めて
+ * `archive_screenshots` に書く。**検めの後の、別のトランザクションで** —— 絵の記録で失敗しても検めは巻き戻さない。
+ * 失敗したら印 (`screenshots_recorded_at`) が立たないまま残り、`pnpm run screenshots:backfill` が拾う。
+ *
  * ## 失敗しても `inspected_at` を立てない
  *
  * 立てるのは読み終えてから、行と同じトランザクションで。WACZ が保管庫に無い・zip として読めない・保管庫に届かない
@@ -26,6 +30,8 @@ import type { Insertable, Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
 import { getJsonObject, getObjectBytes } from "../archive/s3.js";
 import { readManifest } from "../archive/manifest.js";
+import { locateStageScreenshots, type StageScreenshotRow } from "../archive/stage-screenshots.js";
+import { recordStageScreenshots } from "../archive/stage-screenshots-store.js";
 import { entrySize, INDEX_ENTRY_PATH, PAGES_ENTRY_PATH, readEntry } from "../archive/wacz.js";
 
 /** 版を読む entry。WACZ の決まりの名前。 */
@@ -142,7 +148,10 @@ export interface InspectOptions {
   now?: () => Date;
 }
 
-/** 1 本を検め、`archives` の 6 つの列と `archive_pages` の行を 1 つのトランザクションで書く。 */
+/**
+ * 1 本を検め、`archives` の 6 つの列と `archive_pages` の行を 1 つのトランザクションで書く。先に検めた者が居なければ、続けて
+ * 節目のスクリーンショットの在り処を書く (`archive/stage-screenshots-store.ts`)。
+ */
 export const inspectArchive = async (
   archive: UninspectedArchive,
   options: InspectOptions,
@@ -152,6 +161,17 @@ export const inspectArchive = async (
     throw new Error(`the WACZ is not in the store (${archive.bucket}/${archive.objectKey})`);
   }
   const facts = await readWaczFacts(zip);
+  // 読めなくても検めは続ける (印を立てず、埋め直しに任せる)
+  let screenshots: StageScreenshotRow[] | undefined | "unreadable";
+  try {
+    screenshots = await locateStageScreenshots(zip);
+  } catch (err) {
+    log.warn(
+      { err, archiveId: archive.id },
+      "Stage screenshots are not readable; left for the backfill",
+    );
+    screenshots = "unreadable";
+  }
   const manifest =
     archive.manifestKey === null
       ? undefined
@@ -160,8 +180,8 @@ export const inspectArchive = async (
   const indexEmpty = facts.indexEmpty || manifest?.totalRecorded === 0;
   const inspectedAt = (options.now?.() ?? new Date()).toISOString();
 
-  await options.db.transaction().execute(async (trx) => {
-    const claimed = await trx
+  const claimed = await options.db.transaction().execute(async (trx) => {
+    const won = await trx
       .updateTable("archives")
       .set({
         waczSha256: facts.sha256,
@@ -176,7 +196,8 @@ export const inspectArchive = async (
       .where("inspectedAt", "is", null)
       .returning("id")
       .executeTakeFirst();
-    if (claimed === undefined || rows.length === 0) return;
+    if (won === undefined) return false;
+    if (rows.length === 0) return true;
     await trx
       .insertInto("archivePages")
       .values(
@@ -197,7 +218,18 @@ export const inspectArchive = async (
         })),
       )
       .execute();
+    return true;
   });
+  if (claimed && screenshots !== "unreadable") {
+    try {
+      await recordStageScreenshots(options.db, archive.id, screenshots, inspectedAt);
+    } catch (err) {
+      log.warn(
+        { err, archiveId: archive.id },
+        "Stage screenshots were not recorded; left for the backfill",
+      );
+    }
+  }
   log.info(
     { archiveId: archive.id, pages: rows.length, indexEmpty, bytes: facts.bytes },
     "archive inspected",

@@ -97,7 +97,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U capture-ledger -d capture-ledger"
+          --health-cmd "pg_isready -U capture_ledger -d capture_ledger"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -171,6 +171,13 @@ jobs:
       # クロール 1 本だけを足して、最後に消す。
       - name: Links against Postgres
         run: pnpm run build:tools && node dist/tools/links-smoke.js
+
+      # 節目のスクリーンショットの在り処の表 (CAPTURE-432・`041`) を、本物の Postgres に当てる。
+      #
+      # 3 つの形の CHECK・印を立てる UPDATE が 2 度目に当たらないこと・確かめの join と bigint の位置・cascade は、
+      # 試験の記録する DB では確かめられない。鍵が smoke-<pid>/ で始まるアーカイブだけを足して、最後に消す。
+      - name: Screenshots against Postgres
+        run: pnpm run build:tools && node dist/tools/screenshots-smoke.js
 
       # 契約 (openapi.json) から生成した型が、コミットされた物と一致するか。
       - name: OpenAPI types drift check
