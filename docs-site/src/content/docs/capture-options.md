@@ -105,7 +105,7 @@ pnpm run scripts show autoscroll --version 1   # one version's source, disabled 
 pnpm run scripts types                    # the receptacle's (__bh) types, as imported
 
 # One-offs and tuning still go in by hand.
-pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
+pnpm run scripts add autoscroll --file ./autoscroll.ts --options '{"maxSteps":60}'
 pnpm run scripts add my-search --file ./my-search.ts --site www.example.com   # a site script
 pnpm run scripts disable autoscroll       # out of the default set, still nameable (the next import restores the catalog)
 ```
@@ -117,8 +117,9 @@ opinion, and that does make a new version.
 **Whether a script runs by default is the catalog’s call.** An entry with `"default": false` is
 kept out of the default set: `import` disables every version of that id, so an older version cannot
 step in as the default. An entry without `default` (or with `true`) has the imported version enabled.
-`enable` and `disable` by hand last until the next `import`. Today only `autofetch` is out of the
-default set (capture-scripts v0.9.0): name it in `scripts` to run it.
+`enable` and `disable` by hand last until the next `import`. Which entries are out of the default set
+is written in capture-scripts’ `catalog.json`; after an `import`, `pnpm run scripts list` shows them as
+無効 (disabled). Name one in `scripts` to run it.
 
 `import` also copies `types/host.d.ts` from the same directory — the types of the receptacle
 `__bh` — into `host_types`, which likewise adds a version only when the bytes change. It is a copy

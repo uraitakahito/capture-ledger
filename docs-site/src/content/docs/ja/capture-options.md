@@ -99,7 +99,7 @@ pnpm run scripts show autoscroll --version 1   # その版の source（無効な
 pnpm run scripts types                    # 受け皿（__bh）の型。import が写した物
 
 # 1 本だけ試す・設定を変えるのは、いまも手で
-pnpm run scripts add autoscroll --file ./autoscroll.js --options '{"maxSteps":60}'
+pnpm run scripts add autoscroll --file ./autoscroll.ts --options '{"maxSteps":60}'
 pnpm run scripts add my-search --file ./my-search.ts --site www.example.com   # サイト用のスクリプト
 pnpm run scripts disable autoscroll       # 既定から外す。名指しすれば走る（次の import でカタログに戻る）
 ```
@@ -111,7 +111,8 @@ pnpm run scripts disable autoscroll       # 既定から外す。名指しすれ
 **既定に入るかは、カタログが決めます。** `"default": false` の項目は既定に入りません。`import` はその id の
 全版を無効にします（最新版だけを無効にすると、古い版が既定に出てくるため）。`default` を省いた（`true` の）
 項目は、取り込んだ版を有効にします。`enable`・`disable` で手で替えた物は、次の `import` まで効きます。
-いま既定に入らないのは `autofetch` だけです（capture-scripts v0.9.0）。走らせるには `scripts` で名指しします。
+どれが既定に入らないかは capture-scripts の `catalog.json` に書いてあり、`import` の後は `pnpm run scripts list` で
+「無効」と出ます。走らせるには `scripts` で名指しします。
 
 `import` は、同じ置き場所の `types/host.d.ts`（受け皿 `__bh` の型）も `host_types` に写します。
 こちらも中身が変わったときだけ版を足します。スクリプトを読む人に見せる写しで、クロールの変換が使う型は
