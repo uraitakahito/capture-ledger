@@ -131,31 +131,35 @@ submits a capture by hand.
 
 ## Handing out URLs
 
-`capture-api` serves two endpoints for archives. Both require an identity; see below.
+`capture-api` serves three endpoints for archives. All require an identity; see below.
 
 ```sh
 # One archive
 curl -X POST http://localhost:7070/api/archives/<id>/url
 # → { "url": "http://…?X-Amz-Signature=…", "expiresIn": 300 }
 
-# The ones you may see, newest first
+# The ones you may see, newest first (each row carries a screenshot hint)
 curl http://localhost:7070/api/archives
+
+# One archive's stage screenshot (WebP; see "Stage screenshots" below)
+curl -o after-load.webp http://localhost:7070/api/archives/<id>/screenshots/after-load
 ```
 
-The shape of both requests is a JSON Schema on the route, so the checking is
+The shape of every request is a JSON Schema on the route, so the checking is
 the contract rather than a description of it:
 
-|                                                            |          |                                                                                          |
-| ---------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`                               | `id`     | a UUID — anything else is **400**, before authorization runs                             |
-| `GET /api/archives`                                        | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
-| `GET /api/crawls`                                          | `state`  | `running` / `succeeded` / `failed` — anything else is **400**                            |
-|                                                            | `before` | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest       |
-| `GET /api/crawls/:id/pages`                                | `after`  | the previous answer's `next`: digits only, at most 18 — anything else is **400**         |
-|                                                            | `limit`  | 1 to 500, default 100 — anything else is **400**                                         |
-| `GET /api/crawls/:id/pages/:page/log`                      | `page`   | a page id: digits only, at most 18 — anything else is **400**, before authorization runs |
-| `GET /api/crawls/:id/pages/:page/trace`                    | `page`   | the same                                                                                 |
-| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`   | the same                                                                                 |
+|                                                            |               |                                                                                                     |
+| ---------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`                               | `id`          | a UUID — anything else is **400**, before authorization runs                                        |
+| `GET /api/archives`                                        | `before`      | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
+| `GET /api/archives/:id/screenshots/:stage`                 | `id`, `stage` | a UUID, and `after-load` or `after-behaviors` — anything else is **400**, before authorization runs |
+| `GET /api/crawls`                                          | `state`       | `running` / `succeeded` / `failed` — anything else is **400**                                       |
+|                                                            | `before`      | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
+| `GET /api/crawls/:id/pages`                                | `after`       | the previous answer's `next`: digits only, at most 18 — anything else is **400**                    |
+|                                                            | `limit`       | 1 to 500, default 100 — anything else is **400**                                                    |
+| `GET /api/crawls/:id/pages/:page/log`                      | `page`        | a page id: digits only, at most 18 — anything else is **400**, before authorization runs            |
+| `GET /api/crawls/:id/pages/:page/trace`                    | `page`        | the same                                                                                            |
+| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`        | the same                                                                                            |
 
 `before` is a cursor: pass the `capturedAt` (or, for crawls, the `startedAt`) of the
 last row you were given.
@@ -199,6 +203,50 @@ The single-archive check runs at `HIGHER_CONSISTENCY` — a cached "allow" here
 would hand out a URL valid for its whole lifetime. The list does not: appearing
 in a list grants nothing, since fetching any of them still has to pass the
 strongly consistent check.
+
+### Stage screenshots
+
+This endpoint returns one stage screenshot of an archive: a picture of the capture page's viewport, in WebP (CAPTURE-8).
+The picture is a WARC `resource` record inside the BrowserHive WACZ, written from BrowserHive v30.2.0 by a deployment
+set to take them. The stages are `after-load` and `after-behaviors`.
+
+```sh
+curl -o after-load.webp http://localhost:7070/api/archives/<id>/screenshots/after-load
+# → 200 image/webp (the body is the picture)
+```
+
+**capture-ledger does not keep the pictures.** When it inspects a WACZ ([replay bundles](#what-goes-in)), it reads
+`browserhive:capture.screenshots[]` in `datapackage.json` and the index lines, works out where each picture's record
+(one gzip member) sits inside the WACZ, and writes that place to `archive_screenshots` (`041`). The place is checked
+on the spot by decoding it. This endpoint reads the place with **one Range read from the store**, decodes the gzip
+member, checks it again (Record-ID, stage, `image/webp`, size, the WebP header) and returns it. The bytes are the
+ones BrowserHive captured.
+
+The archive list (`GET /api/archives`) and a crawl's page rows (`GET /api/crawls/:id/pages` and the rest) carry
+`screenshot`, a hint about the one picture after load.
+
+| `screenshot`                                | Meaning                                                                                                                               |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `{ "stage": "after-load", "bytes": 47692 }` | There is a picture; this endpoint returns it                                                                                          |
+| `{ "stage": "after-load", "skipped": "…" }` | BrowserHive left it out; the reason as the WACZ says it (`secret`, `withheld`, `disabled`, `task-budget`, `failed`)                   |
+| `{ "stage": "after-load", "problem": "…" }` | The field is there but the place could not be found (`no-index-line`, `warc-not-stored`, `record-mismatch`, …)                        |
+| `null`                                      | No record: a WACZ without the field (before v30.2.0 and so on), one not inspected yet, a capture outside a crawl, a page without WACZ |
+
+Authorization is the WACZ's own `can_view`, at higher consistency. The reasons for refusing are not told apart.
+
+| Answer                                            | When                                                                                                                                           |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200 `image/webp`                                  | The picture, with `x-content-type-options: nosniff`, `content-security-policy: sandbox` and `cache-control: private, max-age=300, immutable`   |
+| 400                                               | `id` is not a UUID, or the stage is unknown (before authorization runs)                                                                        |
+| 401 `{ "error": "unauthenticated" }`              | No identity                                                                                                                                    |
+| 404 `{ "error": "not found" }`                    | Not allowed, no row, a stage left out, a stage whose place was not found, or the WACZ is not in the store. The first four never read the store |
+| 502 `{ "error": "storage unreachable" }`          | The store cannot be reached, or answered a different length than asked                                                                         |
+| 502 `{ "error": "screenshot too large" }`         | The recorded length is over the cap (1 MiB of picture); the store is not read                                                                  |
+| 502 `{ "error": "screenshot record unreadable" }` | What was read is not the named picture                                                                                                         |
+
+`max-age=300` matches the lifetime of a signed URL: after access is withdrawn, the picture stays in the browser for
+that long. A WACZ is never rewritten, so a URL's picture never changes (`immutable`). **The picture is a record inside the
+WACZ; in a signed WACZ it is under the signature.**
 
 ## Starting a crawl
 
@@ -689,7 +737,8 @@ curl 'http://localhost:7070/api/crawls/9072b625-…/pages?limit=100'
 # → { "pages": [{ "id": "1234", "url": "https://…", "depth": 0, "state": "captured", "reason": null,
 #                 "taskId": "6f1c…", "archiveId": "a1b2…",
 #                 "capturedAt": "2026-11-04T05:12:09.812Z", "bundledRev": 1,
-#                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 } }, …],
+#                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 },
+#                 "screenshot": { "stage": "after-load", "bytes": 47692 } }, …],
 #     "next": "1300" }
 
 curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/log
@@ -788,7 +837,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   whose picture was not kept carries only the reason (`skipped`). capture-ledger does not pick members of an entry; it
   passes the entries through as written, and their shape is BrowserHive's contract (`StageScreenshot` in the copy).
   **The pictures themselves are not in this answer.** They are inside the BrowserHive WACZ, and whoever may view the WACZ
-  (`can_view`) reads them from it. For earlier captures, and for captures that did not succeed, the member is absent.
+  (`can_view`) reads them through the [stage screenshot endpoint](#stage-screenshots). For earlier captures, and for captures that did not succeed, the member is absent.
 - `capture.random` sums up the random values BrowserHive noted for the page's JS (the crawl's
   [`recordRandom`](/capture-ledger/capture-options/#recording-random-values)). BrowserHive writes it into `.result.json` from
   v31.1.0, for a capture that succeeded and built a WACZ, whether or not the crawl asked: a capture that recorded has
@@ -1045,6 +1094,12 @@ Each line also gets the sha256 and length of its `text` and the reason it was wi
 (`035`). Changes since last time ([scheduled crawls](/capture-ledger/schedules/)) can then call a page
 unchanged without opening its WACZ. The text itself is not kept in capture-ledger's database.
 `pnpm run changes:backfill` fills rows older than `035`.
+
+The same inspection also writes where the stage screenshots are, to `archive_screenshots` (`041`; see
+[Stage screenshots](#stage-screenshots)). It is a separate transaction after the inspection, so a failure there does not
+undo the inspection: the mark (`archives.screenshots_recorded_at`) stays empty, and `pnpm run screenshots:backfill` fills
+it along with archives inspected before `041` (`--verify` writes nothing and checks the written places with Range reads
+against the store).
 
 A WACZ that recorded nothing — an empty index, or `waczStats.totalRecorded` of 0 — is left out
 (`skipped`; its name and sha256 stay in `replayBundle.skippedResources`): replay would ask for a zero-length range and keep re-reading the JSON on the store's

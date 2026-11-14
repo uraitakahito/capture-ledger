@@ -170,6 +170,8 @@ const page = (over: Record<string, unknown> = {}) => ({
   capturedAt: CAPTURED_AT,
   bundledRev: 2,
   logCounts: { debug: 3, info: 12, warn: 1, error: 0, dropped: 0 },
+  // 行の見本は絵の列を持たない (列の無い行は NULL と同じ)
+  screenshot: null,
   submittedAt: SUBMITTED_AT,
   finishedAt: FINISHED_AT,
   ...over,
