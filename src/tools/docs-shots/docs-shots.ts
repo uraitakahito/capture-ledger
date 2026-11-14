@@ -168,7 +168,10 @@ interface Annotation {
   badgeDx?: number;
 }
 
-const browser = await puppeteer.launch({ args: [`--lang=${EMULATION.lang}`] });
+// --use-mock-keychain: Mac の上で Chrome for Testing を直に起こすと、キーチェーンのダイアログが利用者の画面に出ることがある。
+const browser = await puppeteer.launch({
+  args: [`--lang=${EMULATION.lang}`, "--use-mock-keychain"],
+});
 const shots: string[] = [];
 try {
   const page = await browser.newPage();
