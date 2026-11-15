@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   archivePageRows,
@@ -30,6 +31,20 @@ const VECTORS = "test/vectors/canonical-url.json";
 /** replayweb-server が持つ原本 (submodule が無ければ照らす試験は飛ぶ)。 */
 const UPSTREAM_VECTORS = ".upstream/replayweb-server/test/vectors/canonical-url.json";
 const vectors = JSON.parse(readFileSync(VECTORS, "utf8")) as Vectors;
+
+/** `/q/` を答える本物の関数 (submodule の replayweb-server と capture-player の src/replay-bundle.ts)。型は使う所だけ。 */
+interface QueryServer {
+  parsePagesJson: (text: string) => unknown;
+  queryPages: (
+    index: unknown,
+    query: { page: number; pageSize: number },
+  ) => { items: { id: string }[]; total: number };
+}
+/** `/q/` を答える 2 つ (submodule が無ければ照らす試験は飛ぶ)。 */
+const QUERY_SERVERS = [
+  ["replayweb-server", ".upstream/replayweb-server/src/replay-bundle.ts"],
+  ["capture-player", ".upstream/capture-player/src/replay-bundle.ts"],
+] as const;
 
 describe("正規化（合本の形 v1 の例）", () => {
   it.each(vectors.cases.map((c) => [c.input, c.canonical] as const))(
@@ -207,6 +222,48 @@ const input = (over: Partial<ComposeInput> = {}): ComposeInput => {
   };
 };
 
+/** 文書の行 1 つ (ordinal 0)。 */
+const docRow = (archiveId: string, pageId: string, url: string, ts: string): BundlePage => ({
+  archiveId,
+  ordinal: 0,
+  pageId,
+  url,
+  ts,
+  title: url,
+  stage: null,
+  keys: [url],
+});
+
+/** 写しの行 1 つ。BrowserHive と同じく id は `<taskId>-<時点>`、時刻は写しの WARC-Date (文書の行より後)。 */
+const snapshotRow = (
+  archiveId: string,
+  ordinal: number,
+  taskId: string,
+  stage: string,
+  url: string,
+  ts: string,
+): BundlePage => ({
+  archiveId,
+  ordinal,
+  pageId: `${taskId}-${stage}`,
+  url: `urn:browserhive:snapshot:${stage}:${url}`,
+  ts,
+  title: url,
+  stage,
+  keys: [],
+});
+
+/** initialPages の 1 行の期待。題は helper が url を入れる。 */
+const initial = (archiveId: string, id: string, url: string, ts: string, isSeed: boolean) => ({
+  id,
+  url,
+  ts,
+  title: url.replace(/^urn:browserhive:snapshot:[a-z-]+:/, ""),
+  filename: `${archiveId}_${CRAWL}.wacz`,
+  isSeed,
+  crawl_id: CRAWL,
+});
+
 describe("合本を組む", () => {
   it("置き場は org/<orgId>/crawls/<crawlId>/r<版>/ で、replay.json と pages.json を置く", () => {
     const bundle = composeReplayBundle(input());
@@ -280,37 +337,126 @@ describe("合本を組む", () => {
     expect(bundle.replayJson.pagesQueryUrl).toBe(`/q/org/a%20b/crawls/${CRAWL}/r3/pages`);
   });
 
-  it("initialPages は文書の行だけで、起点を先頭に深さ・時刻の順。写しの行は入れない", () => {
-    const bundle = composeReplayBundle(input());
+  it("initialPages は写しの行も入れ、文書の行と同じ isSeed で、深さ → 時刻 → id の順（CAPTURE-456）", () => {
+    // 時刻の同じ 2 行 (m の写しと n の文書) は id の順。url の順なら n が先に来る
+    const bundle = composeReplayBundle(
+      input({
+        archives: [
+          archive("n", 1, "2026-11-05T01:00:02.000Z"),
+          archive("s", 0, "2026-11-05T01:00:00.000Z"),
+          archive("m", 1, "2026-11-05T01:00:01.000Z"),
+        ],
+        pages: [
+          docRow("n", "task-n", "http://site.test/n", "2026-11-05T01:00:02.000Z"),
+          snapshotRow(
+            "s",
+            2,
+            "task-s",
+            "after-behaviors",
+            "http://site.test/",
+            "2026-11-05T01:00:04.000Z",
+          ),
+          snapshotRow(
+            "m",
+            1,
+            "task-m",
+            "after-load",
+            "http://site.test/m",
+            "2026-11-05T01:00:02.000Z",
+          ),
+          docRow("s", "task-s", "http://site.test/", "2026-11-05T01:00:00.000Z"),
+          snapshotRow(
+            "s",
+            1,
+            "task-s",
+            "after-load",
+            "http://site.test/",
+            "2026-11-05T01:00:03.000Z",
+          ),
+          docRow("m", "task-m", "http://site.test/m", "2026-11-05T01:00:01.000Z"),
+        ],
+      }),
+    );
     expect(bundle.replayJson.initialPages).toEqual([
-      {
-        id: "a",
-        url: "http://site.test/",
-        ts: "2026-11-05T01:00:09.000Z",
-        title: "http://site.test/",
-        filename: `a_${CRAWL}.wacz`,
-        isSeed: true,
-        crawl_id: CRAWL,
-      },
-      {
-        id: "c",
-        url: "http://site.test/c",
-        ts: "2026-11-05T01:00:00.000Z",
-        title: "http://site.test/c",
-        filename: `c_${CRAWL}.wacz`,
-        isSeed: false,
-        crawl_id: CRAWL,
-      },
-      {
-        id: "b",
-        url: "http://site.test/b",
-        ts: "2026-11-05T01:00:01.000Z",
-        title: "http://site.test/b",
-        filename: `b_${CRAWL}.wacz`,
-        isSeed: false,
-        crawl_id: CRAWL,
-      },
+      initial("s", "task-s", "http://site.test/", "2026-11-05T01:00:00.000Z", true),
+      initial(
+        "s",
+        "task-s-after-load",
+        "urn:browserhive:snapshot:after-load:http://site.test/",
+        "2026-11-05T01:00:03.000Z",
+        true,
+      ),
+      initial(
+        "s",
+        "task-s-after-behaviors",
+        "urn:browserhive:snapshot:after-behaviors:http://site.test/",
+        "2026-11-05T01:00:04.000Z",
+        true,
+      ),
+      initial("m", "task-m", "http://site.test/m", "2026-11-05T01:00:01.000Z", false),
+      initial(
+        "m",
+        "task-m-after-load",
+        "urn:browserhive:snapshot:after-load:http://site.test/m",
+        "2026-11-05T01:00:02.000Z",
+        false,
+      ),
+      initial("n", "task-n", "http://site.test/n", "2026-11-05T01:00:02.000Z", false),
     ]);
+    // 写しの行の keys は pages.json でも空のまま
+    expect(
+      bundle.pagesJson.pages.filter((page) => page.stage !== null).map((page) => page.keys),
+    ).toEqual([[], [], []]);
+  });
+
+  it("深さ 1 の頁の写しは isSeed が false、起点の写しは true", () => {
+    const bundle = composeReplayBundle(input());
+    const seedOf = (id: string) =>
+      bundle.replayJson.initialPages.find((page) => page.id === id)?.isSeed;
+    expect(seedOf("a-after-load")).toBe(true);
+    expect(seedOf("b-after-load")).toBe(false);
+    expect(seedOf("c-after-load")).toBe(false);
+  });
+
+  it("写しの無い頁（写しの無い WACZ・記録が 0 で外した WACZ）では行が増えない", () => {
+    const bundle = composeReplayBundle(
+      input({
+        archives: [
+          archive("s", 0, "2026-11-05T01:00:00.000Z"),
+          // 写しを撮らずに終わった頁: 文書の行だけ
+          archive("d", 1, "2026-11-05T01:00:01.000Z"),
+          // 記録が 0 の WACZ の行は、写しも文書も入らない
+          archive("e", 1, "2026-11-05T01:00:02.000Z", { indexEmpty: true }),
+        ],
+        pages: [
+          docRow("s", "task-s", "http://site.test/", "2026-11-05T01:00:00.000Z"),
+          snapshotRow(
+            "s",
+            1,
+            "task-s",
+            "after-load",
+            "http://site.test/",
+            "2026-11-05T01:00:03.000Z",
+          ),
+          docRow("d", "task-d", "http://site.test/d", "2026-11-05T01:00:01.000Z"),
+          docRow("e", "task-e", "http://site.test/e", "2026-11-05T01:00:02.000Z"),
+          snapshotRow(
+            "e",
+            1,
+            "task-e",
+            "after-load",
+            "http://site.test/e",
+            "2026-11-05T01:00:04.000Z",
+          ),
+        ],
+      }),
+    );
+    expect(bundle.replayJson.initialPages.map((page) => page.id)).toEqual([
+      "task-s",
+      "task-s-after-load",
+      "task-d",
+    ]);
+    expect(bundle.replayJson.totalPages).toBe(3);
   });
 
   it(`initialPages は ${String(INITIAL_PAGES)} 行まで（頁の総数は totalPages）`, () => {
@@ -332,10 +478,60 @@ describe("合本を組む", () => {
     );
     expect(bundle.replayJson.initialPages).toHaveLength(INITIAL_PAGES);
     expect(bundle.replayJson.initialPages[0]).toMatchObject({ id: "seed", isSeed: true });
-    expect(bundle.replayJson.initialPages[1]?.id).toBe("p00");
+    expect(bundle.replayJson.initialPages[1]).toMatchObject({
+      id: "seed-after-load",
+      isSeed: true,
+    });
+    expect(bundle.replayJson.initialPages[2]?.id).toBe("p00");
     expect(bundle.replayJson.totalPages).toBe(62);
     expect(bundle.pagesJson.pages).toHaveLength(62);
   });
+
+  /**
+   * replay は一覧の 1 ページ目を initialPages から作り、スクロールすると `/q/` に page=2 を問う。両方を、`/q/` を答える
+   * 本物の関数 (submodule の replayweb-server と capture-player の src/replay-bundle.ts) に同じ pages.json を渡して
+   * 比べる。深さの無い行・時刻の同じ行 (url の順と id の順が逆) を混ぜる —— 並びの鍵が 1 つ違えば切れ目がずれる。
+   */
+  for (const [name, path] of QUERY_SERVERS) {
+    it.skipIf(!existsSync(path))(
+      `initialPages の最後の行の次は、${name} の /q/ の 26 行目（2 ページ目の先頭）`,
+      async () => {
+        const archives = Array.from({ length: 12 }, (_, i) =>
+          archive(
+            `p${String(i).padStart(2, "0")}`,
+            i < 2 ? 0 : i === 11 ? null : 1 + (i % 2),
+            // 2 本ずつ同じ時刻に撮った
+            `2026-11-05T01:00:${String(Math.floor(i / 2)).padStart(2, "0")}.000Z`,
+          ),
+        );
+        const pages = archives.flatMap((one, i) => {
+          const ts = one.capturedAt.toISOString();
+          // url は id と逆の順。写しの 1 つは文書の行と同じ時刻
+          const url = `http://site.test/${String(99 - i)}`;
+          return [
+            docRow(one.id, one.id, url, ts),
+            snapshotRow(one.id, 1, one.id, "after-load", url, ts),
+            snapshotRow(one.id, 2, one.id, "after-behaviors", url, "2026-11-05T01:00:30.000Z"),
+          ];
+        });
+        const bundle = composeReplayBundle(input({ archives, pages }));
+        const ids = bundle.replayJson.initialPages.map((page) => page.id);
+        expect(ids).toHaveLength(INITIAL_PAGES);
+
+        const server = (await import(resolve(path))) as QueryServer;
+        const index = server.parsePagesJson(bundle.pagesBytes.toString("utf8"));
+        const query = (page: number) =>
+          server.queryPages(index, { page, pageSize: INITIAL_PAGES }).items.map((item) => item.id);
+        expect(ids).toEqual(query(1));
+        const all = server
+          .queryPages(index, { page: 1, pageSize: 100 })
+          .items.map((item) => item.id);
+        expect(all).toHaveLength(36);
+        expect([...ids, ...query(2)]).toEqual(all);
+        expect(query(2)[0]).toBe(all[INITIAL_PAGES]);
+      },
+    );
+  }
 
   it("pages.json は全部の行（写しも）を filename・深さ・stage つきで持ち、写しの keys は空", () => {
     const bundle = composeReplayBundle(input());

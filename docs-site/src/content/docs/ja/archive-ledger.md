@@ -992,7 +992,11 @@ digest が同じページの WACZ を開かずに「同じ」と言えます。�
 長さ 0 の Range を求め、保管庫の 416 で JSON を読み直し続けるからです。`resources` は起点の WACZ を
 先頭に、続けて深さ・撮った時刻の順です（決まった順にするためです。replay が、頁が持たない物を探す
 3 本は、この並びではなく WACZ の名前の順で選ばれます）。
-`initialPages`（replay が最初に見せる一覧）は文書の行で、起点が先頭です。
+`initialPages`（replay が最初に見せる一覧）は、`pages.json` の行を replayweb-server の `/q/` が問いなしで
+答える並び（深さ → 時刻 → `id`）にした先頭の 25 行です。文書の行も DOM の写しの行（after-load・after-behaviors）も
+入ります。起点が先頭に来て、replay は一覧の 2 ページ目を `/q/` の 26 行目から読むので、切れ目なく続きます。写しの行の
+`isSeed` は同じ頁の文書の行と同じです（深さ 0 なら true）。起点と起点でない行が混ざると、replay は既定で `isSeed` の
+行だけを並べるからです。
 行に `id` が無ければ（BrowserHive WACZ でない WACZ）、`<filename>#<何番目の行か>` を振ります。replayweb-server は
 `id` が文字列でない行を読めないからです。
 
