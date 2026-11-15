@@ -12,17 +12,21 @@
  * - `resources`: **起点 (深さ 0) の WACZ を先頭に**、深さ・撮った時刻の順。決まった順にして、人が読む順と、
  *   版どうしで比べられる形にするため。replay (ReplayWeb.page 2.5.0) が頁の中で見つからない物 (favicon など) を
  *   探す 3 本は、この並びではなく WACZ の名前の順で選ばれる (replayweb-server の docs/replay-bundle.md。段 1 で確かめた)
- * - `initialPages`: 文書の行だけ、起点の頁を先頭に深さ・時刻の順で 25 行まで。replay は一覧の 1 ページ目をここから
- *   作る (問い合わせのエンドポイントは検索と 2 ページ目以降だけ)。写しの行は入れない
+ * - `initialPages`: `pages.json` の行を、**`/q/` の問いなしの並び (深さ → 時刻 → id)** で 25 行まで。文書の行も
+ *   DOM の写しの行 (after-load・after-behaviors) も入れる。replay は一覧の 1 ページ目をここから作り (問い合わせの
+ *   エンドポイントは検索と 2 ページ目以降だけ)、2 ページ目は `/q/` の 26 行目から読む —— 並びが `/q/` と違うと、
+ *   行が抜けたり 2 度出たりする。写しの行を外すと、合本の一覧に写しが出ず、押して開く所が無い (WACZ 1 本で開いた
+ *   一覧には在る)。写しの行の `isSeed` は同じ頁の文書の行と同じ (深さ 0 なら true): 起点と起点でない行が混ざると、
+ *   replay は既定で `isSeed` の行だけを並べるので、false にすると起点の写しが隠れる
  * - `pages.json`: 並びの約束は無い (server が自分で引けるように持つ)。ここでは `resources` の順・行の順
  *
  * ## 行の id は必ず文字列
-
-replayweb-server は `id` を文字列に限って読む (null の行が 1 つでもあると `/q/` が 502)。BrowserHive の
-pages.jsonl の行は id を持つが、BrowserHive WACZ でない WACZ では欠けうる (`archive_pages.page_id` が null)。そのときは
-`<filename>#<ordinal>` を振る —— filename はクロールの中で一意、ordinal は WACZ の中で一意なので、合本の中で一意。
-
-## 記録が 0 の WACZ は外す
+ *
+ * replayweb-server は `id` を文字列に限って読む (null の行が 1 つでもあると `/q/` が 502)。BrowserHive の
+ * pages.jsonl の行は id を持つが、BrowserHive WACZ でない WACZ では欠けうる (`archive_pages.page_id` が null)。そのときは
+ * `<filename>#<ordinal>` を振る —— filename はクロールの中で一意、ordinal は WACZ の中で一意なので、合本の中で一意。
+ *
+ * ## 記録が 0 の WACZ は外す
  *
  * `indexes/index.cdxj` が空、または BrowserHive の答えの `waczStats.totalRecorded` が 0 の WACZ (`index_empty`)。
  * replay は長さ 0 の Range を求め、保管庫の 416 で JSON を読み直し続ける。`resources` にも `pages.json` にも入れず、
@@ -38,8 +42,9 @@ pages.jsonl の行は id を持つが、BrowserHive WACZ でない WACZ では�
  * バイト列はここで 1 度だけ作り、hash を計るのと保管庫に置くのに同じ Buffer を使う (作り直すと、署名した物と
  * 置いた物が別のバイト列になりうる)。
  *
- * 形の `version` は 1 のまま。欄を足しただけで、replay は `replayBundle` を読まない。定数は `pages.json` の
- * `version` と共用で、上げると replayweb-server が `pages.json` を読めなくなる (`/q/` が 502)。
+ * 形の `version` は 1 のまま。欄を足しただけで、replay は `replayBundle` を読まない。`initialPages` に写しの行を
+ * 入れたのも欄の形は同じで、上げない (CAPTURE-456)。定数は `pages.json` の `version` と共用で、上げると
+ * replayweb-server が `pages.json` を読めなくなる (`/q/` が 502)。
  */
 import { createHash } from "node:crypto";
 import { parseHttpUrl } from "../crawl/scope.js";
@@ -259,6 +264,17 @@ const timeOf = (ts: string | null): number => {
 
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
+const compare = (a: number, b: number): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * `/q/` の問いなしの並び: 深さ → 時刻 → id (深さと時刻の無い行は後ろ)。replayweb-server と capture-player の
+ * src/replay-bundle.ts の `byDefaultOrder` と同じ鍵・同じ向き (`initialPages` の続きを `/q/` の 2 ページ目に繋ぐため)。
+ */
+const byQueryOrder = (a: PagesJsonRow, b: PagesJsonRow): number =>
+  compare(a.depth ?? Number.POSITIVE_INFINITY, b.depth ?? Number.POSITIVE_INFINITY) ||
+  compare(timeOf(a.ts), timeOf(b.ts)) ||
+  byText(a.id, b.id);
+
 export interface ComposeInput {
   crawlId: string;
   orgId: string;
@@ -316,12 +332,9 @@ export const composeReplayBundle = (input: ComposeInput): ReplayBundle => {
     }
   }
 
-  // 文書の行だけ。起点 (深さ 0) を先頭に、深さ・時刻の順
-  const initialPages: InitialPage[] = pages
-    .filter((page) => page.stage === null)
-    .sort(
-      (a, b) => byDepth(a.depth, b.depth) || timeOf(a.ts) - timeOf(b.ts) || byText(a.url, b.url),
-    )
+  // 写しの行も。`/q/` と同じ並びの先頭 25 行 (sort は安定なので、鍵の同じ行も pages.json の順で `/q/` と揃う)
+  const initialPages: InitialPage[] = [...pages]
+    .sort(byQueryOrder)
     .slice(0, INITIAL_PAGES)
     .map((page) => ({
       id: page.id,
@@ -329,6 +342,7 @@ export const composeReplayBundle = (input: ComposeInput): ReplayBundle => {
       ts: page.ts,
       title: page.title,
       filename: page.filename,
+      // 写しの行は文書の行と同じ WACZ の行なので、深さも isSeed も同じ
       isSeed: page.depth === 0,
       crawl_id: crawlId,
     }));

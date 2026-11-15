@@ -1105,8 +1105,12 @@ A WACZ that recorded nothing — an empty index, or `waczStats.totalRecorded` of
 (`skipped`; its name and sha256 stay in `replayBundle.skippedResources`): replay would ask for a zero-length range and keep re-reading the JSON on the store's
 answer, a 416. `resources` starts with the seeds' WACZs, then goes by depth and capture time — a
 fixed order, not a hint: the three WACZs replay tries for something a page does not hold are picked
-by name, not by this order. `initialPages`, the list replay shows first, holds document lines,
-seeds first. A line without an `id` (in a WACZ that is not a BrowserHive WACZ) gets
+by name, not by this order. `initialPages`, the list replay shows first, holds 25 lines of
+`pages.json` — document lines and the DOM snapshot lines (after-load and after-behaviors) alike: the
+first 25 in the order replayweb-server's `/q/` answers without a query (depth, then time, then `id`). Seeds come
+first, and replay reads the second page of the list from `/q/`'s 26th line, so the two meet with no
+gap. A snapshot line's `isSeed` is its document line's (true at depth 0): when seeds and non-seeds
+are mixed, replay lists only the `isSeed` lines by default. A line without an `id` (in a WACZ that is not a BrowserHive WACZ) gets
 `<filename>#<its position>`, because replayweb-server cannot read a line whose `id` is not a string.
 
 ### Reading it back
