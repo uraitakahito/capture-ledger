@@ -139,6 +139,41 @@ OpenFGA 自身のスキーマ移行の記録です。capture-ledger 側の `kyse
 
 ## 覗き方
 
+### DB クライアントから繋ぐ
+
+TablePlus や psql などの DB クライアントで繋げるのは、ポートを公開している capture-ledger の Postgres だけです。手元の Mac から `127.0.0.1` で繋ぎます。
+
+| 項目       | 値                                                                              |
+| ---------- | ------------------------------------------------------------------------------- |
+| host       | `127.0.0.1`                                                                     |
+| port       | `5432`                                                                          |
+| DB 名      | `capture_ledger`                                                                |
+| user       | `capture_ledger`                                                                |
+| パスワード | `docker-compose.yml` の `postgres` の `POSTGRES_PASSWORD`（値は下の命令で見る） |
+
+DB 名・user・パスワードの出どころは、どれも `docker-compose.yml` の `postgres` の `POSTGRES_DB`・`POSTGRES_USER`・`POSTGRES_PASSWORD` です。パスワードの値はこの頁に写しません。repo の根で次のように見ます。
+
+```sh
+# Postgres を作った時の値 (compose)
+grep -A6 '^  postgres:' docker-compose.yml | grep POSTGRES_
+# capture-ledger の API が実際に繋ぐ値
+grep '^DATABASE_URL=' .env
+```
+
+`POSTGRES_PASSWORD` が効くのは、Postgres がデータの置き場（volume）を初めて作る時だけです。置き場を作った後に compose の値を変えても、DB のパスワードは変わりません。2 つが食い違うときは、API が繋げている `.env` の `DATABASE_URL` のほうが今の DB に合っています。
+
+コンテナの名前（`postgres.capture-ledger`）やコンテナの IP では繋がりません。macOS 26 が、Apple の署名の無いアプリからコンテナの subnet への接続を止めるためです（`.env.example` の `DATABASE_URL` の注記）。必ず `127.0.0.1` の公開のポートで繋ぎます。
+
+全文検索の索引（OpenSearch）は SQL の DB ではありませんが、`http://127.0.0.1:9200` で読めます。dev では security plugin を切っているので、認証はありません。
+
+```sh
+curl -s 'http://127.0.0.1:9200/_cat/indices?v'
+```
+
+Windmill の Postgres（`windmill-db.capture-scheduler`）は capture-scheduler のスタックの物なので、この頁では扱いません。
+
+### コンテナの中の psql で覗く
+
 ```sh
 # capture-ledger 側 — ホストの psql でも繋がる (5432 を公開している)
 container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger -c "\dt"
