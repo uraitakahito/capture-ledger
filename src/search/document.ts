@@ -63,7 +63,7 @@ export interface SearchDocument {
   textTruncated: boolean;
   /** 方針が本文を落とした理由。落としていなければ `null`。 */
   textWithheld: string | null;
-  /** capture-ledger が持つ来歴。ヒットから replayweb-server へ渡すのに要る。 */
+  /** capture-ledger が持つ来歴。ヒットから replayweb-player へ渡すのに要る。 */
   objectKey: string;
   sourceUrl: string;
   labels: string[];

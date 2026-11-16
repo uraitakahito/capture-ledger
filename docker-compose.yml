@@ -30,7 +30,7 @@
 #
 #   .upstream/browserhive        本体と、それが動作確認された版の chromium-server-docker (ここから建てる)
 #   .upstream/seaweedfs          object store の検査と片付けの script (package.json の check:store-name・store:wipe)
-#   .upstream/replayweb-server   改変していない ReplayWeb.page のビューア (ここから建てる)
+#   .upstream/replayweb-player   改変していない ReplayWeb.page のビューア (ここから建てる)
 #   .upstream/capture-player     ReplayWeb.page を改変した Web Capture のビューア (ここから建てる)
 #   .upstream/capture-fixtures   取り込み対象のフィクスチャ (profile: capture-fixtures。ここから建てる)
 #   .upstream/capture-scripts    登録済みのスクリプトの元 (pnpm run scripts import が読む)
@@ -201,7 +201,7 @@ services:
       BROWSERHIVE_BROWSER_URL: http://chromium-1.capture-ledger:9222
       # 宛先は共有 store。**変数で書かない** —— container-compose は environment の
       # `${VAR}` も `${VAR:-既定}` も展開せず、文字列のまま container に渡す (実測:
-      # replayweb-server が `S3_BUCKET_URL must be http(s)://…, got: ${S3_ENDPOINT:-…}` で落ちた)。
+      # replayweb-player が `S3_BUCKET_URL must be http(s)://…, got: ${S3_ENDPOINT:-…}` で落ちた)。
       BROWSERHIVE_S3_ENDPOINT: http://seaweedfs.crawler-storage:8333
       BROWSERHIVE_S3_REGION: us-east-1
       BROWSERHIVE_S3_BUCKET: browserhive
@@ -220,7 +220,7 @@ services:
       # 着地する。
       NODE_OPTIONS: "--dns-result-order=ipv4first"
       # 取り込み対象がこのスタックの中に居るので、私設アドレスへの取り込みを許す
-      # (seaweedfs の filer、replayweb-server など。クロールの往復もこれが無いと組めない)。
+      # (seaweedfs の filer、replayweb-player など。クロールの往復もこれが無いと組めない)。
       # **メタデータ(169.254)とループバックはこれでも閉じたまま。**
       # 開発スタック限定で、本番の既定は off (SSRF 対策)。browserhive の compose にも
       # 同じ設定が同じ理由で入っている。
@@ -371,13 +371,13 @@ services:
   # picker を配る capture-api は **host 側で動かす** (`pnpm run api`) —— capture-ledger 自身と
   # 同じ。compose に入れられないのは、OpenFGA の store/model の ID が起動後にしか
   # 決まらないため (`pnpm run fga:deploy` が出力し、.env.local に入れる)。
-  replayweb-server:
+  replayweb-player:
     build:
-      context: ./.upstream/replayweb-server
+      context: ./.upstream/replayweb-player
       args:
-        # browserhive と同じ理由。replayweb-server は `/__version` に書き出す。
-        GIT_TAG: "${REPLAYWEB_SERVER_TAG:-}"
-        GIT_REV: "${REPLAYWEB_SERVER_REV:-dev}"
+        # browserhive と同じ理由。replayweb-player は `/__version` に書き出す。
+        GIT_TAG: "${REPLAYWEB_PLAYER_TAG:-}"
+        GIT_REV: "${REPLAYWEB_PLAYER_REV:-dev}"
     environment:
       # 上流は複合値で渡す。素のサービス名を値に書くと container-compose が
       # その IP に書き換えてしまい、読みが全部 403 になる (browserhive で実測)。
@@ -389,8 +389,8 @@ services:
       - "127.0.0.1:8899:8080"
 
   # ReplayWeb.page と wabac.js を改変した Web Capture のビューア (CAPTURE-102)。workbench の
-  # 「Web Capture ↗」がここへ、replayweb-server と同じ形の ?source=/wacz/<key> で渡す。server は
-  # replayweb-server と同じコードで、/wacz/ と /q/ の形も同じ。image はビューアを Node 24 で build する
+  # 「Web Capture ↗」がここへ、replayweb-player と同じ形の ?source=/wacz/<key> で渡す。server は
+  # replayweb-player と同じコードで、/wacz/ と /q/ の形も同じ。image はビューアを Node 24 で build する
   # (Apple Container の builder の 2 GB で、最大 1.88 GiB・75 秒。2026-11-12 に実測)。
   capture-player:
     build:
@@ -400,10 +400,10 @@ services:
         GIT_TAG: "${CAPTURE_PLAYER_TAG:-}"
         GIT_REV: "${CAPTURE_PLAYER_REV:-dev}"
     environment:
-      # replayweb-server と同じ理由で複合値
+      # replayweb-player と同じ理由で複合値
       - S3_BUCKET_URL=http://seaweedfs.crawler-storage:8333/browserhive
     ports:
-      # replayweb-server と同じ理由で loopback
+      # replayweb-player と同じ理由で loopback
       - "127.0.0.1:8897:8080"
 
   # 全文検索の索引。capture-ledger の API は検索が無いと起動しない (CAPTURE-53)。dev では dev:up の段 search が

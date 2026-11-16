@@ -134,7 +134,7 @@ export const registerRoutes = (app: FastifyInstance, deps: RouteDeps): void => {
         // 読み込みの後の節目のスクリーンショット (`api/stage-screenshot.ts`)。主キーが (archive_id, stage) なので
         // 行は増えず、limit はずれない
         .leftJoin("archiveScreenshots as sh", onListedScreenshot("archives.id"))
-        // objectKey は picker が replayweb-server へ渡す鍵。bucket は返さない —— replayweb-server は
+        // objectKey は picker が replayweb-player へ渡す鍵。bucket は返さない —— replayweb-player は
         // 自分の S3_BUCKET_URL で既に持っていて、両方返すと「どちらが正か」が
         // 2 つになる。
         .select([

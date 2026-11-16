@@ -299,7 +299,7 @@ open http://127.0.0.1:7080/
 ```
 
 [capture-workbench](https://github.com/uraitakahito/capture-workbench) は **1 行 = 1 本のクロール**で、
-状態・撮れた数・WACZ の数と、run（Windmill）と 2 つの再生（[replayweb-server](https://github.com/uraitakahito/replayweb-server) の「ReplayWeb.page ↗」と
+状態・撮れた数・WACZ の数と、run（Windmill）と 2 つの再生（[replayweb-player](https://github.com/uraitakahito/replayweb-player) の「ReplayWeb.page ↗」と
 [capture-player](https://github.com/uraitakahito/capture-player) の「Web Capture ↗」）への行き先が並びます。
 アーカイブの画面では、行の「検証」から **撮れたものが WACZ 1.1.1 と [BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.27.0/ja/) に適合するか**を見られます
 （[wacz-validator](https://github.com/uraitakahito/wacz-validator) が答えます。
@@ -332,7 +332,7 @@ open http://127.0.0.1:7070/
 「401 — このトークンは通らない…」と出たら、同じコマンドで取り直して貼ります
 （[アーカイブを見る](/capture-ledger/ja/picker/#3-手で使うjwt-の設定)）。
 
-行をクリックすると、別のタブで [replay](https://github.com/uraitakahito/replayweb-server) が開きます。
+行をクリックすると、別のタブで [replay](https://github.com/uraitakahito/replayweb-player) が開きます。
 replay はまず、その WACZ に入っているページの一覧を出します
 （WACZ は Web Archive Collection Zipped —— 取り込んだ 1 ページをまとめたファイルです）。
 **題名をクリックすると、再生が始まります。**

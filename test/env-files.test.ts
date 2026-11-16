@@ -30,13 +30,13 @@ describe("readEnvFiles", () => {
   it("宣言されている名前だけを拾い、コメント行は数えない", () => {
     const dir = withFiles({
       ".env":
-        "# LOG_LEVEL=debug\nDATABASE_URL=postgres://x\n\nexport REPLAYWEB_SERVER_ORIGIN=http://x\n",
+        "# LOG_LEVEL=debug\nDATABASE_URL=postgres://x\n\nexport REPLAYWEB_PLAYER_ORIGIN=http://x\n",
     });
     const [dotEnv, local] = readEnvFiles(dir);
     expect(dotEnv).toEqual<EnvFileFacts>({
       file: ".env",
       exists: true,
-      names: ["DATABASE_URL", "REPLAYWEB_SERVER_ORIGIN"],
+      names: ["DATABASE_URL", "REPLAYWEB_PLAYER_ORIGIN"],
     });
     expect(local?.exists).toBe(false);
   });

@@ -21,7 +21,7 @@ import { startupNotes, type StartupFacts } from "./startup-notes.js";
 import { registerRoutes } from "./routes.js";
 import { registerMeRoute } from "./me.js";
 import { registerScriptsRoute } from "./scripts.js";
-import { registerPicker, replaywebServerOriginFromEnv } from "./picker.js";
+import { registerPicker, replaywebPlayerOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
 import { registerScheduleRoutes } from "./schedules.js";
@@ -162,7 +162,7 @@ const start = async (options: ServerOptions): Promise<void> => {
     );
   }
   registerPicker(app, {
-    replaywebServerOrigin: replaywebServerOriginFromEnv(),
+    replaywebPlayerOrigin: replaywebPlayerOriginFromEnv(),
     identity: identityMode,
     listen,
   });
