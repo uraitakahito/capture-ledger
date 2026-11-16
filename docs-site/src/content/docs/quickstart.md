@@ -306,7 +306,7 @@ open http://127.0.0.1:7080/
 
 [capture-workbench](https://github.com/uraitakahito/capture-workbench) is **one row per crawl**: state, pages
 captured, how many WACZ, and links out to the run (Windmill) and to two viewers (“ReplayWeb.page ↗” on
-[replayweb-server](https://github.com/uraitakahito/replayweb-server) and “Web Capture ↗” on
+[replayweb-player](https://github.com/uraitakahito/replayweb-player) and “Web Capture ↗” on
 [capture-player](https://github.com/uraitakahito/capture-player)). On the archives
 face, each row's 検証 (Validate) button reports **whether what was captured conforms to WACZ 1.1.1 and the
 [BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.27.0/)** — answered by [wacz-validator](https://github.com/uraitakahito/wacz-validator), which is
@@ -341,7 +341,7 @@ The token lasts one hour. When the picker says 401 — このトークンは通�
 through"), get a new one with the same command and paste it — see
 [Browsing archives](/capture-ledger/picker/#three-steps-jwt).
 
-Clicking a row opens [replay](https://github.com/uraitakahito/replayweb-server) in a new tab. replay first
+Clicking a row opens [replay](https://github.com/uraitakahito/replayweb-player) in a new tab. replay first
 lists the pages inside that WACZ (Web Archive Collection Zipped — the file one captured page is
 packed into). **Click the title and playback starts.**
 

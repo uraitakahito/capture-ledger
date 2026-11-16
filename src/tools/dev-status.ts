@@ -210,7 +210,7 @@ if (searchUrl === undefined) {
 // pin (タグ) と比べる。違えば、段 stack から起こし直すと pin の版で建て直る。
 {
   const viewers = [
-    { name: "replayweb-server", port: 8899, path: ".upstream/replayweb-server" },
+    { name: "replayweb-player", port: 8899, path: ".upstream/replayweb-player" },
     { name: "capture-player", port: 8897, path: ".upstream/capture-player" },
   ];
   for (const [index, viewer] of viewers.entries()) {
