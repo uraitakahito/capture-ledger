@@ -157,17 +157,6 @@ publishes its port. Connect from your Mac to `127.0.0.1`.
 | user     | `capture_ledger`                                                                           |
 | password | `POSTGRES_PASSWORD` of `postgres` in `docker-compose.yml` (see it with the commands below) |
 
-The database, user and password all come from `POSTGRES_DB`, `POSTGRES_USER` and
-`POSTGRES_PASSWORD` of `postgres` in `docker-compose.yml`. This page does not copy the
-password. See it from the root of the repository:
-
-```sh
-# the values Postgres was created with (compose)
-grep -A6 '^  postgres:' docker-compose.yml | grep POSTGRES_
-# the value capture-ledger's API actually connects with
-grep '^DATABASE_URL=' .env
-```
-
 `POSTGRES_PASSWORD` only takes effect when Postgres first creates its data volume. Changing the
 value in compose afterwards does not change the database's password. When the two disagree,
 `DATABASE_URL` in `.env`, which the API connects with, is the one that matches the database.

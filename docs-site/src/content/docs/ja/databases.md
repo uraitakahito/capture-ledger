@@ -151,15 +151,6 @@ TablePlus や psql などの DB クライアントで繋げるのは、ポート
 | user       | `capture_ledger`                                                                |
 | パスワード | `docker-compose.yml` の `postgres` の `POSTGRES_PASSWORD`（値は下の命令で見る） |
 
-DB 名・user・パスワードの出どころは、どれも `docker-compose.yml` の `postgres` の `POSTGRES_DB`・`POSTGRES_USER`・`POSTGRES_PASSWORD` です。パスワードの値はこの頁に写しません。repo の根で次のように見ます。
-
-```sh
-# Postgres を作った時の値 (compose)
-grep -A6 '^  postgres:' docker-compose.yml | grep POSTGRES_
-# capture-ledger の API が実際に繋ぐ値
-grep '^DATABASE_URL=' .env
-```
-
 `POSTGRES_PASSWORD` が効くのは、Postgres がデータの置き場（volume）を初めて作る時だけです。置き場を作った後に compose の値を変えても、DB のパスワードは変わりません。2 つが食い違うときは、API が繋げている `.env` の `DATABASE_URL` のほうが今の DB に合っています。
 
 コンテナの名前（`postgres.capture-ledger`）やコンテナの IP では繋がりません。macOS 26 が、Apple の署名の無いアプリからコンテナの subnet への接続を止めるためです（`.env.example` の `DATABASE_URL` の注記）。必ず `127.0.0.1` の公開のポートで繋ぎます。
