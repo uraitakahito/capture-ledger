@@ -1,0 +1,45 @@
+# リリースの PR（題が `release: vX.Y.Z — 要約`）は、package.json の version を X.Y.Z に上げ、
+# merge の commit にタグ vX.Y.Z を打つ（CAPTURE-468）。タグは push した後では取り消せないので、
+# merge の前に、題の版と version を比べる。題が release で始まらない PR（機能の PR）は飛ばす。
+name: release-version
+
+on:
+  pull_request:
+    branches: [main]
+    # 題を直したときも比べ直す
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  version-matches-title:
+    name: Release version matches package.json
+    # startsWith は大文字と小文字を区別しない（`Release v1.2.3` も当たる）
+    if: startsWith(github.event.pull_request.title, 'release')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare the PR title with package.json
+        env:
+          # 環境変数で渡す。PR の題は誰でも書ける文字列で、式で直に埋めるとシェルに貼り付く
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          want=$(printf '%s' "${TITLE}" | sed -nE 's/^[Rr]elease:? v([0-9]+\.[0-9]+\.[0-9]+)( .*)?$/\1/p')
+          if [ -z "${want}" ]; then
+            echo "::error::release の PR の題は 'release: vX.Y.Z — 要約' の形にすること。いまは: ${TITLE}"
+            exit 1
+          fi
+          bad=0
+          for f in package.json; do
+            have=$(node -p "require('./${f}').version")
+            if [ "${have}" != "${want}" ]; then
+              echo "::error file=${f}::題は ${want}、${f} の version は ${have}。version を上げるか、題を直すこと"
+              bad=1
+            fi
+          done
+          [ "${bad}" = 0 ] && echo "${want} は version と合う"
+          exit "${bad}"

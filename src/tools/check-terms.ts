@@ -32,7 +32,8 @@
  *   動いている識別子（`crawler-storage`・Windmill の workspace の id）とも同じ字になる（capture-scheduler も見張っている）
  * - **7080 番の Web アプリは「capture-workbench」、文で短く書くときは「workbench」と書く。** 2026-11 に「dashboard」から
  *   そろえた（repo の改名に合わせて）。この repo に Grafana の dashboard は無いので、語を全部見る（capture-scheduler も同じ）
- * - **WACZ を開くビューアは「replayweb-server」と書く。** 2026-11 に「replay」から替えた（repo の改名に合わせて）
+ * - **WACZ を開くビューアは「replayweb-player」と書く。** 2026-11 に「replay」から replayweb-server へ、同じ月の CAPTURE-465 で
+ *   replayweb-player へ替えた（repo の改名に合わせて。兄弟の capture-player と語尾を揃えた）
  * - **HTTP の method と path の組は「エンドポイント」、待ち受けの番号は「ポート」、スクリプトを差し込む時は「phase」、
  *   成果物を PUT する先は「受け取り先」と書く。** 2026-11 に（Jira CAPTURE-184）、1 字の語から意味ごとに替えた。
  *   同じ字がエンドポイント・ポート・phase・受け取り先・`POST /api/crawls` の本文の schema を兼ねていた。
@@ -123,9 +124,9 @@ interface Rule {
   say: string;
 }
 
-/** replayweb-server の旧い名前の形。語の replay は禁じない（上の注記）。 */
+/** replayweb-player の旧い名前の形（replay と、2026-11 の CAPTURE-465 までの replayweb-server）。語の replay は禁じない（上の注記）。 */
 const OLD_REPLAY_NAMES =
-  /uraitakahito[/:]replay(?![\w-])|\.upstream\/(?:browserhive\/)?replay(?![\w-])|\bREPLAY_(?:ORIGIN|TAG|REV)\b|\breplayOrigin(?:FromEnv)?\b|\breplayHref\b|\breplay\.(?:capture-ledger|browserhive|test)\b/u;
+  /uraitakahito[/:]replay(?![\w-])|\.upstream\/(?:browserhive\/)?replay(?![\w-])|\bREPLAY_(?:ORIGIN|TAG|REV)\b|\breplayOrigin(?:FromEnv)?\b|\breplayHref\b|\breplay\.(?:capture-ledger|browserhive|test)\b|\breplayweb[-_]server\b|REPLAYWEB_SERVER|\breplaywebServer/u;
 
 const RULES: Rule[] = [
   {
@@ -175,8 +176,8 @@ const RULES: Rule[] = [
   {
     find: (line) => OLD_REPLAY_NAMES.test(line),
     say:
-      "replay の旧い名前が残っています。WACZ を開くビューアは「replayweb-server」、環境変数は REPLAYWEB_SERVER_*、" +
-      "submodule は `.upstream/replayweb-server` と書きます。",
+      "replay の旧い名前が残っています。WACZ を開くビューアは「replayweb-player」、環境変数は REPLAYWEB_PLAYER_*、" +
+      "submodule は `.upstream/replayweb-player` と書きます。",
   },
   {
     find: (line) => line.includes("注入口") || line.replace(NOT_KUCHI, "").includes("口"),

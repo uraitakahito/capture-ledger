@@ -10,7 +10,7 @@ import {
 /**
  * picker は route が返す 1 枚の HTML。DB も OpenFGA も要らないので、route だけを立てて見る。
  *
- * 見るのは 2 つ。「画面から外へ出る道」—— 使い方のページと replayweb-server。どちらも、壊れても画面は
+ * 見るのは 2 つ。「画面から外へ出る道」—— 使い方のページと replayweb-player。どちらも、壊れても画面は
  * 普通に開くので、ここで見ないと気づけない。もう 1 つは「名乗り方ごとの画面」—— 名乗り方を
  * 見ない画面は、JWT の設定の API で何を入れても 401 になり、原因を言わなかった (2026-09-20)。
  */
@@ -26,7 +26,7 @@ const DENY: PickerOptions["identity"] = { mode: "deny" };
 const open = async (options: Partial<PickerOptions> = {}): Promise<string> => {
   const app = Fastify();
   registerPicker(app, {
-    replaywebServerOrigin: "http://127.0.0.1:8899",
+    replaywebPlayerOrigin: "http://127.0.0.1:8899",
     identity: HEADER,
     listen: LOOPBACK,
     ...options,
@@ -47,15 +47,15 @@ describe("picker の画面", () => {
     );
   });
 
-  // 行のクリックで開く先は、渡された replayweb-server の場所から組む。既定値を焼き込んでいたら、
-  // REPLAYWEB_SERVER_ORIGIN を変えても古い場所を開き続ける。
-  it("渡された replayweb-server の場所を、行のリンクを組む script に埋め込む", async () => {
-    const body = await open({ replaywebServerOrigin: "http://replayweb-server.test:9000" });
-    expect(body).toContain('const REPLAYWEB_SERVER_ORIGIN = "http://replayweb-server.test:9000";');
+  // 行のクリックで開く先は、渡された replayweb-player の場所から組む。既定値を焼き込んでいたら、
+  // REPLAYWEB_PLAYER_ORIGIN を変えても古い場所を開き続ける。
+  it("渡された replayweb-player の場所を、行のリンクを組む script に埋め込む", async () => {
+    const body = await open({ replaywebPlayerOrigin: "http://replayweb-player.test:9000" });
+    expect(body).toContain('const REPLAYWEB_PLAYER_ORIGIN = "http://replayweb-player.test:9000";');
     expect(body).not.toContain("127.0.0.1:8899");
     // 行のリンクは、下の replaywebHref と同じ関数で組む。
     expect(body).toContain("const replaywebHref = ");
-    expect(body).toContain("const href = replaywebHref(REPLAYWEB_SERVER_ORIGIN, a)");
+    expect(body).toContain("const href = replaywebHref(REPLAYWEB_PLAYER_ORIGIN, a)");
   });
 });
 
@@ -116,7 +116,7 @@ describe("行のリンク", () => {
     // replay の画面（wabac）は ?source= を URLSearchParams で 1 度解き、その path を取りに行く
     const source = new URL(href).searchParams.get("source") ?? "";
     expect(source.startsWith("/wacz/")).toBe(true);
-    // replayweb-server（v0.3.0）は /wacz/ の後ろを区切りごとに 1 度だけ解く
+    // replayweb-player（v0.3.0）は /wacz/ の後ろを区切りごとに 1 度だけ解く
     const served = source.slice("/wacz/".length).split("/").map(decodeURIComponent).join("/");
     expect(served).toBe(objectKey);
   });

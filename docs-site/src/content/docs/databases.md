@@ -144,6 +144,40 @@ migrations** is one more sign that they are separate things.
 
 ## Looking inside
 
+### From a database client
+
+The only database a client such as TablePlus or psql can reach is capture-ledger's Postgres, which
+publishes its port. Connect from your Mac to `127.0.0.1`.
+
+| Field    | Value                                                                                      |
+| -------- | ------------------------------------------------------------------------------------------ |
+| host     | `127.0.0.1`                                                                                |
+| port     | `5432`                                                                                     |
+| database | `capture_ledger`                                                                           |
+| user     | `capture_ledger`                                                                           |
+| password | `POSTGRES_PASSWORD` of `postgres` in `docker-compose.yml` (see it with the commands below) |
+
+`POSTGRES_PASSWORD` only takes effect when Postgres first creates its data volume. Changing the
+value in compose afterwards does not change the database's password. When the two disagree,
+`DATABASE_URL` in `.env`, which the API connects with, is the one that matches the database.
+
+The container's name (`postgres.capture-ledger`) and the container's IP do not work. macOS 26
+stops apps that Apple has not signed from connecting to the containers' subnet (see the note on
+`DATABASE_URL` in `.env.example`). Always connect to the published port on `127.0.0.1`.
+
+The full-text search index (OpenSearch) is not an SQL database, but it can be read at
+`http://127.0.0.1:9200`. The dev stack turns the security plugin off, so there is no
+authentication.
+
+```sh
+curl -s 'http://127.0.0.1:9200/_cat/indices?v'
+```
+
+Windmill's Postgres (`windmill-db.capture-scheduler`) belongs to capture-scheduler's stack and is
+not covered here.
+
+### With psql inside the container
+
 ```sh
 # capture-ledger's — the host psql also works (5432 is published)
 container exec postgres.capture-ledger psql -U capture_ledger -d capture_ledger -c "\dt"
