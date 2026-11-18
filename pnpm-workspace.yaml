@@ -101,3 +101,15 @@ auditConfig:
     # 外す条件: これらの親が 11.0.1 以上を要求する版を出したとき (そのとき update で直る)。
     # 確かめ方: pnpm why minimatch -r
     - GHSA-g3hv-75wg-m249
+    # picomatch: 単一の枝を繰り返す extglob (`+(*)` など) の ReDoS (high)。
+    # 勧告の範囲は <= 4.0.7 で 2 系も含み、直った版はまだ無い (2026-11-18 の時点で npm の
+    # 最新は 4.0.7。直しの PR は micromatch/picomatch の #265〜#273 で未 merge)。上げる先が
+    # 無いので、lockfile の更新でも override でも越えられない。
+    # 要求元は astro・@astrojs/internal-helpers・vite・vitest・tinyglobby・fdir・anymatch (2.3.2)。
+    # `pnpm audit --prod` で残る経路は docs-site の Starlight の下だけで、docs は静的な HTML
+    # として出る。picomatch が読むパターンは、build と試験の間のこの repo の設定と、
+    # Astro・vite の内部の物だけで、外の入力は入らない。
+    # 外す条件: 勧告に直った版 (first_patched_version) が載ったとき。
+    # `pnpm update picomatch -r --depth Infinity` で上げ、この行を消しても `pnpm audit` が 0 に
+    # なれば消す (CAPTURE-478)。
+    - GHSA-fc5q-39xc-vjpf
