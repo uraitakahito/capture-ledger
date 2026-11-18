@@ -6,8 +6,6 @@ settings:
 
 overrides:
   axios: ^1.20.0
-  '@expressive-code/core>postcss-nested': ^7.0.2
-  mermaid>katex: ^0.18.2
 
 importers:
 
