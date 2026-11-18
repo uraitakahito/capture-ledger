@@ -55,7 +55,7 @@ allowBuilds:
 #   brace-expansion "^5.0.9" —— 要求元 minimatch 10.2.6 の範囲は ^5.0.8 で、lockfile は 5.0.9
 #   axios "^1.18.1"          —— 要求元 @openfga/sdk 0.9.7 が 1.19.0 を完全一致で指定している
 # js-yaml (旧 ^4.3.0) は、もともと移していない。修正版へは lockfile の更新で上がる。
-# axios は、2026-10 に別の勧告で足し直した (下の axios の説明)。
+# axios は、2026-10 に別の勧告で足し直した (2026-11 に再び外した。下の記録)。
 #
 # 2026-10 に外したもの (上の検査が「もう要らない」と判定した):
 #   lodash-es "^4.18.1"      —— mermaid 12.1.0 が chevrotain を 13.2 に上げ、
@@ -64,16 +64,10 @@ allowBuilds:
 # 2026-11 に外したもの (上の検査が「もう要らない」と判定した):
 #   "@expressive-code/core>postcss-nested" "^7.0.2" —— @expressive-code/core 0.44.3 が postcss-nested を ^7.0.2 で要求する
 #   "mermaid>katex" "^0.18.2"                      —— mermaid 12.3.0 が katex を ^0.18.0 で要求し、lockfile は 0.18.10
-overrides:
-  # @openfga/sdk 0.9.7 (2026-10-01 の時点で最新) が、axios を "1.19.0" と **完全一致で** 指定している。
-  # 1.19.0 は、2026-09-30 に公開された axios の勧告 7 件の対象で、修正版は 1.20.0。
-  # high が GHSA-c29m-xwm3-cm6r・GHSA-mghh-pgcx-3jjj・GHSA-x97p-jq2g-jp4f・GHSA-3pq3-5fj3-cg6v・GHSA-542g-h47m-68v8、
-  # moderate が GHSA-vh66-26gq-q6x8・GHSA-9fr6-4gfg-395g。
-  # 完全一致の指定は lockfile の更新では動かせないので、ここは override でしか直せない。
-  #
-  # **外す条件: @openfga/sdk が、axios を 1.20.0 以上で指定する版を出したとき。**
-  # 外せるようになれば、`pnpm run check:overrides` が名指しする。確かめ方: pnpm why axios
-  axios: "^1.20.0"
+#   axios "^1.20.0"                                —— @openfga/sdk 0.9.8 が axios を "1.21.1" と完全一致で求める (2026-10 に足し直した分)
+#
+# いまは override が 1 本も無いので、`overrides:` の節ごと消してある。要るようになったら
+# 節を足し直し、1 本ごとに、なぜ lockfile の更新で足りないかと、外す条件を書くこと。
 
 # audit から外す勧告。外すのは、上流が修正版を受け取れず、override でも越えられないものだけ。
 # 1 件ごとに、なぜ越えられないかと、外す条件を書く。
