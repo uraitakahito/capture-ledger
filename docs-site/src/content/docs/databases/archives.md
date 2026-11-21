@@ -59,15 +59,16 @@ already in the ledger, its tuples went out the first time.
 
 ## Column notes
 
-| Column                    | Note                                                                                                                                                                                                                         |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                      | `gen_random_uuid()`. Becomes `archive:<id>` in OpenFGA                                                                                                                                                                       |
-| `task_id`                 | BrowserHive's task id                                                                                                                                                                                                        |
-| `correlation_id`          | The thread tying capture-ledger's log lines to artifact filenames (8 hex digits per submission)                                                                                                                              |
-| `bucket` / `object_key`   | **Taken from the server's own report**, not reassembled from a filename                                                                                                                                                      |
-| `wacz_complete`           | `false` means a body is missing or a target's renderer crashed — see below                                                                                                                                                   |
-| `captured_at`             | Capture time; listings are ordered by this, descending                                                                                                                                                                       |
-| `screenshots_recorded_at` | When the archive was inspected for stage screenshots (`041`). NULL means not yet; `pnpm run screenshots:backfill` picks it up. A WACZ inspected without the screenshots field has this set and no `archive_screenshots` rows |
+| Column                    | Note                                                                                                                                                                                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                      | `gen_random_uuid()`. Becomes `archive:<id>` in OpenFGA                                                                                                                                                                                                              |
+| `task_id`                 | BrowserHive's task id                                                                                                                                                                                                                                               |
+| `correlation_id`          | The thread tying capture-ledger's log lines to artifact filenames (8 hex digits per submission)                                                                                                                                                                     |
+| `bucket` / `object_key`   | **Taken from the server's own report**, not reassembled from a filename                                                                                                                                                                                             |
+| `wacz_complete`           | `false` means a body is missing or a target's renderer crashed — see below                                                                                                                                                                                          |
+| `captured_at`             | Capture time; listings are ordered by this, descending                                                                                                                                                                                                              |
+| `source_url_hash`         | A generated column, `digest(source_url, 'sha256')` (`042`); never written. The key of the index that finds the captures of one URL, newest first (`GET /api/history`). The URL itself is not indexed because a long URL would exceed the size limit of an index row |
+| `screenshots_recorded_at` | When the archive was inspected for stage screenshots (`041`). NULL means not yet; `pnpm run screenshots:backfill` picks it up. A WACZ inspected without the screenshots field has this set and no `archive_screenshots` rows                                        |
 
 ### When `wacz_complete` is `false`
 
@@ -96,4 +97,5 @@ archives_captured_at_idx         (captured_at DESC)            -- newest first
 archives_task_id_idx             (task_id)                     -- lookup from a report
 archives_unindexed_idx           (id) WHERE indexed_at IS NULL -- rows not yet in the full-text index
 archives_crawl_id_idx            (crawl_id)                    -- every archive of one crawl
+archives_source_url_hash_captured_at_idx (source_url_hash, captured_at DESC) -- the captures of one URL, newest first
 ```

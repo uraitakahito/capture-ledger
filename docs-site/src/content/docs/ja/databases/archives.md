@@ -57,15 +57,16 @@ if (report.status !== "success" || report.artifacts?.wacz === undefined) {
 
 ## 列の要点
 
-| 列                        | 要点                                                                                                                                                                                      |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                      | `gen_random_uuid()`。OpenFGA の `archive:<id>` になる                                                                                                                                     |
-| `task_id`                 | BrowserHive のタスク id                                                                                                                                                                   |
-| `correlation_id`          | capture-ledger のログ行と成果物のファイル名を結ぶ糸（送信ごとの 16 進 8 桁）                                                                                                              |
-| `bucket` / `object_key`   | **server 自身の報告から取る。** ファイル名を組み直したものではない                                                                                                                        |
-| `wacz_complete`           | `false` は本文が欠けているか、renderer の落ちた target があるという意味。詳細は下記                                                                                                       |
-| `captured_at`             | 取り込みの時刻。一覧はこれの降順                                                                                                                                                          |
-| `screenshots_recorded_at` | 節目のスクリーンショットについて検めた時刻（`041`）。NULL は「まだ」で、`pnpm run screenshots:backfill` が拾う。検めたが絵の欄の無い WACZ は、これが在って `archive_screenshots` の行が 0 |
+| 列                        | 要点                                                                                                                                                                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                      | `gen_random_uuid()`。OpenFGA の `archive:<id>` になる                                                                                                                                                                   |
+| `task_id`                 | BrowserHive のタスク id                                                                                                                                                                                                 |
+| `correlation_id`          | capture-ledger のログ行と成果物のファイル名を結ぶ糸（送信ごとの 16 進 8 桁）                                                                                                                                            |
+| `bucket` / `object_key`   | **server 自身の報告から取る。** ファイル名を組み直したものではない                                                                                                                                                      |
+| `wacz_complete`           | `false` は本文が欠けているか、renderer の落ちた target があるという意味。詳細は下記                                                                                                                                     |
+| `captured_at`             | 取り込みの時刻。一覧はこれの降順                                                                                                                                                                                        |
+| `source_url_hash`         | `digest(source_url, 'sha256')` の生成列（`042`）。書き込みません。同じ URL の取り込みを新しい順に引く索引の鍵です（`GET /api/history`）。URL そのものに索引を張らないのは、長い URL が索引の 1 行の上限に当たるためです |
+| `screenshots_recorded_at` | 節目のスクリーンショットについて検めた時刻（`041`）。NULL は「まだ」で、`pnpm run screenshots:backfill` が拾う。検めたが絵の欄の無い WACZ は、これが在って `archive_screenshots` の行が 0                               |
 
 ### `wacz_complete` が `false` になるとき
 
@@ -94,4 +95,5 @@ archives_captured_at_idx         (captured_at DESC)            -- 一覧は新�
 archives_task_id_idx             (task_id)                     -- 報告から引く
 archives_unindexed_idx           (id) WHERE indexed_at IS NULL -- 全文検索の索引にまだ載せていない行を探す
 archives_crawl_id_idx            (crawl_id)                    -- クロールのアーカイブを全部引く
+archives_source_url_hash_captured_at_idx (source_url_hash, captured_at DESC) -- 同じ URL の取り込みを新しい順に
 ```

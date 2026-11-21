@@ -18,6 +18,7 @@
     "",
     "## 名前から用途が分かりにくい依存",
     "yauzl-promise: WACZ (中身は zip) の中を読む (src/archive/wacz.ts)。全文検索の索引・合本の検め・前回からの変化が、ここを通して読む。",
+    "好きな 2 本の差分 (CAPTURE-462) だけは WACZ を丸ごと持たず、同じ library の fromReader に、保管庫を Range で読む reader を渡す (src/archive/wacz-range.ts)。",
     "@aws-sdk/s3-request-presigner: アーカイブの署名付き URL を発行する (POST /api/archives/:id/url)。",
     "jose: JWT の検証 (本番の身元の経路)。手元の IdP は compose の Floci (Cognito の代役) で、道具は SDK を使わず JSON の API を叩く (src/tools/idp.ts)。",
     "croner: 定期実行の cron の式を読む (`src/schedules/cron.ts`)。タイマーには使わず、周回は `src/schedules/tick.ts` の setInterval。",
@@ -84,7 +85,7 @@
     "container を使う。"
   ],
   "name": "capture-ledger",
-  "version": "0.109.2",
+  "version": "0.110.0",
   "description": "Capture orchestrator for BrowserHive (https://github.com/uraitakahito/browserhive): decides which URLs get captured and keeps the ledger of what came back.",
   "license": "Unlicense",
   "type": "module",

@@ -40,8 +40,11 @@ import { claudeBudgetUsd, createClaude } from "../config/claude.js";
 import { derivationStoreOf } from "../derivations/store.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerChangeRoutes } from "./changes.js";
+import { registerHistoryRoutes } from "./history.js";
 import { registerTraceRoutes } from "./trace.js";
 import { changeReadsOf } from "../changes/reads.js";
+import { historyReadsOf } from "../changes/history.js";
+import { pairSummaryReadsOf } from "../changes/pair-summary.js";
 import { changeStoreOf } from "../changes/store.js";
 import { changeClock } from "../changes/worker.js";
 import { registerSinkRoutes, type SinkConfig } from "./sink.js";
@@ -330,6 +333,25 @@ const start = async (options: ServerOptions): Promise<void> => {
   // 前回からの変化 (CAPTURE-167)。予定の回を前の回と比べ、違えば Claude に要約させる。鍵が無ければ比べるだけ。
   // webhook の無い配備でも回す (予定の回が在れば比べられる)
   registerChangeRoutes(app, { fga, resolveIdentity, reads: changeReadsOf(db) });
+  // 同じ URL の取り込みの一覧と、好きな 2 本の差分 (CAPTURE-462)。DB と保管庫を読むだけなので、webhook の無い配備でも
+  // 出す。差分を Claude に要約させるエンドポイントだけは、鍵が在るときに出す (月の上限は直す係・周回と分け合う)
+  if (claude === undefined) {
+    logger.info(
+      "CAPTURE_LEDGER_ANTHROPIC_API_KEY is not set — /api/archives/:id/changes/summary is not served",
+    );
+  }
+  registerHistoryRoutes(app, {
+    fga,
+    resolveIdentity,
+    reads: historyReadsOf(db),
+    s3,
+    summaries: pairSummaryReadsOf(db),
+    ...(claude && {
+      claude,
+      derivations: derivationStoreOf(db),
+      claudeBudgetUsd: claudeBudgetUsd(),
+    }),
+  });
   const changes = changeClock({
     store: changeStoreOf(db),
     spentThisMonth: (orgId) => derivationStoreOf(db).spentThisMonth(orgId),

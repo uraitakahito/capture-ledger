@@ -157,6 +157,11 @@ export const verifiedSummary = (
   })),
 });
 
+/** 派生の層 (`derivations.usage`) に残す、試みごとの model と token の数。周回と、好きな 2 本の要約が同じ形で残す。 */
+export const attemptsUsageOf = (attempts: readonly ClaudeAttempt[]) => ({
+  attempts: attempts.map((attempt) => ({ model: attempt.model, ...attempt.usage })),
+});
+
 export const summarizeChanges = async (
   claude: Claude,
   pages: readonly ChangeInputPage[],

@@ -122,7 +122,7 @@ capture を投げた人が破ります**。
 
 ## URL を発行する
 
-`capture-api` は、アーカイブのエンドポイントを 3 つ提供します。どれも身元が必要です。
+`capture-api` が提供するアーカイブのエンドポイントは、下のとおりです。どれも身元が必要です。
 
 ```sh
 # 1 本のアーカイブ
@@ -134,28 +134,43 @@ curl http://localhost:7070/api/archives
 
 # 1 本のアーカイブの、節目のスクリーンショット（WebP。下の「節目のスクリーンショット」）
 curl -o after-load.webp http://localhost:7070/api/archives/<id>/screenshots/after-load
+
+# 同じ URL の取り込みを新しい順に（下の「URL の履歴と 2 本の差分」）
+curl 'http://localhost:7070/api/history?url=https://www.apple.com/'
+
+# 同じ URL の 2 本の、文字の差分（<id> が今、since が前）
+curl 'http://localhost:7070/api/archives/<id>/changes?since=<前の id>'
+
+# その差分を Claude に要約させる（鍵が在る配備だけ）
+curl -X POST http://localhost:7070/api/archives/<id>/changes/summary \
+  -H 'content-type: application/json' -d '{"since":"<前の id>"}'
 ```
 
 どのリクエストも形は route の JSON Schema で決まっています。説明ではなく
 検査そのものが契約です。
 
-|                                                            |               |                                                                                  |
-| ---------------------------------------------------------- | ------------- | -------------------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`                               | `id`          | UUID。違えば **400**（認可より前に落ちる）                                       |
-| `GET /api/archives`                                        | `before`      | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
-| `GET /api/archives/:id/screenshots/:stage`                 | `id`・`stage` | UUID と、`after-load` か `after-behaviors`。違えば **400**（認可より前に落ちる） |
-| `GET /api/crawls`                                          | `state`       | `running` / `succeeded` / `failed`。違えば **400**                               |
-|                                                            | `before`      | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
-| `GET /api/crawls/:id/pages`                                | `after`       | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                          |
-|                                                            | `limit`       | 1〜500。既定 100。外れは **400**                                                 |
-| `GET /api/crawls/:id/pages/:page/log`                      | `page`        | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる）          |
-| `GET /api/crawls/:id/pages/:page/trace`                    | `page`        | 同じ                                                                             |
-| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`        | 同じ                                                                             |
+|                                                            |                      |                                                                                  |
+| ---------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`                               | `id`                 | UUID。違えば **400**（認可より前に落ちる）                                       |
+| `GET /api/archives`                                        | `before`             | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
+| `GET /api/archives/:id/screenshots/:stage`                 | `id`・`stage`        | UUID と、`after-load` か `after-behaviors`。違えば **400**（認可より前に落ちる） |
+| `GET /api/history`                                         | `url`                | 1 字以上。http(s) の URL として読めなければ **400**                              |
+|                                                            | `before`             | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
+| `GET /api/archives/:id/changes`                            | `id`・`since`        | どちらも UUID で、`since` は必須。違えば **400**（認可より前に落ちる）           |
+| `POST /api/archives/:id/changes/summary`                   | `id`・本文の `since` | 同じ                                                                             |
+| `GET /api/crawls`                                          | `state`              | `running` / `succeeded` / `failed`。違えば **400**                               |
+|                                                            | `before`             | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
+| `GET /api/crawls/:id/pages`                                | `after`              | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                          |
+|                                                            | `limit`              | 1〜500。既定 100。外れは **400**                                                 |
+| `GET /api/crawls/:id/pages/:page/log`                      | `page`               | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる）          |
+| `GET /api/crawls/:id/pages/:page/trace`                    | `page`               | 同じ                                                                             |
+| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`               | 同じ                                                                             |
 
 `before` はカーソルで、直前に受け取った最後の行の `capturedAt`（クロールなら
-`startedAt`）を渡します。
-知らないクエリパラメータは、拒否も削除もされず、そのまま残って無視されます（全文検索の `GET /api/search`
-と `GET /api/changes` だけは 400 で断ります）。
+`startedAt`）を渡します。`GET /api/history` だけは、答えの `next` を渡します。
+知らないクエリパラメータは、拒否も削除もされず、そのまま残って無視されます。400 で断るのは、全文検索の
+`GET /api/search`・`GET /api/changes`・`GET /api/history`・`GET /api/archives/:id/changes` です
+（`POST /api/archives/:id/changes/summary` は、本文の知らない鍵を 400 で断ります）。
 
 クロールの一覧は `maySubmit` で絞ります —— アーカイブのように 1 行ずつ `can_view` を
 訊く形ではありません。認可モデルに `crawl` という型が無いためです。`maySubmit` は、呼び出し元の組織のどれか 1 つで
@@ -233,6 +248,169 @@ curl -o after-load.webp http://localhost:7070/api/archives/<id>/screenshots/afte
 
 `max-age=300` は署名付き URL の寿命と同じです —— 見る許可を外した後も、この秒数だけはブラウザに残ります。WACZ は
 書き換わらないので、同じ URL の絵は変わりません（`immutable`）。**絵は WACZ の中の記録で、署名した WACZ では署名の下に在ります。**
+
+### URL の履歴と 2 本の差分
+
+同じ URL の取り込みを一覧し、そのうちの好きな 2 本の文字を、その場で比べるエンドポイントです（CAPTURE-462）。
+capture-workbench のタブ「変化」の「URL の履歴」が読みます。予定の回を自動で比べる仕組み
+（[前回からの変化](/capture-ledger/ja/schedules/#前回からの変化)）は、同じ予定・同じ撮り方の 1 つ前の回だけを
+比べます。こちらは、撮った日も撮り方も違う 2 本を、人が選んで比べます。結果は保存しません（2 本の WACZ から
+いつでも作り直せます）。
+
+**名乗りは `can_submit` で通し、取り込みは 1 本ずつ `can_view` で絞ります。** 一覧は弱い一貫性のまとめ訊き
+（アーカイブの一覧と同じ）、差分と要約は 2 本それぞれを強整合で訊きます。WACZ の文字を返す読みなので、取り消した
+直後の許しでは返しません。見てよいと分かるまで、取り込みの行も保管庫も読みません。
+
+#### `GET /api/history?url=<URL>&before=<時刻>`
+
+渡した URL は、クロールの起点と同じ関数（`parseHttpUrl`）で正規化してから引きます。`https://www.apple.com` は
+`https://www.apple.com/` の取り込みに当たります。`#` より後ろは落とし、path の末尾の `/` の有無とクエリの並びは
+揃えません。答えの `url` が、正規化した URL です。
+
+```jsonc
+{
+  "url": "https://www.apple.com/",
+  "archives": [
+    {
+      "id": "<uuid>",
+      "capturedAt": "2026-11-20T19:00:32.000Z",
+      "objectKey": "….browserhive.wacz",
+      "crawlId": "<uuid>", // クロールに繋がらない古い行は null
+      "origin": { "kind": "schedule", "scheduleId": "<uuid>", "scheduleName": "毎朝の 5 サイト" },
+      "recipeSha256": "<64 hex>", // 分からなければ null
+      "browserhiveVersion": "32.0.0", // 分からなければ null
+      "text": { "stage": "after-behaviors", "sha256": "<64 hex>", "chars": 6543 },
+      "notComparable": null,
+    },
+  ],
+  "next": null, // 続きを引くときに before に渡す値。無ければ null
+}
+```
+
+- 行は撮った時刻の新しい順で、1 回に `HISTORY_PAGE_SIZE`（`src/changes/history.ts`）行までです。見てよい行だけに
+  絞るので、返る行はそれより少ないことがあります。**続きが在るかは `next` で見ます**（見てよい行が 0 でも、
+  続きが在れば `next` は時刻です）。
+- `origin.kind` は、予定の回なら `schedule`、手で始めたクロールなら `manual`、クロールに繋がらなければ `unknown` です。
+- `text` は比べる行です。選び方は自動の比べと同じで、after-behaviors の写し、無ければ文書の行（`stage` は `null`）です。
+  「1 つ前から変わったか」は、隣どうしの `text.sha256` を見比べれば分かります。capture-ledger は数えません
+  （見てよくない取り込みと同じ文字かどうかを漏らさないためです）。
+- 比べられない行は `text` が `null` で、`notComparable` に訳が入ります。上から順に見ます。
+
+| `notComparable` | 意味                                                |
+| --------------- | --------------------------------------------------- |
+| `not_inspected` | まだ検めていない（`archives.inspected_at` が NULL） |
+| `withheld`      | 比べる行の文字を、方針で伏せた                      |
+| `no_text`       | 比べる行が無いか、その行に文字の記録が無い          |
+
+クロールを頼めない名乗りには、200 で空の `archives` を返します。http(s) の URL として読めない `url` は
+400 `{ "error": "invalid url" }` です。
+
+引くのは `archives.source_url_hash`（`042` の生成列）の索引です
+（[archives](/capture-ledger/ja/databases/archives/)）。
+
+#### `GET /api/archives/:id/changes?since=<前の取り込みの id>`
+
+`:id` が「今」、`since` が「前」です。
+
+```jsonc
+{
+  "url": "https://www.apple.com/",
+  "state": "diffed", // "same" | "diffed" | "not_comparable"
+  "reason": null, // not_comparable のときだけ
+  "sameBy": null, // same のときだけ: "digest" | "lines"
+  "added": 33,
+  "removed": 39,
+  "hunks": [[" 文脈の行", "-消した行", "+足した行"]],
+  "recipeDiffers": true, // どちらかの撮り方が分からなければ null
+  "stageDiffers": false,
+  "before": {
+    "archiveId": "<uuid>",
+    "objectKey": "…",
+    "sourceUrl": "…",
+    "capturedAt": "…",
+    "browserhiveVersion": "28.0.1",
+    "stage": "after-behaviors",
+  },
+  "after": {
+    "archiveId": "<uuid>",
+    "objectKey": "…",
+    "sourceUrl": "…",
+    "capturedAt": "…",
+    "browserhiveVersion": "32.0.0",
+    "stage": "after-behaviors",
+  },
+  "summary": null, // 要約が在れば { "evidence": false, "model": "…", "promptVersion": "change-v1", "usd": 0.0123 }
+  "significance": null,
+  "headline": null,
+  "quotes": [],
+}
+```
+
+比べ方は自動の比べと同じです（行に割り、両端の空白と空行を落とし、前後 2 行の文脈つきの差分を作ります）。
+
+| `state`          | 意味                                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `same`           | 差分が無い。`sameBy` が `digest` なら文字の digest が同じ（**保管庫を読みません**）、`lines` なら空行と字下げだけの違い |
+| `diffed`         | 差分が在る。`hunks` の形は `GET /api/crawls/:id/changes` のページと同じ                                                 |
+| `not_comparable` | 比べられない。`reason` に訳。2 本のうち「今」を先に見て、最初に当たった訳を言う                                         |
+
+| `reason`        | 意味                                                                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not_inspected` | 一覧の `notComparable` と同じ                                                                                                                                       |
+| `withheld`      | 同じ                                                                                                                                                                |
+| `no_text`       | 同じ                                                                                                                                                                |
+| `wacz_missing`  | WACZ が保管庫に無い                                                                                                                                                 |
+| `too_large`     | 2 本の行数の掛け算が `MAX_LINE_PRODUCT`（`src/changes/compare.ts`）を超えるか、解いた後の `pages.jsonl` が `ENTRY_MAX_BYTES`（`src/archive/wacz-range.ts`）を超える |
+
+- `recipeDiffers` は、2 本のクロールの撮り方の digest（`crawls.recipe_sha256`）が違えば `true` です。自動の比べは
+  撮り方が同じ回どうしだけを比べますが、こちらは違う 2 本も比べ、印を付けます。
+- `stageDiffers` は、比べた行の種類が違えば `true` です（片方が after-behaviors の写し、片方が文書の行）。
+  `before.stage`・`after.stage` が、それぞれの比べた行です（文書の行は `null`）。
+- `summary`・`significance`・`headline`・`quotes` は、同じ差分の要約が派生の層（`derivations`）に在るときだけ
+  載ります。この GET は Claude を呼びません。**要約は証拠ではありません**（`evidence: false`）。
+
+**WACZ は丸ごと読みません。** 文字の digest が違う 2 本だけ、WACZ の末尾（`TAIL_BYTES`。同じ file）を 1 度に取り、
+その中から zip の目次と `pages/pages.jsonl` を読みます。収まらなかった分だけ、Range で追加で取ります。WACZ 全体の
+大きさは `archives.wacz_bytes` を使い、保管庫には訊きません。差分を 1 回作るたびに、保管庫への要求の回数と取った量を
+ログに 1 行出します（`Archive pair compared`）。
+
+| 答え                                     | いつ                                                                             |
+| ---------------------------------------- | -------------------------------------------------------------------------------- |
+| 200                                      | 比べた（比べられない 2 本も 200 で、訳を返す）                                   |
+| 400                                      | `id`・`since` が UUID でない・`since` が無い・知らない引数（認可より前に落ちる） |
+| 401 `{ "error": "unauthenticated" }`     | 身元が無い                                                                       |
+| 404 `{ "error": "not found" }`           | クロールを頼めない・どちらかを見てよくない・どちらかが無い。断る理由は分けません |
+| 422 `{ "error": "different url" }`       | 2 本の `source_url` が違う                                                       |
+| 502 `{ "error": "storage unreachable" }` | 保管庫に届かない・返った長さが頼んだ長さと違う                                   |
+
+#### `POST /api/archives/:id/changes/summary`
+
+本文は `{ "since": "<前の取り込みの id>" }` です。上の GET と同じ 2 本の差分を、Claude に要約させます。**鍵
+（`CAPTURE_LEDGER_ANTHROPIC_API_KEY`）が無い配備には、このエンドポイントがありません**（404）。
+
+自動の要約と同じ関数・同じ決まりの文（版 `change-v1`）・同じ置き場（派生の層の `kind = 'change'`）を使います。
+Claude が読むのは差分の行と前後 2 行だけです。決まりの文は「同じ予定・同じ撮り方の前の回と今回」と言っているので、
+撮り方の違う 2 本では、要約は撮り方の違いを知りません（答えの `recipeDiffers` で補います）。
+
+- **同じ差分に 2 度払いません。** 差分から作る入力の digest と、決まりの文の版が同じ要約が在れば、Claude を呼ばずに
+  それを返します（`reused: true`）。自動の比べが残した要約でも、同じ差分なら当たります。
+- 費用は、「今」の取り込みを撮ったクロールの組織に数えます。月の上限（`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`）は、
+  自動の要約・スクリプトの直し方を訊く機能と分け合います。
+- 残す行は、`archive_id` が「今」の取り込み、`target` が `{ archiveId, prevArchiveId }`、`created_by` が頼んだ人です。
+- Claude が答えない・断るときも、自動のやり直しはしません（頼み直します）。払った試みは、月の上限に数えます。
+
+答えは、上の GET と同じ形に `reused`（`true` か `false`）を足した物で、`summary` が必ず入ります。
+
+| 答え                                                                  | いつ                                                          |
+| --------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 200                                                                   | 要約を返せた                                                  |
+| 400・401・404・502 `storage unreachable`                              | 上の GET と同じ                                               |
+| 422 `{ "error": "different url" }`                                    | 上の GET と同じ                                               |
+| 422 `{ "error": "nothing to summarize" }`                             | 差分が無い（`state` が `diffed` でない）。Claude は呼びません |
+| 422 `{ "error": "no organization" }`                                  | 「今」の取り込みがクロールに繋がらず、費用を数える組織が無い  |
+| 429 `{ "error": "claude budget exhausted", "spentUsd", "budgetUsd" }` | 組織の月の上限に届いた。Claude は呼びません                   |
+| 422 `{ "error": "claude refused" }`                                   | Claude が断った                                               |
+| 502 `{ "error": "claude failed" }`                                    | Claude が答えなかったか、答えが決めた形で読めなかった         |
 
 ## クロールを始める
 

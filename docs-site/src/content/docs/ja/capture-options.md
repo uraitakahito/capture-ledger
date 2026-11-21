@@ -211,7 +211,7 @@ ts-compile-service しか呼ばないので GET で、許可はクロールの�
 Claude を呼んだ頼みは、1 回ごとに表 `derivations` に 1 行残します（入力の digest・model・prompt の版・
 effort・回数・出力・usage・費用）。WACZ には書きません。組織ごとの月の上限は、その費用を足して数えます
 （`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`、既定 5）。上限は、予定の回の前回からの変化の要約（[定期実行](/capture-ledger/ja/schedules/)。
-こちらはページの文字の差分を送ります）と分け合います。エンドポイントは `CAPTURE_LEDGER_ANTHROPIC_API_KEY` があるときだけ出し、
+こちらはページの文字の差分を送ります）と、好きな 2 本の取り込みの差分の要約（`POST /api/archives/:id/changes/summary`。同じく差分を送ります）と分け合います。エンドポイントは `CAPTURE_LEDGER_ANTHROPIC_API_KEY` があるときだけ出し、
 鍵があって `CAPTURE_LEDGER_TS_COMPILE_URL` が無ければ API は起動で止まります。答えの `usage` に token の数と
 費用（`usd`）が載ります。
 

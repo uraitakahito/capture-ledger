@@ -124,6 +124,25 @@ in both runs, not withheld, with a text digest on both sides (a page in only one
 pairs with a WACZ the caller may not view, so `pages` plus `unchanged` equals it only for a caller who may view every
 WACZ of the run (`restricted: false`).
 
+### Comparing any two captures
+
+The automatic comparison only looks at the previous run of the same schedule and the same recipe. Apart from
+it, the captures of one URL can be listed (`GET /api/history`) and any two of them compared on the spot
+(`GET /api/archives/:id/changes?since=`, CAPTURE-462). The compared line and the diff are chosen and built
+exactly as in the automatic comparison. Nothing is stored. Two captures with different recipes, or whose
+compared lines are of different kinds (one the after-behaviors snapshot, the other the document line), are
+compared anyway and the answer says so (`recipeDiffers`, `stageDiffers`). The WACZ is not read whole: only
+`pages/pages.jsonl` is read, with Range requests.
+
+A summary is made **only when a person asks for it** (`POST /api/archives/:id/changes/summary`). Reading the
+diff never calls Claude. When a summary of the same diff is already in the derived layer it is returned and
+nothing is paid (a summary left by the worker matches too). The cost is counted against the organization of the
+crawl that made the "now" capture, and the monthly limit is shared with the worker's summaries and the fixer.
+The states in the table above (`crawl_changes`) are not used, and nothing is retried automatically.
+
+The shape of the answers is in
+[the archive ledger](/capture-ledger/archive-ledger/#url-history-and-comparing-two-archives).
+
 ## Settings
 
 | Environment variable                           | Default | Effect                                                                          |
