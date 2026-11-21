@@ -12,12 +12,11 @@
 import type { S3Client } from "@aws-sdk/client-s3";
 
 import { getObjectBytes } from "../archive/s3.js";
-import { ClaudeUnavailable, type Claude, type ClaudeAttempt } from "../claude/types.js";
+import { ClaudeUnavailable, type Claude } from "../claude/types.js";
 import { createChildLogger } from "../logger.js";
 import { readWaczFacts } from "../replay-bundle/inspect.js";
-import type { PageLine } from "../search/document.js";
 import { changeOf } from "./change-of.js";
-import { pairsOf } from "./pairs.js";
+import { comparedTextOf, pairsOf } from "./pairs.js";
 import type {
   ChangeStore,
   ComparedPage,
@@ -26,6 +25,7 @@ import type {
   RunToSummarize,
 } from "./store.js";
 import {
+  attemptsUsageOf,
   CHANGE_EFFORT,
   CHANGE_PROMPT_VERSION,
   changeInputSha256,
@@ -62,19 +62,10 @@ export type ChangeTick =
   | { kind: "compared"; crawlId: string; state: string; pagesChanged: number }
   | { kind: "summarized" | "reused" | "deferred" | "failed" | "retry"; crawlId: string };
 
-/** WACZ の比べる行の文字。`ComparedPage` と同じ選び方 (stage の同じ行)。 */
-const textOf = (lines: readonly PageLine[], stage: string | null): string => {
-  const line =
-    stage === null
-      ? lines.find((l) => typeof l.stage !== "string" || l.stage === "")
-      : lines.find((l) => l.stage === stage);
-  return line?.text ?? "";
-};
-
 const readText = async (s3: S3Client, page: ComparedPage): Promise<string | undefined> => {
   const zip = await getObjectBytes(s3, page.bucket, page.objectKey);
   if (zip === undefined) return undefined;
-  return textOf((await readWaczFacts(zip)).lines, page.stage);
+  return comparedTextOf((await readWaczFacts(zip)).lines, page.stage);
 };
 
 const compareRun = async (
@@ -132,10 +123,6 @@ const compareRun = async (
   );
   return { kind: "compared", crawlId: run.crawlId, state, pagesChanged: pages.length };
 };
-
-const usageOf = (attempts: readonly ClaudeAttempt[]) => ({
-  attempts: attempts.map((a) => ({ model: a.model, ...a.usage })),
-});
 
 const summarizeRun = async (
   deps: ChangeWorkerDeps,
@@ -200,7 +187,7 @@ const summarizeRun = async (
       promptVersion: CHANGE_PROMPT_VERSION,
       effort: CHANGE_EFFORT,
       output: { kind: result.kind },
-      usage: usageOf(result.attempts),
+      usage: attemptsUsageOf(result.attempts),
       usd: result.usd,
     });
     const refused = result.kind === "refused";
@@ -227,7 +214,7 @@ const summarizeRun = async (
         promptVersion: CHANGE_PROMPT_VERSION,
         effort: CHANGE_EFFORT,
         output: result.summary as unknown as Record<string, unknown>,
-        usage: usageOf(result.attempts),
+        usage: attemptsUsageOf(result.attempts),
         usd: result.usd,
       },
       headline: result.summary.headline,

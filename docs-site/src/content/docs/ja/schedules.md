@@ -114,6 +114,21 @@ options、変数の値、User-Agent、宣言したシークレットの名前で
 ページは数えない）。`pagesCompared` は見てよくない WACZ を含む組も数えるので、`pages` と `unchanged` を足した数と
 等しくなるのは、回の WACZ を全部見てよい名乗り（`restricted: false`）のときだけです。
 
+### 好きな 2 本を比べる
+
+自動の比べは、同じ予定・同じ撮り方の 1 つ前の回だけを相手にします。それとは別に、同じ URL の取り込みを一覧し
+（`GET /api/history`）、そのうちの好きな 2 本をその場で比べられます（`GET /api/archives/:id/changes?since=`・
+CAPTURE-462）。比べる行の選び方と差分の作り方は、自動の比べと同じ物です。結果は保存しません。撮り方が違う 2 本や、
+比べた行の種類が違う 2 本（片方が after-behaviors の写し、片方が文書の行）も比べ、答えに印を付けます
+（`recipeDiffers`・`stageDiffers`）。WACZ は丸ごと読まず、`pages/pages.jsonl` だけを Range で読みます。
+
+要約は、**人が頼んだ時だけ**作ります（`POST /api/archives/:id/changes/summary`）。差分を読んだだけでは Claude を
+呼びません。同じ差分の要約が派生の層に在れば、それを返して払いません（周回が残した要約でも当たります）。費用は
+「今」の取り込みを撮ったクロールの組織に数え、月の上限を周回の要約・直す係と分け合います。上の表の状態
+（`crawl_changes`）は使わず、自動のやり直しもしません。
+
+エンドポイントの答えの形は、[アーカイブの記録](/capture-ledger/ja/archive-ledger/#url-の履歴と-2-本の差分)に在ります。
+
 ## 設定
 
 | 環境変数                                       | 既定 | 効果                                                                            |

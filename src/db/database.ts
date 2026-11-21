@@ -21,6 +21,11 @@ export interface ArchivesTable {
   bucket: string;
   objectKey: string;
   sourceUrl: string;
+  /**
+   * GENERATED ALWAYS AS (digest(source_url, 'sha256')) STORED —— 書き込むことはない (`042`)。同じ URL の取り込みを
+   * 引く索引の鍵 (`changes/history.ts`)。
+   */
+  sourceUrlHash: GeneratedAlways<Buffer>;
   labels: ColumnType<string[], string[] | undefined, string[]>;
   waczComplete: boolean | null;
   /** wacz-auth の署名を持って出たか。NULL は「求めていない」。`005` を見ること。 */

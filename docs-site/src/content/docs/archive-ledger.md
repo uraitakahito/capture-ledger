@@ -131,7 +131,7 @@ submits a capture by hand.
 
 ## Handing out URLs
 
-`capture-api` serves three endpoints for archives. All require an identity; see below.
+`capture-api` serves the archive endpoints below. All require an identity; see below.
 
 ```sh
 # One archive
@@ -143,28 +143,44 @@ curl http://localhost:7070/api/archives
 
 # One archive's stage screenshot (WebP; see "Stage screenshots" below)
 curl -o after-load.webp http://localhost:7070/api/archives/<id>/screenshots/after-load
+
+# The captures of one URL, newest first (see "URL history and comparing two archives" below)
+curl 'http://localhost:7070/api/history?url=https://www.apple.com/'
+
+# The text diff of two captures of the same URL (<id> is now, since is before)
+curl 'http://localhost:7070/api/archives/<id>/changes?since=<earlier id>'
+
+# Have Claude summarize that diff (only where the key is set)
+curl -X POST http://localhost:7070/api/archives/<id>/changes/summary \
+  -H 'content-type: application/json' -d '{"since":"<earlier id>"}'
 ```
 
 The shape of every request is a JSON Schema on the route, so the checking is
 the contract rather than a description of it:
 
-|                                                            |               |                                                                                                     |
-| ---------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`                               | `id`          | a UUID — anything else is **400**, before authorization runs                                        |
-| `GET /api/archives`                                        | `before`      | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
-| `GET /api/archives/:id/screenshots/:stage`                 | `id`, `stage` | a UUID, and `after-load` or `after-behaviors` — anything else is **400**, before authorization runs |
-| `GET /api/crawls`                                          | `state`       | `running` / `succeeded` / `failed` — anything else is **400**                                       |
-|                                                            | `before`      | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
-| `GET /api/crawls/:id/pages`                                | `after`       | the previous answer's `next`: digits only, at most 18 — anything else is **400**                    |
-|                                                            | `limit`       | 1 to 500, default 100 — anything else is **400**                                                    |
-| `GET /api/crawls/:id/pages/:page/log`                      | `page`        | a page id: digits only, at most 18 — anything else is **400**, before authorization runs            |
-| `GET /api/crawls/:id/pages/:page/trace`                    | `page`        | the same                                                                                            |
-| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`        | the same                                                                                            |
+|                                                            |                           |                                                                                                     |
+| ---------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`                               | `id`                      | a UUID — anything else is **400**, before authorization runs                                        |
+| `GET /api/archives`                                        | `before`                  | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
+| `GET /api/archives/:id/screenshots/:stage`                 | `id`, `stage`             | a UUID, and `after-load` or `after-behaviors` — anything else is **400**, before authorization runs |
+| `GET /api/history`                                         | `url`                     | at least one character; **400** when it does not read as an http(s) URL                             |
+|                                                            | `before`                  | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
+| `GET /api/archives/:id/changes`                            | `id`, `since`             | both UUIDs, `since` required — anything else is **400**, before authorization runs                  |
+| `POST /api/archives/:id/changes/summary`                   | `id`, `since` in the body | the same                                                                                            |
+| `GET /api/crawls`                                          | `state`                   | `running` / `succeeded` / `failed` — anything else is **400**                                       |
+|                                                            | `before`                  | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
+| `GET /api/crawls/:id/pages`                                | `after`                   | the previous answer's `next`: digits only, at most 18 — anything else is **400**                    |
+|                                                            | `limit`                   | 1 to 500, default 100 — anything else is **400**                                                    |
+| `GET /api/crawls/:id/pages/:page/log`                      | `page`                    | a page id: digits only, at most 18 — anything else is **400**, before authorization runs            |
+| `GET /api/crawls/:id/pages/:page/trace`                    | `page`                    | the same                                                                                            |
+| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`                    | the same                                                                                            |
 
 `before` is a cursor: pass the `capturedAt` (or, for crawls, the `startedAt`) of the
-last row you were given.
-Unknown query parameters are neither rejected nor dropped: they stay and are ignored
-(only `GET /api/search`, the full-text search, and `GET /api/changes` refuse them with a 400).
+last row you were given. `GET /api/history` is the exception: pass the answer's `next`.
+Unknown query parameters are neither rejected nor dropped: they stay and are ignored.
+The ones that refuse them with a 400 are `GET /api/search` (the full-text search), `GET /api/changes`,
+`GET /api/history` and `GET /api/archives/:id/changes` (`POST /api/archives/:id/changes/summary`
+refuses unknown keys in its body with a 400).
 
 The crawl list is gated on `maySubmit`, not on a per-row `can_view` the way archives
 are: the authorization model has no `crawl` type. `maySubmit` lets a caller through when
@@ -247,6 +263,185 @@ Authorization is the WACZ's own `can_view`, at higher consistency. The reasons f
 `max-age=300` matches the lifetime of a signed URL: after access is withdrawn, the picture stays in the browser for
 that long. A WACZ is never rewritten, so a URL's picture never changes (`immutable`). **The picture is a record inside the
 WACZ; in a signed WACZ it is under the signature.**
+
+### URL history and comparing two archives
+
+These endpoints list the captures of one URL and compare the text of any two of them on the spot (CAPTURE-462).
+The "URL history" view of capture-workbench's Changes tab reads them. The automatic comparison of scheduled runs
+([changes since last time](/capture-ledger/schedules/#changes-since-last-time)) only compares a run with the
+previous run of the same schedule and the same recipe. Here a person picks two captures, which may differ in
+date and in recipe. Nothing is stored: the result can be rebuilt from the two WACZ files at any time.
+
+**A caller gets in with `can_submit`, and each capture is filtered by `can_view`.** The list asks in one
+batch with the default consistency (like the archive list); the diff and the summary ask about each of the two
+captures with higher consistency. They return text out of a WACZ, so a permission revoked a moment ago must not
+pass. Until both are known to be viewable, neither the archive rows nor the store are read.
+
+#### `GET /api/history?url=<URL>&before=<timestamp>`
+
+The URL is normalized by the function that normalizes crawl seeds (`parseHttpUrl`) before the lookup, so
+`https://www.apple.com` finds the captures of `https://www.apple.com/`. The fragment is dropped; a trailing
+slash on the path and the order of the query are left as they are. `url` in the answer is the normalized URL.
+
+```jsonc
+{
+  "url": "https://www.apple.com/",
+  "archives": [
+    {
+      "id": "<uuid>",
+      "capturedAt": "2026-11-20T19:00:32.000Z",
+      "objectKey": "….browserhive.wacz",
+      "crawlId": "<uuid>", // null for an old row with no crawl
+      "origin": {
+        "kind": "schedule",
+        "scheduleId": "<uuid>",
+        "scheduleName": "Five sites every morning",
+      },
+      "recipeSha256": "<64 hex>", // null when unknown
+      "browserhiveVersion": "32.0.0", // null when unknown
+      "text": { "stage": "after-behaviors", "sha256": "<64 hex>", "chars": 6543 },
+      "notComparable": null,
+    },
+  ],
+  "next": null, // pass it as before to read on; null when there is no more
+}
+```
+
+- Rows are ordered by capture time, newest first, at most `HISTORY_PAGE_SIZE` (`src/changes/history.ts`) per
+  call. Only viewable rows are returned, so there can be fewer. **Whether there is more is told by `next`**
+  (it is a timestamp even when no row of this page was viewable).
+- `origin.kind` is `schedule` for a scheduled run, `manual` for a crawl started by hand, and `unknown` when the
+  capture belongs to no crawl.
+- `text` is the compared line, chosen as the automatic comparison chooses it: the after-behaviors snapshot, or
+  the document line when there is none (`stage` is `null`). Whether a capture differs from the one before it
+  shows in the `text.sha256` of neighbouring rows. capture-ledger does not count that itself, so that it never
+  tells whether a capture the caller may not view has the same text.
+- A row that cannot be compared has `text: null` and a reason in `notComparable`, checked in this order:
+
+| `notComparable` | Meaning                                                      |
+| --------------- | ------------------------------------------------------------ |
+| `not_inspected` | Not inspected yet (`archives.inspected_at` is NULL)          |
+| `withheld`      | The text of the compared line was withheld by policy         |
+| `no_text`       | There is no compared line, or it has no text digest recorded |
+
+A caller who may not start crawls gets a 200 with an empty `archives`. A `url` that does not read as an http(s)
+URL is 400 `{ "error": "invalid url" }`.
+
+The lookup uses the index on `archives.source_url_hash`, the generated column of `042`
+([archives](/capture-ledger/databases/archives/)).
+
+#### `GET /api/archives/:id/changes?since=<id of the earlier capture>`
+
+`:id` is "now" and `since` is "before".
+
+```jsonc
+{
+  "url": "https://www.apple.com/",
+  "state": "diffed", // "same" | "diffed" | "not_comparable"
+  "reason": null, // only for not_comparable
+  "sameBy": null, // only for same: "digest" | "lines"
+  "added": 33,
+  "removed": 39,
+  "hunks": [[" a context line", "-a removed line", "+an added line"]],
+  "recipeDiffers": true, // null when either recipe is unknown
+  "stageDiffers": false,
+  "before": {
+    "archiveId": "<uuid>",
+    "objectKey": "…",
+    "sourceUrl": "…",
+    "capturedAt": "…",
+    "browserhiveVersion": "28.0.1",
+    "stage": "after-behaviors",
+  },
+  "after": {
+    "archiveId": "<uuid>",
+    "objectKey": "…",
+    "sourceUrl": "…",
+    "capturedAt": "…",
+    "browserhiveVersion": "32.0.0",
+    "stage": "after-behaviors",
+  },
+  "summary": null, // when there is one: { "evidence": false, "model": "…", "promptVersion": "change-v1", "usd": 0.0123 }
+  "significance": null,
+  "headline": null,
+  "quotes": [],
+}
+```
+
+The comparison is the automatic one: split into lines, trim both ends, drop blank lines, and build a diff with
+two lines of context.
+
+| `state`          | Meaning                                                                                                                                             |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `same`           | No diff. `sameBy: "digest"` means the text digests are equal (**the store is not read**); `"lines"` means only blank lines and indentation differed |
+| `diffed`         | There is a diff. `hunks` has the shape of a page in `GET /api/crawls/:id/changes`                                                                   |
+| `not_comparable` | Cannot be compared; `reason` says why. "Now" is checked first, and the first reason found is given                                                  |
+
+| `reason`        | Meaning                                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `not_inspected` | As `notComparable` in the list                                                                                                                                                  |
+| `withheld`      | The same                                                                                                                                                                        |
+| `no_text`       | The same                                                                                                                                                                        |
+| `wacz_missing`  | The WACZ is not in the store                                                                                                                                                    |
+| `too_large`     | The product of the two line counts exceeds `MAX_LINE_PRODUCT` (`src/changes/compare.ts`), or the unpacked `pages.jsonl` exceeds `ENTRY_MAX_BYTES` (`src/archive/wacz-range.ts`) |
+
+- `recipeDiffers` is `true` when the recipe digests of the two crawls (`crawls.recipe_sha256`) differ. The
+  automatic comparison only pairs runs with the same recipe; this one compares the two anyway and says so.
+- `stageDiffers` is `true` when the kinds of the compared lines differ (one is the after-behaviors snapshot,
+  the other the document line). `before.stage` and `after.stage` name each compared line (`null` for the
+  document line).
+- `summary`, `significance`, `headline` and `quotes` are filled only when a summary of the same diff is in the
+  derived layer (`derivations`). This GET never calls Claude. **A summary is not evidence**
+  (`evidence: false`).
+
+**The WACZ is not read whole.** Only for two captures whose text digests differ, the tail of each WACZ
+(`TAIL_BYTES`, in the same file) is fetched once, and the zip directory and `pages/pages.jsonl` are read out of
+it. Whatever did not fit is fetched with further Range reads. The size of the WACZ comes from
+`archives.wacz_bytes`; the store is not asked. Each comparison logs one line with the number of requests to
+the store and the bytes fetched (`Archive pair compared`).
+
+| Answer                                   | When                                                                                                                |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 200                                      | Compared (two captures that cannot be compared are also a 200, with the reason)                                     |
+| 400                                      | `id` or `since` is not a UUID, `since` is missing, or an unknown parameter (before authorization runs)              |
+| 401 `{ "error": "unauthenticated" }`     | No identity                                                                                                         |
+| 404 `{ "error": "not found" }`           | The caller may not start crawls, may not view one of the two, or one does not exist. The reasons are not told apart |
+| 422 `{ "error": "different url" }`       | The `source_url` of the two differ                                                                                  |
+| 502 `{ "error": "storage unreachable" }` | The store did not answer, or answered a length other than the one asked                                             |
+
+#### `POST /api/archives/:id/changes/summary`
+
+The body is `{ "since": "<id of the earlier capture>" }`. It has Claude summarize the diff of the same two
+captures as the GET above. **A deployment without the key (`CAPTURE_LEDGER_ANTHROPIC_API_KEY`) does not have
+this endpoint** (404).
+
+It uses the function, the rubric (version `change-v1`) and the place (`kind = 'change'` in the derived layer)
+of the automatic summary. Claude reads only the diff lines and two lines around them. The rubric speaks of
+"the previous run and this run of the same schedule and the same recipe", so for two captures with different
+recipes the summary does not know the recipes differ (`recipeDiffers` in the answer makes up for it).
+
+- **The same diff is never paid for twice.** When a summary with the same input digest and the same rubric
+  version exists, it is returned without calling Claude (`reused: true`). A summary left by the automatic
+  comparison matches too, when the diff is the same.
+- The cost is counted against the organization of the crawl that made the "now" capture. The monthly limit
+  (`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`) is shared with the automatic summaries and with the script fixer.
+- The stored row has `archive_id` set to the "now" capture, `target` set to `{ archiveId, prevArchiveId }`,
+  and `created_by` set to the caller.
+- When Claude does not answer or refuses, nothing is retried automatically (ask again). An attempt that was
+  paid for counts against the monthly limit.
+
+The answer is the GET's answer plus `reused` (`true` or `false`), and `summary` is always filled.
+
+| Answer                                                                | When                                                                         |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 200                                                                   | The summary is returned                                                      |
+| 400, 401, 404, 502 `storage unreachable`                              | As the GET above                                                             |
+| 422 `{ "error": "different url" }`                                    | As the GET above                                                             |
+| 422 `{ "error": "nothing to summarize" }`                             | There is no diff (`state` is not `diffed`). Claude is not called             |
+| 422 `{ "error": "no organization" }`                                  | The "now" capture belongs to no crawl, so there is no organization to charge |
+| 429 `{ "error": "claude budget exhausted", "spentUsd", "budgetUsd" }` | The organization's monthly limit is reached. Claude is not called            |
+| 422 `{ "error": "claude refused" }`                                   | Claude refused                                                               |
+| 502 `{ "error": "claude failed" }`                                    | Claude did not answer, or the answer did not read in the agreed shape        |
 
 ## Starting a crawl
 

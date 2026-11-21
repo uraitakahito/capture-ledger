@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { comparedPagesOf, pairsOf, type ComparedPage } from "../src/changes/pairs.js";
+import {
+  comparedPagesOf,
+  comparedTextOf,
+  pairsOf,
+  type ComparedPage,
+} from "../src/changes/pairs.js";
 import { recordingDb } from "./recording-db.js";
 
 /**
@@ -116,5 +121,37 @@ describe("比べる組", () => {
     const { sql } = queries[0]!;
     expect(sql).toContain('"archives"."inspected_at" is not null');
     expect(sql).toContain('order by "archives"."captured_at", "archive_pages"."ordinal"');
+  });
+});
+
+describe("WACZ の行から、比べる行の文字を取る", () => {
+  const lines = [
+    { url: "https://a.test/", text: "文書" },
+    {
+      url: "urn:browserhive:snapshot:after-load:https://a.test/",
+      stage: "after-load",
+      text: "読み込みの後",
+    },
+    {
+      url: "urn:browserhive:snapshot:after-behaviors:https://a.test/",
+      stage: "after-behaviors",
+      text: "スクリプトの後",
+    },
+  ];
+
+  it("時点を言えば、その時点の写しの文字", () => {
+    expect(comparedTextOf(lines, "after-behaviors")).toBe("スクリプトの後");
+  });
+
+  it("時点が null なら、文書の行（stage の無い行）の文字", () => {
+    expect(comparedTextOf(lines, null)).toBe("文書");
+    expect(comparedTextOf([{ url: "https://a.test/", stage: "", text: "空の stage" }], null)).toBe(
+      "空の stage",
+    );
+  });
+
+  it("その行が無い・文字が無ければ空", () => {
+    expect(comparedTextOf(lines.slice(0, 2), "after-behaviors")).toBe("");
+    expect(comparedTextOf([{ url: "https://a.test/" }], null)).toBe("");
   });
 });

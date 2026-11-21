@@ -230,7 +230,8 @@ Each request that called Claude leaves one row in the `derivations` table (input
 version, effort, rounds, output, usage and cost), never in the WACZ. The monthly limit per organization
 adds those costs up (`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`, 5 by default), and is shared with the summaries of
 changes since last time on scheduled runs ([scheduled crawls](/capture-ledger/schedules/); those do send the
-diff of a page's text). The route exists only when
+diff of a page's text) and with the summaries of the difference between any two captures
+(`POST /api/archives/:id/changes/summary`, which sends the diff as well). The route exists only when
 `CAPTURE_LEDGER_ANTHROPIC_API_KEY` is set, and the API refuses to start with the key but without
 `CAPTURE_LEDGER_TS_COMPILE_URL`. `usage` in the answer carries the tokens and the cost (`usd`).
 

@@ -3,7 +3,8 @@
  * 使う。
  *
  * **WACZ は丸ごとメモリにある** (`archive/s3.ts` の `getObjectBytes`)。`fromBuffer` は中央ディレクトリを読むだけ
- * なので、呼ぶたびに開き直しても安い。
+ * なので、呼ぶたびに開き直しても安い。丸ごと持たずに、保管庫への Range の読みだけで entry 1 つを取る道は
+ * `archive/wacz-range.ts` に在る (好きな 2 本の差分が使う。CAPTURE-462)。entry の名前の定数は、そちらもここの物を使う。
  *
  * `fflate.unzipSync` (browserhive の test helper) を使わないのは、あれが **全 entry を一括で伸長する**から。
  * 欲しいのは小さな JSONL 1 本と、索引の大きさだけ。

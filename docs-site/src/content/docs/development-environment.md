@@ -331,6 +331,8 @@ To add one:
 An old migration stays even when what it made is gone: on a database that has applied it, deleting
 the file stops Kysely with `corrupted migrations`. To remove a table, add a migration that drops it.
 
+`042` adds a stored generated column to `archives`, so Postgres rewrites the table (on a database with many rows that takes time, and the table cannot be written to meanwhile).
+
 ## Setting up an identity locally
 
 There is one entry point for identity — the API — and it **denies everyone by

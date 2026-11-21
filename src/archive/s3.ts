@@ -69,9 +69,10 @@ export const getJsonObject = async (
  * 中央 12 KB。実サイトのトップは数 MB〜数十 MB) で、1 本ずつなら丸ごと持てる。
  *
  * 同じ 1 本を何度も読む所は、丸ごと読まない: 節目のスクリーンショット (`archive/stage-screenshots.ts`) は、
- * 検める時に位置だけを覚え、読む時は `getObjectRange` で 1 本の Range にする。zip の中を全部 Range で読む形が
- * 要るなら、wacz-validator の packages/core/src/wacz/s3-range-reader.ts が `HeadObject` で大きさを
- * 訊いてから yauzl に Range で食わせる形を持っている。
+ * 検める時に位置だけを覚え、読む時は `getObjectRange` で 1 本の Range にする。好きな 2 本の差分
+ * (`changes/compare.ts`。CAPTURE-462) は、`pages.jsonl` だけを Range で読む: `archive/wacz-range.ts` が、末尾を
+ * 1 度に取って控える reader を yauzl に渡す。全体の大きさは DB (`archives.wacz_bytes`) から渡し、保管庫には訊かない
+ * (wacz-validator の packages/core/src/wacz/s3-range-reader.ts は、`HeadObject` で大きさを訊いてから yauzl に Range で食わせる)。
  */
 export const getObjectBytes = async (
   s3: S3Client,

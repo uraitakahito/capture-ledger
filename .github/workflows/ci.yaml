@@ -179,6 +179,14 @@ jobs:
       - name: Screenshots against Postgres
         run: pnpm run build:tools && node dist/tools/screenshots-smoke.js
 
+      # 同じ URL の取り込みの一覧と、好きな 2 本の差分 (CAPTURE-462・`042`) の読む SQL を、本物の Postgres に当てる。
+      #
+      # 生成列の式・digest との突き合わせ・新しい順・続きの 1 行・比べる行の選び方は、試験の記録する DB では確かめ
+      # られない。索引は explain に出る名前で見る (撮った時刻の索引が既に在るので、順に読んでいないことを見るだけでは、
+      # 張り忘れても緑のまま)。自分の組織 (smoke-<pid>) の物だけを足して、最後に消す。
+      - name: History against Postgres
+        run: pnpm run build:tools && node dist/tools/history-smoke.js
+
       # 契約 (openapi.json) から生成した型が、コミットされた物と一致するか。
       - name: OpenAPI types drift check
         run: pnpm run openapi:check
