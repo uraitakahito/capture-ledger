@@ -102,7 +102,7 @@ options、変数の値、User-Agent、宣言したシークレットの名前で
 | `budget_wait` | 組織の月の上限（直す係と共有）に届いた。1 時間ごとに見直し、月が替わるか上限を上げると進む |
 | `failed`      | Claude が 3 回答えなかった（1・5・30 分を空けた）か、断った                                |
 
-拾うのは締まって 48 時間以内の回だけです（`035` より前の回は、`pnpm run changes:backfill` で digest を埋めると拾えます）。予定の答え（`GET /api/schedules`）の `recentRuns[].change` に、状態・比べた数・
+拾うのは締まって 48 時間以内の回だけです（`035` より前の回は digest が無いので、`pnpm run changes:backfill` で埋めるまで拾いません。埋めても、拾うのは 48 時間の内の回だけです）。予定の答え（`GET /api/schedules`）の `recentRuns[].change` に、状態・比べた数・
 違った数・重さ・1 行の写しが載ります。中身は `GET /api/changes?before=`（回のまとめの一覧）と
 `GET /api/crawls/:id/changes`（ページごとの差分・要約・前と今の WACZ）で読み、どちらも `can_submit` で通し、
 前と今の WACZ を `can_view` で見てよいページだけを返します。
