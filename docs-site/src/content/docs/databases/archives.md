@@ -26,8 +26,7 @@ OpenFGA.
 ## Failed captures do not enter
 
 ```ts
-if (report.status !== CaptureStatus.CAPTURE_STATUS_SUCCESS ||
-    report.artifacts?.wacz === undefined) {
+if (report.status !== "success" || report.artifacts?.wacz === undefined) {
   log.warn(…, "capture produced no archive; not adding to the ledger");
   return { reason: "no-archive" };
 }
@@ -95,4 +94,6 @@ archives_pkey                    PRIMARY KEY (id)
 archives_bucket_object_key_key   UNIQUE (bucket, object_key)   -- blocks double registration
 archives_captured_at_idx         (captured_at DESC)            -- newest first
 archives_task_id_idx             (task_id)                     -- lookup from a report
+archives_unindexed_idx           (id) WHERE indexed_at IS NULL -- rows not yet in the full-text index
+archives_crawl_id_idx            (crawl_id)                    -- every archive of one crawl
 ```

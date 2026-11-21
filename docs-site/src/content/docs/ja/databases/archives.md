@@ -25,8 +25,7 @@ OpenFGA が持ちます。**
 ## 失敗した取り込みは入らない
 
 ```ts
-if (report.status !== CaptureStatus.CAPTURE_STATUS_SUCCESS ||
-    report.artifacts?.wacz === undefined) {
+if (report.status !== "success" || report.artifacts?.wacz === undefined) {
   log.warn(…, "capture produced no archive; not adding to the ledger");
   return { reason: "no-archive" };
 }
@@ -93,4 +92,6 @@ archives_pkey                    PRIMARY KEY (id)
 archives_bucket_object_key_key   UNIQUE (bucket, object_key)   -- 二重登録の防止
 archives_captured_at_idx         (captured_at DESC)            -- 一覧は新しい順
 archives_task_id_idx             (task_id)                     -- 報告から引く
+archives_unindexed_idx           (id) WHERE indexed_at IS NULL -- 全文検索の索引にまだ載せていない行を探す
+archives_crawl_id_idx            (crawl_id)                    -- クロールのアーカイブを全部引く
 ```
