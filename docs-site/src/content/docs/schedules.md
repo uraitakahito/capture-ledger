@@ -110,7 +110,8 @@ Withheld pages are not compared.
 | `budget_wait` | The organization's monthly limit (shared with the fixer) is reached; rechecked hourly     |
 | `failed`      | Claude did not answer three times (1, 5 and 30 minutes apart), or refused                 |
 
-Only runs closed within the last 48 hours are picked up. `recentRuns[].change` in the schedule answers
+Only runs closed within the last 48 hours are picked up (a run from before `035` has no digest until
+`pnpm run changes:backfill` fills it, and is picked up only if it is still within those 48 hours). `recentRuns[].change` in the schedule answers
 (`GET /api/schedules`) carries the state, the counts, the weight and the run's line. The details are read with
 `GET /api/changes?before=` (the runs, newest first) and `GET /api/crawls/:id/changes` (per page: the diff, the
 summary, and the WACZ before and after). Both need `can_submit`, and return only pages whose two WACZ files the
