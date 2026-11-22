@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { ENTRY_MAX_BYTES, TAIL_BYTES } from "../src/archive/wacz-range.js";
 import { changeOf } from "../src/changes/change-of.js";
 import { MAX_LINE_PRODUCT } from "../src/changes/compare.js";
-import { CHANGE_PROMPT_VERSION, changeInputSha256 } from "../src/changes/summarize.js";
+import { changeInputSha256, PAIR_PROMPT, PAIR_PROMPT_VERSION } from "../src/changes/summarize.js";
 import {
   archiveOf,
   call,
@@ -332,7 +332,7 @@ describe("好きな 2 本の差分", () => {
   describe("在る要約", () => {
     const summary = {
       model: "claude-opus-5-5",
-      promptVersion: CHANGE_PROMPT_VERSION,
+      promptVersion: PAIR_PROMPT_VERSION,
       usd: "0.012300",
       output: {
         headline: "価格が変わった",
@@ -362,7 +362,7 @@ describe("好きな 2 本の差分", () => {
         summary: {
           evidence: false,
           model: "claude-opus-5-5",
-          promptVersion: "change-v1",
+          promptVersion: "change-pair-v1",
           usd: 0.0123,
         },
         // 要約の pages のうち、URL が同じ物から取る
@@ -380,8 +380,12 @@ describe("好きな 2 本の差分", () => {
       );
       expect(find?.parameters).toEqual([
         "change",
-        changeInputSha256([{ url: URL_A, hunks: changeOf(OLD, NEW).hunks }]),
-        "change-v1",
+        // 差分・撮り方の違い・手の比較の決まりの文
+        changeInputSha256([{ url: URL_A, hunks: changeOf(OLD, NEW).hunks }], PAIR_PROMPT, {
+          recipeDiffers: false,
+          stageDiffers: false,
+        }),
+        "change-pair-v1",
       ]);
       // 読むだけ。Claude は呼ばない
       expect(claudeAsked()).toBe(0);

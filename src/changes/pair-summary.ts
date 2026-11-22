@@ -1,10 +1,11 @@
 /**
  * 好きな 2 本の差分の要約 (CAPTURE-462)。人が押した時だけ、Claude を 1 回呼ぶ。
  *
- * 周回の要約 (`changes/worker.ts`) と同じ物を使う: 同じ関数 (`summarizeChanges`)・同じ決まりの文 (版
- * `CHANGE_PROMPT_VERSION`)・同じ置き場 (派生の層。`derivations` の `kind = 'change'`)。**同じ差分に 2 度払わない** ——
- * 差分から作る入力の digest と決まりの文の版が同じ行が在れば、Claude を呼ばずにそれを返す (`034` の部分の一意)。
- * 周回が残した要約でも、同じ入力なら当たる (入力は URL と差分の行だけ)。
+ * 周回の要約 (`changes/worker.ts`) と同じ関数 (`summarizeChanges`)・同じ置き場 (派生の層。`derivations` の
+ * `kind = 'change'`) を使う。**決まりの文は別** (`PAIR_PROMPT`。版 `PAIR_PROMPT_VERSION`) —— 人が選んだ 2 本は、
+ * 予定も撮り方も比べた行の種類も違いうるので、その違い (`recipeDiffers`・`stageDiffers`) を入力に添え、文がそれを読む。
+ * **同じ差分に 2 度払わない** —— 入力の digest (差分・撮り方の違い・決まりの文) と版が同じ行が在れば、Claude を
+ * 呼ばずにそれを返す (`034` の部分の一意)。周回が残した要約には当たらない (決まりの文が違うので、別の入力)。
  *
  * 予定の回の状態 (`crawl_changes`) は使わない (手の比較には回が無い)。周回のような自動のやり直しもしない (押し直す)。
  * 費用は「今」の取り込みを撮ったクロールの組織に数え、月の上限は周回・直す係と分け合う。
@@ -23,10 +24,12 @@ import type { HistoryArchive } from "./history.js";
 import {
   attemptsUsageOf,
   CHANGE_EFFORT,
-  CHANGE_PROMPT_VERSION,
   changeInputSha256,
+  PAIR_PROMPT,
+  PAIR_PROMPT_VERSION,
   summarizeChanges,
   type ChangeSummary,
+  type PairCapture,
 } from "./summarize.js";
 
 /** `034` の部分の一意の索引。同じ入力・同じ版の 2 行目がこれにぶつかる。 */
@@ -95,13 +98,23 @@ const fieldsOf = (url: string, stored: StoredPairSummary): PairSummaryFields => 
 /** 差分 1 組を Claude に渡す形 (周回の 1 ページと同じ)。 */
 const inputOf = (comparison: PairComparison) => [{ url: comparison.url, hunks: comparison.hunks }];
 
+/** 入力に添える、撮り方の違い。 */
+const captureOf = (comparison: PairComparison): PairCapture => ({
+  recipeDiffers: comparison.recipeDiffers,
+  stageDiffers: comparison.stageDiffers,
+});
+
+/** この 2 本の入力の digest (差分・撮り方の違い・決まりの文)。 */
+export const pairInputSha256 = (comparison: PairComparison): string =>
+  changeInputSha256(inputOf(comparison), PAIR_PROMPT, captureOf(comparison));
+
 /** 在る要約を読む。差分の無い 2 本と、要約がまだ無い 2 本は `NO_SUMMARY`。**Claude は呼ばない。** */
 export const existingSummaryOf = async (
   reads: PairSummaryReads,
   comparison: PairComparison,
 ): Promise<PairSummaryFields> => {
   if (comparison.state !== "diffed") return NO_SUMMARY;
-  const stored = await reads.find(changeInputSha256(inputOf(comparison)), CHANGE_PROMPT_VERSION);
+  const stored = await reads.find(pairInputSha256(comparison), PAIR_PROMPT_VERSION);
   return stored === undefined ? NO_SUMMARY : fieldsOf(comparison.url, stored);
 };
 
@@ -151,8 +164,8 @@ export const summarizePair = async (
   if (after.crawlId === null || after.orgId === null) return { kind: "no_organization" };
 
   const input = inputOf(comparison);
-  const inputSha256 = changeInputSha256(input);
-  const stored = await deps.reads.find(inputSha256, CHANGE_PROMPT_VERSION);
+  const inputSha256 = pairInputSha256(comparison);
+  const stored = await deps.reads.find(inputSha256, PAIR_PROMPT_VERSION);
   if (stored !== undefined) {
     return { kind: "summarized", reused: true, fields: fieldsOf(comparison.url, stored) };
   }
@@ -168,7 +181,7 @@ export const summarizePair = async (
 
   let result;
   try {
-    result = await summarizeChanges(deps.claude, input);
+    result = await summarizeChanges(deps.claude, input, PAIR_PROMPT, captureOf(comparison));
   } catch (err) {
     // 答えが無かった試みは、費用が分からないので残さない
     if (!(err instanceof ClaudeUnavailable)) throw err;
@@ -180,7 +193,7 @@ export const summarizePair = async (
     crawlId: after.crawlId,
     archiveId: after.id,
     model: result.model,
-    promptVersion: CHANGE_PROMPT_VERSION,
+    promptVersion: PAIR_PROMPT_VERSION,
     effort: CHANGE_EFFORT,
     rounds: 1,
     usage: attemptsUsageOf(result.attempts),
@@ -208,7 +221,7 @@ export const summarizePair = async (
   } catch (err) {
     // 同じ 2 本を同時に頼まれ、先の頼みが残した。先の行を返す (周回が同じ入力で先に残したときも同じ)
     if (!isUniqueViolation(err)) throw err;
-    const first = await deps.reads.find(result.inputSha256, CHANGE_PROMPT_VERSION);
+    const first = await deps.reads.find(result.inputSha256, PAIR_PROMPT_VERSION);
     if (first === undefined) throw err;
     return { kind: "summarized", reused: true, fields: fieldsOf(comparison.url, first) };
   }
@@ -217,7 +230,7 @@ export const summarizePair = async (
     reused: false,
     fields: fieldsOf(comparison.url, {
       model: result.model,
-      promptVersion: CHANGE_PROMPT_VERSION,
+      promptVersion: PAIR_PROMPT_VERSION,
       usd: result.usd.toFixed(6),
       output,
     }),

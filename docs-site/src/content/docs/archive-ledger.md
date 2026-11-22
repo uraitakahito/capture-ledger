@@ -361,7 +361,7 @@ The lookup uses the index on `archives.source_url_hash`, the generated column of
     "browserhiveVersion": "32.0.0",
     "stage": "after-behaviors",
   },
-  "summary": null, // when there is one: { "evidence": false, "model": "…", "promptVersion": "change-v1", "usd": 0.0123 }
+  "summary": null, // when there is one: { "evidence": false, "model": "…", "promptVersion": "change-pair-v1", "usd": 0.0123 }
   "significance": null,
   "headline": null,
   "quotes": [],
@@ -415,10 +415,12 @@ The body is `{ "since": "<id of the earlier capture>" }`. It has Claude summariz
 captures as the GET above. **A deployment without the key (`CAPTURE_LEDGER_ANTHROPIC_API_KEY`) does not have
 this endpoint** (404).
 
-It uses the function, the rubric (version `change-v1`) and the place (`kind = 'change'` in the derived layer)
-of the automatic summary. Claude reads only the diff lines and two lines around them. The rubric speaks of
-"the previous run and this run of the same schedule and the same recipe", so for two captures with different
-recipes the summary does not know the recipes differ (`recipeDiffers` in the answer makes up for it).
+It uses the function and the place (`kind = 'change'` in the derived layer) of the automatic summary, but its
+own rubric (version `change-pair-v1`). The automatic summary's rubric assumes "the previous run and this run of
+the same schedule and the same recipe", while two captures a person picks may differ in schedule, in recipe and
+in the kind of line compared. Claude reads only the diff lines, two lines around them, and how the two captures
+were taken (`recipeDiffers` and `stageDiffers`, the same as in the answer). When either is true, the rubric
+tells it not to decide whether a difference comes from the site or from the recipe.
 
 - **The same diff is never paid for twice.** When a summary with the same input digest and the same rubric
   version exists, it is returned without calling Claude (`reused: true`). A summary left by the automatic

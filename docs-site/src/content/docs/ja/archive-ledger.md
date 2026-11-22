@@ -339,7 +339,7 @@ capture-workbench のタブ「変化」の「URL の履歴」が読みます。�
     "browserhiveVersion": "32.0.0",
     "stage": "after-behaviors",
   },
-  "summary": null, // 要約が在れば { "evidence": false, "model": "…", "promptVersion": "change-v1", "usd": 0.0123 }
+  "summary": null, // 要約が在れば { "evidence": false, "model": "…", "promptVersion": "change-pair-v1", "usd": 0.0123 }
   "significance": null,
   "headline": null,
   "quotes": [],
@@ -388,9 +388,10 @@ capture-workbench のタブ「変化」の「URL の履歴」が読みます。�
 本文は `{ "since": "<前の取り込みの id>" }` です。上の GET と同じ 2 本の差分を、Claude に要約させます。**鍵
 （`CAPTURE_LEDGER_ANTHROPIC_API_KEY`）が無い配備には、このエンドポイントがありません**（404）。
 
-自動の要約と同じ関数・同じ決まりの文（版 `change-v1`）・同じ置き場（派生の層の `kind = 'change'`）を使います。
-Claude が読むのは差分の行と前後 2 行だけです。決まりの文は「同じ予定・同じ撮り方の前の回と今回」と言っているので、
-撮り方の違う 2 本では、要約は撮り方の違いを知りません（答えの `recipeDiffers` で補います）。
+自動の要約と同じ関数・同じ置き場（派生の層の `kind = 'change'`）を使います。決まりの文は別です（版 `change-pair-v1`）。
+自動の要約の文は「同じ予定・同じ撮り方の前の回と今回」が前提ですが、人が選んだ 2 本は、予定も撮り方も比べた行の種類も
+違いうるからです。Claude が読むのは、差分の行と前後 2 行と、2 本の撮り方の違い（答えと同じ `recipeDiffers`・`stageDiffers`）
+だけです。どちらかが真のとき、決まりの文は「サイトの変化か撮り方の違いかを決めつけない」と言います。
 
 - **同じ差分に 2 度払いません。** 差分から作る入力の digest と、決まりの文の版が同じ要約が在れば、Claude を呼ばずに
   それを返します（`reused: true`）。自動の比べが残した要約でも、同じ差分なら当たります。
