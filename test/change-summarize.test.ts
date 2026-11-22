@@ -1,14 +1,21 @@
+import { createHash } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import type { Claude, ClaudeReply } from "../src/claude/types.js";
 import type { DiffLine } from "../src/changes/change-of.js";
 import {
+  CHANGE_RUBRIC,
+  changeInputOf,
   changeInputSha256,
   heaviest,
+  PAIR_PROMPT,
+  PAIR_RUBRIC,
   summarizeChanges,
   unverifiedQuotes,
   type ChangeOutput,
 } from "../src/changes/summarize.js";
+import { canonicalJson } from "../src/crawl/recipe-digest.js";
 
 const USAGE = {
   input_tokens: 771,
@@ -110,6 +117,37 @@ describe("回の要約 (summarizeChanges)", () => {
   it("入力の digest は同じ差分なら同じ、1 行違えば違う", () => {
     expect(changeInputSha256(PAGES)).toBe(changeInputSha256(structuredClone(PAGES)));
     expect(changeInputSha256([PAGES[0]!])).not.toBe(changeInputSha256(PAGES));
+  });
+
+  it("周回の入力と digest は、手の比較の決まりの文を足しても変わらない（capture の欄を持たない）", () => {
+    expect(changeInputOf(PAGES)).toEqual({
+      pages: PAGES.map((page) => ({ url: page.url, diff: page.hunks.flat() })),
+    });
+    expect(changeInputSha256(PAGES)).toBe(
+      createHash("sha256")
+        .update(
+          canonicalJson({ v: "change-v1", rubric: CHANGE_RUBRIC, input: changeInputOf(PAGES) }),
+        )
+        .digest("hex"),
+    );
+  });
+
+  it("手の比較の digest は、同じ差分でも周回の digest と違い、撮り方の違いでも変わる", () => {
+    const same = { recipeDiffers: false, stageDiffers: false };
+    const pair = changeInputSha256(PAGES, PAIR_PROMPT, same);
+    expect(pair).not.toBe(changeInputSha256(PAGES));
+    expect(pair).not.toBe(changeInputSha256(PAGES, PAIR_PROMPT, { ...same, recipeDiffers: true }));
+    expect(pair).not.toBe(changeInputSha256(PAGES, PAIR_PROMPT, { ...same, stageDiffers: true }));
+    expect(changeInputOf(PAGES, same)).toMatchObject({ capture: same });
+  });
+
+  it("手の比較の決まりの文で頼むと、Claude にはその文と capture つきの入力が渡る", async () => {
+    const { claude, asked } = fakeClaude({ output: { headline: "x", pages: [] } });
+    const capture = { recipeDiffers: true, stageDiffers: false };
+    const result = await summarizeChanges(claude, PAGES, PAIR_PROMPT, capture);
+    expect(asked[0]?.system).toBe(PAIR_RUBRIC);
+    expect(JSON.parse(asked[0]?.messages[0]?.content as string)).toMatchObject({ capture });
+    expect(result.inputSha256).toBe(changeInputSha256(PAGES, PAIR_PROMPT, capture));
   });
 
   it("一番重い重さ: none < minor < content", () => {

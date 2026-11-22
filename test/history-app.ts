@@ -276,10 +276,16 @@ export const build = async (opts: BuildOptions = {}) => {
   } as unknown as OpenFgaClient;
 
   let claudeAsked = 0;
+  /** Claude に渡った頼み (決まりの文と、入力の JSON)。 */
+  const claudeRequests: { system: string; input: unknown }[] = [];
   const answer = opts.claude;
   const claude: Claude = {
-    ask<T>() {
+    ask<T>(request: Parameters<Claude["ask"]>[0]) {
       claudeAsked += 1;
+      claudeRequests.push({
+        system: request.system,
+        input: JSON.parse(String(request.messages[0]?.content ?? "null")) as unknown,
+      });
       if (answer === undefined || answer === false) throw new Error("Claude は呼ばれないはず");
       return answer() as Promise<ClaudeReply<T>>;
     },
@@ -314,6 +320,7 @@ export const build = async (opts: BuildOptions = {}) => {
     batchAsked,
     inserted,
     claudeAsked: () => claudeAsked,
+    claudeRequests,
     keyOf,
   };
 };

@@ -136,8 +136,9 @@ compared anyway and the answer says so (`recipeDiffers`, `stageDiffers`). The WA
 `pages/pages.jsonl` is read, with Range requests.
 
 A summary is made **only when a person asks for it** (`POST /api/archives/:id/changes/summary`). Reading the
-diff never calls Claude. When a summary of the same diff is already in the derived layer it is returned and
-nothing is paid (a summary left by the worker matches too). The cost is counted against the organization of the
+diff never calls Claude. When a summary of the same two captures is already in the derived layer it is returned
+and nothing is paid. Its rubric is not the worker's (version `change-pair-v1`) and also reads how the two
+captures were taken, so a summary left by the worker does not match. The cost is counted against the organization of the
 crawl that made the "now" capture, and the monthly limit is shared with the worker's summaries and the fixer.
 The states in the table above (`crawl_changes`) are not used, and nothing is retried automatically.
 

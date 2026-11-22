@@ -7,7 +7,13 @@
 import { describe, expect, it } from "vitest";
 
 import { changeOf } from "../src/changes/change-of.js";
-import { CHANGE_PROMPT_VERSION, changeInputSha256 } from "../src/changes/summarize.js";
+import {
+  CHANGE_PROMPT_VERSION,
+  changeInputSha256,
+  PAIR_PROMPT,
+  PAIR_PROMPT_VERSION,
+  PAIR_RUBRIC,
+} from "../src/changes/summarize.js";
 import { ClaudeUnavailable } from "../src/claude/types.js";
 import {
   archiveOf,
@@ -24,7 +30,9 @@ const BEFORE = "b0000000-0000-4000-8000-0000000000bb";
 const OLD = "お知らせ\n価格 100 円\nお問い合わせ";
 const NEW = "お知らせ\n価格 120 円\nお問い合わせ";
 const HUNKS = changeOf(OLD, NEW).hunks;
-const INPUT_SHA256 = changeInputSha256([{ url: URL_A, hunks: HUNKS }]);
+// 手の比較の入力の digest: 差分・撮り方の違い・手の比較の決まりの文 (周回の digest とは別の値)
+const CAPTURE = { recipeDiffers: false, stageDiffers: false };
+const INPUT_SHA256 = changeInputSha256([{ url: URL_A, hunks: HUNKS }], PAIR_PROMPT, CAPTURE);
 
 const after = (text = NEW, over: Partial<ArchiveSeed> = {}) =>
   archiveOf(AFTER, { behaviors: text }, over);
@@ -57,7 +65,7 @@ const reply = (over: Record<string, unknown> = {}) => ({
 
 const stored: StoredSummary = {
   model: "claude-opus-5-5",
-  promptVersion: CHANGE_PROMPT_VERSION,
+  promptVersion: PAIR_PROMPT_VERSION,
   usd: "0.012300",
   output: {
     headline: "前に払った要約",
@@ -94,7 +102,7 @@ describe("好きな 2 本の差分を Claude に要約させる", () => {
       summary: {
         evidence: false,
         model: "claude-opus-5-5",
-        promptVersion: "change-v1",
+        promptVersion: "change-pair-v1",
         usd: 0.0072,
       },
       significance: "content",
@@ -117,7 +125,7 @@ describe("好きな 2 本の差分を Claude に要約させる", () => {
       target: JSON.stringify({ archiveId: AFTER, prevArchiveId: BEFORE }),
       input_sha256: INPUT_SHA256,
       model: "claude-opus-5-5",
-      prompt_version: "change-v1",
+      prompt_version: "change-pair-v1",
       effort: "low",
       rounds: 1,
       usd: "0.007200",
@@ -151,7 +159,7 @@ describe("好きな 2 本の差分を Claude に要約させる", () => {
     expect(claudeAsked()).toBe(0);
     expect(inserted).toEqual([]);
     const find = queries.find((q) => q.sql.startsWith('select "model"'));
-    expect(find?.parameters).toEqual(["change", INPUT_SHA256, "change-v1"]);
+    expect(find?.parameters).toEqual(["change", INPUT_SHA256, "change-pair-v1"]);
   });
 
   it("月の上限に届いていれば 429 で、Claude を呼ばず、残さない", async () => {
@@ -175,6 +183,41 @@ describe("好きな 2 本の差分を Claude に要約させる", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(claudeAsked()).toBe(1);
+  });
+
+  it("Claude には、手の比較の決まりの文と、差分と撮り方の違いを渡す（周回の文ではない）", async () => {
+    const { claudeRequests } = await post({
+      archives: [after(), before()],
+      claude: () => Promise.resolve(reply()),
+    });
+    expect(claudeRequests).toEqual([
+      {
+        system: PAIR_RUBRIC,
+        input: {
+          pages: [{ url: URL_A, diff: HUNKS.flat() }],
+          capture: { recipeDiffers: false, stageDiffers: false },
+        },
+      },
+    ]);
+    expect(PAIR_PROMPT_VERSION).not.toBe(CHANGE_PROMPT_VERSION);
+  });
+
+  it("撮り方の違う 2 本は、入力の recipeDiffers が真で、同じ差分でも別の入力として残る", async () => {
+    const { claudeRequests, inserted } = await post({
+      archives: [after(), before(OLD, { crawl: { ...CRAWL, recipeSha256: "b".repeat(64) } })],
+      claude: () => Promise.resolve(reply()),
+    });
+    expect(claudeRequests[0]?.input).toMatchObject({
+      capture: { recipeDiffers: true, stageDiffers: false },
+    });
+    const row = rowOf(inserted[0]);
+    expect(row["input_sha256"]).not.toBe(INPUT_SHA256);
+    expect(row["input_sha256"]).toBe(
+      changeInputSha256([{ url: URL_A, hunks: HUNKS }], PAIR_PROMPT, {
+        recipeDiffers: true,
+        stageDiffers: false,
+      }),
+    );
   });
 
   it("差分の無い 2 本（同じ・比べられない）は 422（nothing to summarize）で、Claude を呼ばない", async () => {
