@@ -590,7 +590,7 @@ only together** — with just one of them set, the API refuses to start:
 
 ```sh
 CAPTURE_LEDGER_API_HOST=0.0.0.0 \
-CAPTURE_LEDGER_SINK_ORIGIN=http://$(container network inspect default | jq -r '.[0].status.ipv4Gateway'):7070 \
+CAPTURE_LEDGER_SINK_ORIGIN=http://$(container inspect browserhive-1.capture-ledger | jq -r '.[0].status.networks[0].ipv4Gateway'):7070 \
 CAPTURE_LEDGER_SINK_SECRET=$(openssl rand -hex 32) \
   pnpm run api
 ```
@@ -600,9 +600,11 @@ does not override a variable the shell has already set.
 
 The origin is **the address BrowserHive's containers reach the API at**, not the one
 you use. On the dev stack that is the host as seen from the container network — the
-gateway of the `default` network, which the command above reads (`192.168.66.1` on the
-machine this was written on; it changes when the network is recreated, so do not copy
-it) — and the API has to listen on `0.0.0.0`: bound to loopback, it refuses the
+gateway a BrowserHive container actually has, which the command above reads (`192.168.64.1`
+on the machine this was written on; it can change, so do not copy it). The record of the
+`default` network (`container network inspect default`) is not read: it can disagree with
+the addresses actually handed out (on 2026-11-23 it said `192.168.65.1` while containers got
+`192.168.64.1`) — and the API has to listen on `0.0.0.0`: bound to loopback, it refuses the
 containers. A wrong origin fails captures with an error that starts with
 the sink URL (`http://…/api/sink/…: …`).
 

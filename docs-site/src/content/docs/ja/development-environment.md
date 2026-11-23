@@ -563,7 +563,7 @@ API は起動しません。
 
 ```sh
 CAPTURE_LEDGER_API_HOST=0.0.0.0 \
-CAPTURE_LEDGER_SINK_ORIGIN=http://$(container network inspect default | jq -r '.[0].status.ipv4Gateway'):7070 \
+CAPTURE_LEDGER_SINK_ORIGIN=http://$(container inspect browserhive-1.capture-ledger | jq -r '.[0].status.networks[0].ipv4Gateway'):7070 \
 CAPTURE_LEDGER_SINK_SECRET=$(openssl rand -hex 32) \
   pnpm run api
 ```
@@ -572,9 +572,10 @@ CAPTURE_LEDGER_SINK_SECRET=$(openssl rand -hex 32) \
 既に持っている変数を上書きしません。
 
 origin は **BrowserHive のコンテナから API に届くアドレス**で、手元から使うアドレスではありません。
-dev のスタックでは、コンテナのネットワークから見た host —— default ネットワークの gateway で、
-上のコマンドがその場で読みます（この文書を書いた Mac では `192.168.66.1`。network を作り直すと
-変わるので、写さないでください）。API は
+dev のスタックでは、コンテナのネットワークから見た host —— BrowserHive のコンテナが実際に持つ gateway で、
+上のコマンドがその場で読みます（この文書を書いた Mac では `192.168.64.1`。変わることがあるので、
+写さないでください）。default ネットワークの記録（`container network inspect default`）は、実際に
+配られた番地と食い違うことがあるので読みません（2026-11-23 に記録は `192.168.65.1`、コンテナは `192.168.64.1`）。API は
 `0.0.0.0` で待ち受ける必要があります —— loopback に bind すると、コンテナからの接続を断ります。
 origin を誤ると、取り込みは受け取り先の URL で始まる誤り（`http://…/api/sink/…: …`）で落ちます。
 
