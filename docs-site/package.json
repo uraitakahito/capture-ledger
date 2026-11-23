@@ -18,14 +18,14 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.42.11",
-    "astro": "^7.4.12",
+    "@astrojs/starlight": "^0.43.1",
+    "astro": "^7.4.13",
     "astro-mermaid": "^2.2.0",
     "mermaid": "^12.3.0",
     "sharp": "0.35.5"
   },
   "devDependencies": {
-    "@astrojs/markdown-satteri": "^0.4.9",
+    "@astrojs/markdown-satteri": "^0.4.10",
     "satteri": "^0.11.7"
   }
 }
