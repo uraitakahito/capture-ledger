@@ -203,7 +203,8 @@ export interface CrawlsTable {
   requestedBy: string;
   /**
    * 始めた時の読める名前 (`044`)。人はトークンの `username`、機械は app client の名前。**表示のための物** ——
-   * 許可と `owner` tuple は `requestedBy` で書く。`044` より前の行・定期の回・ヘッダの経路は NULL。後から書き換えない。
+   * 許可と `owner` tuple は `requestedBy` で書く。定期の回は予定を作った者の名前 (`045`。それより前に作った予定は NULL)。
+   * `044` より前の行・ヘッダの経路は NULL。後から書き換えない。
    * (申告の名前 `requestedActor` だけは、ヘッダの経路でも見出しを送れば残る。)
    */
   requestedByName: ColumnType<string | null, string | null | undefined, never>;
@@ -214,6 +215,12 @@ export interface CrawlsTable {
    * 画面は「申告」と書いて出す。無ければ NULL。後から書き換えない。
    */
   requestedActor: ColumnType<string | null, string | null | undefined, never>;
+  /**
+   * この回の「いま撮る」を押した主体と、その読める名前 (`045`)。**主体 (`requestedBy`) は予定を作った主体のまま** ——
+   * 予定の中身は作った主体の名前で解く。期限の回・手で始めたクロール・`045` より前の行は NULL。後から書き換えない。
+   */
+  runRequestedBy: ColumnType<string | null, string | null | undefined, never>;
+  runRequestedByName: ColumnType<string | null, string | null | undefined, never>;
   /**
    * このクロールがページの中で走らせるもの。**解決済み・並びが実行順**で、
    * 登録済みのスクリプト (`scripts`) を引き直すことはしない —— 途中で版が足されても、同じクロールの
@@ -340,11 +347,19 @@ export interface CrawlSchedulesTable {
   nextRunAt: ColumnType<Date, string, string>;
   /** 「いま撮る」の頼み。周回が始めたら消す。 */
   runRequestedAt: ColumnType<Date | null, string | null | undefined, string | null>;
+  /**
+   * 待っている「いま撮る」を押した主体と、その読める名前 (`045`)。`runRequestedAt` と一緒に立て、一緒に消す。
+   * 始まった回の行 (`crawls.runRequestedBy`) に写る。表示のための物。
+   */
+  runRequestedBy: ColumnType<string | null, string | null | undefined, string | null>;
+  runRequestedByName: ColumnType<string | null, string | null | undefined, string | null>;
   /** form の中身。`POST /api/crawls` と同じ形で、「固定し直す」が読み直す。 */
   request: ColumnType<CrawlBody, string, never>;
   recipe: ColumnType<ScheduleRecipe, string, string>;
   pinnedAt: ColumnType<Date, string, string>;
   createdBy: string;
+  /** 作った時の読める名前 (`045`)。回の `requestedByName` に写る。`045` より前の行とヘッダの経路は NULL。 */
+  createdByName: ColumnType<string | null, string | null | undefined, never>;
   createdAt: ColumnType<Date, string | undefined, never>;
   /** 消した時刻。行は残す (クロールの行に名前を出すため)。 */
   deletedAt: ColumnType<Date | null, never, string>;

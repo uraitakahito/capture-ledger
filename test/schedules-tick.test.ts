@@ -53,10 +53,13 @@ const schedule = (overrides: Partial<ScheduleRow> = {}): ScheduleRow => ({
   enabled: true,
   nextRunAt: jst("2026-11-07T04:00:00"),
   runRequestedAt: null,
+  runRequestedBy: null,
+  runRequestedByName: null,
   request: { seeds: ["https://site.test/"] },
   recipe: recipe(),
   pinnedAt: jst("2026-11-01T00:00:00"),
   createdBy: "alice",
+  createdByName: null,
   createdAt: jst("2026-11-01T00:00:00"),
   deletedAt: null,
   ...overrides,
@@ -224,6 +227,35 @@ describe("定期実行の周回", () => {
     expect(fake.fired[0]?.scheduledFor).toBeNull();
     expect(fake.fired[0]?.missed).toBe(0);
     expect(fake.fired[0]?.nextRunAt).toBeUndefined();
+  });
+
+  /**
+   * 誰の回か (`045`・CAPTURE-450)。**回の主体は予定を作った主体のまま** —— シークレットをその名前で解くので、
+   * 押す人で回の動きが変わってはいけない。押した者は別に運ぶ。
+   */
+  it("いま撮るの回でも、主体は作った者のまま (押した者は store が回の行に写す)", async () => {
+    const fake = fakeStore([
+      schedule({
+        nextRunAt: jst("2026-11-08T04:00:00"),
+        createdByName: "alice-name",
+        runRequestedAt: NOW,
+        runRequestedBy: "bob-sub",
+        runRequestedByName: "bob",
+      }),
+    ]);
+    const { deps } = depsOf(fake.store, { startedAt: NOW });
+    await tickSchedules(deps);
+    expect(fake.fired[0]?.who).toEqual({ orgId: "acme", subject: "alice", name: "alice-name" });
+  });
+
+  // 名前の分からない予定 (`045` より前の行) は、名前を運ばない
+  it("名前の分からない予定は、主体だけを運ぶ", async () => {
+    const fake = fakeStore([
+      schedule({ runRequestedAt: NOW, runRequestedBy: "bob-sub", runRequestedByName: "bob" }),
+    ]);
+    const { deps } = depsOf(fake.store);
+    await tickSchedules(deps);
+    expect(fake.fired[0]?.who).toEqual({ orgId: "acme", subject: "alice" });
   });
 
   it("止めた予定もいま撮るなら始まり、期限は動かない", async () => {

@@ -246,6 +246,8 @@ const NO_SCHEDULE = {
   scheduleName: null,
   scheduledFor: null,
   scheduleMissed: 0,
+  runRequestedBy: null,
+  runRequestedByName: null,
 };
 
 /** 認可と単一実行を見るための、最小の偽物。 */
@@ -310,6 +312,9 @@ interface FakeCrawl {
   scheduleName?: string | null;
   scheduledFor?: Date | null;
   scheduleMissed?: number;
+  /** 「いま撮る」を押した主体と名前 (`045`)。本物の行は必ず持つ (nullable なだけ)。 */
+  runRequestedBy?: string | null;
+  runRequestedByName?: string | null;
 }
 
 /** `scripts` の 1 行。解決の並びと、見つからない id の扱いを見るのに要る欄だけ。 */
@@ -1282,6 +1287,33 @@ describe("クロール route の認可と単一実行", () => {
     const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
     await app.close();
     expect(res.json()).toMatchObject(NO_REQUESTER_NAMES);
+  });
+
+  // 「いま撮る」を押した者 (`045`)。回の主体は予定を作った主体のままで、押した者は別の欄で返る。
+  it("GET は、いま撮るを押した主体と名前を返す。主体は作った者のまま", async () => {
+    const app = await buildApp(
+      depsWith({
+        crawls: [
+          {
+            ...finishedCrawl,
+            scheduleId: "44444444-4444-4444-8444-444444444444",
+            scheduleName: "毎朝",
+            scheduledFor: null,
+            runRequestedBy: "bob-sub",
+            runRequestedByName: "bob",
+          },
+        ],
+        allowed: true,
+      }),
+    );
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    await app.close();
+    expect(res.json()).toMatchObject({
+      requestedBy: "alice",
+      scheduledFor: null,
+      runRequestedBy: "bob-sub",
+      runRequestedByName: "bob",
+    });
   });
 
   it("GET は定期の回の予定の名前と本来の時刻と欠けを返す", async () => {

@@ -66,6 +66,19 @@ action is a POST (capture-workbench only relays POST for writes).
 `GET /api/crawls` and `GET /api/crawls/:id` also return `schedule` (`{id, name}` or `null`),
 `scheduledFor`, and `scheduleMissed`.
 
+### Whose run it is
+
+The subject of a scheduled run (`crawls.requested_by`) is **the subject who created the schedule**, and a run-now
+does not change that. A schedule's contents (its secret references, for one) are resolved under the creator's name,
+so a run must not behave differently depending on who pressed the button.
+
+Whoever pressed run-now is recorded separately. A schedule returns the waiting request's `runRequestedBy` (the subject)
+and `runRequestedByName` (a readable name). When the run starts, both are copied onto the crawl row, and
+`GET /api/crawls` and `GET /api/crawls/:id` return them under the same names (recent runs carry `runRequestedByName`).
+A due run is `null` even when a request overlapped it, because the clock started it. A schedule's `createdByName` is
+the readable name at creation and is copied to the run's `requestedByName`. All of these are for display, not
+authorization ([Recording who started it, and from where](/capture-ledger/archive-ledger/#recording-who-started-it-and-from-where)).
+
 ## Health words
 
 `health` is read from the top down. capture-workbench writes the sentences; the ledger only returns

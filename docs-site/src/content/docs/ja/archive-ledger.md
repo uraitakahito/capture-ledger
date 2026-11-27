@@ -623,8 +623,9 @@ curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/me
 | `requestedClient` | どの app client のトークンか。名前は `CAPTURE_LEDGER_OIDC_CLIENT_IDS` に `名前=ID` と書いた物（トークンは名前を運ばない） |
 | `requestedActor`  | 呼び手が見出し `X-Capture-ledger-Actor` に書いた名前。**申告で、確かめていない**                                          |
 
-分からない物は `null`（名前を書いていない app client・定期の回・この欄より前の行）。開発用ヘッダの経路では、
-名前と app client が `null` で、申告の名前は見出しを送れば残る。
+分からない物は `null`（名前を書いていない app client・この欄より前の行）。定期の回は、名前が予定を作った者の名前で
+（その名前を残す前に作った予定は `null`）、app client と申告の名前は `null`（[誰の回か](/capture-ledger/ja/schedules/#誰の回か)）。
+開発用ヘッダの経路では、名前と app client が `null` で、申告の名前は見出しを送れば残る。
 **3 つとも認可には使わない。** 同じ app client をいくつもの呼び手（AI の担当の席など）が使うとき、どの席かはトークンから
 分からない。そこで呼び手が自分の名前を見出しで添えられるようにしてある。誰でも好きな名前を書けるので、capture-workbench は
 「申告」と書いて出す。

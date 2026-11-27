@@ -214,7 +214,7 @@ export const CRAWL_BODY_SCHEMA = {
 /**
  * 誰の頼みか。組織は行の帰属に、subject は行とログに使う。
  *
- * `name`・`client`・`actor` は行に写して画面に出すだけの物 (`044`)。定期の回は持たない。
+ * `name`・`client`・`actor` は行に写して画面に出すだけの物 (`044`)。定期の回は `name` (予定を作った者の名前。`045`) だけを持つ。
  */
 export interface CrawlRequester {
   orgId: string;

@@ -11,13 +11,25 @@ description: Scheduled crawls. The table the clock reads; a run is a crawls row.
 
 ## There is no table of runs
 
-**A run is a `crawls` row.** Three columns on `crawls` are all it takes: the rows already say when a capture happened and when it did not. A separate table of runs would say the same thing twice.
+**A run is a `crawls` row.** A few columns on `crawls` are all it takes: the rows already say when a capture happened and when it did not. A separate table of runs would say the same thing twice.
 
-| `crawls` column   | Meaning                                                             |
-| ----------------- | ------------------------------------------------------------------- |
-| `schedule_id`     | Which schedule this is a run of. `NULL` for a crawl started by hand |
-| `scheduled_for`   | When it was due. `NULL` for run-now and for a crawl started by hand |
-| `schedule_missed` | How many runs were merged into this one                             |
+| `crawls` column         | Meaning                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| `schedule_id`           | Which schedule this is a run of. `NULL` for a crawl started by hand                                     |
+| `scheduled_for`         | When it was due. `NULL` for run-now and for a crawl started by hand                                     |
+| `schedule_missed`       | How many runs were merged into this one                                                                 |
+| `run_requested_by`      | The subject who pressed run-now (`045`). `NULL` for a due run and for a crawl started by hand           |
+| `run_requested_by_name` | Its readable name (`045`). For display; the run's subject (`requested_by`) stays the schedule's creator |
+
+## Who created it, and who pressed run-now
+
+Besides the `032` columns, a schedule row has three more (`045`). All are for display.
+
+| Column                  | Meaning                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `created_by_name`       | The readable name at creation, copied to a run's `requested_by_name`. `NULL` for rows older than `045`                                     |
+| `run_requested_by`      | The subject who pressed the waiting run-now. Set with `run_requested_at`, and cleared with it when the run starts, on pause, and on delete |
+| `run_requested_by_name` | Its readable name                                                                                                                          |
 
 ## request and recipe
 

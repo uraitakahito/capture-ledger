@@ -494,6 +494,9 @@ export interface ScheduleMark {
   scheduledFor: string | null;
   /** 1 回にまとめた欠けの数。 */
   scheduleMissed: number;
+  /** 「いま撮る」を押した主体と名前 (`045`)。期限の回には無い。 */
+  runRequestedBy?: string | null;
+  runRequestedByName?: string | null;
 }
 
 /** `crawls` の行の値。走行中で足すときも、周回が失敗の行を足すときも同じ形にする。 */

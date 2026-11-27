@@ -103,6 +103,9 @@ const answerOf = (
     blockedBy: (health === "stuck" || waiting) && running !== undefined ? running : null,
     nextRunAt: row.nextRunAt,
     runRequestedAt: row.runRequestedAt,
+    // 待っている「いま撮る」を押した主体と名前 (`045`)。頼みが無ければ null
+    runRequestedBy: row.runRequestedBy,
+    runRequestedByName: row.runRequestedByName,
     seeds: row.recipe.seeds.map((seed) => seed.normalized),
     maxDepth: row.recipe.maxDepth,
     maxPages: row.recipe.maxPages,
@@ -110,6 +113,7 @@ const answerOf = (
     outdated: scripts.some((script) => script.latest !== null && script.latest > script.version),
     pinnedAt: row.pinnedAt,
     createdBy: row.createdBy,
+    createdByName: row.createdByName,
     createdAt: row.createdAt,
     recentRuns: runs,
   };
@@ -202,6 +206,7 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
         request: request.body.request,
         recipe: recipeOf(prepared),
         createdBy: who.subject,
+        ...(identity.name !== undefined && { createdByName: identity.name }),
         now,
       });
       if (created.kind === "duplicate-name") {
@@ -289,7 +294,10 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
     async (request, reply) => {
       const identity = await allowed(request, reply);
       if (identity === null) return reply;
-      const row = await store.requestRun(request.params.id, deps.now());
+      const row = await store.requestRun(request.params.id, deps.now(), {
+        subject: identity.subject,
+        ...(identity.name !== undefined && { name: identity.name }),
+      });
       if (row === undefined) return notFound(reply);
       deps.poke();
       log.info({ subject: identity.subject, scheduleId: row.id }, "Schedule run requested");

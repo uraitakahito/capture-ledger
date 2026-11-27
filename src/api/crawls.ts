@@ -195,16 +195,22 @@ const scheduleOf = (crawl: {
   scheduleName: string | null;
   scheduledFor: Date | null;
   scheduleMissed: number;
+  runRequestedBy: string | null;
+  runRequestedByName: string | null;
 }) => ({
   schedule:
     crawl.scheduleId === null ? null : { id: crawl.scheduleId, name: crawl.scheduleName ?? "" },
   scheduledFor: crawl.scheduledFor,
   scheduleMissed: crawl.scheduleMissed,
+  // 「いま撮る」を押した主体と名前 (`045`)。期限の回と手で始めたクロールは null。回の主体 (`requestedBy`) は予定を作った主体のまま
+  runRequestedBy: crawl.runRequestedBy,
+  runRequestedByName: crawl.runRequestedByName,
 });
 
 /**
  * 始めた時の名前と出どころ (`044`)。一覧と 1 本の両方が同じ形で返す。**表示のための物** —— 分からなければ null
- * (`044` より前の行・定期の回。ヘッダの経路は名前と app client が null)。`requestedActor` は呼び手の申告で、確かめていない
+ * (`044` より前の行。定期の回は app client と申告が null で、名前は予定を作った者の名前。ヘッダの経路は名前と app client が null)。
+ * `requestedActor` は呼び手の申告で、確かめていない
  * (名乗りの経路に依らず、見出しを送れば残る)。
  */
 const requesterNamesOf = (crawl: {
@@ -663,6 +669,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           scheduleName.as("scheduleName"),
           "scheduledFor",
           "scheduleMissed",
+          "runRequestedBy",
+          "runRequestedByName",
           dispatchOf.as("dispatch"),
         ])
         .orderBy("startedAt", "desc")

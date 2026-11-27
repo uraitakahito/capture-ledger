@@ -3,11 +3,13 @@ import Fastify, { type FastifyInstance } from "fastify";
 import type { OpenFgaClient } from "@openfga/sdk";
 
 import { registerScheduleRoutes, type ScheduleRouteDeps } from "../src/api/schedules.js";
+import type { Identity } from "../src/config/identity.js";
 import type { PreparedCrawl, RefusedCrawl } from "../src/crawl/prepare.js";
 import type { ScheduleRecipe } from "../src/db/database.js";
 import type {
   CreateResult,
   NewSchedule,
+  RunRequester,
   ScheduleRow,
   ScheduleRun,
   ScheduleStore,
@@ -77,10 +79,13 @@ const rowOf = (overrides: Partial<ScheduleRow> = {}): ScheduleRow => ({
   enabled: true,
   nextRunAt: jst("2026-11-08T04:00:00"),
   runRequestedAt: null,
+  runRequestedBy: null,
+  runRequestedByName: null,
   request: { seeds: ["https://site.test/"] },
   recipe,
   pinnedAt: NOW,
   createdBy: "alice",
+  createdByName: null,
   createdAt: NOW,
   deletedAt: null,
   ...overrides,
@@ -93,6 +98,7 @@ const runOf = (overrides: Partial<ScheduleRun> = {}): ScheduleRun => ({
   startedAt: jst("2026-11-07T04:00:10"),
   finishedAt: jst("2026-11-07T04:01:10"),
   scheduleMissed: 0,
+  runRequestedByName: null,
   pagesCaptured: 5,
   pagesFailed: 0,
   error: null,
@@ -134,10 +140,12 @@ const fakeStore = () => {
       row.nextRunAt = nextRunAt;
       return Promise.resolve(row);
     },
-    requestRun: (id: string, now: Date) => {
+    requestRun: (id: string, now: Date, by: RunRequester) => {
       const row = rows.get(id);
       if (row === undefined) return Promise.resolve(undefined);
       row.runRequestedAt = now;
+      row.runRequestedBy = by.subject;
+      row.runRequestedByName = by.name ?? null;
       return Promise.resolve(row);
     },
     repin: (id: string, next: ScheduleRecipe, now: Date) => {
@@ -176,6 +184,7 @@ describe("定期実行のエンドポイント", () => {
   let prepare: ReturnType<typeof vi.fn>;
   let allowed: boolean;
   let named: boolean;
+  let identity: Identity;
 
   beforeEach(async () => {
     fake = fakeStore();
@@ -183,13 +192,13 @@ describe("定期実行のエンドポイント", () => {
     prepare = vi.fn(() => Promise.resolve<PreparedCrawl | RefusedCrawl>(prepared));
     allowed = true;
     named = true;
+    identity = { subject: "alice", organizations: ["acme"] };
     app = Fastify({ ajv: { customOptions: { removeAdditional: false } } });
     const deps: ScheduleRouteDeps = {
       fga: {
         check: () => Promise.resolve({ allowed }),
       } as unknown as OpenFgaClient,
-      resolveIdentity: () =>
-        Promise.resolve(named ? { subject: "alice", organizations: ["acme"] } : undefined),
+      resolveIdentity: () => Promise.resolve(named ? identity : undefined),
       store: fake.store,
       prepare: prepare as unknown as ScheduleRouteDeps["prepare"],
       poke: poke as unknown as () => void,
@@ -246,6 +255,19 @@ describe("定期実行のエンドポイント", () => {
       // シークレットの更新時刻は回ごとに訊き直すので、行に残さない
       expect(created?.recipe).not.toHaveProperty("secrets");
       expect(created?.recipe).not.toHaveProperty("kind");
+    });
+
+    // 作った者の読める名前 (`045`)。定期の回の「始めた人」に写る。
+    it("作った者の名前が分かれば、予定に残す", async () => {
+      identity = { subject: "alice-sub", organizations: ["acme"], name: "alice" };
+      await post("/api/schedules", VALID);
+      expect(fake.created[0]).toMatchObject({ createdBy: "alice-sub", createdByName: "alice" });
+    });
+
+    it("作った者の名前が分からなければ、名前の欄を渡さない", async () => {
+      await post("/api/schedules", VALID);
+      expect(fake.created[0]?.createdBy).toBe("alice");
+      expect(fake.created[0]).not.toHaveProperty("createdByName");
     });
 
     it("乱数の控えの頼みも、固定した撮り方に残す", async () => {
@@ -505,6 +527,20 @@ describe("定期実行のエンドポイント", () => {
       expect(res.statusCode).toBe(202);
       expect(res.json()).toMatchObject({ runRequestedAt: NOW.toISOString(), health: "blocked" });
       expect(poke).toHaveBeenCalledTimes(1);
+    });
+
+    // 押した者を残す (`045`・CAPTURE-450)。これまではログにだけ出していて、行からは誰が押したか分からなかった。
+    it("いま撮るは、押した主体と名前を予定に残して返す", async () => {
+      identity = { subject: "bob-sub", organizations: ["acme"], name: "bob", client: "workbench" };
+      const res = await post(`/api/schedules/${ID}/run`);
+      expect(res.json()).toMatchObject({ runRequestedBy: "bob-sub", runRequestedByName: "bob" });
+      // 予定を作った者は変わらない
+      expect(res.json()).toMatchObject({ createdBy: "alice" });
+    });
+
+    it("名前の分からない者が押したら、主体だけを残す", async () => {
+      const res = await post(`/api/schedules/${ID}/run`);
+      expect(res.json()).toMatchObject({ runRequestedBy: "alice", runRequestedByName: null });
     });
 
     it("固定し直すは頼みをいま解決し直す", async () => {

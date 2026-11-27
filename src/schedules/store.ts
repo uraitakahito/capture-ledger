@@ -35,6 +35,8 @@ export interface ScheduleRun {
   startedAt: Date;
   finishedAt: Date | null;
   scheduleMissed: number;
+  /** 「いま撮る」を押した者の名前 (`045`)。期限の回と、名前の分からない回は null。 */
+  runRequestedByName: string | null;
   pagesCaptured: number;
   pagesFailed: number;
   error: string | null;
@@ -59,7 +61,15 @@ export interface NewSchedule {
   request: CrawlBody;
   recipe: ScheduleRecipe;
   createdBy: string;
+  /** 作った時の読める名前 (`045`)。分からなければ無い。 */
+  createdByName?: string;
   now: Date;
+}
+
+/** 「いま撮る」を押した者 (`045`)。回の行に写して画面に出すだけで、回の主体は変えない。 */
+export interface RunRequester {
+  subject: string;
+  name?: string;
 }
 
 /** 周回が 1 回を始めるときに渡す物。計算は周回がして、ここは 1 つのトランザクションで書くだけ。 */
@@ -121,7 +131,8 @@ export interface ScheduleStore {
   pause(id: string): Promise<ScheduleRow | undefined>;
   /** 再開。次の期限は呼ぶ側が今から計算し直す (止めていた間は欠けに数えない)。止めていない予定には何もしない。 */
   resume(id: string, nextRunAt: Date): Promise<ScheduleRow | undefined>;
-  requestRun(id: string, now: Date): Promise<ScheduleRow | undefined>;
+  /** 「いま撮る」の頼みを立てる。押した者も残す (`045`)。 */
+  requestRun(id: string, now: Date, by: RunRequester): Promise<ScheduleRow | undefined>;
   repin(id: string, recipe: ScheduleRecipe, now: Date): Promise<ScheduleRow | undefined>;
   softDelete(id: string, now: Date): Promise<boolean>;
 }
@@ -141,6 +152,7 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
           recipe: JSON.stringify(schedule.recipe),
           pinnedAt: schedule.now.toISOString(),
           createdBy: schedule.createdBy,
+          createdByName: schedule.createdByName ?? null,
         })
         .returningAll()
         .executeTakeFirstOrThrow();
@@ -182,6 +194,7 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
         "crawls.startedAt",
         "crawls.finishedAt",
         "crawls.scheduleMissed",
+        "crawls.runRequestedByName",
         "crawls.pagesCaptured",
         pagesFailed.as("pagesFailed"),
         "crawls.error",
@@ -285,7 +298,8 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
         // 候補を選んでからここまでの間に消された・止められた・別の周回が取った物は、始めない
         const held = await trx
           .selectFrom("crawlSchedules")
-          .select("id")
+          // 押した者は掴んだ行から読み直す。候補を読んでから掴むまでの間に押し直されたら、後の人が回に写る
+          .select(["id", "runRequestedBy", "runRequestedByName"])
           .where("id", "=", plan.scheduleId)
           .where("deletedAt", "is", null)
           .where((eb) =>
@@ -298,6 +312,12 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
           .skipLocked()
           .executeTakeFirst();
         if (held === undefined) return { kind: "gone" };
+        // 期限の回 (時計が始めた回) には押した者を付けない。「いま撮る」の回は、掴んだ行の押した者
+        const pressed =
+          plan.scheduledFor === null
+            ? { runRequestedBy: held.runRequestedBy, runRequestedByName: held.runRequestedByName }
+            : { runRequestedBy: null, runRequestedByName: null };
+        const marked = { ...mark, ...pressed };
 
         let result: FireResult;
         if (plan.failure === undefined) {
@@ -308,7 +328,7 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
             plan.who,
             plan.capture,
             plan.sink,
-            mark,
+            marked,
           );
           result = { kind: "started", level };
         } else {
@@ -316,7 +336,7 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
           await trx
             .insertInto("crawls")
             .values({
-              ...crawlValues(plan.prepared, plan.crawlId, plan.who, plan.sink, mark),
+              ...crawlValues(plan.prepared, plan.crawlId, plan.who, plan.sink, marked),
               state: "failed",
               stopReason: "failed",
               // `started_at` と同じ DB の時計 (トランザクションの時刻)。周回の時計だと始まりより前になりうる
@@ -332,6 +352,8 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
           .set({
             ...(plan.nextRunAt !== undefined && { nextRunAt: plan.nextRunAt.toISOString() }),
             runRequestedAt: null,
+            runRequestedBy: null,
+            runRequestedByName: null,
           })
           .where("id", "=", plan.scheduleId)
           .execute();
@@ -349,7 +371,12 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
       db
         .updateTable("crawlSchedules")
         // 待っている「いま撮る」の頼みも消す。止めたのに後で始まると、止めた意味が無い
-        .set({ enabled: false, runRequestedAt: null })
+        .set({
+          enabled: false,
+          runRequestedAt: null,
+          runRequestedBy: null,
+          runRequestedByName: null,
+        })
         .where("id", "=", id)
         .where("deletedAt", "is", null)
         .returningAll()
@@ -371,10 +398,15 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
     );
   },
 
-  async requestRun(id, now) {
+  async requestRun(id, now, by) {
     return db
       .updateTable("crawlSchedules")
-      .set({ runRequestedAt: now.toISOString() })
+      .set({
+        runRequestedAt: now.toISOString(),
+        // 2 度押されたら、後の人が残る (頼みは 1 つで、時刻も後の物になる)
+        runRequestedBy: by.subject,
+        runRequestedByName: by.name ?? null,
+      })
       .where("id", "=", id)
       .where("deletedAt", "is", null)
       .returningAll()
@@ -394,7 +426,12 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
   async softDelete(id, now) {
     const rows = await db
       .updateTable("crawlSchedules")
-      .set({ deletedAt: now.toISOString(), runRequestedAt: null })
+      .set({
+        deletedAt: now.toISOString(),
+        runRequestedAt: null,
+        runRequestedBy: null,
+        runRequestedByName: null,
+      })
       .where("id", "=", id)
       .where("deletedAt", "is", null)
       .returning("id")

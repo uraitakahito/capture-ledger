@@ -89,7 +89,13 @@ export const tickSchedules = async (deps: TickDeps): Promise<TickResult> => {
 
   // 期限が来ているなら、頼みがあっても本来の回として始める (頼みの回と期限の回が続けて 2 本走らないように)
   const isDue = row.enabled && row.nextRunAt.getTime() <= now.getTime();
-  const who = { orgId: row.orgId, subject: row.createdBy };
+  // **主体は予定を作った主体。**「いま撮る」の回でも変えない —— 下でシークレットをこの名前で解く。押した者は、`fire` が
+  // 掴んだ予定の行から回の行へ写す (`045`)
+  const who = {
+    orgId: row.orgId,
+    subject: row.createdBy,
+    ...(row.createdByName !== null && { name: row.createdByName }),
+  };
   const crawlId = randomUUID();
 
   // **この予定の問題で、周回を止めない。** Windmill の変な答えや大きすぎる行で投げたまま次の周回へ渡すと、同じ予定を

@@ -62,6 +62,17 @@ options、変数の値、User-Agent、宣言したシークレットの名前で
 `GET /api/crawls` と `GET /api/crawls/:id` は、`schedule`（`{id, name}` か `null`）・`scheduledFor`・
 `scheduleMissed` も返します。
 
+### 誰の回か
+
+定期の回の主体（`crawls.requested_by`）は、**予定を作った主体**です。「いま撮る」の回でも変わりません。
+予定の中身（シークレットの参照など）は作った主体の名前で解くので、押す人によって回の動きが変わらないようにしてあります。
+
+「いま撮る」を押した者は、別に残します。予定は、待っている頼みの `runRequestedBy`（主体）と `runRequestedByName`（読める名前）を
+返します。回が始まると、その 2 つは回の行に写り、`GET /api/crawls` と `GET /api/crawls/:id` が同じ名前で返します
+（直近の回には `runRequestedByName`）。期限の回は、頼みが重なっていても時計が始めた回なので `null` です。
+予定の `createdByName` は作った時の読める名前で、回の `requestedByName` に写ります。どれも表示のための物で、認可には使いません
+（[誰が・どこから始めたかを残す](/capture-ledger/ja/archive-ledger/#誰がどこから始めたかを残す)）。
+
 ## 状態の語
 
 `health` は上から順に見ます。文は capture-workbench が作り、capture-ledger は語だけを返します。
