@@ -72,6 +72,9 @@ signing_enabled() {
 #   - 共有 store: 起きているか。**403 は「立っている」** ——
 #     S3 は署名の無い要求を拒むのが正常なので、`curl -f` で見ると立っている store を
 #     「落ちている」と判定する。見るのは status で、接続できないときだけ curl は 000 を返す。
+#     **起こすサービスが store を使わないときは見ない** (`stack:up postgres` など。t-e5bz)。決めるのは
+#     `src/tools/stack-store.ts` で、compose を読んで答える。道具が無い・落ちた・答えが読めないときは見る ——
+#     飛ばしてよいと言い切れるときだけ飛ばす。
 #
 # down には掛けない。DNS ドメインが無くても、止めることはできるべきだから。
 preflight() {
@@ -97,6 +100,14 @@ preflight() {
     exit 1
   fi
 
+  # 起こすサービスが store を使うか。答えは「check<TAB>理由」か「skip<TAB>理由」。それ以外 (道具が無い・落ちた) は見る
+  local decision
+  decision="$(node dist/tools/stack-needs-store.js "$@" 2>/dev/null || true)"
+  if [ "${decision%%$'\t'*}" = "skip" ]; then
+    store_line="store: 見ていない (${decision#*$'\t'})"
+    return 0
+  fi
+
   # 共有 store が起きているか。**403 は「立っている」**。
   local status
   status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8333/ || true)"
@@ -110,8 +121,11 @@ preflight() {
   fi
 }
 
+# preflight が store を見なかったときに置き換える (起こすサービスが store を使わない)
+store_line="store: 共有 (seaweedfs.crawler-storage:8333)"
+
 if [ "${SUBCOMMAND}" = "up" ]; then
-  preflight
+  preflight "$@"
 fi
 
 # **空配列の展開は `set -u` に当たる。** macOS の bash は 3.2 で、そこでは
@@ -120,7 +134,7 @@ fi
 profile_args=()
 env_args=()
 
-echo "store: 共有 (seaweedfs.crawler-storage:8333)"
+echo "${store_line}"
 
 if signing_enabled; then
   profile_args=(--profile signing)

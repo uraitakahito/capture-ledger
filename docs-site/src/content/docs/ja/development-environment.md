@@ -33,7 +33,9 @@ pnpm run check       # push の前に走らせる検査の全部（中身は pac
 スタックは `container-compose` を直接叩かず、`pnpm run stack:up` で起動してください。
 起動の前に、道具と `capture-ledger` DNS ドメイン、すべての build context が指す
 `.upstream/` の submodule、そして**共有 store が起きているか**を確かめ、足りなければ
-名前を挙げて止まります。
+名前を挙げて止まります。store を使わないサービスだけを名指したとき（`pnpm run stack:up postgres` など）は、
+store は見ません（`store: 見ていない` と出ます）。store を使うかは `docker-compose.yml` から決め、知らない旗や
+サービスの名が 1 つでもあれば見ます。
 
 成果物を置く store（SeaweedFS）は、このスタックには入っていません。[Web Capture](https://uraitakahito.github.io/capture-ledger/ja/#web-capture) の repo が
 共有する 1 つの store（`seaweedfs.crawler-storage`）で、submodule から起こします:
