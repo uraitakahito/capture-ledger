@@ -17,6 +17,7 @@ import { drainOutbox } from "../fga/outbox-worker.js";
 import { createS3Client } from "../archive/s3.js";
 import { submitterOrganizations } from "./authorization.js";
 import { selectIdentity } from "./identity.js";
+import { registerScopeGate, rememberIdentity } from "./scope-gate.js";
 import { startupNotes, type StartupFacts } from "./startup-notes.js";
 import { registerRoutes } from "./routes.js";
 import { registerMeRoute } from "./me.js";
@@ -101,7 +102,8 @@ const start = async (options: ServerOptions): Promise<void> => {
   const identity = selectIdentity({
     machineOrganizations: (subject) => submitterOrganizations(fga, subject),
   });
-  const resolveIdentity = identity.resolve;
+  // 1 要求に 1 度だけ確かめる。scope の門と route の手続きが同じ答えを使う (`scope-gate.ts`)
+  const resolveIdentity = rememberIdentity(identity.resolve);
   // どの名乗り方で起きたか。起動ログと picker が同じものを言う —— resolver は渡さない
   // (どちらも言うだけで、検めはしない)。
   const identityMode: StartupFacts["identity"] =
@@ -136,6 +138,8 @@ const start = async (options: ServerOptions): Promise<void> => {
     return reply.code(500).send({ error: "internal error" });
   });
 
+  // 機械のトークンの scope で、届いてよい route を絞る (CAPTURE-450)。route より先に掛ける
+  registerScopeGate(app, resolveIdentity);
   registerRoutes(app, { db, fga, s3, resolveIdentity });
   registerMeRoute(app, { fga, resolveIdentity });
   // 型の検査のクライアント (ts-compile-service を host の loopback で)。クロールとスクリプトのエンドポイントの両方が使う

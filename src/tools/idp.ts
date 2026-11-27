@@ -52,9 +52,17 @@ export const IDP_HANDOFF = ".dev/idp.env";
 /** 群の名前が組織の名前（`cognito:groups`）。手元の既定の組織。 */
 export const DEV_ORGANIZATION = "acme";
 
-/** resource server と scope。Windmill の flow はこの scope でトークンを取る。 */
-export const RESOURCE_SERVER = "capture-ledger";
-export const CRAWL_SCOPE = `${RESOURCE_SERVER}/crawl`;
+/**
+ * resource server と scope (CAPTURE-450)。綴りは API の門 (`src/api/scope.ts`) の 1 か所が持つ。
+ * Windmill の flow は `CRAWL_SCOPE`、AI の担当の app client は `START_SCOPE` でトークンを取る。
+ */
+export { CRAWL_SCOPE, RESOURCE_SERVER, START_SCOPE } from "../api/scope.js";
+
+/**
+ * AI の担当の引き渡しファイル (CAPTURE-450)。AI の担当の app client の ID と secret だけを置く ——
+ * `.dev/idp.env` (人のパスワードと Windmill の secret) とは分け、クロールを始める CLI はこちらだけを読む。
+ */
+export const IDP_AI_HANDOFF = ".dev/idp-ai.env";
 
 /** Cognito の JSON の API の失敗。`__type` を名前に持つ。 */
 export class CognitoError extends Error {
@@ -114,8 +122,8 @@ export const readEnvFile = (path: string): Record<string, string> => {
 export const readHandoff = (root: string = ROOT) => readEnvFile(resolve(root, IDP_HANDOFF));
 
 /** 引き渡しファイルを書く（全部を置き換える）。値は印字しない —— secret が混じる。 */
-export const writeHandoff = (values: Record<string, string>) => {
-  const path = resolve(ROOT, IDP_HANDOFF);
+export const writeHandoff = (values: Record<string, string>, file: string = IDP_HANDOFF) => {
+  const path = resolve(ROOT, file);
   mkdirSync(dirname(path), { recursive: true });
   const header =
     "# capture-ledger の pnpm run idp:bootstrap が書くファイル。**手で書かない**。\n" +

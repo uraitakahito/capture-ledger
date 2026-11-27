@@ -15,7 +15,9 @@ import { createRemoteJWKSet } from "jose";
 const ENDPOINT = process.env["CAPTURE_LEDGER_TEST_IDP_ENDPOINT"];
 if (ENDPOINT !== undefined) process.env["CAPTURE_LEDGER_IDP_ENDPOINT"] = ENDPOINT;
 
-const { cognito, CRAWL_SCOPE, RESOURCE_SERVER, TOKEN_PATH } = await import("../src/tools/idp.js");
+const { cognito, CRAWL_SCOPE, RESOURCE_SERVER, START_SCOPE, TOKEN_PATH } =
+  await import("../src/tools/idp.js");
+const { scopeRefusal } = await import("../src/api/scope.js");
 const { jwtIdentityResolver } = await import("../src/api/identity.js");
 
 interface Client {
@@ -35,6 +37,7 @@ describe.skipIf(ENDPOINT === undefined)(
     let stranger: Client;
     let humanTokens: { AccessToken: string; IdToken: string };
     let machineToken = "";
+    let ai: Client;
 
     beforeAll(async () => {
       const { UserPool } = await cognito<{ UserPool: { Id: string } }>("CreateUserPool", {
@@ -46,7 +49,10 @@ describe.skipIf(ENDPOINT === undefined)(
         UserPoolId: pool,
         Identifier: RESOURCE_SERVER,
         Name: RESOURCE_SERVER,
-        Scopes: [{ ScopeName: "crawl", ScopeDescription: "crawl" }],
+        Scopes: [
+          { ScopeName: "crawl", ScopeDescription: "crawl" },
+          { ScopeName: "crawl.start", ScopeDescription: "crawl.start" },
+        ],
       });
       const client = async (name: string, settings: object) =>
         (
@@ -63,6 +69,15 @@ describe.skipIf(ENDPOINT === undefined)(
         AllowedOAuthFlows: ["client_credentials"],
         AllowedOAuthScopes: [CRAWL_SCOPE],
         AllowedOAuthFlowsUserPoolClient: true,
+      });
+      // AI の担当の client (CAPTURE-450)。狭い scope だけ・token の期限 10 分 (idp:bootstrap と同じ形)
+      ai = await client("ai", {
+        GenerateSecret: true,
+        AllowedOAuthFlows: ["client_credentials"],
+        AllowedOAuthScopes: [START_SCOPE],
+        AllowedOAuthFlowsUserPoolClient: true,
+        AccessTokenValidity: 10,
+        TokenValidityUnits: { AccessToken: "minutes" },
       });
       await cognito("CreateGroup", { UserPoolId: pool, GroupName: "acme" });
       await cognito("AdminCreateUser", {
@@ -102,14 +117,28 @@ describe.skipIf(ENDPOINT === undefined)(
       machineToken = ((await res.json()) as { access_token: string }).access_token;
     });
 
+    /** client credentials の token を取る。答えの状態と本文を返す (断られた時も読むため)。 */
+    const clientToken = async (who: Client, scope: string) => {
+      const res = await fetch(`${ENDPOINT ?? ""}${TOKEN_PATH}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          authorization: `Basic ${Buffer.from(`${who.ClientId}:${who.ClientSecret ?? ""}`).toString("base64")}`,
+        },
+        body: `grant_type=client_credentials&scope=${encodeURIComponent(scope)}`,
+      });
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+    };
+
     const resolver = () =>
       jwtIdentityResolver(createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)), {
         issuer,
-        clientIds: [web.ClientId, windmill.ClientId],
+        clientIds: [web.ClientId, windmill.ClientId, ai.ClientId],
         // 名前はトークンに無く、設定 (`名前=ID`) が持つ (CAPTURE-450)
         clientNames: new Map([
           [web.ClientId, "web"],
           [windmill.ClientId, "windmill"],
+          [ai.ClientId, "ai"],
         ]),
         machineOrganizations: (subject) =>
           Promise.resolve(subject === windmill.ClientId ? ["acme"] : []),
@@ -132,7 +161,40 @@ describe.skipIf(ENDPOINT === undefined)(
         name: "windmill",
         client: "windmill",
         machine: true,
+        scopes: [CRAWL_SCOPE],
       });
+    });
+
+    /**
+     * AI の担当の client (CAPTURE-450)。本物の token に狭い scope が載り、期限が設定どおりで、門が
+     * 始める・読む route だけを通すことを、Floci の token で見る。
+     */
+    it("AI の担当の client: token に狭い scope が載り、期限は 10 分", async () => {
+      const { status, body } = await clientToken(ai, START_SCOPE);
+      expect(status).toBe(200);
+      expect(body["expires_in"]).toBe(600);
+      const identity = await resolver()(bearer(String(body["access_token"])));
+      expect(identity).toMatchObject({
+        name: "ai",
+        client: "ai",
+        machine: true,
+        scopes: [START_SCOPE],
+      });
+      expect(scopeRefusal(identity!, "POST", "/api/crawls")).toBeUndefined();
+      expect(scopeRefusal(identity!, "GET", "/api/crawls/:id")).toBeUndefined();
+      expect(scopeRefusal(identity!, "POST", "/api/schedules")).toMatchObject({
+        scope: CRAWL_SCOPE,
+      });
+      expect(scopeRefusal(identity!, "POST", "/api/crawls/:id/failed")).toMatchObject({
+        scope: CRAWL_SCOPE,
+      });
+    });
+
+    // 広い scope は IdP が出さない。狭い client が広い scope の token を取れないことが、AI の担当の狭さの元
+    it("AI の担当の client は、広い scope の token を取れない", async () => {
+      const { status, body } = await clientToken(ai, CRAWL_SCOPE);
+      expect(status).toBe(400);
+      expect(body["error"]).toBe("invalid_scope");
     });
 
     it("ID token を拒む", async () => {

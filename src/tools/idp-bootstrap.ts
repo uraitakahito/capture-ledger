@@ -8,17 +8,20 @@
  * 作る物（在れば使い回す。何度打っても同じ形になる）:
  *
  *   - プール `capture-ledger-dev`
- *   - resource server `capture-ledger` と scope `crawl`
- *   - app client 3 つ
+ *   - resource server `capture-ledger` と scope `crawl`・`crawl.start`（在る resource server に足りなければ足す）
+ *   - app client 4 つ
  *       workbench  public。authorization code と PKCE（戻り先は 7080 の /callback）
  *       cli        public。パスワードの流れ。`pnpm run idp:token` と picker に貼るトークン用
- *       windmill   secret つき。client credentials（M2M）
+ *       windmill   secret つき。client credentials（M2M）。scope `crawl`（どの route も通る）
+ *       ai         secret つき。client credentials。scope `crawl.start` だけ（始める・読む）・token の期限 10 分。
+ *                  AI の担当がクロールを始める CLI 用（CAPTURE-450）
  *   - 群 `acme`（群の名前が組織の名前）と、利用者 `$(whoami)`（`acme` に入れる）
  *
  * 書く物:
  *
  *   - `.env.local` に `CAPTURE_LEDGER_OIDC_ISSUER` と `CAPTURE_LEDGER_OIDC_CLIENT_IDS`（API が読む）
  *   - `.dev/idp.env`（引き渡しファイル）に、client の ID・Windmill の secret・利用者のパスワード
+ *   - `.dev/idp-ai.env`（AI の担当の引き渡しファイル）に、ai の client の ID と secret だけ
  *
  * ## プールは Floci が起き直すと消える
  *
@@ -35,8 +38,10 @@ import {
   DEV_ORGANIZATION,
   IDP_CONTAINER_ENDPOINT,
   IDP_ENDPOINT,
+  IDP_AI_HANDOFF,
   IDP_HANDOFF,
   RESOURCE_SERVER,
+  START_SCOPE,
   TOKEN_PATH,
   cognito,
   readHandoff,
@@ -76,18 +81,81 @@ const ensurePool = async (): Promise<string> => {
   return UserPool.Id;
 };
 
+/** resource server の scope。`CRAWL_SCOPE`・`START_SCOPE` の、頭の `capture-ledger/` を除いた所。 */
+const SCOPES = [
+  { ScopeName: "crawl", ScopeDescription: "クロールを始め、段を報告する（どの route も通る）" },
+  { ScopeName: "crawl.start", ScopeDescription: "クロールを始め、読む（AI の担当）" },
+];
+
+/** resource server を用意する。在って scope が足りなければ足す（作り直さずに、前の bootstrap のプールを揃える）。 */
 const ensureResourceServer = async (pool: string) => {
+  let have: string[];
   try {
-    await cognito("DescribeResourceServer", { UserPoolId: pool, Identifier: RESOURCE_SERVER });
+    const { ResourceServer } = await cognito<{
+      ResourceServer: { Scopes?: { ScopeName: string }[] };
+    }>("DescribeResourceServer", { UserPoolId: pool, Identifier: RESOURCE_SERVER });
+    have = (ResourceServer.Scopes ?? []).map((scope) => scope.ScopeName);
   } catch (err) {
     if (!(err instanceof CognitoError) || err.type !== "ResourceNotFoundException") throw err;
     await cognito("CreateResourceServer", {
       UserPoolId: pool,
       Identifier: RESOURCE_SERVER,
       Name: RESOURCE_SERVER,
-      Scopes: [{ ScopeName: "crawl", ScopeDescription: "クロールを始め、段を報告する" }],
+      Scopes: SCOPES,
     });
+    return;
   }
+  if (SCOPES.every((scope) => have.includes(scope.ScopeName))) return;
+  await cognito("UpdateResourceServer", {
+    UserPoolId: pool,
+    Identifier: RESOURCE_SERVER,
+    Name: RESOURCE_SERVER,
+    Scopes: SCOPES,
+  });
+};
+
+/**
+ * AI の担当の app client の設定 (CAPTURE-450)。狭い scope だけを許し、token の期限を短くする —— 出た token は
+ * 期限まで止められないので (Cognito の決まり)、漏れた時の害を期限で小さくする。
+ */
+const AI_CLIENT = {
+  GenerateSecret: true,
+  AllowedOAuthFlows: ["client_credentials"],
+  AllowedOAuthScopes: [START_SCOPE],
+  AllowedOAuthFlowsUserPoolClient: true,
+  AccessTokenValidity: 10,
+  TokenValidityUnits: { AccessToken: "minutes" },
+};
+
+/**
+ * 在る client の設定が `settings` と違えば、直す。UpdateUserPoolClient は渡さない欄を既定に戻すので、
+ * 全部の設定を渡す (secret はそのまま)。
+ */
+const syncClient = async (
+  pool: string,
+  client: Client & { AllowedOAuthScopes?: string[]; AccessTokenValidity?: number },
+  settings: typeof AI_CLIENT,
+): Promise<Client> => {
+  const same =
+    JSON.stringify(client.AllowedOAuthScopes ?? []) ===
+      JSON.stringify(settings.AllowedOAuthScopes) &&
+    client.AccessTokenValidity === settings.AccessTokenValidity;
+  if (same) return client;
+  // 在る client の secret は作り直さない (GenerateSecret は作る時だけの欄)
+  const rest: Omit<typeof settings, "GenerateSecret"> = {
+    AllowedOAuthFlows: settings.AllowedOAuthFlows,
+    AllowedOAuthScopes: settings.AllowedOAuthScopes,
+    AllowedOAuthFlowsUserPoolClient: settings.AllowedOAuthFlowsUserPoolClient,
+    AccessTokenValidity: settings.AccessTokenValidity,
+    TokenValidityUnits: settings.TokenValidityUnits,
+  };
+  const { UserPoolClient } = await cognito<{ UserPoolClient: Client }>("UpdateUserPoolClient", {
+    UserPoolId: pool,
+    ClientId: client.ClientId,
+    ClientName: client.ClientName,
+    ...rest,
+  });
+  return { ...UserPoolClient, ClientSecret: UserPoolClient.ClientSecret ?? client.ClientSecret };
 };
 
 const ensureClient = async (pool: string, name: string, settings: object): Promise<Client> => {
@@ -178,6 +246,8 @@ const main = async () => {
     AllowedOAuthFlowsUserPoolClient: true,
   });
   if (windmill.ClientSecret === undefined) throw new Error("windmill の client に secret が無い");
+  const ai = await syncClient(pool, await ensureClient(pool, "ai", AI_CLIENT), AI_CLIENT);
+  if (ai.ClientSecret === undefined) throw new Error("ai の client に secret が無い");
   await ensureGroup(pool, DEV_ORGANIZATION);
   const user = userInfo().username;
   const { password, sub } = await ensureUser(
@@ -192,6 +262,7 @@ const main = async () => {
     `workbench=${workbench.ClientId}`,
     `cli=${cli.ClientId}`,
     `windmill=${windmill.ClientId}`,
+    `ai=${ai.ClientId}`,
   ];
   const env = upsertEnvLocal({
     CAPTURE_LEDGER_OIDC_ISSUER: issuer,
@@ -206,18 +277,31 @@ const main = async () => {
     IDP_WINDMILL_CLIENT_ID: windmill.ClientId,
     IDP_WINDMILL_CLIENT_SECRET: windmill.ClientSecret,
     IDP_WINDMILL_SCOPE: CRAWL_SCOPE,
+    // AI の担当の client の ID (許可を付ける idp:grant が読む)。secret は別のファイルに置く
+    IDP_AI_CLIENT_ID: ai.ClientId,
     IDP_ORGANIZATION: DEV_ORGANIZATION,
     IDP_USER: user,
     IDP_USER_PASSWORD: password,
     IDP_USER_SUB: sub,
   });
+  // AI の担当の引き渡し。クロールを始める CLI が読む。人のパスワードと Windmill の secret は入れない
+  const aiHandoff = writeHandoff(
+    {
+      IDP_TOKEN_ENDPOINT: `${IDP_ENDPOINT}${TOKEN_PATH}`,
+      IDP_AI_CLIENT_ID: ai.ClientId,
+      IDP_AI_CLIENT_SECRET: ai.ClientSecret,
+      IDP_AI_SCOPE: START_SCOPE,
+    },
+    IDP_AI_HANDOFF,
+  );
 
   process.stdout.write(
     `プール ${pool}（iss ${issuer}）\n` +
-      `  client: workbench ${workbench.ClientId} / cli ${cli.ClientId} / windmill ${windmill.ClientId}\n` +
+      `  client: workbench ${workbench.ClientId} / cli ${cli.ClientId} / windmill ${windmill.ClientId} / ai ${ai.ClientId}\n` +
       `  利用者 ${user}（群 ${DEV_ORGANIZATION}・sub ${sub}）\n` +
       `${env.path} に CAPTURE_LEDGER_OIDC_ISSUER・CAPTURE_LEDGER_OIDC_CLIENT_IDS を書いた\n` +
-      `${handoff} に secret とパスワードを書いた（${IDP_HANDOFF}。値は印字しない）\n`,
+      `${handoff} に secret とパスワードを書いた（${IDP_HANDOFF}。値は印字しない）\n` +
+      `${aiHandoff} に ai の client の secret を書いた（${IDP_AI_HANDOFF}。値は印字しない）\n`,
   );
 };
 
