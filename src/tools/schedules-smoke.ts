@@ -130,6 +130,8 @@ const planOf = (row: ScheduleRow, now: Date, overrides: Partial<FirePlan> = {}):
   capture: parseCaptureFormats("wacz", false),
   sink: undefined,
   scheduledFor: row.nextRunAt,
+  runRequestedBy: null,
+  runRequestedByName: null,
   missed: 0,
   nextRunAt: new Date(now.getTime() + 86_400_000),
   now,
@@ -269,7 +271,7 @@ try {
 
   // ── いま撮る ───────────────────────────────────────────
   const manual = await create(`${org}-manual`, new Date(now.getTime() + day), now);
-  await store.requestRun(manual.id, now);
+  await store.requestRun(manual.id, now, { subject: "presser-sub", name: "presser" });
   const quiet = tickDeps(now, { quietMs: 86_400_000, startedAt: now });
   const manualTick = await tickSchedules(quiet);
   check("いま撮るは静かな時間を見ない", manualTick.kind === "started", JSON.stringify(manualTick));
@@ -283,6 +285,18 @@ try {
   const manualAfter = await store.get(manual.id);
   check("いま撮るは期限を動かさない", iso(manualAfter?.nextRunAt) === iso(manual.nextRunAt));
   check("いま撮るの頼みは消える", manualAfter?.runRequestedAt === null);
+  // 押した者 (`045`)。回の主体は予定を作った主体のままで、押した者は別の列に写る
+  check(
+    "いま撮るの回は、押した者を別の列に残す (主体は作った者のまま)",
+    manualCrawl?.runRequestedBy === "presser-sub" &&
+      manualCrawl.runRequestedByName === "presser" &&
+      manualCrawl.requestedBy === manual.createdBy,
+    JSON.stringify([manualCrawl?.runRequestedBy, manualCrawl?.runRequestedByName]),
+  );
+  check(
+    "始まった後は、予定の押した者も消える",
+    manualAfter?.runRequestedBy === null && manualAfter.runRequestedByName === null,
+  );
   await closeCrawl(manualId);
 
   // ── 静かな時間 ─────────────────────────────────────────
@@ -298,12 +312,12 @@ try {
 
   // ── 止める ─────────────────────────────────────────────
   // 待っている頼みごと止める
-  await store.requestRun(calm.id, now);
+  await store.requestRun(calm.id, now, { subject: "smoke", name: "smoke" });
   await store.pause(calm.id);
   check("止めた予定は期限が来ても候補にならない", (await store.candidate(now)) === undefined);
   const stillOn = await store.resume(waiting.id, new Date(now.getTime() + day));
   check("動いている予定に再開を当てても書かない", stillOn === undefined);
-  await store.requestRun(calm.id, now);
+  await store.requestRun(calm.id, now, { subject: "smoke", name: "smoke" });
   const pausedPick = await store.candidate(now);
   check("止めた予定もいま撮るなら候補になる", pausedPick?.id === calm.id, String(pausedPick?.id));
   const pausedTick = await tickSchedules(tickDeps(now));

@@ -43,6 +43,8 @@ const plan = (overrides: Partial<FirePlan> = {}): FirePlan => ({
   who: { orgId: "acme", subject: "alice" },
   capture: parseCaptureFormats("wacz", false),
   sink: undefined,
+  runRequestedBy: null,
+  runRequestedByName: null,
   scheduledFor: new Date("2026-11-03T19:00:00.000Z"),
   missed: 3,
   nextRunAt: new Date("2026-11-07T19:00:00.000Z"),
@@ -241,7 +243,7 @@ describe("予定の store", () => {
     const store = scheduleStoreOf(db);
     await store.pause(ID);
     await store.resume(ID, NOW);
-    await store.requestRun(ID, NOW);
+    await store.requestRun(ID, NOW, { subject: "bob" });
     await store.repin(ID, prepared, NOW);
     expect(await store.softDelete(ID, NOW)).toBe(false);
     expect(queries).toHaveLength(5);
@@ -249,6 +251,59 @@ describe("予定の store", () => {
       expect(sql).toContain('update "crawl_schedules"');
       expect(sql).toContain('"deleted_at" is null');
     }
+  });
+
+  /**
+   * 「いま撮る」を押した者 (`045`・CAPTURE-450)。頼みと一緒に立て、一緒に消す —— 片方だけ残ると、
+   * 次の回に前の人の名前が付く。
+   */
+  describe("いま撮るを押した者", () => {
+    it("頼みを立てるとき、押した主体と名前も書く", async () => {
+      const { db, queries } = recordingDb([[]]);
+      await scheduleStoreOf(db).requestRun(ID, NOW, { subject: "bob-sub", name: "bob" });
+      expect(queries[0]!.sql).toContain('"run_requested_by" = $2');
+      expect(queries[0]!.sql).toContain('"run_requested_by_name" = $3');
+      expect(queries[0]!.parameters.slice(0, 3)).toEqual([NOW.toISOString(), "bob-sub", "bob"]);
+    });
+
+    it("名前が分からなければ、名前は null を書く (前の人の名前を残さない)", async () => {
+      const { db, queries } = recordingDb([[]]);
+      await scheduleStoreOf(db).requestRun(ID, NOW, { subject: "bob-sub" });
+      expect(queries[0]!.parameters.slice(0, 3)).toEqual([NOW.toISOString(), "bob-sub", null]);
+    });
+
+    it("回を始めたら、予定の押した者を消し、回の行に写す", async () => {
+      const seeded = [{ url: "https://site.test/", host: "site.test" }];
+      const { db, queries } = recordingDb([[{ id: ID }], [], seeded, [], []]);
+      const manual = plan({
+        scheduledFor: null,
+        missed: 0,
+        runRequestedBy: "bob-sub",
+        runRequestedByName: "bob",
+      });
+      delete manual.nextRunAt;
+      await scheduleStoreOf(db).fire(manual);
+      const insert = queries.find((query) => query.sql.includes('insert into "crawls"'))!;
+      expect(insert.sql).toContain('"run_requested_by"');
+      expect(insert.sql).toContain('"run_requested_by_name"');
+      expect(insert.parameters).toContain("bob-sub");
+      expect(insert.parameters).toContain("bob");
+      const update = queries.find((query) => query.sql.includes('update "crawl_schedules"'))!;
+      expect(update.sql).toContain('"run_requested_by" = ');
+      expect(update.sql).toContain('"run_requested_by_name" = ');
+      // 消す値は 3 つとも null
+      expect(update.parameters.slice(0, 3)).toEqual([null, null, null]);
+    });
+
+    it.each([
+      ["止める", (store: ReturnType<typeof scheduleStoreOf>) => store.pause(ID)],
+      ["消す", (store: ReturnType<typeof scheduleStoreOf>) => store.softDelete(ID, NOW)],
+    ])("%s ときは、押した者も消す", async (_label, act) => {
+      const { db, queries } = recordingDb([[]]);
+      await act(scheduleStoreOf(db));
+      expect(queries[0]!.sql).toContain('"run_requested_by" = ');
+      expect(queries[0]!.sql).toContain('"run_requested_by_name" = ');
+    });
   });
 
   it("止めるときは待っている頼みも消す", async () => {
