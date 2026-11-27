@@ -103,14 +103,14 @@ whether the caller may see the picture is decided by whether the caller belongs 
 
 ## Column notes
 
-| Column           | Note                                                                                                                                               |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `task_id`        | **Primary key.** BrowserHive's id, the join back to the result report                                                                              |
-| `org_id`         | `not null`. **The reason this table exists**                                                                                                       |
-| `submitted_by`   | The user who asked, when there was one. **NULL for scheduled runs that belong to an organization rather than a person**                            |
-| `submitted_at`   | Default `now()`                                                                                                                                    |
-| `manifest_key`   | Where the capture's `.result.json` is, minus the bucket, exactly as reported. NULL when there is a `manifest_error`, and for rows older than `014` |
-| `manifest_error` | Why there is no manifest the ledger can read: the write failed, or the reported location is not in the configured bucket                           |
+| Column           | Note                                                                                                                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task_id`        | **Primary key.** BrowserHive's id, the join back to the result report                                                                                                                   |
+| `org_id`         | `not null`. **The reason this table exists**                                                                                                                                            |
+| `submitted_by`   | The subject who asked (a copy of `crawls.requested_by`). **For a scheduled run it is the subject who created the schedule.** The column is nullable, but no current path leaves it NULL |
+| `submitted_at`   | Default `now()`                                                                                                                                                                         |
+| `manifest_key`   | Where the capture's `.result.json` is, minus the bucket, exactly as reported. NULL when there is a `manifest_error`, and for rows older than `014`                                      |
+| `manifest_error` | Why there is no manifest the ledger can read: the write failed, or the reported location is not in the configured bucket                                                                |
 
 :::caution[`submitted_by` is not the result of authentication]
 What fills this column is whatever the API request claimed as its subject

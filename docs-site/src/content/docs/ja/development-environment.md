@@ -359,9 +359,15 @@ compose のサービス `idp` で、`127.0.0.1:4566` に出ています（コン
 pnpm run idp:bootstrap                 # プール・app client・自分の利用者を作り、.env.local に書く
 pnpm run idp:grant                     # windmill の client と自分の利用者に acme の submitter
 pnpm run api                           # 起こし直す。.env.local は起動のときに 1 度だけ読む
-TOKEN=$(pnpm run --silent idp:token)
+TOKEN=$(pnpm run --silent idp:token)   # 人が打つとき。AI の担当は --user ai-cli（下の注意）
 curl -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls
 ```
+
+:::caution[AI の担当は、自分の利用者で取ります]
+`idp:token` は、何も付けないと人の利用者でトークンを取ります。AI の担当（Claude Code などの道具）は、専用の利用者 `ai-cli` で
+取ります —— `pnpm run idp:grant --user ai-cli` の後に `pnpm run --silent idp:token --user ai-cli --org acme`。
+訳と手順は[クイックスタートの「始める」](/capture-ledger/ja/quickstart/#始める)に在ります。
+:::
 
 `idp:bootstrap` が作るのは、プール `capture-ledger-dev`、resource server `capture-ledger` と
 scope `crawl`、群 `acme` と、その群に入れた `$(whoami)` の名前の利用者（群の名前が組織の名前です）、

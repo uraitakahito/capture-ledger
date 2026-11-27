@@ -98,14 +98,14 @@ manifest_key を持ち、archives に行の無い capture_submissions の行
 
 ## 列の要点
 
-| 列               | 要点                                                                                                                          |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `task_id`        | **主キー。** BrowserHive が採番したもので、結果の報告へ戻る join の鍵                                                         |
-| `org_id`         | `not null`。**この表が在る理由そのもの**                                                                                      |
-| `submitted_by`   | それを求めた利用者。**人ではなく組織に属する定期実行では NULL**                                                               |
-| `submitted_at`   | `now()` 既定                                                                                                                  |
-| `manifest_key`   | その取り込みの `.result.json` の在り処（bucket を除く）。報告のまま。`manifest_error` が在るときと、`014` より前の行では NULL |
-| `manifest_error` | capture-ledger が読める manifest が無い理由。書けなかったか、報告された場所が設定の bucket の外                               |
+| 列               | 要点                                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task_id`        | **主キー。** BrowserHive が採番したもので、結果の報告へ戻る join の鍵                                                                       |
+| `org_id`         | `not null`。**この表が在る理由そのもの**                                                                                                    |
+| `submitted_by`   | それを求めた主体（`crawls.requested_by` の写し）。**定期実行の回では、予定を作った主体。** 列は NULL を許すが、今の経路では NULL にならない |
+| `submitted_at`   | `now()` 既定                                                                                                                                |
+| `manifest_key`   | その取り込みの `.result.json` の在り処（bucket を除く）。報告のまま。`manifest_error` が在るときと、`014` より前の行では NULL               |
+| `manifest_error` | capture-ledger が読める manifest が無い理由。書けなかったか、報告された場所が設定の bucket の外                                             |
 
 :::caution[`submitted_by` は認証の結果ではありません]
 この列を埋めているのは、API のリクエストが名乗った主体です

@@ -256,7 +256,7 @@ capture-scheduler のクイックスタートの最後にある `pnpm run doctor
 JWT で名乗ります。§6 のヘッダは、JWT の設定の API には効きません。
 
 ```sh
-TOKEN=$(pnpm run --silent idp:token)   # idp:bootstrap が作った自分の利用者（acme）
+TOKEN=$(pnpm run --silent idp:token)   # 人が打つとき: idp:bootstrap が作った自分の利用者（acme）。AI の担当は下の枠の --user ai-cli
 curl -X POST http://127.0.0.1:7070/api/crawls \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -H "idempotency-key: $(uuidgen)" \
@@ -265,6 +265,19 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 ```
 
 `seeds` は起点の URL を名指しします。既定はリンクを 2 段まで辿ることで、`maxDepth: 0` でそのページだけを取ります。
+
+:::caution[AI の担当は、自分の利用者で始めます]
+`idp:token` は、何も付けないと `idp:bootstrap` が作った人の利用者でトークンを取ります。AI の担当（Claude Code などの
+道具）がこれで始めると、クロールが人と同じ `sub` で残り、capture-workbench の一覧で誰が始めたかを見分けられません。
+AI の担当は、専用の利用者 `ai-cli` で取ります。
+
+```sh
+pnpm run idp:grant --user ai-cli            # 1 度だけ。idp か OpenFGA を作り直したら（POST /api/crawls が 404 なら）もう 1 度
+TOKEN=$(pnpm run --silent idp:token --user ai-cli --org acme)
+```
+
+`.dev/idp.env`（人の利用者のパスワードと Windmill の secret が入っています）を開いたり、`idp:token` を何も付けずに打ったりしません。
+:::
 
 サイト用のスクリプトを試すなら、起点を `https://laws.e-gov.go.jp/` にし、本文に `"variables":{"query":"個人情報"}` を足します。
 `scripts` を書かなければ、capture-scripts から入れた `egov-law-search`（対象サイト `laws.e-gov.go.jp`）が既定に入り、頁の中で法令名を

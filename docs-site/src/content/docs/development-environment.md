@@ -375,9 +375,15 @@ service `idp`, published on `127.0.0.1:4566` (`http://idp.capture-ledger:4566` f
 pnpm run idp:bootstrap                 # pool, app clients and your user; writes .env.local
 pnpm run idp:grant                     # submitter on acme for the windmill client and your user
 pnpm run api                           # restart it: it reads .env.local once, at startup
-TOKEN=$(pnpm run --silent idp:token)
+TOKEN=$(pnpm run --silent idp:token)   # a person. An AI agent uses --user ai-cli (see the caution below)
 curl -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls
 ```
+
+:::caution[An AI agent gets a token as its own user]
+With no flags, `idp:token` gets a token for the human user. An AI agent (a tool such as Claude Code) uses the dedicated user
+`ai-cli` instead: `pnpm run idp:grant --user ai-cli`, then `pnpm run --silent idp:token --user ai-cli --org acme`.
+The reason and the steps are in [the quickstart, "Start one"](/capture-ledger/quickstart/#start-one).
+:::
 
 `idp:bootstrap` creates the pool `capture-ledger-dev`, the resource server `capture-ledger` with
 the scope `crawl`, the group `acme` and a user named after `$(whoami)` in that group (the group's
