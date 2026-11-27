@@ -83,8 +83,8 @@ capture_submissions row with manifest_key, no archives row
 **The log route for one page** (`GET /api/crawls/:id/pages/:page/log`) follows the page row's `task_id`
 to this table's `manifest_key` and returns the `log` of that `.result.json`
 ([Pages and their capture logs](/capture-ledger/archive-ledger/#pages-and-their-capture-logs)).
-`crawl_pages.task_id` is text and this table's `task_id` is a uuid, so the uuid side is cast to text —
-the other way round, a single value that is not uuid-shaped fails the whole query.
+Both `task_id` columns are uuids (`043` aligned `crawl_pages.task_id`, which used to be text), so the join
+uses this table's primary key.
 
 **The trace route for one capture** (`GET /api/crawls/:id/pages/:page/trace`) follows the same path to
 `manifest_key` and returns that `.result.json`'s capture members, `log` and `trace`

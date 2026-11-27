@@ -535,11 +535,12 @@ describe("取り込み 1 回の経緯を読む", () => {
     }
   });
 
-  it("ページはクロールとの組で引き、capture_submissions は task_id の uuid 側を text に倒して繋ぐ", async () => {
+  it("ページはクロールとの組で引き、capture_submissions は task_id で cast せずに繋ぐ", async () => {
     const { queries } = await get(url, { results: [[row()]], store: { [KEY]: success } });
     const query = queries[0];
     expect(query?.sql).toContain('"capture_submissions" as "s"');
-    expect(query?.sql).toContain('"s"."task_id"::text');
+    expect(query?.sql).toContain('on "s"."task_id" = "p"."task_id"');
+    expect(query?.sql).not.toContain("::text");
     // flow が測った投入と完了・WACZ の鍵を、同じ 1 本で引く
     expect(query?.sql).toContain('"p"."submitted_at"');
     expect(query?.sql).toContain('"p"."finished_at"');
@@ -698,7 +699,7 @@ describe("失敗の時点の絵を返す", () => {
     expect(sized).toEqual([`b/${PICTURE_KEY}`]);
   });
 
-  it("取り込みを出した組織は capture_submissions から引く（ページはクロールとの組で、task_id の uuid 側を text に倒して繋ぐ）", async () => {
+  it("取り込みを出した組織は capture_submissions から引く（ページはクロールとの組で、task_id で cast せずに繋ぐ）", async () => {
     const { queries } = await get(pictureUrl, {
       results: [[pictureRow()]],
       store: { [KEY]: notFoundDocument, [PICTURE_KEY]: webp() },
@@ -706,7 +707,8 @@ describe("失敗の時点の絵を返す", () => {
     expect(queries).toHaveLength(1);
     const query = queries[0];
     expect(query?.sql).toContain('inner join "capture_submissions" as "s"');
-    expect(query?.sql).toContain('"s"."task_id"::text');
+    expect(query?.sql).toContain('on "s"."task_id" = "p"."task_id"');
+    expect(query?.sql).not.toContain("::text");
     expect(query?.sql).toContain('"s"."org_id"');
     expect(query?.sql).toContain('"p"."crawl_id" = ');
     expect(query?.parameters).toEqual([CRAWL, "42"]);

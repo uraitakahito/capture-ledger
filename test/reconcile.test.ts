@@ -181,14 +181,14 @@ describe("reconcile は記録された鍵だけを読む", () => {
    * どのクロールの取り込みか (`027`) は、段の報告が `crawl_pages` に書いた task_id から引く (correlationId の
    * 申し合わせではない)。本物の Kysely に組ませて、問い合わせの形を見る。
    */
-  it("クロールの id は crawl_pages の task_id から引く（uuid 側を text に倒す）", async () => {
+  it("クロールの id は crawl_pages の task_id から引く（どちらも uuid で、cast しない）", async () => {
     const { db, queries } = recordingDb([[]]);
 
     await reconcile(db, S3, "b");
 
     expect(queries[0]?.sql).toBe(
       'select "s"."task_id", "s"."manifest_key", "s"."org_id", "s"."submitted_by", ' +
-        '(select "p"."crawl_id" from "crawl_pages" as "p" where "p"."task_id" = "s"."task_id"::text limit $1) ' +
+        '(select "p"."crawl_id" from "crawl_pages" as "p" where "p"."task_id" = "s"."task_id" limit $1) ' +
         'as "crawl_id" from "capture_submissions" as "s" ' +
         'left join "archives" as "a" on "a"."task_id" = "s"."task_id" ' +
         'where "a"."task_id" is null and "s"."manifest_key" is not null',

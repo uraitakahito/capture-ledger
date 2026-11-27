@@ -57,7 +57,7 @@ export const backfillCrawl = async (
   }>`
     select p.id, p.url, p.depth, s.manifest_key
       from crawl_pages p
-      left join capture_submissions s on s.task_id::text = p.task_id
+      left join capture_submissions s on s.task_id = p.task_id
      where p.crawl_id = ${crawl.id} and p.state = 'captured'
      order by p.id`.execute(deps.db);
 

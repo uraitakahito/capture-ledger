@@ -34,7 +34,7 @@
  * bucket の大きさではなく、未登録の取り込みの数で決まる。成果物の無い manifest
  * (時間切れ・失敗など) は capture-ledger が受け付けないので、回すたびに読み直す —— 以前と同じ。
  */
-import { sql, type Kysely } from "kysely";
+import type { Kysely } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
 import { logCountsOf, readManifest } from "./manifest.js";
 import type { Database } from "../db/database.js";
@@ -71,12 +71,12 @@ export const reconcile = async (
     .leftJoin("archives as a", "a.taskId", "s.taskId")
     .select(["s.taskId", "s.manifestKey", "s.orgId", "s.submittedBy"])
     // どのクロールの取り込みか (`027`)。段の報告が `crawl_pages` に書いた task_id から引く —— 記録された関係で、
-    // correlationId の申し合わせではない。`crawl_pages.task_id` は text なので uuid 側を倒す
+    // correlationId の申し合わせではない。どちらも uuid (`043`) で、`crawl_pages_task_id_idx` で引く
     .select((eb) =>
       eb
         .selectFrom("crawlPages as p")
         .select("p.crawlId")
-        .where("p.taskId", "=", sql<string>`${sql.ref("s.taskId")}::text`)
+        .whereRef("p.taskId", "=", "s.taskId")
         .limit(1)
         .as("crawlId"),
     )
@@ -124,7 +124,7 @@ export const reconcile = async (
 
     // 取り込みのログの数を、段の登録が読めなかったページの行に埋める (`025`)。WACZ の無い取り込みは `archives` に
     // 入らないので、回すたびにここへ来る —— 埋めるのは NULL の行だけにして、数を書き直さない (終わった取り込みの
-    // 事実なので、段の登録が書いた数と同じはず)。行の task_id は text なので、uuid を文字列のまま比べる
+    // 事実なので、段の登録が書いた数と同じはず)。task_id は `crawl_pages_task_id_idx` で引く (`043`)
     const counts = logCountsOf(report);
     if (counts !== undefined) {
       const filled = await db

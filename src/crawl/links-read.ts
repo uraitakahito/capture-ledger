@@ -130,7 +130,7 @@ export const readLinkGraph = async (
     select p.id, p.discovered_from as parent, p.depth, p.url, p.state, p.skip_reason as reason,
            (select ap.title from archives a
               join archive_pages ap on ap.archive_id = a.id and ap.ordinal = 0
-             where a.task_id::text = p.task_id
+             where a.task_id = p.task_id
              order by a.created_at limit 1) as title
       from crawl_pages p
      where p.crawl_id = ${crawlId}

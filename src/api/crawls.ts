@@ -138,6 +138,13 @@ const PAGES_MAX = 500;
  * Postgres が「範囲の外」で断り、400 ではなく 500 になるから。
  */
 export const PAGE_ID = "^[0-9]{1,18}$";
+/**
+ * BrowserHive の task id。`crawl_pages`・`capture_submissions`・`archives` の `task_id` はどれも uuid (`043`) なので、
+ * 段の報告で uuid の形でない値を断る。`format: "uuid"` にしないのは、ajv-formats の uuid が `urn:uuid:` の頭を
+ * 許すから —— Postgres の uuid はそれを読まず、受け付けた後で 500 になる。JSON schema の pattern には
+ * 大文字小文字を無視する旗が無いので、両方を書く。
+ */
+const TASK_ID = "^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$";
 /** 一覧の 1 ページ。`GET /api/archives` と同じ大きさに揃えてある。 */
 const CRAWLS_PAGE = 50;
 /** `GET /api/decisions` が返す行の上限。超えたら `truncated` で言う (`com` のような広いドメインのため)。 */
@@ -148,19 +155,15 @@ const DECISIONS_SHOWN = 500;
  * **繋ぐのは `crawl_pages` の `task_id`。** `archives.crawl_id` (`027`) は 027 より前の行で空なので、ここでは
  * 使わない —— 使うと、前からあるクロールの数が 0 に化ける (`008` と `013`)。
  *
- * **cast が 2 つとも要る。**
+ * `task_id` は両方 uuid なので、そのまま繋ぐ (`043` で揃えた。それまでは `crawl_pages.task_id` が text で、uuid の
+ * 側を text に倒していたので `archives_task_id_idx` が効かなかった)。
  *
- *   - `a.task_id::text` —— `archives.task_id` は uuid、`crawl_pages.task_id` は text。
- *     素で繋ぐと `operator does not exist: text = uuid` で落ちる (実測)。**uuid 側を
- *     text に倒す**のは意図的で、逆向き (`p.task_id::uuid`) は uuid の形でない値が
- *     1 行でも入った日に一覧ごと 500 になる。この repo に DB 試験は無いので、
- *     その日は本番で分かることになる。
- *   - `count(*)::int` —— `count` は int8 で、node-pg は精度を落とさないために
- *     **文字列で返す**。そのまま載せると JSON に `"3"` が出る。
+ * `count(*)::int` —— `count` は int8 で、node-pg は精度を落とさないために **文字列で返す**。そのまま載せると
+ * JSON に `"3"` が出る。
  */
 const waczCount = sql<number>`(
   select count(*)::int from archives a
-  join crawl_pages p on a.task_id::text = p.task_id
+  join crawl_pages p on a.task_id = p.task_id
   where p.crawl_id = crawls.id
 )`;
 
@@ -301,18 +304,15 @@ const secretsOf = (
  * クロール 1 本のページの行と、その取り込みの WACZ の id・撮った時刻・WACZ が最初に入った合本の版。ページの一覧と
  * 1 ページのログのエンドポイントと、経緯のエンドポイント (`api/trace.ts`) が、同じ形を返すため。
  *
- * **繋ぐのは `task_id`** (`archives.crawl_id` は 027 より前の行で空。`waczCount` と同じ)。uuid 側を text に倒す
- * (`waczCount` と同じ理由 —— 素で繋ぐと `operator does not exist`、逆向きは uuid の形でない値が 1 行でもあると
- * 問い合わせごと落ちる)。
+ * **繋ぐのは `task_id`** (`archives.crawl_id` は 027 より前の行で空。`waczCount` と同じ)。どちらも uuid (`043`) なので、
+ * `archives_task_id_idx` で引く。
  * 1 つの取り込みの WACZ は 1 本なので行は増えないはずだが、`distinct on` で 1 ページ 1 行に縛る —— 増えれば
  * 一覧の `limit` と `next` がずれる。並びはページの id の昇順 (`crawl_pages` に入った順)。
  */
 export const pageRows = (db: Kysely<Database>, crawlId: string) =>
   db
     .selectFrom("crawlPages as p")
-    .leftJoin("archives as a", (join) =>
-      join.onRef("p.taskId", "=", sql<string>`${sql.ref("a.taskId")}::text`),
-    )
+    .leftJoin("archives as a", (join) => join.onRef("p.taskId", "=", "a.taskId"))
     .leftJoin("archiveScreenshots as sh", onListedScreenshot("a.id"))
     .select([
       "p.id",
@@ -959,7 +959,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    * 書いた `log` を、そのたびに保管庫から読んで返す。行は届いた順のままで、並べ替えも言い換えもしない。
    *
    * 引く順: ページの行 (id とクロールの組 —— 他のクロールのページは 404) → その行の `task_id` →
-   * `capture_submissions.manifest_key` (task_id は uuid と text なので、uuid 側を text に倒す) → 保管庫の
+   * `capture_submissions.manifest_key` (task_id はどちらも uuid。主キーで引く) → 保管庫の
    * `.result.json` → 契約に照らす (`readManifest`)。途中で読めなければ、ページと理由 (`LogUnreadable`) を
    * 200 で返す。保管庫に届かないときだけ 502。認可と 404 は `GET /api/crawls/:id` と同じ。
    */
@@ -986,9 +986,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       const { id: crawlId, page: pageId } = request.params;
       const row = await pageRows(db, crawlId)
-        .leftJoin("captureSubmissions as s", (join) =>
-          join.onRef("p.taskId", "=", sql<string>`${sql.ref("s.taskId")}::text`),
-        )
+        .leftJoin("captureSubmissions as s", "s.taskId", "p.taskId")
         .select("s.manifestKey")
         .where("p.id", "=", pageId)
         .executeTakeFirst();
@@ -1574,7 +1572,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                   url: { type: "string", minLength: 1 },
                   status: { type: "string", enum: ["captured", "failed", "skipped"] },
                   skipReason: { type: "string" },
-                  taskId: { type: "string" },
+                  // 空の文字列も断る。以前は受けて `crawl_pages` に "" を書き、帰属だけを飛ばしていた (`043`)
+                  taskId: { type: "string", pattern: TASK_ID },
                   correlationId: { type: "string" },
                   submittedAt: { type: "string", format: "date-time" },
                   finishedAt: { type: "string", format: "date-time" },
@@ -1758,8 +1757,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // 実体が S3 に在っても組織が言えず、capture-ledger に入れようがない。
         // 投入が通っている限り id は在るので、書かない理由が無い。
         const submitted = results.filter(
-          (r): r is PageReport & { taskId: string } =>
-            typeof r.taskId === "string" && r.taskId !== "",
+          // 空の文字列は schema が断る (`TASK_ID`) ので、ここには来ない
+          (r): r is PageReport & { taskId: string } => typeof r.taskId === "string",
         );
         // 報告の場所を capture-ledger の形に。**1 度だけ計算し、書き留める値と読みに行く鍵に同じものを使う。**
         const manifests = new Map(

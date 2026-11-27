@@ -329,7 +329,7 @@ describe("合本を書く", () => {
       // 検めていない物も同じ問い合わせで読む (未検めを数える。別の問い合わせにすると snapshot がずれる)
       'select distinct on ("a"."id") "a"."id", "a"."object_key", "a"."wacz_sha256", "a"."index_empty", ' +
         '"a"."captured_at", "a"."inspected_at", "p"."depth" from "archives" as "a" ' +
-        'left join "crawl_pages" as "p" on "p"."crawl_id" = "a"."crawl_id" and "p"."task_id" = "a"."task_id"::text ' +
+        'left join "crawl_pages" as "p" on "p"."crawl_id" = "a"."crawl_id" and "p"."task_id" = "a"."task_id" ' +
         'where "a"."crawl_id" = $1 order by "a"."id", "p"."depth"',
       'select "ap"."archive_id", "ap"."ordinal", "ap"."page_id", "ap"."url", "ap"."ts", "ap"."title", ' +
         '"ap"."stage", "ap"."keys" from "archive_pages" as "ap" ' +
@@ -737,7 +737,7 @@ describe("027 より前のアーカイブをクロールに繋ぐ（作り直し
     expect(queries[0]?.sql).toBe(
       'update "archives" set "crawl_id" = $1 where "crawl_id" is null and exists ' +
         '(select "p"."id" from "crawl_pages" as "p" where "p"."crawl_id" = $2 ' +
-        'and "p"."task_id" = "archives"."task_id"::text)',
+        'and "p"."task_id" = "archives"."task_id")',
     );
     expect(queries[0]?.parameters).toEqual([CRAWL, CRAWL]);
   });

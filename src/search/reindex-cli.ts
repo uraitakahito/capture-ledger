@@ -15,7 +15,6 @@
  * 1 本でも入らなければ終了コード 1。入らなかった行の `indexed_at` は空のまま残るので、打ち直せば拾う。
  */
 import { Command, InvalidArgumentError, Option } from "commander";
-import { sql } from "kysely";
 import { databaseUrlOption } from "../cli/database-url-option.js";
 import { collectEnv, searchFrom, storageFrom } from "../config/env.js";
 import { createKyselyClient } from "../db/kysely.js";
@@ -49,19 +48,13 @@ const reindex = async (opts: { databaseUrl: string; crawl?: string }): Promise<v
       "archives.labels",
       "archives.capturedAt",
     ] as const;
-    // クロールで絞るときは、索引のエンドポイントと同じ繋ぎ方 (`crawl_pages.task_id` は text なので cast する)。
+    // クロールで絞るときは、索引のエンドポイントと同じ繋ぎ方 (task_id はどちらも uuid。`043`)。
     const archives =
       opts.crawl === undefined
         ? await db.selectFrom("archives").select(columns).execute()
         : await db
             .selectFrom("archives")
-            .innerJoin("crawlPages", (join) =>
-              join.onRef(
-                "crawlPages.taskId",
-                "=",
-                sql<string>`${sql.ref("archives.taskId")}::text`,
-              ),
-            )
+            .innerJoin("crawlPages", "crawlPages.taskId", "archives.taskId")
             .select(columns)
             .where("crawlPages.crawlId", "=", opts.crawl)
             .distinctOn("archives.id")

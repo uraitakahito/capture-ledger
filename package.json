@@ -85,7 +85,7 @@
     "container を使う。"
   ],
   "name": "capture-ledger",
-  "version": "0.110.2",
+  "version": "0.111.0",
   "description": "Capture orchestrator for BrowserHive (https://github.com/uraitakahito/browserhive): decides which URLs get captured and keeps the ledger of what came back.",
   "license": "Unlicense",
   "type": "module",

@@ -513,6 +513,7 @@ export interface CrawlPagesTable {
   // 取らなかった・取れなかった理由。`skipped` と `failed` のときに入る —— `crawl_host` は
   // 取り込みの失敗の理由もここへ入れる (名前は `skip` だが、失敗の理由の置き場でもある)。
   skipReason: ColumnType<string | null, string | null | undefined, string | null>;
+  // BrowserHive の task id。uuid (`043`。それまでは text)。node-pg は uuid を文字列で返す。
   taskId: ColumnType<string | null, string | null | undefined, string | null>;
   correlationId: ColumnType<string | null, string | null | undefined, string | null>;
   discoveredFrom: ColumnType<string | null, string | null | undefined, string | null>;
