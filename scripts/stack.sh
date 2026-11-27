@@ -107,6 +107,11 @@ preflight() {
     store_line="store: 見ていない (${decision#*$'\t'})"
     return 0
   fi
+  # 道具は在るのに答えが読めない (dist が古い・compose が読めない など)。見るが、訳を 1 行出す。
+  # 道具が無いのは ./scripts/stack.sh を直に打った時なので、黙って見る
+  if [ -f dist/tools/stack-needs-store.js ] && [ "${decision%%$'\t'*}" != "check" ]; then
+    echo "store: 起こすサービスが保管庫を使うかを判じられなかったので、保管庫を見ます" >&2
+  fi
 
   # 共有 store が起きているか。**403 は「立っている」**。
   local status

@@ -61,6 +61,19 @@ describe("本物の docker-compose.yml", () => {
     expect(decide(["postgres", "no-such-service"]).check).toBe(true);
   });
 
+  it("object の持つ名 (__proto__・constructor) も compose に無い名として確かめる", () => {
+    expect(decide(["__proto__"])).toEqual({ check: true, reason: "compose に無い名 __proto__" });
+    expect(decide(["constructor"])).toEqual({
+      check: true,
+      reason: "compose に無い名 constructor",
+    });
+  });
+
+  it("別の compose (-f・--file) を名指したら確かめる (読むのは根の docker-compose.yml だけ)", () => {
+    expect(decide(["-f", "other.yml", "postgres"]).check).toBe(true);
+    expect(decide(["--file=other.yml", "postgres"]).check).toBe(true);
+  });
+
   it("保管庫を使わない物と使う物を一緒に名指せば確かめる", () => {
     expect(decide(["postgres", "browserhive-1"]).check).toBe(true);
   });
@@ -85,6 +98,13 @@ services:
         condition: service_started
   inherits:
     <<: *base
+  from-file:
+    image: w
+    env_file: other.env
+  extended:
+    extends:
+      file: other.yml
+      service: x
 `;
 
   it("depends_on で保管庫を使うサービスを引き込むなら確かめる (配列の形も object の形も)", () => {
@@ -94,6 +114,11 @@ services:
 
   it("<<: で引き継いだ depends_on も辿る", () => {
     expect(decide(["inherits"], compose).check).toBe(true);
+  });
+
+  it("別の file から設定を引き込む (env_file・extends) なら確かめる", () => {
+    expect(decide(["from-file"], compose).check).toBe(true);
+    expect(decide(["extended"], compose).check).toBe(true);
   });
 
   it("どれも保管庫に届かなければ飛ばす", () => {

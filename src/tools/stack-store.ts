@@ -17,8 +17,11 @@ import { parse } from "yaml";
 /** 保管庫の名。compose でこの字を持つサービスが保管庫を使う */
 export const STORE_HOST = "seaweedfs.crawler-storage";
 
-/** 次の 1 つを値に取る旗。値はサービスの名ではない */
-const VALUE_FLAGS = new Set(["--profile", "--env-file", "-f", "--file", "-p", "--project-name"]);
+/**
+ * 次の 1 つを値に取る旗。値はサービスの名ではない。`-f`・`--file` (別の compose) は入れない —— 道具が読むのは
+ * いつも根の `docker-compose.yml` なので、別の compose を名指されたら判じられない。知らない旗として確かめる
+ */
+const VALUE_FLAGS = new Set(["--profile", "--env-file", "-p", "--project-name"]);
 /** 値を取らない旗として知っている物 (stack.sh の既定の `-d -b` も含む) */
 const BARE_FLAGS = new Set(["-d", "--detach", "-b", "--build", "--no-deps", "--force-recreate"]);
 
@@ -26,6 +29,8 @@ export type StoreDecision = { check: true; reason: string } | { check: false; re
 
 interface ComposeService {
   depends_on?: string[] | Record<string, unknown>;
+  extends?: unknown;
+  env_file?: unknown;
 }
 
 const dependsOn = (service: ComposeService | undefined): string[] => {
@@ -66,8 +71,14 @@ export const decideStoreCheck = (args: readonly string[], composeSource: string)
     const name = queue.shift()!;
     if (seen.has(name)) continue;
     seen.add(name);
-    const service = services[name];
-    if (service === undefined) return { check: true, reason: `compose に無い名 ${name}` };
+    // 素の object を名で引くと、`__proto__` や `constructor` が compose に無いのに何かを返す
+    if (!Object.hasOwn(services, name)) return { check: true, reason: `compose に無い名 ${name}` };
+    const service = services[name] ?? {};
+    // 見るのは塊の字と depends_on だけ。別の file から設定を引き込む鍵 (extends・env_file) が在れば、
+    // その先に保管庫の宛先が在るかを言えないので確かめる
+    if (service.extends !== undefined || service.env_file !== undefined) {
+      return { check: true, reason: `${name} は別の file から設定を引き込む` };
+    }
     if (JSON.stringify(service).includes(STORE_HOST)) {
       return { check: true, reason: `${name} が保管庫を使う` };
     }
