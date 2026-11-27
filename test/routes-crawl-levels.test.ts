@@ -204,12 +204,12 @@ describe("終わりの commit", () => {
     expect(dispatched[0]?.depth).toBe(1);
     expect(dispatched[0]?.levelKey).not.toBe(LEVEL_KEY);
     expect(created?.parameters).toContain(dispatched[0]?.levelKey);
-    // 全部が 1 つのトランザクションの中
+    // 全部が 1 つのトランザクションの中 (終わりの commit は最後のトランザクション。前にページを閉じる 1 つがある)
     const sqls = queries.map((query) => query.sql);
-    const begin = sqls.indexOf("begin");
+    const begin = sqls.lastIndexOf("begin");
     expect(begin).toBeGreaterThan(-1);
     expect(sqls.indexOf(reported!.sql)).toBeGreaterThan(begin);
-    expect(sqls.indexOf(created!.sql)).toBeLessThan(sqls.indexOf("commit"));
+    expect(sqls.indexOf(created!.sql)).toBeLessThan(sqls.lastIndexOf("commit"));
   });
 
   it("リンクを 1 本ずつ残す: 次の段のページを入れた後に行を読み、この段のページの行を置き換える（039）", async () => {
@@ -230,11 +230,11 @@ describe("終わりの commit", () => {
     const removed = at('delete from "crawl_links"');
     const written = at('insert into "crawl_links"');
     // 入れた行を読んでから決める。消してから入れる (足さない)。全部が終わりのトランザクションの中
-    expect(inserted).toBeGreaterThan(sqls.indexOf("begin"));
+    expect(inserted).toBeGreaterThan(sqls.lastIndexOf("begin"));
     expect(read).toBeGreaterThan(inserted);
     expect(removed).toBeGreaterThan(read);
     expect(written).toBeGreaterThan(removed);
-    expect(written).toBeLessThan(sqls.indexOf("commit"));
+    expect(written).toBeLessThan(sqls.lastIndexOf("commit"));
     // 消すのは、この段でリンクを読んだページ (起点の行 11) の行だけ
     expect(queries[removed]?.parameters).toEqual([CRAWL, "11"]);
     // 行: クロール・リンクのあったページ・順・URL・ホスト名・文字・規則・どうなったか
@@ -447,5 +447,91 @@ describe("一覧と 1 本の dispatch", () => {
     expect(res.json<{ dispatch: unknown }>().dispatch).toEqual(dispatch);
     expect(queries[0]?.sql).toContain("from crawl_levels l where l.crawl_id = crawls.id");
     expect(queries[0]?.sql).toContain("order by l.depth desc limit 1");
+  });
+});
+
+describe("ページを閉じる書き込みと帰属の書き込み (t-e5bz)", () => {
+  const TASK = "7d0e4a52-3c1b-4f6e-9a8d-2b5c6e7f8a90";
+  /** 取り込みの id を持つ報告。manifest は書けなかったと言うので、保管庫は読まない */
+  const reportWithTask = (app: FastifyInstance) =>
+    app.inject({
+      method: "POST",
+      url: `/api/crawls/${CRAWL}/pages`,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
+      payload: {
+        depth: 0,
+        compiled: COMPILED,
+        results: [
+          {
+            url: SEED,
+            status: "captured",
+            taskId: TASK,
+            manifestError: "not written within 10000ms",
+          },
+        ],
+      },
+    });
+
+  it("ページを閉じる UPDATE と帰属の INSERT が、同じ begin と commit の間にある", async () => {
+    const { app, queries } = await build([[crawlRow()], [{ id: "11" }]]);
+    await reportWithTask(app);
+    await app.close();
+    const sqls = queries.map((query) => query.sql);
+    const closed = sqls.findIndex((sql) => sql.startsWith('update "crawl_pages" set "state"'));
+    const attributed = sqls.findIndex((sql) => sql.startsWith('insert into "capture_submissions"'));
+    const begin = sqls.indexOf("begin");
+    const commit = sqls.indexOf("commit");
+    expect(begin).toBeGreaterThan(-1);
+    expect(closed).toBeGreaterThan(begin);
+    expect(attributed).toBeGreaterThan(closed);
+    expect(commit).toBeGreaterThan(attributed);
+    // 間に別のトランザクションの境目が無い (1 つの中で書く)
+    expect(sqls.slice(begin + 1, commit)).not.toContain("begin");
+    expect(sqls.slice(begin + 1, commit)).not.toContain("commit");
+  });
+
+  it("帰属を書けなければ rollback し、段の期限を手放して 500 を返す（次の段も作らない）", async () => {
+    const level = levelResponder();
+    const { db, queries } = recordingDb([[crawlRow()], [{ id: "11" }]], {
+      answer: (sql, parameters) => {
+        if (sql.startsWith('insert into "capture_submissions"')) {
+          throw new Error("the attribution insert failed");
+        }
+        return level.answer(sql, parameters);
+      },
+      seen: level.seen,
+    });
+    const dispatched: DispatchedCrawl[] = [];
+    const app = Fastify({ logger: false, ajv: { customOptions: { removeAdditional: false } } });
+    registerCrawlRoutes(app, {
+      db,
+      fga: { check: () => Promise.resolve({ allowed: true }) },
+      resolveIdentity: () => Promise.resolve({ subject: "alice", organizations: ["acme"] }),
+      dispatch: (crawl: DispatchedCrawl) => {
+        dispatched.push(crawl);
+        return Promise.resolve(crawl.levelKey);
+      },
+      s3: {},
+      bucket: "b",
+      capture: parseCaptureFormats("wacz", false),
+      writeReplayBundle: () => Promise.resolve(undefined),
+    } as unknown as CrawlRouteDeps);
+    await app.ready();
+    const res = await reportWithTask(app);
+    await app.close();
+    expect(res.statusCode).toBe(500);
+    const sqls = queries.map((query) => query.sql);
+    const closed = sqls.findIndex((sql) => sql.startsWith('update "crawl_pages" set "state"'));
+    const rollback = sqls.indexOf("rollback");
+    expect(closed).toBeGreaterThan(sqls.indexOf("begin"));
+    expect(rollback).toBeGreaterThan(closed);
+    expect(sqls).not.toContain("commit");
+    // 期限を今に縮めて手放す (flow の再試行が 2 分を待たずに取り直せる)
+    const released = queries.findIndex(
+      (query, i) => i > rollback && query.sql.startsWith('update "crawl_levels" set "lease_until"'),
+    );
+    expect(released).toBeGreaterThan(rollback);
+    expect(touched(queries, 'insert into "crawl_levels"')).toBe(false);
+    expect(dispatched).toEqual([]);
   });
 });
