@@ -256,7 +256,7 @@ capture-scheduler のクイックスタートの最後にある `pnpm run doctor
 JWT で名乗ります。§6 のヘッダは、JWT の設定の API には効きません。
 
 ```sh
-TOKEN=$(pnpm run --silent idp:token)   # idp:bootstrap が作った自分の利用者（acme）
+TOKEN=$(pnpm run --silent idp:token)   # 人が打つとき: idp:bootstrap が作った自分の利用者（acme）。AI の担当は下の枠の --user ai-cli
 curl -X POST http://127.0.0.1:7070/api/crawls \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -H "idempotency-key: $(uuidgen)" \
@@ -272,11 +272,11 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 AI の担当は、専用の利用者 `ai-cli` で取ります。
 
 ```sh
-pnpm run idp:grant --user ai-cli            # 1 度だけ。compose の idp を作り直したら、もう 1 度
+pnpm run idp:grant --user ai-cli            # 1 度だけ。idp か OpenFGA を作り直したら（POST /api/crawls が 404 なら）もう 1 度
 TOKEN=$(pnpm run --silent idp:token --user ai-cli --org acme)
 ```
 
-`.dev/idp.env`（人の利用者のパスワードが入っています）を開いたり、`idp:token` を何も付けずに打ったりしません。
+`.dev/idp.env`（人の利用者のパスワードと Windmill の secret が入っています）を開いたり、`idp:token` を何も付けずに打ったりしません。
 :::
 
 サイト用のスクリプトを試すなら、起点を `https://laws.e-gov.go.jp/` にし、本文に `"variables":{"query":"個人情報"}` を足します。

@@ -260,7 +260,7 @@ someone makes one, in capture-workbench's Schedules tab —
 Identify with a JWT. The headers from §6 do nothing on an API set up for JWTs.
 
 ```sh
-TOKEN=$(pnpm run --silent idp:token)   # your user from idp:bootstrap, in acme
+TOKEN=$(pnpm run --silent idp:token)   # a person: your user from idp:bootstrap, in acme. An AI agent: --user ai-cli (box below)
 curl -X POST http://127.0.0.1:7070/api/crawls \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -H "idempotency-key: $(uuidgen)" \
@@ -277,11 +277,11 @@ Claude Code) starts a crawl that way, the crawl is recorded under the same `sub`
 capture-workbench cannot tell who started it. An AI agent uses the dedicated user `ai-cli` instead.
 
 ```sh
-pnpm run idp:grant --user ai-cli            # once; again after the compose idp service is recreated
+pnpm run idp:grant --user ai-cli            # once; again after idp or OpenFGA is recreated (when POST /api/crawls answers 404)
 TOKEN=$(pnpm run --silent idp:token --user ai-cli --org acme)
 ```
 
-Do not open `.dev/idp.env` (it holds the human user's password), and do not run `idp:token` without flags.
+Do not open `.dev/idp.env` (it holds the human user's password and the Windmill client secret), and do not run `idp:token` without flags.
 :::
 
 To try a site script, seed `https://laws.e-gov.go.jp/` and add `"variables":{"query":"個人情報"}` to the body.
