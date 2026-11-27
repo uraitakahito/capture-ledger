@@ -2,7 +2,7 @@
 /**
  * 手元の Floci の主体に、組織のクロールの許可を与える。
  *
- *   pnpm run idp:grant                  # idp:bootstrap が作った利用者と Windmill の client
+ *   pnpm run idp:grant                  # idp:bootstrap が作った利用者と Windmill の client と AI の担当の client
  *   pnpm run idp:grant --user e2e       # Floci の利用者 e2e も (無ければ作り、群 acme に入れる)
  *
  * 許可（OpenFGA の `submitter`）は **名前ではなく `sub`** に付く。Cognito（と代役の Floci）の
@@ -22,6 +22,9 @@ if (issuer === undefined || defaults.some((subject) => subject === undefined || 
   process.stderr.write("引き渡しファイルが無い。先に pnpm run idp:bootstrap (dev:up が打つ)\n");
   process.exit(1);
 }
+// AI の担当の client (CAPTURE-450)。前の版の bootstrap が書いた引き渡しには無いので、在る時だけ
+const aiClient = handoff["IDP_AI_CLIENT_ID"];
+if (aiClient !== undefined && aiClient !== "") defaults.push(aiClient);
 const pool = issuer.slice(issuer.lastIndexOf("/") + 1);
 
 /** `--user <名前>` (繰り返せる)。commander を使わないのは、ほかに旗が無いから。 */

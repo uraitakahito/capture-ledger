@@ -306,6 +306,7 @@ describe("jwtIdentityResolver の機械の組織", () => {
       subject: MACHINE,
       organizations: ["acme"],
       machine: true,
+      scopes: ["capture-ledger/crawl"],
     });
     expect(asked).toEqual([MACHINE]);
   });
@@ -323,6 +324,8 @@ describe("jwtIdentityResolver の機械の組織", () => {
     await expect(resolve(bearer(await token(machine({ sub: "someone" }))))).resolves.toEqual({
       subject: "someone",
       organizations: [],
+      // scope は読むが、機械ではないので門は掛けない (`api/scope.ts`)
+      scopes: ["capture-ledger/crawl"],
     });
     expect(asked).toEqual([]);
   });
@@ -370,6 +373,7 @@ describe("jwtIdentityResolver の名前と app client", () => {
       name: "windmill",
       client: "windmill",
       machine: true,
+      scopes: ["capture-ledger/crawl"],
     });
   });
 
@@ -385,7 +389,12 @@ describe("jwtIdentityResolver の名前と app client", () => {
       resolve(
         bearer(await token(machine({ sub: "nameless-client", client_id: "nameless-client" }))),
       ),
-    ).resolves.toEqual({ subject: "nameless-client", organizations: ["acme"], machine: true });
+    ).resolves.toEqual({
+      subject: "nameless-client",
+      organizations: ["acme"],
+      machine: true,
+      scopes: ["capture-ledger/crawl"],
+    });
   });
 
   // username を偽っても、機械にはならない (機械かは sub と client_id で決まる)。

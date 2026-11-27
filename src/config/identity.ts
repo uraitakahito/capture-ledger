@@ -25,6 +25,11 @@ export interface Identity {
   client?: string;
   /** 機械 (client credentials) のトークンなら true。人とヘッダの経路では無い。 */
   machine?: true;
+  /**
+   * トークンの scope (CAPTURE-450)。機械のトークンが届いてよい route を絞る (`api/scope.ts`)。
+   * ヘッダの経路と、scope を持たないトークンでは無い。
+   */
+  scopes?: string[];
 }
 
 /** 人の access token が利用者の名前を載せるクレーム (Cognito と代役の Floci)。機械のトークンには無い。 */
@@ -127,6 +132,9 @@ export const identityFromClaims = (payload: JWTPayload): Identity | undefined =>
   if (typeof payload.sub !== "string" || payload.sub === "") return undefined;
   const claim = payload[ORGANIZATIONS_CLAIM];
   const username = payload[USERNAME_CLAIM];
+  // OAuth の scope は空白区切りの 1 つの字。1 つずつ字が同じかで見る (`crawl.start` は `crawl` を頭に含む)
+  const scope = payload["scope"];
+  const scopes = typeof scope === "string" ? scope.split(" ").filter((item) => item !== "") : [];
   return {
     subject: payload.sub,
     organizations: Array.isArray(claim)
@@ -135,5 +143,6 @@ export const identityFromClaims = (payload: JWTPayload): Identity | undefined =>
     // 在るときだけ足す。機械のトークンには `username` が無く、名前は resolver が client の名前から足す
     ...(typeof username === "string" && username !== "" && { name: username }),
     ...(isMachineToken(payload) && { machine: true as const }),
+    ...(scopes.length > 0 && { scopes }),
   };
 };

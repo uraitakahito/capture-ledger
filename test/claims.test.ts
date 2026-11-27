@@ -66,6 +66,22 @@ describe("identityFromClaims", () => {
     });
   });
 
+  // OAuth の scope は空白区切り。1 つずつに分ける (CAPTURE-450。門が字の同じかで見る)
+  it("scope を空白で分けて scopes に写す。空なら無い", () => {
+    expect(
+      identityFromClaims(claims({ sub: "abc", client_id: "abc", scope: "a/crawl  a/crawl.start" })),
+    ).toEqual({
+      subject: "abc",
+      organizations: [],
+      machine: true,
+      scopes: ["a/crawl", "a/crawl.start"],
+    });
+    expect(identityFromClaims(claims({ sub: "abc", scope: "" }))).toEqual({
+      subject: "abc",
+      organizations: [],
+    });
+  });
+
   // 機械かは sub と client_id で決まる。名前はここでは付かない (client の名前は resolver が設定から引く)。
   it("sub と client_id が同じなら machine が付く", () => {
     expect(identityFromClaims(claims({ sub: "abc", client_id: "abc" }))).toEqual({

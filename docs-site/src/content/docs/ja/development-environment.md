@@ -376,18 +376,20 @@ curl -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls
 :::
 
 `idp:bootstrap` が作るのは、プール `capture-ledger-dev`、resource server `capture-ledger` と
-scope `crawl`、群 `acme` と、その群に入れた `$(whoami)` の名前の利用者（群の名前が組織の名前です）、
+scope `crawl`・`crawl.start`、群 `acme` と、その群に入れた `$(whoami)` の名前の利用者（群の名前が組織の名前です）、
 それに次の app client です。
 
 | app client  | 種類   | 使うもの                                                                                                                |
 | ----------- | ------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `workbench` | public | capture-workbench。authorization code と PKCE（Proof Key for Code Exchange）。戻り先は `http://127.0.0.1:7080/callback` |
 | `cli`       | public | `pnpm run idp:token`（パスワードの流れ）。picker や `curl` に貼るトークン                                               |
-| `windmill`  | secret | capture-scheduler のクロールの flow（client credentials）                                                               |
+| `windmill`  | secret | capture-scheduler のクロールの flow（client credentials）。scope `crawl`（どの route も通る）                           |
+| `ai`        | secret | AI の担当がクロールを始める道具（client credentials）。scope `crawl.start` だけ（始める・読む）・token の期限 10 分     |
 
 書くのは、`.env.local` の `CAPTURE_LEDGER_OIDC_ISSUER`（`http://127.0.0.1:4566/<プールの ID>`）と
 `CAPTURE_LEDGER_OIDC_CLIENT_IDS`（**手で書きません**。プールの ID が `iss` に入るためです）、
-それに引き渡しファイル `.dev/idp.env`（client の ID・windmill の secret・利用者のパスワードと `sub`）です。
+それに引き渡しファイル `.dev/idp.env`（client の ID・windmill の secret・利用者のパスワードと `sub`）と、
+AI の担当の引き渡しファイル `.dev/idp-ai.env`（`ai` の client の ID と secret だけ）です。
 引き渡しファイルは capture-scheduler の `windmill:capture-ledger-token` が読みます。
 打ち直すと、在るものを使い回します。
 
@@ -418,11 +420,44 @@ Floci はプールを**メモリに**持ちます。コンテナが作り直さ�
 `.env.local` のプールがまだ在るかを言います。
 :::
 
+### scope と、AI の担当の app client
+
+resource server `capture-ledger` の scope は 2 つです。API は、機械のトークン（client credentials）が届いてよい
+route を scope で絞ります（`src/api/scope.ts`。人のトークンとヘッダの経路には掛けません）。
+
+| scope                        | 持つ app client | 届く route                                                                                            |
+| ---------------------------- | --------------- | ----------------------------------------------------------------------------------------------------- |
+| `capture-ledger/crawl`       | `windmill`      | どの route も（段の報告・行を締める・予定を含む）                                                     |
+| `capture-ledger/crawl.start` | `ai`            | クロールを始める（`POST /api/crawls`）・読む（`GET` の route みな・`POST /api/archives/:id/url`）だけ |
+
+足りない scope の要求は、本文を読む前に **403** `{"error":"insufficient_scope","scope":"<要る scope>"}` で断ります。
+狭い scope で届く書き込みは一覧で持ち、**新しい書き込みの route は一覧に足すまで `ai` には届きません**
+（`test/scope.test.ts` が、src の書き込みの route を全部どちらかに分けます）。`GET` の route はみな届きます（組織の許可が絞ります）。
+`GET` で書き込みや費用を起こす route を足すなら、門（`src/api/scope.ts`）を見直します。
+機械の token は、`crawl` か `crawl.start` を頼んで取ります。どちらも持たない token は、`GET` でも 403 です。行を締める `POST /api/crawls/:id/failed` は、クロールを止める route ではない
+（flow は走り続ける）ので、`ai` には開きません。
+
+**止め方は 3 段です。** Cognito には、機械の token を期限の前に止める手段がありません。
+
+1. `ai` の token の期限を短くしてある（10 分）。漏れた token も、長くて 10 分で切れます。
+2. app client を消すか secret を入れ替えると、新しい token が出なくなります。
+3. `CAPTURE_LEDGER_OIDC_CLIENT_IDS` から `ai=…` を外して API を起こし直すと、出ていた token も 401 になります。
+   手元では、次の `dev:up`（ほかの人が打つ物も）が `ai` を足し直すので、止め続けるなら変更を戻します。
+
 ### 本番の Cognito へ移るとき
 
 変わるのは `CAPTURE_LEDGER_OIDC_ISSUER`（`https://cognito-idp.<region>.amazonaws.com/<プールの ID>`）と
 `CAPTURE_LEDGER_OIDC_CLIENT_IDS` の値だけです。`jwtIdentityResolver` は 1 行も変わりません。
 プール・app client・群は AWS の側で作ります。`idp:bootstrap`・`idp:token`・`idp:grant` は Floci 専用です。
+
+AI の担当の app client は、AWS の側で次のとおりに作ります（手元の `idp:bootstrap` と同じ形）。
+
+1. resource server `capture-ledger` に scope `crawl.start` を足す。
+2. app client `ai` を作る。secret つき・client credentials だけ・許す scope は `capture-ledger/crawl.start` だけ・
+   access token の期限 10 分。
+3. `CAPTURE_LEDGER_OIDC_CLIENT_IDS` に `ai=<client の ID>` を足し、`pnpm run fga:grant submitter <client の ID> <組織>` で
+   始める許可を付ける。
+4. secret は、AI の担当が動く機械の、本人だけが読める file に置く。会話・チャット・課題管理には貼りません。
 
 ただし **JWKS を HTTP で取ってくる経路は単体試験では守れません**。
 `createRemoteJWKSet` をローカルの鍵に差し替えても試験は緑のままです。そこで CI の job `idp` が

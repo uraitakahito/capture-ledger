@@ -394,19 +394,21 @@ The reason and the steps are in [the quickstart, "Start one"](/capture-ledger/qu
 :::
 
 `idp:bootstrap` creates the pool `capture-ledger-dev`, the resource server `capture-ledger` with
-the scope `crawl`, the group `acme` and a user named after `$(whoami)` in that group (the group's
+the scopes `crawl` and `crawl.start`, the group `acme` and a user named after `$(whoami)` in that group (the group's
 name is the organization's name), and these app clients:
 
-| App client  | Kind   | Used by                                                                                                                  |
-| ----------- | ------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `workbench` | public | capture-workbench: authorization code with PKCE (Proof Key for Code Exchange), callback `http://127.0.0.1:7080/callback` |
-| `cli`       | public | `pnpm run idp:token` (password flow) — the token you paste into the picker or `curl`                                     |
-| `windmill`  | secret | The crawl flow in capture-scheduler (client credentials)                                                                 |
+| App client  | Kind   | Used by                                                                                                                     |
+| ----------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `workbench` | public | capture-workbench: authorization code with PKCE (Proof Key for Code Exchange), callback `http://127.0.0.1:7080/callback`    |
+| `cli`       | public | `pnpm run idp:token` (password flow) — the token you paste into the picker or `curl`                                        |
+| `windmill`  | secret | The crawl flow in capture-scheduler (client credentials). Scope `crawl` (every route)                                       |
+| `ai`        | secret | The tool an AI agent uses to start crawls (client credentials). Scope `crawl.start` only (start and read); 10-minute tokens |
 
 It writes `CAPTURE_LEDGER_OIDC_ISSUER` (`http://127.0.0.1:4566/<poolId>`) and
 `CAPTURE_LEDGER_OIDC_CLIENT_IDS` to `.env.local` — **do not write them by hand**; the pool ID is
 part of `iss` — and a handoff file, `.dev/idp.env` (the client IDs, the windmill secret, your
-user's password and `sub`), which capture-scheduler's `windmill:capture-ledger-token` reads.
+user's password and `sub`), which capture-scheduler's `windmill:capture-ledger-token` reads, plus
+the AI agent's handoff file, `.dev/idp-ai.env` (only the `ai` client's ID and secret).
 Running it again reuses what is already there.
 
 The token does not belong in `.env` — the API is what reads it, and the caller
@@ -436,12 +438,50 @@ ran only `stack:up`, run `pnpm run dev:up --from idp`. `pnpm run dev:status` say
 IdP row whether Floci answers and whether the pool in `.env.local` still exists.
 :::
 
+### Scopes, and the AI agent's app client
+
+The resource server `capture-ledger` has two scopes. The API uses them to narrow which routes a
+machine token (client credentials) may reach (`src/api/scope.ts`; person tokens and the header path
+are not checked).
+
+| Scope                        | App client | Routes it reaches                                                                                           |
+| ---------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| `capture-ledger/crawl`       | `windmill` | Every route (level reports, closing a row, schedules included)                                              |
+| `capture-ledger/crawl.start` | `ai`       | Starting a crawl (`POST /api/crawls`) and reading (every `GET` route and `POST /api/archives/:id/url`) only |
+
+A request without the scope it needs is refused with **403**
+`{"error":"insufficient_scope","scope":"<scope needed>"}` before its body is read. The writing routes the
+narrow scope reaches are a list, and **a new writing route does not reach `ai` until it is added to the list**
+(`test/scope.test.ts` sorts every writing route in src into one side or the other). Every `GET` route
+reaches it (the organization's permission narrows those). If you add a `GET` route that writes or costs
+something, revisit the gate (`src/api/scope.ts`). A machine token is obtained by asking for `crawl` or
+`crawl.start`; a token with neither gets 403 even on `GET`. `POST /api/crawls/:id/failed`
+only closes the row — it does not stop the crawl, and the flow keeps running — so `ai` does not get it.
+
+**Stopping it takes three steps.** Cognito has no way to stop a machine token before it expires.
+
+1. The `ai` tokens are short-lived (10 minutes), so a leaked one dies within 10 minutes.
+2. Deleting the app client or replacing its secret stops new tokens.
+3. Removing `ai=…` from `CAPTURE_LEDGER_OIDC_CLIENT_IDS` and restarting the API makes tokens already
+   issued answer 401 too. Locally, the next `dev:up` (anyone's) adds `ai` back, so revert the change
+   to keep it stopped.
+
 ### Moving to production Cognito
 
 Only the values of `CAPTURE_LEDGER_OIDC_ISSUER`
 (`https://cognito-idp.<region>.amazonaws.com/<poolId>`) and `CAPTURE_LEDGER_OIDC_CLIENT_IDS`
 change. `jwtIdentityResolver` does not change at all. The pool, app clients and groups are made on
 the AWS side; `idp:bootstrap`, `idp:token` and `idp:grant` are for Floci only.
+
+Create the AI agent's app client on the AWS side the same way `idp:bootstrap` does locally:
+
+1. Add the scope `crawl.start` to the resource server `capture-ledger`.
+2. Create the app client `ai`: with a secret, client credentials only, the scope
+   `capture-ledger/crawl.start` only, and 10-minute access tokens.
+3. Add `ai=<client ID>` to `CAPTURE_LEDGER_OIDC_CLIENT_IDS`, and grant it the right to start crawls
+   with `pnpm run fga:grant submitter <client ID> <organization>`.
+4. Put the secret in a file on the machine the AI agent runs on, readable only by its owner. Never
+   paste it into a conversation, a chat or the issue tracker.
 
 Note that **the JWKS-over-HTTP path cannot be covered by unit tests**. Swapping
 `createRemoteJWKSet` for a local key leaves the suite green. So the CI job `idp` starts Floci and
