@@ -15,7 +15,71 @@ import type { JWTPayload } from "jose";
 export interface Identity {
   subject: string;
   organizations: string[];
+  /**
+   * 読める名前 (CAPTURE-450)。人は access token の `username`、機械は app client の名前
+   * (`CAPTURE_LEDGER_OIDC_CLIENT_IDS` に `名前=ID` と書いた物)。**表示のための物で、認可には使わない** ——
+   * 許可も `owner` tuple も `subject` で書く。分からなければ無い。
+   */
+  name?: string;
+  /** どの app client から来たか (受ける一覧に書いた名前)。名前の無い client と、ヘッダの経路では無い。 */
+  client?: string;
+  /** 機械 (client credentials) のトークンなら true。人とヘッダの経路では無い。 */
+  machine?: true;
 }
+
+/** 人の access token が利用者の名前を載せるクレーム (Cognito と代役の Floci)。機械のトークンには無い。 */
+export const USERNAME_CLAIM = "username";
+
+/**
+ * 受ける app client の一覧を読んだ結果。`names` は ID から名前へ (名前を書いた client だけ)。
+ * Map にしてあるのは、ID が `constructor` のような object の元から在る名前でも、名前の無い client として読むため。
+ */
+export interface AcceptedClients {
+  ids: string[];
+  names: Map<string, string>;
+}
+
+/** app client の名前に使える字。行に写して画面に出すので、狭くしておく。 */
+const CLIENT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
+
+/**
+ * `CAPTURE_LEDGER_OIDC_CLIENT_IDS` を読む。項目はカンマ区切りで、`ID` か `名前=ID` (CAPTURE-450)。
+ *
+ * 名前を書くと、その client から来たクロールの行に名前が残る (`crawls.requested_client`)。ID だけの
+ * 書き方は今までどおり通り、名前が残らないだけ。**形の崩れた項目は投げる** —— 黙って落とすと、その client の
+ * トークンが 401 になり、設定の誤りが「トークンが悪い」に見える。同じ ID に違う名前を書いた時も投げる
+ * (どちらかが黙って勝つと、「始めた人」の欄が黙って誤る)。
+ */
+export const clientsFromList = (value: string): AcceptedClients => {
+  const ids: string[] = [];
+  const names = new Map<string, string>();
+  for (const item of value.split(",").map((part) => part.trim())) {
+    if (item === "") continue;
+    const at = item.indexOf("=");
+    if (at === -1) {
+      ids.push(item);
+      continue;
+    }
+    const name = item.slice(0, at).trim();
+    const id = item.slice(at + 1).trim();
+    if (!CLIENT_NAME.test(name) || id === "" || id.includes("=")) {
+      throw new Error(
+        `CAPTURE_LEDGER_OIDC_CLIENT_IDS の項目 "${item}" が読めません。` +
+          "`ID` か `名前=ID` で書いてください (名前は英小文字・数字・ハイフンで 32 字まで)",
+      );
+    }
+    const before = names.get(id);
+    if (before !== undefined && before !== name) {
+      throw new Error(
+        `CAPTURE_LEDGER_OIDC_CLIENT_IDS の項目 "${item}" が読めません。` +
+          `同じ ID に、違う名前 "${before}" がもう書いてあります`,
+      );
+    }
+    ids.push(id);
+    names.set(id, name);
+  }
+  return { ids, names };
+};
 
 /**
  * 組織のクレームの綴り。Cognito（と代役の Floci）は、利用者が属する群を
@@ -62,10 +126,14 @@ export const isMachineToken = (payload: JWTPayload): boolean =>
 export const identityFromClaims = (payload: JWTPayload): Identity | undefined => {
   if (typeof payload.sub !== "string" || payload.sub === "") return undefined;
   const claim = payload[ORGANIZATIONS_CLAIM];
+  const username = payload[USERNAME_CLAIM];
   return {
     subject: payload.sub,
     organizations: Array.isArray(claim)
       ? claim.filter((org): org is string => typeof org === "string" && org !== "")
       : [],
+    // 在るときだけ足す。機械のトークンには `username` が無く、名前は resolver が client の名前から足す
+    ...(typeof username === "string" && username !== "" && { name: username }),
+    ...(isMachineToken(payload) && { machine: true as const }),
   };
 };

@@ -366,6 +366,14 @@ be `access` (ID tokens are refused), and `client_id` must be one of
 and M2M (machine-to-machine, client credentials) tokens cannot have one. With the issuer set and
 the client IDs empty, the API refuses to start.
 
+Each item in the list is `name=ID` or a bare `ID`, separated by commas. With a name, crawls that come
+from that app client keep the name on their row
+([Recording who started it, and from where](/capture-ledger/archive-ledger/#recording-who-started-it-and-from-where)).
+Tokens carry no app client name, so this setting is the only place a name can live. A bare ID still
+works; it just leaves no name. A name takes lowercase letters, digits and `-`, starts with a letter
+or digit, and is at most 32 characters (`ai`, `windmill`; not `AI` or `ai_cli`). A malformed item (a
+name that breaks the rule, an empty ID, two `=`, or one ID under two names) stops the API from starting.
+
 The production IdP is Amazon Cognito. Locally,
 [Floci](https://github.com/floci-io/floci), a Cognito emulator, stands in for it: the compose
 service `idp`, published on `127.0.0.1:4566` (`http://idp.capture-ledger:4566` from containers).

@@ -39,6 +39,10 @@ export const registerMeRoute = (app: FastifyInstance, deps: MeRouteDeps): void =
       subject: identity.subject,
       organizations: identity.organizations,
       canSubmit: await maySubmit(fga, identity),
+      // 読める名前・どの app client から来たか・機械か (CAPTURE-450)。クロールの行に残るのと同じ物。分からなければ null
+      name: identity.name ?? null,
+      client: identity.client ?? null,
+      machine: identity.machine === true,
     });
   });
 };

@@ -66,7 +66,31 @@ describe("GET /api/me", () => {
       resolveIdentity: () => Promise.resolve({ subject: "windmill", organizations: ["acme"] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ subject: "windmill", organizations: ["acme"], canSubmit: true });
+    expect(res.json()).toEqual({
+      subject: "windmill",
+      organizations: ["acme"],
+      canSubmit: true,
+      name: null,
+      client: null,
+      machine: false,
+    });
+  });
+
+  // クロールの行に残るのと同じ物を、呼び手が自分で確かめられる (CAPTURE-450)。
+  it("名前・app client・機械かを返す", async () => {
+    const { fga } = fgaAnswering(true);
+    const res = await me({
+      fga: fga as unknown as MeRouteDeps["fga"],
+      resolveIdentity: () =>
+        Promise.resolve({
+          subject: "ai-id",
+          organizations: ["acme"],
+          name: "ai",
+          client: "ai",
+          machine: true,
+        }),
+    });
+    expect(res.json()).toMatchObject({ name: "ai", client: "ai", machine: true });
   });
 
   it("クロールのエンドポイントと同じ問いを訊く（can_submit・強い一貫性）", async () => {
@@ -90,7 +114,11 @@ describe("GET /api/me", () => {
       resolveIdentity: () => Promise.resolve({ subject: "windmill", organizations: ["acme"] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ subject: "windmill", organizations: ["acme"], canSubmit: false });
+    expect(res.json()).toMatchObject({
+      subject: "windmill",
+      organizations: ["acme"],
+      canSubmit: false,
+    });
   });
 
   it("組織を持たない呼び出し元は、OpenFGA に訊かずに canSubmit: false", async () => {
@@ -99,6 +127,6 @@ describe("GET /api/me", () => {
       resolveIdentity: () => Promise.resolve({ subject: "windmill", organizations: [] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ subject: "windmill", organizations: [], canSubmit: false });
+    expect(res.json()).toMatchObject({ subject: "windmill", organizations: [], canSubmit: false });
   });
 });

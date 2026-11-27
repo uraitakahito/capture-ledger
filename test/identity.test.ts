@@ -195,10 +195,11 @@ describe("jwtIdentityResolver", () => {
     clientIds: [WEB, MACHINE],
   });
 
-  it("人の access token: sub と cognito:groups を Identity に写す", async () => {
+  it("人の access token: sub と cognito:groups と username を Identity に写す", async () => {
     await expect(resolve(bearer(await token(human())))).resolves.toEqual({
       subject: "alice-sub",
       organizations: ["acme"],
+      name: "alice",
     });
   });
 
@@ -232,7 +233,7 @@ describe("jwtIdentityResolver", () => {
   it("organizations のクレームは読まない", async () => {
     await expect(
       resolve(bearer(await token(human({ "cognito:groups": undefined, organizations: ["acme"] })))),
-    ).resolves.toEqual({ subject: "alice-sub", organizations: [] });
+    ).resolves.toEqual({ subject: "alice-sub", organizations: [], name: "alice" });
   });
 
   it("別の鍵で署名されたトークンを拒む", async () => {
@@ -257,7 +258,7 @@ describe("jwtIdentityResolver", () => {
   it("群の無い人は、組織が空になる", async () => {
     await expect(
       resolve(bearer(await token(human({ "cognito:groups": undefined })))),
-    ).resolves.toEqual({ subject: "alice-sub", organizations: [] });
+    ).resolves.toEqual({ subject: "alice-sub", organizations: [], name: "alice" });
   });
 
   it("sub が無いトークンを拒む", async () => {
@@ -304,6 +305,7 @@ describe("jwtIdentityResolver の機械の組織", () => {
     await expect(resolve(bearer(await token(machine())))).resolves.toEqual({
       subject: MACHINE,
       organizations: ["acme"],
+      machine: true,
     });
     expect(asked).toEqual([MACHINE]);
   });
@@ -312,7 +314,7 @@ describe("jwtIdentityResolver の機械の組織", () => {
   it("群の無い人には引かない", async () => {
     await expect(
       resolve(bearer(await token(human({ "cognito:groups": undefined })))),
-    ).resolves.toEqual({ subject: "alice-sub", organizations: [] });
+    ).resolves.toEqual({ subject: "alice-sub", organizations: [], name: "alice" });
     expect(asked).toEqual([]);
   });
 
@@ -334,4 +336,118 @@ describe("jwtIdentityResolver の機械の組織", () => {
     });
     await expect(failing(bearer(await token(machine())))).rejects.toThrow("openfga unreachable");
   });
+});
+
+/**
+ * 名前と出どころ (CAPTURE-450)。クロールの行に「誰が・どこから始めたか」を残すための物で、認可には使わない。
+ * app client の名前はトークンに無いので、設定 (`名前=ID`) から引く。
+ */
+describe("jwtIdentityResolver の名前と app client", () => {
+  const resolve = jwtIdentityResolver(keys.publicKey, {
+    issuer: ISSUER,
+    clientIds: [WEB, MACHINE, "nameless-client"],
+    clientNames: new Map([
+      [WEB, "workbench"],
+      [MACHINE, "windmill"],
+    ]),
+    machineOrganizations: () => Promise.resolve(["acme"]),
+  });
+
+  it("人: 名前は username、app client は設定の名前", async () => {
+    await expect(resolve(bearer(await token(human())))).resolves.toEqual({
+      subject: "alice-sub",
+      organizations: ["acme"],
+      name: "alice",
+      client: "workbench",
+    });
+  });
+
+  // 機械のトークンには username が無い。名前を出せるのは、設定に書いた client の名前だけ。
+  it("機械: 名前も app client も設定の名前で、machine が付く", async () => {
+    await expect(resolve(bearer(await token(machine())))).resolves.toEqual({
+      subject: MACHINE,
+      organizations: ["acme"],
+      name: "windmill",
+      client: "windmill",
+      machine: true,
+    });
+  });
+
+  // 人の名前を client の名前で上書きしない —— 同じ画面の client を何人もが使う。
+  it("人の名前は、client の名前で上書きしない", async () => {
+    const identity = await resolve(bearer(await token(human({ username: "bob" }))));
+    expect(identity?.name).toBe("bob");
+  });
+
+  // ID だけで書いた client は今までどおり通り、名前が残らないだけ。
+  it("名前を書いていない client は通るが、client も機械の名前も無い", async () => {
+    await expect(
+      resolve(
+        bearer(await token(machine({ sub: "nameless-client", client_id: "nameless-client" }))),
+      ),
+    ).resolves.toEqual({ subject: "nameless-client", organizations: ["acme"], machine: true });
+  });
+
+  // username を偽っても、機械にはならない (機械かは sub と client_id で決まる)。
+  it("username が空なら名前は無い", async () => {
+    const identity = await resolve(bearer(await token(human({ username: "" }))));
+    expect(identity).toEqual({
+      subject: "alice-sub",
+      organizations: ["acme"],
+      client: "workbench",
+    });
+  });
+});
+
+describe("selectIdentity の受ける app client の一覧", () => {
+  const withEnv = async (vars: Record<string, string>, run: () => Promise<void>) => {
+    const before = Object.fromEntries(Object.keys(vars).map((key) => [key, process.env[key]]));
+    Object.assign(process.env, vars);
+    try {
+      await run();
+    } finally {
+      for (const [key, value] of Object.entries(before)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  };
+  const ISSUER_ENV = "http://127.0.0.1:4566/us-east-1_example";
+
+  it("名前=ID と ID だけの項目を、混ぜて読む", async () => {
+    await withEnv(
+      {
+        CAPTURE_LEDGER_OIDC_ISSUER: ISSUER_ENV,
+        CAPTURE_LEDGER_OIDC_CLIENT_IDS: " workbench=abc , def , windmill = ghi ,",
+      },
+      () => {
+        expect(selectIdentity()).toMatchObject({
+          mode: "jwt",
+          clientIds: ["abc", "def", "ghi"],
+          clientNames: new Map([
+            ["abc", "workbench"],
+            ["ghi", "windmill"],
+          ]),
+        });
+        return Promise.resolve();
+      },
+    );
+  });
+
+  // 黙って落とすと、その client のトークンが 401 になり、設定の誤りが「トークンが悪い」に見える。
+  it.each(["=abc", "workbench=", "Work Bench=abc", "a=b=c"])(
+    "形の崩れた項目 %j は、起動で落とす",
+    async (item) => {
+      await withEnv(
+        {
+          CAPTURE_LEDGER_OIDC_ISSUER: ISSUER_ENV,
+          CAPTURE_LEDGER_OIDC_CLIENT_IDS: `ok=abc,${item}`,
+        },
+        () => {
+          expect(() => selectIdentity()).toThrow(/CAPTURE_LEDGER_OIDC_CLIENT_IDS の項目/);
+          return Promise.resolve();
+        },
+      );
+    },
+  );
 });

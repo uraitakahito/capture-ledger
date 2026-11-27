@@ -202,6 +202,19 @@ export interface CrawlsTable {
   orgId: string;
   requestedBy: string;
   /**
+   * 始めた時の読める名前 (`044`)。人はトークンの `username`、機械は app client の名前。**表示のための物** ——
+   * 許可と `owner` tuple は `requestedBy` で書く。`044` より前の行・定期の回・ヘッダの経路は NULL。後から書き換えない。
+   * (申告の名前 `requestedActor` だけは、ヘッダの経路でも見出しを送れば残る。)
+   */
+  requestedByName: ColumnType<string | null, string | null | undefined, never>;
+  /** どの app client から来たか (`044`。受ける一覧に書いた名前)。分からなければ NULL。後から書き換えない。 */
+  requestedClient: ColumnType<string | null, string | null | undefined, never>;
+  /**
+   * 呼び手が見出し `X-Capture-ledger-Actor` で申告した名前 (`044`)。**確かめていない** —— 誰でも好きな名前を書ける。
+   * 画面は「申告」と書いて出す。無ければ NULL。後から書き換えない。
+   */
+  requestedActor: ColumnType<string | null, string | null | undefined, never>;
+  /**
    * このクロールがページの中で走らせるもの。**解決済み・並びが実行順**で、
    * 登録済みのスクリプト (`scripts`) を引き直すことはしない —— 途中で版が足されても、同じクロールの
    * 前半と後半で違うコードが走ることは無い (`018` を見ること)。

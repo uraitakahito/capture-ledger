@@ -87,6 +87,7 @@ import {
   type RememberedRequest,
   type RequestKey,
 } from "../crawl/request-key.js";
+import { ACTOR_HEADER, actorOf, INVALID_ACTOR, requesterOf } from "../crawl/requester.js";
 import { nothingCapturedError } from "../crawl/close.js";
 import { pagesFailed } from "../crawl/page-counts.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
@@ -199,6 +200,21 @@ const scheduleOf = (crawl: {
     crawl.scheduleId === null ? null : { id: crawl.scheduleId, name: crawl.scheduleName ?? "" },
   scheduledFor: crawl.scheduledFor,
   scheduleMissed: crawl.scheduleMissed,
+});
+
+/**
+ * 始めた時の名前と出どころ (`044`)。一覧と 1 本の両方が同じ形で返す。**表示のための物** —— 分からなければ null
+ * (`044` より前の行・定期の回。ヘッダの経路は名前と app client が null)。`requestedActor` は呼び手の申告で、確かめていない
+ * (名乗りの経路に依らず、見出しを送れば残る)。
+ */
+const requesterNamesOf = (crawl: {
+  requestedByName: string | null;
+  requestedClient: string | null;
+  requestedActor: string | null;
+}) => ({
+  requestedByName: crawl.requestedByName,
+  requestedClient: crawl.requestedClient,
+  requestedActor: crawl.requestedActor,
 });
 
 export interface CrawlRouteDeps {
@@ -505,9 +521,12 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         return reply.code(404).send({ error: "not found" });
       }
 
-      // 組織は呼び出し元の 1 つ目。`maySubmit` はどれか 1 つで許されていれば通すので、
-      // 許しをくれた組織とは限らない。
-      const who = { orgId: identity.organizations[0] ?? "", subject: identity.subject };
+      // 申告の名前 (`X-Capture-ledger-Actor`)。鍵と同じく、名乗りの後に見る。本文の digest には入らない
+      // (同じ鍵・同じ本文なら、見出しが違っても同じ要求)。
+      const actor = actorOf(request.headers[ACTOR_HEADER]);
+      if (actor === null) return reply.code(400).send(INVALID_ACTOR);
+      // 組織は呼び出し元の 1 つ目 (`requesterOf` の注記)。名前と出どころは行に写すだけで、認可には使わない
+      const who = requesterOf(identity, actor);
 
       // **鍵は名乗りの後に見る** (CAPTURE-180)。schema の headers に置くと名乗る前に 400 になり、
       // 名乗らずに叩いて 401 を見る点検 (capture-scheduler の doctor の crawl route) が崩れる。
@@ -617,6 +636,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           "stopReason",
           "seeds",
           "requestedBy",
+          "requestedByName",
+          "requestedClient",
+          "requestedActor",
           "orgId",
           "startedAt",
           "finishedAt",
@@ -658,6 +680,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           stopReason: crawl.stopReason,
           seeds: crawl.seeds,
           requestedBy: crawl.requestedBy,
+          // 始めた時の名前・app client・申告の名前 (`044`)。分からなければ null。表示のための物
+          ...requesterNamesOf(crawl),
           orgId: crawl.orgId,
           startedAt: crawl.startedAt,
           finishedAt: crawl.finishedAt,
@@ -733,6 +757,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         rules: crawl.rules,
         state: crawl.state,
         stopReason: crawl.stopReason,
+        // 誰が・どこから始めたか。一覧と同じ欄 (`044`)
+        requestedBy: crawl.requestedBy,
+        ...requesterNamesOf(crawl),
+        orgId: crawl.orgId,
         maxDepth: crawl.maxDepth,
         maxPages: crawl.maxPages,
         perHostDelayMs: crawl.perHostDelayMs,

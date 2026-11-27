@@ -683,11 +683,43 @@ question the crawl routes ask:
 
 ```sh
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/me
-# → {"subject":"<sub>","organizations":["acme"],"canSubmit":true}
+# → {"subject":"<sub>","organizations":["acme"],"canSubmit":true,"name":"alice","client":"cli","machine":false}
 ```
 
 A crawl route's 404 cannot tell "not allowed" from "no such route". This one answers
-`canSubmit: false` instead of 404.
+`canSubmit: false` instead of 404. `name`, `client` and `machine` are the same values a crawl row
+keeps ([Recording who started it, and from where](#recording-who-started-it-and-from-where)).
+
+### Recording who started it, and from where
+
+Besides the subject that started it (`requested_by`, the ID used for authorization), `POST /api/crawls`
+keeps three readable copies on the row. `GET /api/crawls` (the list) and `GET /api/crawls/:id` (one
+crawl) return them under the same names.
+
+| Field             | Where it comes from                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `requestedByName` | The token's `username` for a person; the app client's name for a machine (client credentials)                                              |
+| `requestedClient` | Which app client the token belongs to. The name is the one written as `name=ID` in `CAPTURE_LEDGER_OIDC_CLIENT_IDS` (tokens carry no name) |
+| `requestedActor`  | The name the caller wrote in the `X-Capture-ledger-Actor` header. **Declared, not verified**                                               |
+
+Unknown values are `null` (an app client with no name, scheduled runs, and rows older than these
+fields). On the development-header path the name and the app client are `null`, while a declared
+name is still kept when the header is sent. **None of the three is used for authorization.** When several callers
+share one app client — the seats of an AI agent, for example — the token cannot say which one it was,
+so a caller may add its own name in a header. Anyone can write any name, so capture-workbench labels it
+as declared.
+
+```sh
+curl -X POST http://127.0.0.1:7070/api/crawls \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -H "idempotency-key: $(uuidgen)" -H 'x-capture-ledger-actor: swe-seat-1' \
+  -d '{"seeds":["https://example.com/"],"maxDepth":0}'
+```
+
+The header takes up to 64 characters: letters, digits, `.`, `_` and `-`, starting with a letter or
+digit. Anything else is a **400**, and no row is created. An empty header is the same as no header
+(nothing declared). The header is not part of the
+`Idempotency-Key` comparison (the digest covers the body only).
 
 Membership cannot stand in for it. Organizations arrive as contextual tuples
 built from the caller's own token, so a rule like `can_submit: member` reduces to

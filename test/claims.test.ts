@@ -3,6 +3,7 @@ import type { JWTPayload } from "jose";
 
 import {
   ORGANIZATIONS_CLAIM,
+  clientsFromList,
   identityFromClaims,
   isMachineToken,
   organizationsFromList,
@@ -46,6 +47,31 @@ describe("identityFromClaims", () => {
     expect(identityFromClaims(claims({ sub: "alice", [ORGANIZATIONS_CLAIM]: ["acme"] }))).toEqual({
       subject: "alice",
       organizations: ["acme"],
+    });
+  });
+
+  // 読める名前 (CAPTURE-450)。人の access token は username を持つ。在るときだけ写す。
+  it("username が在れば name に写す", () => {
+    expect(identityFromClaims(claims({ sub: "alice-sub", username: "alice" }))).toEqual({
+      subject: "alice-sub",
+      organizations: [],
+      name: "alice",
+    });
+  });
+
+  it("username が文字列でなければ name は無い", () => {
+    expect(identityFromClaims(claims({ sub: "alice-sub", username: 42 }))).toEqual({
+      subject: "alice-sub",
+      organizations: [],
+    });
+  });
+
+  // 機械かは sub と client_id で決まる。名前はここでは付かない (client の名前は resolver が設定から引く)。
+  it("sub と client_id が同じなら machine が付く", () => {
+    expect(identityFromClaims(claims({ sub: "abc", client_id: "abc" }))).toEqual({
+      subject: "abc",
+      organizations: [],
+      machine: true,
     });
   });
 
@@ -95,4 +121,59 @@ describe("organizationsFromList", () => {
   it("空文字なら空の一覧", () => {
     expect(organizationsFromList("")).toEqual([]);
   });
+});
+
+/**
+ * 受ける app client の一覧 (`CAPTURE_LEDGER_OIDC_CLIENT_IDS`) の読み方。項目は `ID` か `名前=ID` (CAPTURE-450)。
+ * 名前は、その client から来たクロールの行に残る。
+ */
+describe("clientsFromList", () => {
+  it("ID だけの項目は、今までどおり読む（名前は無い）", () => {
+    expect(clientsFromList(" web , windmill ,")).toEqual({
+      ids: ["web", "windmill"],
+      names: new Map(),
+    });
+  });
+
+  it("名前=ID の項目は、ID と名前を読む", () => {
+    expect(clientsFromList("workbench=abc,ai = def")).toEqual({
+      ids: ["abc", "def"],
+      names: new Map([
+        ["abc", "workbench"],
+        ["def", "ai"],
+      ]),
+    });
+  });
+
+  it("2 つの書き方を混ぜてよい", () => {
+    expect(clientsFromList("workbench=abc,def")).toEqual({
+      ids: ["abc", "def"],
+      names: new Map([["abc", "workbench"]]),
+    });
+  });
+
+  it("空文字なら空", () => {
+    expect(clientsFromList("")).toEqual({ ids: [], names: new Map() });
+  });
+
+  // どちらかが黙って勝つと、「始めた人」の欄が黙って誤る。同じ名前の書き直しは害が無いので通す。
+  it("同じ ID に違う名前を書いたら投げる。同じ名前なら通す", () => {
+    expect(() => clientsFromList("a=abc,b=abc")).toThrow(/同じ ID に、違う名前 "a"/);
+    expect(clientsFromList("a=abc,a=abc").names).toEqual(new Map([["abc", "a"]]));
+  });
+
+  // ID が object の元から在る名前でも、名前の無い client として読む (名前を引くと関数が返る、を塞ぐ)。
+  it("constructor という ID は、名前の無い client", () => {
+    const { ids, names } = clientsFromList("constructor");
+    expect(ids).toEqual(["constructor"]);
+    expect(names.get("constructor")).toBeUndefined();
+  });
+
+  // 名前は行に写して画面に出す。字を限り、崩れた項目は黙って落とさずに投げる。
+  it.each(["=abc", "name=", "Name=abc", "na me=abc", "a=b=c", `${"x".repeat(33)}=abc`])(
+    "形の崩れた項目 %j は投げる",
+    (item) => {
+      expect(() => clientsFromList(item)).toThrow(/CAPTURE_LEDGER_OIDC_CLIENT_IDS の項目/);
+    },
+  );
 });

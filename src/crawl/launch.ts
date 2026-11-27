@@ -517,6 +517,10 @@ export const crawlValues = (
     hostParallelism: prepared.hostParallelism,
     orgId,
     requestedBy: who.subject,
+    // 始めた時の名前と出どころ (`044`)。表示のための写しで、後から ID で引き直さない
+    requestedByName: who.name ?? null,
+    requestedClient: who.client ?? null,
+    requestedActor: who.actor ?? null,
     // 解決済みの写し。並びが実行順。
     scripts: JSON.stringify(prepared.scripts),
     // クロールごとの値。変数は値ごと、シークレットは path と更新時刻だけ (値は capture-ledger を通らない)

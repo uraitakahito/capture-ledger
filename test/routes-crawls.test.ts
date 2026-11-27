@@ -8,6 +8,7 @@ import {
   type DispatchedCrawl,
 } from "../src/api/crawls.js";
 import { parseCaptureFormats } from "../src/config/capture-formats.js";
+import type { Identity } from "../src/config/identity.js";
 import { prepareCrawl, type CrawlBody } from "../src/crawl/prepare.js";
 import { WindmillUnreachable, type WindmillVariables } from "../src/crawl/windmill-variables.js";
 import type {
@@ -232,6 +233,13 @@ const NO_REPLAY_BUNDLE = {
   replayBundleSignError: null,
 };
 
+/** 名前と出どころの分からない行 (`044` より前の行・定期の回)。本物の行は null を持つ。 */
+const NO_REQUESTER_NAMES = {
+  requestedByName: null,
+  requestedClient: null,
+  requestedActor: null,
+};
+
 /** 手で始めたクロールの定期の欄 (`032`)。本物の行は null と 0 を持つ。 */
 const NO_SCHEDULE = {
   scheduleId: null,
@@ -252,6 +260,10 @@ interface FakeCrawl {
   hostParallelism: number;
   orgId: string;
   requestedBy: string;
+  /** 始めた時の名前と出どころ (`044`)。本物の行は必ず持つ (nullable なだけ)。始めた行は route が埋める。 */
+  requestedByName?: string | null;
+  requestedClient?: string | null;
+  requestedActor?: string | null;
   stopReason: string | null;
   startedAt: Date;
   finishedAt: Date | null;
@@ -902,6 +914,104 @@ describe("クロール route の認可と単一実行", () => {
     await app.close();
   });
 
+  /**
+   * 誰が・どこから始めたかを行に写す (`044`・CAPTURE-450)。名前と app client は名乗りから、
+   * 申告の名前は見出しから。どれも表示のための写しで、主体 (`requestedBy`) は今までどおり `subject`。
+   */
+  describe("始めた者の名前と出どころ", () => {
+    const startAs = async (
+      identity: Identity,
+      headers: Record<string, string> = {},
+    ): Promise<{ status: number; crawls: FakeCrawl[] }> => {
+      const crawls: FakeCrawl[] = [];
+      const app = await buildApp({
+        ...depsWith({ crawls, allowed: true }),
+        resolveIdentity: () => Promise.resolve(identity),
+      });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/crawls",
+        headers: { ...keyHeader(), ...headers },
+        payload: { seeds: [SEED] },
+      });
+      await app.close();
+      return { status: res.statusCode, crawls };
+    };
+
+    it("人: username と app client の名前を行に写す", async () => {
+      const { crawls } = await startAs({
+        subject: "alice-sub",
+        organizations: ["acme"],
+        name: "alice",
+        client: "workbench",
+      });
+      expect(crawls[0]).toMatchObject({
+        requestedBy: "alice-sub",
+        requestedByName: "alice",
+        requestedClient: "workbench",
+        requestedActor: null,
+      });
+    });
+
+    it("機械: app client の名前と、見出しで申告した席の名前を行に写す", async () => {
+      const { crawls } = await startAs(
+        {
+          subject: "ai-client-id",
+          organizations: ["acme"],
+          name: "ai",
+          client: "ai",
+          machine: true,
+        },
+        { "x-capture-ledger-actor": "capture-450-swe.1" },
+      );
+      expect(crawls[0]).toMatchObject({
+        requestedBy: "ai-client-id",
+        requestedByName: "ai",
+        requestedClient: "ai",
+        requestedActor: "capture-450-swe.1",
+      });
+    });
+
+    // ヘッダの経路と、名前を書いていない client。分からない物は null (空文字にしない)。
+    it("名前も app client も分からなければ null を書く", async () => {
+      const { crawls } = await startAs({ subject: "alice", organizations: ["acme"] });
+      expect(crawls[0]).toMatchObject({ requestedBy: "alice", ...NO_REQUESTER_NAMES });
+    });
+
+    // 行に写して画面に出す字なので、形を限る。黙って落とさず 400 (呼び手が気づける)。
+    it.each(["a b", "名前", "-leading", "x".repeat(65), "<script>"])(
+      "申告の名前 %j は 400 で、行を作らない",
+      async (actor) => {
+        const { status, crawls } = await startAs(
+          { subject: "alice", organizations: ["acme"] },
+          { "x-capture-ledger-actor": actor },
+        );
+        expect(status).toBe(400);
+        expect(crawls).toEqual([]);
+      },
+    );
+
+    // 見出しは本文の digest に入らない。同じ鍵・同じ本文なら、申告の名前が違っても同じ要求。
+    it("申告の名前は、要求の鍵の照合に入らない", async () => {
+      const crawls: FakeCrawl[] = [];
+      const app = await buildApp(depsWith({ crawls, allowed: true }));
+      const key = keyHeader();
+      const send = (actor: string) =>
+        app.inject({
+          method: "POST",
+          url: "/api/crawls",
+          headers: { ...key, "x-capture-ledger-actor": actor },
+          payload: { seeds: [SEED] },
+        });
+      const first = await send("seat-a");
+      const second = await send("seat-b");
+      await app.close();
+      expect([first.statusCode, second.statusCode]).toEqual([202, 202]);
+      expect(second.json()).toEqual(first.json());
+      expect(crawls.map((crawl) => crawl.requestedActor)).toEqual(["seat-a"]);
+    });
+  });
+
   it("stores the defaults when the caller asks for nothing", async () => {
     // 既定は控えめな側。**30 が効いていること**が、上限で止まる普通の姿を作る。
     const crawls: FakeCrawl[] = [];
@@ -1118,6 +1228,7 @@ describe("クロール route の認可と単一実行", () => {
     error: null,
     lastJobId: "0193b6a1-3c1d-7a2e-9f00-1234567890ab",
     lastJobDepth: 0,
+    ...NO_REQUESTER_NAMES,
     ...NO_REPLAY_BUNDLE,
     ...NO_SCHEDULE,
     scripts: [
@@ -1138,6 +1249,40 @@ describe("クロール route の認可と単一実行", () => {
     recordRandom: false,
     secrets: {},
   };
+
+  // 誰が・どこから始めたか (`044`)。1 本の答えは、これまで requestedBy も orgId も返していなかった。
+  it("GET は始めた主体と組織と、名前・app client・申告の名前を返す", async () => {
+    const app = await buildApp(
+      depsWith({
+        crawls: [
+          {
+            ...finishedCrawl,
+            requestedByName: "ai",
+            requestedClient: "ai",
+            requestedActor: "capture-450-swe.1",
+          },
+        ],
+        allowed: true,
+      }),
+    );
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    await app.close();
+    expect(res.json()).toMatchObject({
+      requestedBy: "alice",
+      orgId: "acme",
+      requestedByName: "ai",
+      requestedClient: "ai",
+      requestedActor: "capture-450-swe.1",
+    });
+  });
+
+  // `044` より前の行と定期の回は名前を持たない。欄は消さずに null で返す (画面が「分からない」を読める)。
+  it("GET は名前の分からない行に null を返す", async () => {
+    const app = await buildApp(depsWith({ crawls: [finishedCrawl], allowed: true }));
+    const res = await app.inject({ method: "GET", url: `/api/crawls/${UUID}` });
+    await app.close();
+    expect(res.json()).toMatchObject(NO_REQUESTER_NAMES);
+  });
 
   it("GET は定期の回の予定の名前と本来の時刻と欠けを返す", async () => {
     const app = await buildApp(
@@ -2346,6 +2491,7 @@ describe("クロールの一覧", () => {
     // { id: undefined } になる —— 偽物の形が本物と違うと、試験が嘘をつく。
     lastJobId: null,
     lastJobDepth: null,
+    ...NO_REQUESTER_NAMES,
     ...NO_REPLAY_BUNDLE,
     ...NO_SCHEDULE,
     scripts: [],
@@ -2394,6 +2540,26 @@ describe("クロールの一覧", () => {
     const res = await list(depsWith({ crawls: [NEW, OLD], allowed: false }));
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ crawls: [] });
+  });
+
+  // 一覧は 1 本と同じ欄で、誰が・どこから始めたかを返す (`044`)。workbench の「始めた人」が読む。
+  it("始めた時の名前・app client・申告の名前を返す。分からない行は null", async () => {
+    const named = row({
+      id: "33333333-3333-4333-8333-333333333333",
+      startedAt: new Date(3),
+      requestedByName: "ai",
+      requestedClient: "ai",
+      requestedActor: "capture-450-swe.1",
+    });
+    const res = await list(depsWith({ crawls: [OLD, named], allowed: true }));
+    const crawls = res.json<{ crawls: Record<string, unknown>[] }>().crawls;
+    expect(crawls[0]).toMatchObject({
+      requestedBy: "alice",
+      requestedByName: "ai",
+      requestedClient: "ai",
+      requestedActor: "capture-450-swe.1",
+    });
+    expect(crawls[1]).toMatchObject({ requestedBy: "alice", ...NO_REQUESTER_NAMES });
   });
 
   it("新しい順に並べる —— 古い順で渡しても、新しいほうが先に出る", async () => {

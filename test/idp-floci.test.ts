@@ -106,6 +106,11 @@ describe.skipIf(ENDPOINT === undefined)(
       jwtIdentityResolver(createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)), {
         issuer,
         clientIds: [web.ClientId, windmill.ClientId],
+        // 名前はトークンに無く、設定 (`名前=ID`) が持つ (CAPTURE-450)
+        clientNames: new Map([
+          [web.ClientId, "web"],
+          [windmill.ClientId, "windmill"],
+        ]),
         machineOrganizations: (subject) =>
           Promise.resolve(subject === windmill.ClientId ? ["acme"] : []),
       });
@@ -114,12 +119,19 @@ describe.skipIf(ENDPOINT === undefined)(
       const identity = await resolver()(bearer(humanTokens.AccessToken));
       expect(identity?.organizations).toEqual(["acme"]);
       expect(identity?.subject).not.toBe("alice"); // sub は Floci が付けた ID で、名前ではない
+      // 読める名前は username のクレームから。本物のトークンがこのクレームを持つことを、ここで見る (CAPTURE-450)
+      expect(identity).toMatchObject({ name: "alice", client: "web" });
+      expect(identity?.machine).toBeUndefined();
     });
 
     it("機械（client credentials）の access token を受け、組織は保存された許可から引く", async () => {
+      // 機械のトークンは username を持たない。名前は app client の名前 (CAPTURE-450)
       await expect(resolver()(bearer(machineToken))).resolves.toEqual({
         subject: windmill.ClientId,
         organizations: ["acme"],
+        name: "windmill",
+        client: "windmill",
+        machine: true,
       });
     });
 

@@ -34,7 +34,7 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | `archive_pages`                                                            | アーカイブの頁の一覧（`pages/pages.jsonl`）の 1 行が 1 行。クロールの合本のために 1 度だけ読む                                                                                                                    |
 | `archive_screenshots`                                                      | 節目のスクリーンショット（BrowserHive WACZ の中の WARC の resource）の在り処。時点ごとに 1 行で、WACZ の中の位置・残さなかった理由・位置を引けなかった理由のどれか。検める時に書き、絵そのものは写さない（`041`） |
 | [`fga_outbox`](/capture-ledger/ja/databases/fga-outbox/)                   | OpenFGA へ送る予定のタプル                                                                                                                                                                                        |
-| `crawls`                                                                   | クロール 1 本につき 1 行。方針・状態・停止理由と、合本の版・署名（[下記](#crawls-の合本の列)）                                                                                                                    |
+| `crawls`                                                                   | クロール 1 本につき 1 行。方針・状態・停止理由と、誰が始めたか（[下記](#crawls-の誰が始めたかの列)）、合本の版・署名（[下記](#crawls-の合本の列)）                                                                |
 | `crawl_pages`                                                              | クロールが触った URL 1 つにつき 1 行（取る前の pending も）。重複排除の索引でもあり、取り込みのログの数（`log_counts`）も持つ                                                                                     |
 | `crawl_decisions`                                                          | クロールの規則が決めたこと。段 × 規則 × ホスト名で 1 行                                                                                                                                                           |
 | [`crawl_schedules`](/capture-ledger/ja/databases/crawl-schedules/)         | 定期実行の予定。時計の表で、回は `crawls` の行                                                                                                                                                                    |
@@ -58,6 +58,21 @@ capture-ledger の開発スタックには **Postgres が 2 つ**あります。
 | `store`                                        | 名前空間。削除は soft delete（下記） |
 | `assertion`                                    | 使っていない（下記）                 |
 | `goose_db_version`                             | OpenFGA 自身のスキーマ移行（下記）   |
+
+## crawls の誰が始めたかの列
+
+クロールを誰が・どこから始めたかは、4 つの列が持ちます。認可に使うのは `requested_by` だけで、
+残りの 3 つ（`044`）は capture-workbench の一覧が「始めた人」を読める形で出すための写しです。
+
+| 列                  | 要点                                                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `requested_by`      | 始めた主体。JWT ならトークンの `sub`（人は IdP が付けた ID、機械は app client の ID）。定期の回では予定を作った主体。許可も `owner` tuple もこの値で書く                       |
+| `requested_by_name` | 始めた時の読める名前。人はトークンの `username`、機械は app client の名前。分からなければ NULL                                                                                 |
+| `requested_client`  | どの app client から来たか。`CAPTURE_LEDGER_OIDC_CLIENT_IDS` に `名前=ID` と書いた名前（手元では `workbench`・`cli`・`windmill`）。名前を書いていない client と定期の回は NULL |
+| `requested_actor`   | 呼び手が見出し `X-Capture-ledger-Actor` で**申告**した名前（AI の担当の席の名前など）。**確かめていません** —— 誰でも好きな名前を書けるので、画面は「申告」と書いて出します    |
+
+3 つとも、始めた時に行へ写します（後から ID で引き直しません）。手元の IdP は作り直すと app client の ID が
+替わるので、ID から引くと古い行の名前が出なくなるためです。`044` より前の行は NULL のままです。
 
 ## crawls の合本の列
 

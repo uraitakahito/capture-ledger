@@ -34,7 +34,7 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 | `archive_pages`                                                         | One row per line of an archive's page list (`pages/pages.jsonl`), read once for the crawl's replay bundle                                                                                                                                                                                                                 |
 | `archive_screenshots`                                                   | Where an archive's stage screenshots (WARC resource records inside the BrowserHive WACZ) are: one row per stage, holding the place inside the WACZ, the reason BrowserHive left the picture out, or the reason the place could not be found. Written when the WACZ is inspected; the picture itself is not copied (`041`) |
 | [`fga_outbox`](/capture-ledger/databases/fga-outbox/)                   | Tuples waiting to reach OpenFGA                                                                                                                                                                                                                                                                                           |
-| `crawls`                                                                | One row per crawl — its policy, state and stop reason, and its replay bundle and signature ([below](#the-replay-bundle-columns-of-crawls))                                                                                                                                                                                |
+| `crawls`                                                                | One row per crawl — its policy, state and stop reason, who started it ([below](#the-who-started-it-columns-of-crawls)), and its replay bundle and signature ([below](#the-replay-bundle-columns-of-crawls))                                                                                                               |
 | `crawl_pages`                                                           | One row per URL a crawl touched (pending ones too); also the dedup index, and the capture log's counts (`log_counts`)                                                                                                                                                                                                     |
 | `crawl_decisions`                                                       | What a crawl's rules decided, per depth, rule and host name                                                                                                                                                                                                                                                               |
 | [`crawl_schedules`](/capture-ledger/databases/crawl-schedules/)         | Scheduled crawls — the clock's table; a run is a `crawls` row                                                                                                                                                                                                                                                             |
@@ -58,6 +58,22 @@ what makes [`fga_outbox`](/capture-ledger/databases/fga-outbox/) necessary.
 | `store`                                     | Namespaces; deletion is soft (below)               |
 | `assertion`                                 | Unused (below)                                     |
 | `goose_db_version`                          | OpenFGA's own schema migrations (below)            |
+
+## The who-started-it columns of crawls
+
+Four columns say who started a crawl and from where. Only `requested_by` is used for authorization;
+the other three (`044`) are copies that let the capture-workbench list show a readable "started by".
+
+| Column              | What it holds                                                                                                                                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requested_by`      | The subject that started it. Under JWT, the token's `sub` (a person's ID from the IdP, or a machine's app client ID). For a scheduled run, the subject who created the schedule. Grants and the `owner` tuple use this value |
+| `requested_by_name` | A readable name at the time it started: the token's `username` for a person, the app client's name for a machine. NULL when unknown                                                                                          |
+| `requested_client`  | Which app client it came from: the name written as `name=ID` in `CAPTURE_LEDGER_OIDC_CLIENT_IDS` (locally `workbench`, `cli`, `windmill`). NULL for a client with no name and for scheduled runs                             |
+| `requested_actor`   | A name the caller **declared** in the `X-Capture-ledger-Actor` header (an AI agent's seat name, for example). **It is not verified** — anyone can write any name — so the screen labels it as declared                       |
+
+All three are copied onto the row when the crawl starts and are never looked up again by ID. The local
+IdP assigns new app client IDs whenever it is recreated, so a lookup would lose the names of older rows.
+Rows older than `044` keep NULL.
 
 ## The replay bundle columns of crawls
 

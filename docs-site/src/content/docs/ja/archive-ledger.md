@@ -605,11 +605,40 @@ Windmill の flow が使う app client の ID に、`acme` の `submitter` を�
 
 ```sh
 curl -s -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/me
-# → {"subject":"<sub>","organizations":["acme"],"canSubmit":true}
+# → {"subject":"<sub>","organizations":["acme"],"canSubmit":true,"name":"alice","client":"cli","machine":false}
 ```
 
 クロールのエンドポイントの 404 からは「許可が無い」のか「エンドポイントが無い」のかが読めない。こちらは許可が無くても
-404 にせず、`canSubmit: false` と答える。
+404 にせず、`canSubmit: false` と答える。`name`・`client`・`machine` は、クロールの行に残るのと同じ物
+（[誰が・どこから始めたかを残す](#誰がどこから始めたかを残す)）。
+
+### 誰が・どこから始めたかを残す
+
+`POST /api/crawls` は、始めた主体（`requested_by`。認可に使う ID）のほかに、読むための写しを 3 つ行に残す。
+`GET /api/crawls`（一覧）と `GET /api/crawls/:id`（1 本）が、同じ欄で返す。
+
+| 欄                | 出どころ                                                                                                                  |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `requestedByName` | 人はトークンの `username`、機械（client credentials）は app client の名前                                                 |
+| `requestedClient` | どの app client のトークンか。名前は `CAPTURE_LEDGER_OIDC_CLIENT_IDS` に `名前=ID` と書いた物（トークンは名前を運ばない） |
+| `requestedActor`  | 呼び手が見出し `X-Capture-ledger-Actor` に書いた名前。**申告で、確かめていない**                                          |
+
+分からない物は `null`（名前を書いていない app client・定期の回・この欄より前の行）。開発用ヘッダの経路では、
+名前と app client が `null` で、申告の名前は見出しを送れば残る。
+**3 つとも認可には使わない。** 同じ app client をいくつもの呼び手（AI の担当の席など）が使うとき、どの席かはトークンから
+分からない。そこで呼び手が自分の名前を見出しで添えられるようにしてある。誰でも好きな名前を書けるので、capture-workbench は
+「申告」と書いて出す。
+
+```sh
+curl -X POST http://127.0.0.1:7070/api/crawls \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -H "idempotency-key: $(uuidgen)" -H 'x-capture-ledger-actor: swe-seat-1' \
+  -d '{"seeds":["https://example.com/"],"maxDepth":0}'
+```
+
+見出しの字は、英数字で始まる、英数字と `.`・`_`・`-` の 64 字まで。形が違えば **400** で、行は作らない。
+空の見出しは、送らないのと同じ（申告なし）。
+見出しは `Idempotency-Key` の照合（本文の digest）に入らない。
 
 所属で代用してはならない。組織は呼び出し元自身のトークンから組んだ contextual tuple として
 届くので、`can_submit: member` のような規則は「member だと言った者に member か訊く」形に
