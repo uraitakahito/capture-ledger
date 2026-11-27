@@ -24,6 +24,8 @@
  * 黙って NULL にすると、何の取り込みだったかの手がかりが消える。数と先頭の行の id を出して投げ、
  * 何も変えない (Kysely は Postgres では migrate の 1 回をまるごと transaction の中で流す)。
  *
+ * `pg_input_is_valid` を使うので、Postgres 16 以上が要る (dev の compose と CI は 17)。
+ *
  * ## 鍵
  *
  * 先に ACCESS EXCLUSIVE を取ってから数える。数えた後に古いコードが uuid でない値を書く隙を作らない
@@ -48,8 +50,18 @@ const lockCrawlPages = async (db: Kysely<unknown>): Promise<void> => {
   await sql`lock table crawl_pages in access exclusive mode`.execute(db);
 };
 
+/**
+ * 鍵の待ちを既定に戻す。Kysely はまだ流していない migration をまとめて 1 つの transaction で流すので、
+ * `set local` は後に続く migration にも効いてしまう —— 鍵を頼んでいない後の migration が 5 秒で落ち、
+ * 043 ごと戻らないように、鍵を取り終えたら戻す (鍵は transaction の終わりまで持ったまま)。
+ */
+const resetLockTimeout = async (db: Kysely<unknown>): Promise<void> => {
+  await sql`set local lock_timeout to default`.execute(db);
+};
+
 export const up = async (db: Kysely<unknown>): Promise<void> => {
   await lockCrawlPages(db);
+  await resetLockTimeout(db);
 
   const { rows } = await sql<{ bad: string; ids: string[] | null }>`
     select count(*)::text as bad,
@@ -77,6 +89,7 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
 
 export const down = async (db: Kysely<unknown>): Promise<void> => {
   await lockCrawlPages(db);
+  await resetLockTimeout(db);
   await db.schema.dropIndex("crawl_pages_task_id_idx").execute();
   await sql`alter table crawl_pages alter column task_id type text using task_id::text`.execute(db);
 };

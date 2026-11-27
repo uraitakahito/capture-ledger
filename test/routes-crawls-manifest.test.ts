@@ -265,6 +265,8 @@ describe("段の報告と manifest", () => {
         },
       ]),
     ).not.toBe(400);
+    // 断らずに、帰属を書くところまで進んだ
+    expect(inserted).toHaveLength(1);
   });
 
   // 投入が通らなかったページ (taskId が無い) に結末は付かない。

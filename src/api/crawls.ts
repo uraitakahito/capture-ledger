@@ -1757,8 +1757,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // 実体が S3 に在っても組織が言えず、capture-ledger に入れようがない。
         // 投入が通っている限り id は在るので、書かない理由が無い。
         const submitted = results.filter(
-          (r): r is PageReport & { taskId: string } =>
-            typeof r.taskId === "string" && r.taskId !== "",
+          // 空の文字列は schema が断る (`TASK_ID`) ので、ここには来ない
+          (r): r is PageReport & { taskId: string } => typeof r.taskId === "string",
         );
         // 報告の場所を capture-ledger の形に。**1 度だけ計算し、書き留める値と読みに行く鍵に同じものを使う。**
         const manifests = new Map(
