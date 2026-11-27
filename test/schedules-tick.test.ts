@@ -233,7 +233,7 @@ describe("定期実行の周回", () => {
    * 誰の回か (`045`・CAPTURE-450)。**回の主体は予定を作った主体のまま** —— シークレットをその名前で解くので、
    * 押す人で回の動きが変わってはいけない。押した者は別に運ぶ。
    */
-  it("いま撮るの回は、主体は作った者のままで、押した者を別に運ぶ", async () => {
+  it("いま撮るの回でも、主体は作った者のまま (押した者は store が回の行に写す)", async () => {
     const fake = fakeStore([
       schedule({
         nextRunAt: jst("2026-11-08T04:00:00"),
@@ -246,19 +246,15 @@ describe("定期実行の周回", () => {
     const { deps } = depsOf(fake.store, { startedAt: NOW });
     await tickSchedules(deps);
     expect(fake.fired[0]?.who).toEqual({ orgId: "acme", subject: "alice", name: "alice-name" });
-    expect(fake.fired[0]).toMatchObject({ runRequestedBy: "bob-sub", runRequestedByName: "bob" });
   });
 
-  // 期限の回として始めるなら、頼みが重なっていても時計が始めた回。押した者を付けない。
-  it("期限の回には、頼みが重なっていても押した者を付けない", async () => {
+  // 名前の分からない予定 (`045` より前の行) は、名前を運ばない
+  it("名前の分からない予定は、主体だけを運ぶ", async () => {
     const fake = fakeStore([
       schedule({ runRequestedAt: NOW, runRequestedBy: "bob-sub", runRequestedByName: "bob" }),
     ]);
     const { deps } = depsOf(fake.store);
     await tickSchedules(deps);
-    expect(fake.fired[0]?.scheduledFor).not.toBeNull();
-    expect(fake.fired[0]).toMatchObject({ runRequestedBy: null, runRequestedByName: null });
-    // 名前の分からない予定 (`045` より前の行) は、名前を運ばない
     expect(fake.fired[0]?.who).toEqual({ orgId: "acme", subject: "alice" });
   });
 

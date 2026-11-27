@@ -83,9 +83,6 @@ export interface FirePlan {
   sink: SinkConfig | undefined;
   /** 本来の時刻。「いま撮る」は null。 */
   scheduledFor: Date | null;
-  /** 「いま撮る」を押した主体と名前 (`045`)。期限の回は null。 */
-  runRequestedBy: string | null;
-  runRequestedByName: string | null;
   missed: number;
   /** 次の期限。期限の回だけが持つ。「いま撮る」は書かない。 */
   nextRunAt?: Date;
@@ -295,15 +292,14 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
       scheduleId: plan.scheduleId,
       scheduledFor: plan.scheduledFor === null ? null : plan.scheduledFor.toISOString(),
       scheduleMissed: plan.missed,
-      runRequestedBy: plan.runRequestedBy,
-      runRequestedByName: plan.runRequestedByName,
     };
     try {
       return await db.transaction().execute(async (trx): Promise<FireResult> => {
         // 候補を選んでからここまでの間に消された・止められた・別の周回が取った物は、始めない
         const held = await trx
           .selectFrom("crawlSchedules")
-          .select("id")
+          // 押した者は掴んだ行から読み直す。候補を読んでから掴むまでの間に押し直されたら、後の人が回に写る
+          .select(["id", "runRequestedBy", "runRequestedByName"])
           .where("id", "=", plan.scheduleId)
           .where("deletedAt", "is", null)
           .where((eb) =>
@@ -316,6 +312,12 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
           .skipLocked()
           .executeTakeFirst();
         if (held === undefined) return { kind: "gone" };
+        // 期限の回 (時計が始めた回) には押した者を付けない。「いま撮る」の回は、掴んだ行の押した者
+        const pressed =
+          plan.scheduledFor === null
+            ? { runRequestedBy: held.runRequestedBy, runRequestedByName: held.runRequestedByName }
+            : { runRequestedBy: null, runRequestedByName: null };
+        const marked = { ...mark, ...pressed };
 
         let result: FireResult;
         if (plan.failure === undefined) {
@@ -326,7 +328,7 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
             plan.who,
             plan.capture,
             plan.sink,
-            mark,
+            marked,
           );
           result = { kind: "started", level };
         } else {
@@ -334,7 +336,7 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
           await trx
             .insertInto("crawls")
             .values({
-              ...crawlValues(plan.prepared, plan.crawlId, plan.who, plan.sink, mark),
+              ...crawlValues(plan.prepared, plan.crawlId, plan.who, plan.sink, marked),
               state: "failed",
               stopReason: "failed",
               // `started_at` と同じ DB の時計 (トランザクションの時刻)。周回の時計だと始まりより前になりうる

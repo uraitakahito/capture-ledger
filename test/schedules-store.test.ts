@@ -43,8 +43,6 @@ const plan = (overrides: Partial<FirePlan> = {}): FirePlan => ({
   who: { orgId: "acme", subject: "alice" },
   capture: parseCaptureFormats("wacz", false),
   sink: undefined,
-  runRequestedBy: null,
-  runRequestedByName: null,
   scheduledFor: new Date("2026-11-03T19:00:00.000Z"),
   missed: 3,
   nextRunAt: new Date("2026-11-07T19:00:00.000Z"),
@@ -272,15 +270,13 @@ describe("予定の store", () => {
       expect(queries[0]!.parameters.slice(0, 3)).toEqual([NOW.toISOString(), "bob-sub", null]);
     });
 
+    // 押した者は、掴んだ予定の行から読む (候補を読んでから掴むまでに押し直されたら、後の人が写る)
+    const pressedRow = { id: ID, run_requested_by: "bob-sub", run_requested_by_name: "bob" };
+    const seeded = [{ url: "https://site.test/", host: "site.test" }];
+
     it("回を始めたら、予定の押した者を消し、回の行に写す", async () => {
-      const seeded = [{ url: "https://site.test/", host: "site.test" }];
-      const { db, queries } = recordingDb([[{ id: ID }], [], seeded, [], []]);
-      const manual = plan({
-        scheduledFor: null,
-        missed: 0,
-        runRequestedBy: "bob-sub",
-        runRequestedByName: "bob",
-      });
+      const { db, queries } = recordingDb([[pressedRow], [], seeded, [], []]);
+      const manual = plan({ scheduledFor: null, missed: 0 });
       delete manual.nextRunAt;
       await scheduleStoreOf(db).fire(manual);
       const insert = queries.find((query) => query.sql.includes('insert into "crawls"'))!;
@@ -293,6 +289,18 @@ describe("予定の store", () => {
       expect(update.sql).toContain('"run_requested_by_name" = ');
       // 消す値は 3 つとも null
       expect(update.parameters.slice(0, 3)).toEqual([null, null, null]);
+      // 掴む問い合わせが、押した者を読む
+      const held = queries.find((query) => query.sql.includes("for update skip locked"))!;
+      expect(held.sql).toContain('"run_requested_by"');
+    });
+
+    // 期限の回は時計が始めた回。頼みが重なっていても、押した者を付けない
+    it("期限の回には、掴んだ行に押した者が在っても写さない", async () => {
+      const { db, queries } = recordingDb([[pressedRow], [], seeded, [], []]);
+      await scheduleStoreOf(db).fire(plan());
+      const insert = queries.find((query) => query.sql.includes('insert into "crawls"'))!;
+      expect(insert.parameters).not.toContain("bob-sub");
+      expect(insert.parameters).not.toContain("bob");
     });
 
     it.each([

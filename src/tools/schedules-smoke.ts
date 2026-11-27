@@ -130,8 +130,6 @@ const planOf = (row: ScheduleRow, now: Date, overrides: Partial<FirePlan> = {}):
   capture: parseCaptureFormats("wacz", false),
   sink: undefined,
   scheduledFor: row.nextRunAt,
-  runRequestedBy: null,
-  runRequestedByName: null,
   missed: 0,
   nextRunAt: new Date(now.getTime() + 86_400_000),
   now,

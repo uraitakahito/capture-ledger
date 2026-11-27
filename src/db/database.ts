@@ -203,7 +203,8 @@ export interface CrawlsTable {
   requestedBy: string;
   /**
    * 始めた時の読める名前 (`044`)。人はトークンの `username`、機械は app client の名前。**表示のための物** ——
-   * 許可と `owner` tuple は `requestedBy` で書く。`044` より前の行・定期の回・ヘッダの経路は NULL。後から書き換えない。
+   * 許可と `owner` tuple は `requestedBy` で書く。定期の回は予定を作った者の名前 (`045`。それより前に作った予定は NULL)。
+   * `044` より前の行・ヘッダの経路は NULL。後から書き換えない。
    * (申告の名前 `requestedActor` だけは、ヘッダの経路でも見出しを送れば残る。)
    */
   requestedByName: ColumnType<string | null, string | null | undefined, never>;
