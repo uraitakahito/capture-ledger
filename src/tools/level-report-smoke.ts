@@ -117,7 +117,10 @@ try {
   await sql`
     create function ${fn}() returns trigger language plpgsql as $$
     begin
-      if new.org_id = ${sql.lit(org)} then
+      -- ページの行がもう閉じて見える時だけ落とす。同じトランザクションの中で先に閉じていれば見え、その後の
+      -- rollback でページが pending に戻る。帰属を先に別の文で書く形 (ページを閉じる前) では投げないので、場面 1 は赤くなる
+      if new.org_id = ${sql.lit(org)}
+         and exists (select 1 from crawl_pages where task_id = new.task_id and state <> 'pending') then
         raise exception 'level-report-smoke: the attribution insert fails';
       end if;
       return new;
@@ -138,9 +141,11 @@ try {
     JSON.stringify(afterFail),
   );
   check("帰属の行も無い", (await submissions()) === 0);
+  // 期限は route が Node の時計で書き、ここは Postgres の時計で比べる。2 つがずれても (Apple Container の VM の
+  // 時計など) 読み違えないよう、手放した (今) と 2 分の期限を見分けられる幅 (1 分) で見る
   const lease = (
     await sql<{ state: string; released: boolean }>`
-      select state, lease_until <= now() as released from crawl_levels
+      select state, lease_until < now() + interval '1 minute' as released from crawl_levels
        where crawl_id = ${crawlId} and depth = 0`.execute(db)
   ).rows[0];
   check(

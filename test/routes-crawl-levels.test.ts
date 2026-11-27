@@ -490,6 +490,54 @@ describe("ページを閉じる書き込みと帰属の書き込み (t-e5bz)", (
     expect(sqls.slice(begin + 1, commit)).not.toContain("commit");
   });
 
+  it("保管庫を読む (manifest を読んで archives に入れる 2b) のは、ページと帰属の commit の後", async () => {
+    // 保管庫を待つ間に行の錠を持たない。2b をトランザクションの中へ動かすと赤くなる
+    const level = levelResponder();
+    const { db, queries } = recordingDb([[crawlRow()], [{ id: "11" }]], level);
+    const s3 = {
+      send: () => {
+        queries.push({ sql: "s3:read", parameters: [] });
+        return Promise.reject(new Error("the store is not part of this test"));
+      },
+    };
+    const app = Fastify({ logger: false, ajv: { customOptions: { removeAdditional: false } } });
+    registerCrawlRoutes(app, {
+      db,
+      fga: { check: () => Promise.resolve({ allowed: true }) },
+      resolveIdentity: () => Promise.resolve({ subject: "alice", organizations: ["acme"] }),
+      dispatch: (crawl: DispatchedCrawl) => Promise.resolve(crawl.levelKey),
+      s3,
+      bucket: "b",
+      capture: parseCaptureFormats("wacz", false),
+      writeReplayBundle: () => Promise.resolve(undefined),
+    } as unknown as CrawlRouteDeps);
+    await app.ready();
+    await app.inject({
+      method: "POST",
+      url: `/api/crawls/${CRAWL}/pages`,
+      headers: { ...SUBJECT, "idempotency-key": LEVEL_KEY },
+      payload: {
+        depth: 0,
+        compiled: COMPILED,
+        results: [
+          {
+            url: SEED,
+            status: "captured",
+            taskId: TASK,
+            manifestLocation: "s3://b/x.result.json",
+          },
+        ],
+      },
+    });
+    await app.close();
+    const sqls = queries.map((query) => query.sql);
+    const attributed = sqls.findIndex((sql) => sql.startsWith('insert into "capture_submissions"'));
+    const read = sqls.indexOf("s3:read");
+    expect(attributed).toBeGreaterThan(-1);
+    expect(read).toBeGreaterThan(-1);
+    expect(read).toBeGreaterThan(sqls.indexOf("commit"));
+  });
+
   it("帰属を書けなければ rollback し、段の期限を手放して 500 を返す（次の段も作らない）", async () => {
     const level = levelResponder();
     const { db, queries } = recordingDb([[crawlRow()], [{ id: "11" }]], {
