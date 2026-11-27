@@ -211,10 +211,20 @@ export const CRAWL_BODY_SCHEMA = {
   },
 } as const;
 
-/** 誰の頼みか。組織は行の帰属に、subject は行とログに使う。 */
+/**
+ * 誰の頼みか。組織は行の帰属に、subject は行とログに使う。
+ *
+ * `name`・`client`・`actor` は行に写して画面に出すだけの物 (`044`)。定期の回は持たない。
+ */
 export interface CrawlRequester {
   orgId: string;
   subject: string;
+  /** 読める名前 (人は `username`、機械は app client の名前)。 */
+  name?: string;
+  /** どの app client から来たか。 */
+  client?: string;
+  /** 呼び手が申告した名前。確かめていない。 */
+  actor?: string;
 }
 
 export interface PrepareDeps {

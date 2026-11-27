@@ -22,8 +22,8 @@ import type { FastifyRequest } from "fastify";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from "jose";
 import { optional } from "../config/env.js";
 import {
+  clientsFromList,
   identityFromClaims,
-  isMachineToken,
   organizationsFromList,
   type Identity,
 } from "../config/identity.js";
@@ -78,6 +78,11 @@ export interface JwtCheck {
    * `client_id` で言う（M2M のトークンは `aud` を持てない）。だから `aud` ではなくこれで照らす。
    */
   clientIds: readonly string[];
+  /**
+   * app client の ID から名前へ (CAPTURE-450)。名前の在る client から来たトークンは、名乗りに `client` を持つ。
+   * 機械のトークンは `username` を持たないので、名前 (`name`) もここから取る。渡さなければ、どちらも無い。
+   */
+  clientNames?: Readonly<Record<string, string>>;
   /**
    * 機械（M2M）の組織を引く。M2M のトークンには `cognito:groups` が載らないので、
    * capture-ledger が OpenFGA に保存した許可から決める。渡さなければ、機械の組織は空のまま。
@@ -139,12 +144,21 @@ export const jwtIdentityResolver =
       return undefined;
     }
     // クレームの読み方は config/identity.ts の 1 か所。
-    const identity = identityFromClaims(payload);
-    if (identity === undefined) return undefined;
+    const claimed = identityFromClaims(payload);
+    if (claimed === undefined) return undefined;
+    // どの app client から来たか。`accessTokenRefusal` を通ったので `client_id` は受ける一覧に在る。
+    // 名前は設定 (`名前=ID`) が持つ —— トークンは client の名前を運ばない。
+    const client = options.clientNames?.[payload["client_id"] as string];
+    const identity: Identity = {
+      ...claimed,
+      ...(client !== undefined && { client }),
+      // 機械の名前は client の名前。人の名前 (`username`) は上書きしない
+      ...(client !== undefined && claimed.machine === true && { name: client }),
+    };
     // **try の外で引く。** OpenFGA に届かないのは「名乗りが偽」ではないので、401 に
     // 化けさせない (投げれば 500 になり、原因がログに出る)。
     if (
-      isMachineToken(payload) &&
+      identity.machine === true &&
       identity.organizations.length === 0 &&
       options.machineOrganizations !== undefined
     ) {
@@ -158,7 +172,14 @@ export const denyAllResolver: IdentityResolver = () => Promise.resolve(undefined
 
 /** 選んだ名乗り方。resolver と一緒に、どれを選んだかを持つ。 */
 export type IdentitySetup =
-  | { mode: "jwt"; issuer: string; clientIds: string[]; resolve: IdentityResolver }
+  | {
+      mode: "jwt";
+      issuer: string;
+      clientIds: string[];
+      /** ID から名前へ。名前を書いた client だけ。 */
+      clientNames: Record<string, string>;
+      resolve: IdentityResolver;
+    }
   | { mode: "header"; resolve: IdentityResolver }
   | { mode: "deny"; resolve: IdentityResolver };
 
@@ -183,23 +204,25 @@ export const selectIdentity = (
 ): IdentitySetup => {
   const issuer = optional("CAPTURE_LEDGER_OIDC_ISSUER", "");
   if (issuer !== "") {
-    const clientIds = optional("CAPTURE_LEDGER_OIDC_CLIENT_IDS", "")
-      .split(",")
-      .map((id) => id.trim())
-      .filter((id) => id !== "");
+    // 項目は `ID` か `名前=ID`。読み方は config/identity.ts の 1 か所
+    const { ids: clientIds, names: clientNames } = clientsFromList(
+      optional("CAPTURE_LEDGER_OIDC_CLIENT_IDS", ""),
+    );
     if (clientIds.length === 0) {
       throw new Error(
         "CAPTURE_LEDGER_OIDC_ISSUER が在るのに CAPTURE_LEDGER_OIDC_CLIENT_IDS が空です。" +
-          "受ける app client の ID をカンマ区切りで書いてください (手元なら pnpm run idp:bootstrap が .env.local に書く)",
+          "受ける app client を `名前=ID` のカンマ区切りで書いてください (手元なら pnpm run idp:bootstrap が .env.local に書く)",
       );
     }
     return {
       mode: "jwt",
       issuer,
       clientIds,
+      clientNames,
       resolve: jwtIdentityResolver(createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`)), {
         issuer,
         clientIds,
+        clientNames,
         ...deps,
       }),
     };

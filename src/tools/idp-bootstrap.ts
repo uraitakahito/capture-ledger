@@ -187,7 +187,12 @@ const main = async () => {
   );
 
   const issuer = `${IDP_ENDPOINT}/${pool}`;
-  const clientIds = [workbench.ClientId, cli.ClientId, windmill.ClientId];
+  // `名前=ID`。API は名前を、その client から来たクロールの行に残す (src/config/identity.ts の clientsFromList)
+  const clientIds = [
+    `workbench=${workbench.ClientId}`,
+    `cli=${cli.ClientId}`,
+    `windmill=${windmill.ClientId}`,
+  ];
   const env = upsertEnvLocal({
     CAPTURE_LEDGER_OIDC_ISSUER: issuer,
     CAPTURE_LEDGER_OIDC_CLIENT_IDS: clientIds.join(","),
