@@ -29,6 +29,11 @@ export const SCRIPT_ENV = [
   "CAPTURE_LEDGER_FGA_IMAGE",
   "CAPTURE_LEDGER_FGA_DATASTORE_URI",
   "CAPTURE_LEDGER_IDP_ENDPOINT",
+  // pnpm run crawl (CAPTURE-450): 申告する席の名前と、席の名前を訊く castlist の宛先
+  "CAPTURE_LEDGER_ACTOR",
+  "CAPTURE_LEDGER_CASTLIST_URL",
+  // Claude Code が session ごとに入れる。castlist に席の名前を訊く鍵
+  "CLAUDE_CODE_SESSION_ID",
 ] as const;
 
 /**

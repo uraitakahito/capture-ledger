@@ -260,7 +260,7 @@ someone makes one, in capture-workbench's Schedules tab —
 Identify with a JWT. The headers from §6 do nothing on an API set up for JWTs.
 
 ```sh
-TOKEN=$(pnpm run --silent idp:token)   # a person: your user from idp:bootstrap, in acme. An AI agent: --user ai-cli (box below)
+TOKEN=$(pnpm run --silent idp:token)   # a person: your user from idp:bootstrap, in acme. An AI agent: pnpm run crawl (box below)
 curl -X POST http://127.0.0.1:7070/api/crawls \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -H "idempotency-key: $(uuidgen)" \
@@ -271,17 +271,25 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 `seeds` names the starting pages. Seeds follow links two levels deep by default; `maxDepth: 0` takes
 the page alone.
 
-:::caution[An AI agent starts crawls as its own user]
+:::caution[An AI agent starts crawls with its own app client]
 With no flags, `idp:token` gets a token for the human user that `idp:bootstrap` created. When an AI agent (a tool such as
 Claude Code) starts a crawl that way, the crawl is recorded under the same `sub` as the human, and the list in
-capture-workbench cannot tell who started it. An AI agent uses the dedicated user `ai-cli` instead.
+capture-workbench cannot tell who started it. An AI agent uses the CLI that starts crawls with the AI agent's app client `ai`.
 
 ```sh
-pnpm run idp:grant --user ai-cli            # once; again after idp or OpenFGA is recreated (when POST /api/crawls answers 404)
-TOKEN=$(pnpm run --silent idp:token --user ai-cli --org acme)
+pnpm run crawl start https://example.com/ --depth 0          # start one and print its crawl ID
+pnpm run crawl start https://example.com/ --depth 0 --wait   # wait for it to end and print the result
+pnpm run crawl show <crawlId>                                 # see how it is going
 ```
 
-Do not open `.dev/idp.env` (it holds the human user's password and the Windmill client secret), and do not run `idp:token` without flags.
+The CLI reads the client ID and secret from `.dev/idp-ai.env`, gets a token and calls the API. It prints neither the
+secret nor the token. The `ai` scope only starts and reads: it cannot create schedules or close a running crawl (ask a
+person). The seat name comes from `--actor`, `CAPTURE_LEDGER_ACTOR` or castlist (`CAPTURE_LEDGER_CASTLIST_URL`), in that
+order, and is kept on the row as declared.
+
+Do not open `.dev/idp.env` or `.dev/idp-ai.env`, and do not run `idp:token` without flags. Only when the CLI cannot be
+used, get a token as the dedicated user `ai-cli` (`pnpm run idp:grant --user ai-cli`, then
+`TOKEN=$(pnpm run --silent idp:token --user ai-cli --org acme)`).
 :::
 
 To try a site script, seed `https://laws.e-gov.go.jp/` and add `"variables":{"query":"個人情報"}` to the body.
