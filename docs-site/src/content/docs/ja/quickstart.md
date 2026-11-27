@@ -256,7 +256,7 @@ capture-scheduler のクイックスタートの最後にある `pnpm run doctor
 JWT で名乗ります。§6 のヘッダは、JWT の設定の API には効きません。
 
 ```sh
-TOKEN=$(pnpm run --silent idp:token)   # 人が打つとき: idp:bootstrap が作った自分の利用者（acme）。AI の担当は下の枠の --user ai-cli
+TOKEN=$(pnpm run --silent idp:token)   # 人が打つとき: idp:bootstrap が作った自分の利用者（acme）。AI の担当は下の枠の pnpm run crawl
 curl -X POST http://127.0.0.1:7070/api/crawls \
   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -H "idempotency-key: $(uuidgen)" \
@@ -266,17 +266,24 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 
 `seeds` は起点の URL を名指しします。既定はリンクを 2 段まで辿ることで、`maxDepth: 0` でそのページだけを取ります。
 
-:::caution[AI の担当は、自分の利用者で始めます]
+:::caution[AI の担当は、自分の app client で始めます]
 `idp:token` は、何も付けないと `idp:bootstrap` が作った人の利用者でトークンを取ります。AI の担当（Claude Code などの
 道具）がこれで始めると、クロールが人と同じ `sub` で残り、capture-workbench の一覧で誰が始めたかを見分けられません。
-AI の担当は、専用の利用者 `ai-cli` で取ります。
+AI の担当は、AI の担当の app client `ai` で始める CLI を使います。
 
 ```sh
-pnpm run idp:grant --user ai-cli            # 1 度だけ。idp か OpenFGA を作り直したら（POST /api/crawls が 404 なら）もう 1 度
-TOKEN=$(pnpm run --silent idp:token --user ai-cli --org acme)
+pnpm run crawl start https://example.com/ --depth 0          # 始めて、クロールの id を出す
+pnpm run crawl start https://example.com/ --depth 0 --wait   # 終わるまで待って、結果を出す
+pnpm run crawl show <crawlId>                                 # 様子を見る
 ```
 
-`.dev/idp.env`（人の利用者のパスワードと Windmill の secret が入っています）を開いたり、`idp:token` を何も付けずに打ったりしません。
+CLI は `.dev/idp-ai.env` から client の ID と secret を読み、token を取って叩きます。secret も token も出しません。
+`ai` の scope は始める・読むだけで、予定を作る・走っているクロールを締める、はできません（人に頼みます）。
+席の名前は `--actor`・`CAPTURE_LEDGER_ACTOR`・castlist（`CAPTURE_LEDGER_CASTLIST_URL`）の順に決め、申告として行に残ります。
+
+`.dev/idp.env` と `.dev/idp-ai.env` を開いたり、`idp:token` を何も付けずに打ったりしません。CLI が使えない時だけ、
+専用の利用者 `ai-cli` で取ります（`pnpm run idp:grant --user ai-cli` の後に
+`TOKEN=$(pnpm run --silent idp:token --user ai-cli --org acme)`）。
 :::
 
 サイト用のスクリプトを試すなら、起点を `https://laws.e-gov.go.jp/` にし、本文に `"variables":{"query":"個人情報"}` を足します。
