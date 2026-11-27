@@ -8,6 +8,7 @@ import {
   heldTokenOf,
   refusalText,
   startBody,
+  unreachableText,
   summaryOf,
   tokenRequest,
   tokenStillGood,
@@ -104,6 +105,12 @@ describe("席の名前 (申告)", () => {
     expect(actorFromCastlist({ actors: [] })).toBeUndefined();
     expect(actorFromCastlist({ error: "x" })).toBeUndefined();
   });
+
+  // 申告は表示のためだけ。castlist の名前が申告の字の形に合わなければ捨て、始めることを 400 で止めない
+  it("castlist の名前が申告の字の形に合わなければ、捨てる", () => {
+    expect(actorFromCastlist({ actors: [{ name: "席 1" }] })).toBeUndefined();
+    expect(actorFromCastlist({ actors: [{ name: "x".repeat(65) }] })).toBeUndefined();
+  });
 });
 
 describe("refusalText", () => {
@@ -119,6 +126,28 @@ describe("refusalText", () => {
     [400, { error: "missing seeds" }, "(400): missing seeds"],
   ])("%i は、次の手を言う", (status, body, expected) => {
     expect(refusalText(status, body)).toContain(expected);
+  });
+
+  // 1 本を読んだ時の 404 は、id の打ち違いか許可。idp:grant を勧めない
+  it("1 本を読んだ時の 404 は、id を確かめる", () => {
+    expect(refusalText(404, { error: "not found" }, true)).toContain("id を確かめる");
+    expect(refusalText(404, { error: "not found" }, true)).not.toContain("idp:grant");
+  });
+
+  // Fastify が 400 の訳を入れる message も出す (「Bad Request」だけでは迷う)
+  it("400 は error と message を出す", () => {
+    expect(
+      refusalText(400, { error: "Bad Request", message: 'params/id must match format "uuid"' }),
+    ).toBe('capture-ledger が断った (400): Bad Request: params/id must match format "uuid"');
+  });
+
+  it("繋がらない時は、どこに届かないかと起こす命令を言う", () => {
+    expect(unreachableText("idp", "http://127.0.0.1:4566/x")).toContain(
+      "pnpm run dev:up --from idp",
+    );
+    expect(unreachableText("api", "http://127.0.0.1:7070/api/crawls")).toContain(
+      "pnpm run dev:up --from api",
+    );
   });
 
   // 本文の error と scope のほかは載せない

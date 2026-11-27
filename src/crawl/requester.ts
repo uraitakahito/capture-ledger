@@ -20,6 +20,9 @@ export const ACTOR_HEADER = "x-capture-ledger-actor";
 /** 申告の名前の字。英数字で始まる、英数字と `.`・`_`・`-` の 1〜64 字 (`capture-450-swe.1` が入る)。 */
 const ACTOR_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
+/** 申告の名前の字の形に合うか。CLI (`src/tools/crawl.ts`) が、castlist から引いた名前を送る前に見る。 */
+export const isActorName = (value: string): boolean => ACTOR_SHAPE.test(value);
+
 /** 見出しの形が違うときの 400 の本文。 */
 export const INVALID_ACTOR = {
   error:

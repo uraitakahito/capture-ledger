@@ -25,6 +25,7 @@ import {
   summaryOf,
   tokenRequest,
   tokenStillGood,
+  unreachableText,
   type AiClient,
   type HeldToken,
 } from "./crawl-cli.js";
@@ -41,6 +42,15 @@ const POLL_MS = 5_000;
 
 class Refused extends Error {}
 
+/** fetch して、繋がらなければ、どこに届かないかを言う断りにする (素の `fetch failed` を出さない)。 */
+const reach = async (where: "idp" | "api", url: string, init?: RequestInit) => {
+  try {
+    return await fetch(url, init);
+  } catch {
+    throw new Refused(unreachableText(where, url));
+  }
+};
+
 const clientOrFail = (): AiClient => {
   const client = aiClientOf(readEnvFile(resolve(ROOT, IDP_AI_HANDOFF)));
   if ("error" in client) throw new Refused(client.error);
@@ -53,7 +63,7 @@ const tokens = (client: AiClient) => {
   return async (): Promise<string> => {
     if (tokenStillGood(held, Date.now())) return held.value;
     const { headers, body } = tokenRequest(client);
-    const res = await fetch(client.tokenEndpoint, { method: "POST", headers, body });
+    const res = await reach("idp", client.tokenEndpoint, { method: "POST", headers, body });
     const answer = heldTokenOf(res.status, await res.json().catch(() => ({})), Date.now());
     if ("error" in answer) throw new Refused(answer.error);
     held = answer;
@@ -82,7 +92,7 @@ const call = async (
   path: string,
   init: { headers?: Record<string, string>; body?: unknown } = {},
 ) => {
-  const res = await fetch(`${API}${path}`, {
+  const res = await reach("api", `${API}${path}`, {
     method,
     headers: {
       authorization: `Bearer ${await token()}`,
@@ -92,7 +102,7 @@ const call = async (
     ...(init.body !== undefined && { body: JSON.stringify(init.body) }),
   });
   const body: unknown = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Refused(refusalText(res.status, body));
+  if (!res.ok) throw new Refused(refusalText(res.status, body, method === "GET"));
   return body as Record<string, unknown>;
 };
 
@@ -134,11 +144,10 @@ program
       opts: { depth?: number; actor?: string; wait?: boolean; timeout: number },
     ) => {
       const token = tokens(clientOrFail());
-      const actor = actorFrom(
-        opts.actor,
-        optional("CAPTURE_LEDGER_ACTOR", ""),
-        await lookUpActor(),
-      );
+      // castlist は、旗と環境変数で決まらない時だけ訊く (遅い・届かない時に待たない。要らない時に session の ID を送らない)
+      const actor =
+        actorFrom(opts.actor, optional("CAPTURE_LEDGER_ACTOR", ""), undefined) ??
+        actorFrom(undefined, undefined, await lookUpActor());
       const answer = await call(token, "POST", "/api/crawls", {
         headers: {
           "idempotency-key": randomUUID(),
@@ -147,9 +156,11 @@ program
         body: startBody(urls, opts.depth),
       });
       const crawlId = String(answer["crawlId"]);
-      process.stdout.write(
+      // 知らせの行は stderr に (--wait の JSON を jq に渡せるように)。待たない時は、id だけを stdout に
+      process.stderr.write(
         `始めた: ${crawlId}${actor === undefined ? "（申告なし）" : `（席 ${actor}）`}\n`,
       );
+      if (!opts.wait) process.stdout.write(`${crawlId}\n`);
       if (opts.wait)
         process.stdout.write(
           `${JSON.stringify(await waitFor(token, crawlId, opts.timeout), null, 2)}\n`,

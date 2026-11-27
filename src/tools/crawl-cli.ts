@@ -8,6 +8,8 @@
  * `error` の字・足りない scope の名前だけ (見出しも本文の全部も載せない)。
  */
 
+import { isActorName } from "../crawl/requester.js";
+
 /** AI の担当の引き渡しファイル (`.dev/idp-ai.env`) から読む物。 */
 export interface AiClient {
   tokenEndpoint: string;
@@ -88,6 +90,7 @@ export const actorFrom = (
 /**
  * castlist の `GET /api/actors?binding=claude.session:<id>` の答えから、アクターの名前を 1 つ選ぶ。
  * 名前が 1 つに決まらなければ (無い・違う名前が 2 つ以上) undefined —— 誤った名前で申告しない。
+ * 申告の字の形 (`isActorName`) に合わない名前も捨てる —— 表示のための申告で、始めること自体を 400 で止めない。
  */
 export const actorFromCastlist = (body: unknown): string | undefined => {
   const record = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
@@ -102,13 +105,19 @@ export const actorFromCastlist = (body: unknown): string | undefined => {
       )
       .filter((name): name is string => typeof name === "string" && name !== ""),
   );
-  return names.size === 1 ? [...names][0] : undefined;
+  const [only] = names;
+  return names.size === 1 && only !== undefined && isActorName(only) ? only : undefined;
 };
 
-/** capture-ledger が断った時の文。次に打つ 1 行を添える。本文は `error` と `scope` の字だけを使う。 */
-export const refusalText = (status: number, body: unknown): string => {
+/**
+ * capture-ledger が断った時の文。次に打つ 1 行を添える。本文は `error`・`message`・`scope` の字だけを使う
+ * (`message` は Fastify が 400 の訳を入れる欄で、秘密は入らない)。`reading` は 1 本を読んだ時 (404 の訳が違う)。
+ */
+export const refusalText = (status: number, body: unknown, reading = false): string => {
   const record = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
-  const error = typeof record["error"] === "string" ? record["error"] : "";
+  const error = [record["error"], record["message"]]
+    .filter((part): part is string => typeof part === "string" && part !== "")
+    .join(": ");
   switch (status) {
     case 401:
       return (
@@ -118,7 +127,9 @@ export const refusalText = (status: number, body: unknown): string => {
     case 403:
       return `この client の scope では届かない (403)。要る scope: ${typeof record["scope"] === "string" ? record["scope"] : "不明"}`;
     case 404:
-      return "許可が無いか、エンドポイントが無い (404)。pnpm run idp:grant で ai の client に許可を付ける";
+      return reading
+        ? "そのクロールが無いか、許可が無い (404)。id を確かめる"
+        : "許可が無いか、エンドポイントが無い (404)。pnpm run idp:grant で ai の client に許可を付ける";
     case 409:
       return "走っているクロールが在る (409)。終わるのを待つ";
     default:
@@ -140,6 +151,12 @@ export const summaryOf = (crawl: Record<string, unknown>) => ({
 });
 
 /** 始める本文。起点と深さだけ (ほかの欄は capture-ledger の既定)。 */
+/** 繋がらなかった時の文。どこに届かないかと、起こす命令を言う。 */
+export const unreachableText = (where: "idp" | "api", url: string): string =>
+  where === "idp"
+    ? `IdP (${url}) に届かない。compose の idp は起きているか (pnpm run dev:up --from idp)`
+    : `capture-ledger の API (${url}) に届かない。起きているか (pnpm run dev:up --from api)`;
+
 export const startBody = (seeds: readonly string[], depth: number | undefined) => ({
   seeds,
   ...(depth !== undefined && { maxDepth: depth }),
