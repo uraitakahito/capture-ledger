@@ -431,8 +431,10 @@ route を scope で絞ります（`src/api/scope.ts`。人のトークンとヘ�
 | `capture-ledger/crawl.start` | `ai`            | クロールを始める（`POST /api/crawls`）・読む（`GET` の route みな・`POST /api/archives/:id/url`）だけ |
 
 足りない scope の要求は、本文を読む前に **403** `{"error":"insufficient_scope","scope":"<要る scope>"}` で断ります。
-狭い scope で届く route は一覧で持ち、**新しい route は一覧に足すまで `ai` には届きません**（`test/scope.test.ts` が、
-src の route を全部どちらかに分けます）。行を締める `POST /api/crawls/:id/failed` は、クロールを止める route ではない
+狭い scope で届く書き込みは一覧で持ち、**新しい書き込みの route は一覧に足すまで `ai` には届きません**
+（`test/scope.test.ts` が、src の書き込みの route を全部どちらかに分けます）。`GET` の route はみな届きます（組織の許可が絞ります）。
+`GET` で書き込みや費用を起こす route を足すなら、門（`src/api/scope.ts`）を見直します。
+機械の token は、`crawl` か `crawl.start` を頼んで取ります。どちらも持たない token は、`GET` でも 403 です。行を締める `POST /api/crawls/:id/failed` は、クロールを止める route ではない
 （flow は走り続ける）ので、`ai` には開きません。
 
 **止め方は 3 段です。** Cognito には、機械の token を期限の前に止める手段がありません。

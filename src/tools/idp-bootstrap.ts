@@ -87,14 +87,18 @@ const SCOPES = [
   { ScopeName: "crawl.start", ScopeDescription: "クロールを始め、読む（AI の担当）" },
 ];
 
-/** resource server を用意する。在って scope が足りなければ足す（作り直さずに、前の bootstrap のプールを揃える）。 */
+/**
+ * resource server を用意する。在って scope が足りなければ足す（作り直さずに、前の bootstrap のプールを揃える）。
+ * UpdateResourceServer は scope の並びを丸ごと置き換えるので、在る scope に足りない物を足した並びを渡す
+ * （手で足した scope を消さない）。
+ */
 const ensureResourceServer = async (pool: string) => {
-  let have: string[];
+  let have: { ScopeName: string; ScopeDescription?: string }[];
   try {
     const { ResourceServer } = await cognito<{
-      ResourceServer: { Scopes?: { ScopeName: string }[] };
+      ResourceServer: { Scopes?: { ScopeName: string; ScopeDescription?: string }[] };
     }>("DescribeResourceServer", { UserPoolId: pool, Identifier: RESOURCE_SERVER });
-    have = (ResourceServer.Scopes ?? []).map((scope) => scope.ScopeName);
+    have = ResourceServer.Scopes ?? [];
   } catch (err) {
     if (!(err instanceof CognitoError) || err.type !== "ResourceNotFoundException") throw err;
     await cognito("CreateResourceServer", {
@@ -105,12 +109,14 @@ const ensureResourceServer = async (pool: string) => {
     });
     return;
   }
-  if (SCOPES.every((scope) => have.includes(scope.ScopeName))) return;
+  const names = new Set(have.map((scope) => scope.ScopeName));
+  const missing = SCOPES.filter((scope) => !names.has(scope.ScopeName));
+  if (missing.length === 0) return;
   await cognito("UpdateResourceServer", {
     UserPoolId: pool,
     Identifier: RESOURCE_SERVER,
     Name: RESOURCE_SERVER,
-    Scopes: SCOPES,
+    Scopes: [...have, ...missing],
   });
 };
 
@@ -133,13 +139,23 @@ const AI_CLIENT = {
  */
 const syncClient = async (
   pool: string,
-  client: Client & { AllowedOAuthScopes?: string[]; AccessTokenValidity?: number },
+  client: Client & {
+    AllowedOAuthFlows?: string[];
+    AllowedOAuthScopes?: string[];
+    AllowedOAuthFlowsUserPoolClient?: boolean;
+    AccessTokenValidity?: number;
+    TokenValidityUnits?: { AccessToken?: string };
+  },
   settings: typeof AI_CLIENT,
 ): Promise<Client> => {
+  // 作る時だけの欄 (GenerateSecret) のほかを、みな比べる。期限は数と単位の両方 (止め方の段 1 が懸かる)
   const same =
+    JSON.stringify(client.AllowedOAuthFlows ?? []) === JSON.stringify(settings.AllowedOAuthFlows) &&
     JSON.stringify(client.AllowedOAuthScopes ?? []) ===
       JSON.stringify(settings.AllowedOAuthScopes) &&
-    client.AccessTokenValidity === settings.AccessTokenValidity;
+    client.AllowedOAuthFlowsUserPoolClient === settings.AllowedOAuthFlowsUserPoolClient &&
+    client.AccessTokenValidity === settings.AccessTokenValidity &&
+    client.TokenValidityUnits?.AccessToken === settings.TokenValidityUnits.AccessToken;
   if (same) return client;
   // 在る client の secret は作り直さない (GenerateSecret は作る時だけの欄)
   const rest: Omit<typeof settings, "GenerateSecret"> = {

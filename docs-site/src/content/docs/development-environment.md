@@ -450,9 +450,12 @@ are not checked).
 | `capture-ledger/crawl.start` | `ai`       | Starting a crawl (`POST /api/crawls`) and reading (every `GET` route and `POST /api/archives/:id/url`) only |
 
 A request without the scope it needs is refused with **403**
-`{"error":"insufficient_scope","scope":"<scope needed>"}` before its body is read. The routes the
-narrow scope reaches are a list, and **a new route does not reach `ai` until it is added to the list**
-(`test/scope.test.ts` sorts every route in src into one side or the other). `POST /api/crawls/:id/failed`
+`{"error":"insufficient_scope","scope":"<scope needed>"}` before its body is read. The writing routes the
+narrow scope reaches are a list, and **a new writing route does not reach `ai` until it is added to the list**
+(`test/scope.test.ts` sorts every writing route in src into one side or the other). Every `GET` route
+reaches it (the organization's permission narrows those). If you add a `GET` route that writes or costs
+something, revisit the gate (`src/api/scope.ts`). A machine token is obtained by asking for `crawl` or
+`crawl.start`; a token with neither gets 403 even on `GET`. `POST /api/crawls/:id/failed`
 only closes the row — it does not stop the crawl, and the flow keeps running — so `ai` does not get it.
 
 **Stopping it takes three steps.** Cognito has no way to stop a machine token before it expires.
