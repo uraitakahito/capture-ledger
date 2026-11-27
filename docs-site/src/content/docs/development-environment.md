@@ -35,7 +35,10 @@ pnpm run check       # every check to run before pushing (the list is package.js
 Start the stack with `pnpm run stack:up`, never with `container-compose`
 directly: before starting anything it checks whether the shared store is up, the toolchain, the
 `capture-ledger` DNS domain and the `.upstream/` submodules that every build
-context points at, and stops, naming whatever is missing.
+context points at, and stops, naming whatever is missing. When you name only services that do
+not use the store (`pnpm run stack:up postgres`, say), it does not look at the store (it prints
+`store: 見ていない`). Whether a service uses the store is read from `docker-compose.yml`; any flag or
+service name it does not know makes it look.
 
 The artifact store (SeaweedFS) is not part of this stack. It is one store shared by the
 [Web Capture](https://uraitakahito.github.io/capture-ledger/#web-capture) repos (`seaweedfs.crawler-storage`), started from the submodule:

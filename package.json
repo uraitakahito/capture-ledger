@@ -47,6 +47,7 @@
     "書き換えないために分けてある。端末側で渡した環境変数は、どちらにも勝つ (空の値でも勝つ) ——",
     ".env を書き換えずに 1 回だけ値を変えたいときに使える。",
     "stack:up: スタックを起こす唯一の命令。container-compose を直接叩かない (理由は scripts/stack.sh の冒頭)。",
+    "stack:up は build:tools を先に流す。起こすサービスが保管庫を使うかを、stack.sh が dist/tools/stack-needs-store.js に訊くため (t-e5bz)。",
     "dev:up: 立ち上げの段を順に起こす (段は `src/tools/dev-up.ts` の STEPS)。**打つコマンドを 1 行ずつ印字してから走らせる** (--dry-run で一覧、",
     "--from <段> で途中から)。新しい実装は持たず、既存の script を呼ぶだけ —— 中身が名前より",
     "小さいままであること。消した setup.sh と同じ轍を踏まないための条件 (`src/tools/dev-up.ts` の冒頭)。",
@@ -85,7 +86,7 @@
     "container を使う。"
   ],
   "name": "capture-ledger",
-  "version": "0.111.1",
+  "version": "0.111.2",
   "description": "Capture orchestrator for BrowserHive (https://github.com/uraitakahito/browserhive): decides which URLs get captured and keeps the ledger of what came back.",
   "license": "Unlicense",
   "type": "module",
@@ -124,7 +125,7 @@
     "dev:status": "pnpm run build:tools && node dist/tools/dev-status.js",
     "dev:down": "pnpm run build:tools && node dist/tools/dev-down.js",
     "check-comment-refs": "pnpm run build:tools && node dist/tools/check-comment-refs.js",
-    "stack:up": "./scripts/stack.sh up",
+    "stack:up": "pnpm run build:tools && ./scripts/stack.sh up",
     "stack:down": "./scripts/stack.sh down",
     "openapi:sync": "cp .upstream/browserhive/generated/openapi.json src/rpc/generated/browserhive/openapi.json",
     "site:dev": "pnpm --filter capture-ledger-docs-site run dev",
@@ -190,6 +191,7 @@
     "semver": "^7.8.6",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "yaml": "^2.9.1"
   }
 }
