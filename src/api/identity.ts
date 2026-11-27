@@ -82,7 +82,7 @@ export interface JwtCheck {
    * app client の ID から名前へ (CAPTURE-450)。名前の在る client から来たトークンは、名乗りに `client` を持つ。
    * 機械のトークンは `username` を持たないので、名前 (`name`) もここから取る。渡さなければ、どちらも無い。
    */
-  clientNames?: Readonly<Record<string, string>>;
+  clientNames?: ReadonlyMap<string, string>;
   /**
    * 機械（M2M）の組織を引く。M2M のトークンには `cognito:groups` が載らないので、
    * capture-ledger が OpenFGA に保存した許可から決める。渡さなければ、機械の組織は空のまま。
@@ -148,7 +148,7 @@ export const jwtIdentityResolver =
     if (claimed === undefined) return undefined;
     // どの app client から来たか。`accessTokenRefusal` を通ったので `client_id` は受ける一覧に在る。
     // 名前は設定 (`名前=ID`) が持つ —— トークンは client の名前を運ばない。
-    const client = options.clientNames?.[payload["client_id"] as string];
+    const client = options.clientNames?.get(payload["client_id"] as string);
     const identity: Identity = {
       ...claimed,
       ...(client !== undefined && { client }),
@@ -177,7 +177,7 @@ export type IdentitySetup =
       issuer: string;
       clientIds: string[];
       /** ID から名前へ。名前を書いた client だけ。 */
-      clientNames: Record<string, string>;
+      clientNames: Map<string, string>;
       resolve: IdentityResolver;
     }
   | { mode: "header"; resolve: IdentityResolver }
@@ -211,7 +211,7 @@ export const selectIdentity = (
     if (clientIds.length === 0) {
       throw new Error(
         "CAPTURE_LEDGER_OIDC_ISSUER が在るのに CAPTURE_LEDGER_OIDC_CLIENT_IDS が空です。" +
-          "受ける app client を `名前=ID` のカンマ区切りで書いてください (手元なら pnpm run idp:bootstrap が .env.local に書く)",
+          "受ける app client を `ID` か `名前=ID` のカンマ区切りで書いてください (手元なら pnpm run idp:bootstrap が .env.local に書く)",
       );
     }
     return {

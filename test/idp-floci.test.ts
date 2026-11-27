@@ -107,7 +107,10 @@ describe.skipIf(ENDPOINT === undefined)(
         issuer,
         clientIds: [web.ClientId, windmill.ClientId],
         // 名前はトークンに無く、設定 (`名前=ID`) が持つ (CAPTURE-450)
-        clientNames: { [web.ClientId]: "web", [windmill.ClientId]: "windmill" },
+        clientNames: new Map([
+          [web.ClientId, "web"],
+          [windmill.ClientId, "windmill"],
+        ]),
         machineOrganizations: (subject) =>
           Promise.resolve(subject === windmill.ClientId ? ["acme"] : []),
       });

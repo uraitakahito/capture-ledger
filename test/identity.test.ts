@@ -346,7 +346,10 @@ describe("jwtIdentityResolver の名前と app client", () => {
   const resolve = jwtIdentityResolver(keys.publicKey, {
     issuer: ISSUER,
     clientIds: [WEB, MACHINE, "nameless-client"],
-    clientNames: { [WEB]: "workbench", [MACHINE]: "windmill" },
+    clientNames: new Map([
+      [WEB, "workbench"],
+      [MACHINE, "windmill"],
+    ]),
     machineOrganizations: () => Promise.resolve(["acme"]),
   });
 
@@ -421,7 +424,10 @@ describe("selectIdentity の受ける app client の一覧", () => {
         expect(selectIdentity()).toMatchObject({
           mode: "jwt",
           clientIds: ["abc", "def", "ghi"],
-          clientNames: { abc: "workbench", ghi: "windmill" },
+          clientNames: new Map([
+            ["abc", "workbench"],
+            ["ghi", "windmill"],
+          ]),
         });
         return Promise.resolve();
       },

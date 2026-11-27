@@ -353,7 +353,8 @@ Cognito の access token は `aud` を持たず、M2M（machine-to-machine。cli
 CLIENT_IDS の項目は `名前=ID` か `ID` です（カンマ区切り）。名前を書くと、その app client から来たクロールの行に
 名前が残ります（[誰が・どこから始めたかを残す](/capture-ledger/ja/archive-ledger/#誰がどこから始めたかを残す)）。
 トークンは app client の名前を運ばないので、名前を持てるのはこの設定だけです。ID だけの項目も通り、名前が残らないだけです。
-形の崩れた項目（名前が空・`=` が 2 つ）が在ると、API は起動しません。
+名前に使えるのは英小文字・数字・`-` で、英小文字か数字で始まる 32 字までです（`ai`・`windmill`。`AI`・`ai_cli` は使えません）。
+形の崩れた項目（名前が決まりに合わない・ID が空・`=` が 2 つ・同じ ID に違う名前）が在ると、API は起動しません。
 
 本番の IdP は Amazon Cognito です。
 手元では Cognito を真似る [Floci](https://github.com/floci-io/floci) が代わりを務めます。

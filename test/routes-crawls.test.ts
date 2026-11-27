@@ -979,7 +979,7 @@ describe("クロール route の認可と単一実行", () => {
     });
 
     // 行に写して画面に出す字なので、形を限る。黙って落とさず 400 (呼び手が気づける)。
-    it.each(["", "a b", "名前", "-leading", "x".repeat(65), "<script>"])(
+    it.each(["a b", "名前", "-leading", "x".repeat(65), "<script>"])(
       "申告の名前 %j は 400 で、行を作らない",
       async (actor) => {
         const { status, crawls } = await startAs(

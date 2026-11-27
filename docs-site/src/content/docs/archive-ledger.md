@@ -702,8 +702,9 @@ crawl) return them under the same names.
 | `requestedClient` | Which app client the token belongs to. The name is the one written as `name=ID` in `CAPTURE_LEDGER_OIDC_CLIENT_IDS` (tokens carry no name) |
 | `requestedActor`  | The name the caller wrote in the `X-Capture-ledger-Actor` header. **Declared, not verified**                                               |
 
-Unknown values are `null` (the development-header path, an app client with no name, scheduled runs,
-and rows older than these fields). **None of the three is used for authorization.** When several callers
+Unknown values are `null` (an app client with no name, scheduled runs, and rows older than these
+fields). On the development-header path the name and the app client are `null`, while a declared
+name is still kept when the header is sent. **None of the three is used for authorization.** When several callers
 share one app client — the seats of an AI agent, for example — the token cannot say which one it was,
 so a caller may add its own name in a header. Anyone can write any name, so capture-workbench labels it
 as declared.
@@ -716,7 +717,8 @@ curl -X POST http://127.0.0.1:7070/api/crawls \
 ```
 
 The header takes up to 64 characters: letters, digits, `.`, `_` and `-`, starting with a letter or
-digit. Anything else is a **400**, and no row is created. The header is not part of the
+digit. Anything else is a **400**, and no row is created. An empty header is the same as no header
+(nothing declared). The header is not part of the
 `Idempotency-Key` comparison (the digest covers the body only).
 
 Membership cannot stand in for it. Organizations arrive as contextual tuples

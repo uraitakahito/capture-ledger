@@ -15,7 +15,16 @@ describe("actorOf", () => {
   });
 
   // null は「在るが形が違う」。route はこれを 400 にする (黙って落とすと、申告したつもりの席が気づけない)。
-  it.each(["", " ", "a b", ".hidden", "-x", "席", "a/b", "x".repeat(65)])("%j は null", (value) => {
+  // 道具が「席の名前が分からなければ空」で見出しをいつも送っても、クロールは始まる。
+  it.each(["", " ", "\t"])("空の見出し %j は、無いのと同じ (申告なし)", (value) => {
+    expect(actorOf(value)).toBeUndefined();
+  });
+
+  it("前後の空白は落として読む", () => {
+    expect(actorOf(" seat-1 ")).toBe("seat-1");
+  });
+
+  it.each(["a b", ".hidden", "-x", "席", "a/b", "x".repeat(65)])("%j は null", (value) => {
     expect(actorOf(value)).toBeNull();
   });
 

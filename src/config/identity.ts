@@ -30,10 +30,13 @@ export interface Identity {
 /** 人の access token が利用者の名前を載せるクレーム (Cognito と代役の Floci)。機械のトークンには無い。 */
 export const USERNAME_CLAIM = "username";
 
-/** 受ける app client の一覧を読んだ結果。`names` は ID から名前へ (名前を書いた client だけ)。 */
+/**
+ * 受ける app client の一覧を読んだ結果。`names` は ID から名前へ (名前を書いた client だけ)。
+ * Map にしてあるのは、ID が `constructor` のような object の元から在る名前でも、名前の無い client として読むため。
+ */
 export interface AcceptedClients {
   ids: string[];
-  names: Record<string, string>;
+  names: Map<string, string>;
 }
 
 /** app client の名前に使える字。行に写して画面に出すので、狭くしておく。 */
@@ -44,11 +47,12 @@ const CLIENT_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/;
  *
  * 名前を書くと、その client から来たクロールの行に名前が残る (`crawls.requested_client`)。ID だけの
  * 書き方は今までどおり通り、名前が残らないだけ。**形の崩れた項目は投げる** —— 黙って落とすと、その client の
- * トークンが 401 になり、設定の誤りが「トークンが悪い」に見える。
+ * トークンが 401 になり、設定の誤りが「トークンが悪い」に見える。同じ ID に違う名前を書いた時も投げる
+ * (どちらかが黙って勝つと、「始めた人」の欄が黙って誤る)。
  */
 export const clientsFromList = (value: string): AcceptedClients => {
   const ids: string[] = [];
-  const names: Record<string, string> = {};
+  const names = new Map<string, string>();
   for (const item of value.split(",").map((part) => part.trim())) {
     if (item === "") continue;
     const at = item.indexOf("=");
@@ -64,8 +68,15 @@ export const clientsFromList = (value: string): AcceptedClients => {
           "`ID` か `名前=ID` で書いてください (名前は英小文字・数字・ハイフンで 32 字まで)",
       );
     }
+    const before = names.get(id);
+    if (before !== undefined && before !== name) {
+      throw new Error(
+        `CAPTURE_LEDGER_OIDC_CLIENT_IDS の項目 "${item}" が読めません。` +
+          `同じ ID に、違う名前 "${before}" がもう書いてあります`,
+      );
+    }
     ids.push(id);
-    names[id] = name;
+    names.set(id, name);
   }
   return { ids, names };
 };

@@ -204,6 +204,7 @@ export interface CrawlsTable {
   /**
    * 始めた時の読める名前 (`044`)。人はトークンの `username`、機械は app client の名前。**表示のための物** ——
    * 許可と `owner` tuple は `requestedBy` で書く。`044` より前の行・定期の回・ヘッダの経路は NULL。後から書き換えない。
+   * (申告の名前 `requestedActor` だけは、ヘッダの経路でも見出しを送れば残る。)
    */
   requestedByName: ColumnType<string | null, string | null | undefined, never>;
   /** どの app client から来たか (`044`。受ける一覧に書いた名前)。分からなければ NULL。後から書き換えない。 */

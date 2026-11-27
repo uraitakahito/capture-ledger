@@ -204,7 +204,8 @@ const scheduleOf = (crawl: {
 
 /**
  * 始めた時の名前と出どころ (`044`)。一覧と 1 本の両方が同じ形で返す。**表示のための物** —— 分からなければ null
- * (`044` より前の行・定期の回・ヘッダの経路)。`requestedActor` は呼び手の申告で、確かめていない。
+ * (`044` より前の行・定期の回。ヘッダの経路は名前と app client が null)。`requestedActor` は呼び手の申告で、確かめていない
+ * (名乗りの経路に依らず、見出しを送れば残る)。
  */
 const requesterNamesOf = (crawl: {
   requestedByName: string | null;

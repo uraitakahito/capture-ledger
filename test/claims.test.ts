@@ -129,25 +129,44 @@ describe("organizationsFromList", () => {
  */
 describe("clientsFromList", () => {
   it("ID だけの項目は、今までどおり読む（名前は無い）", () => {
-    expect(clientsFromList(" web , windmill ,")).toEqual({ ids: ["web", "windmill"], names: {} });
+    expect(clientsFromList(" web , windmill ,")).toEqual({
+      ids: ["web", "windmill"],
+      names: new Map(),
+    });
   });
 
   it("名前=ID の項目は、ID と名前を読む", () => {
     expect(clientsFromList("workbench=abc,ai = def")).toEqual({
       ids: ["abc", "def"],
-      names: { abc: "workbench", def: "ai" },
+      names: new Map([
+        ["abc", "workbench"],
+        ["def", "ai"],
+      ]),
     });
   });
 
   it("2 つの書き方を混ぜてよい", () => {
     expect(clientsFromList("workbench=abc,def")).toEqual({
       ids: ["abc", "def"],
-      names: { abc: "workbench" },
+      names: new Map([["abc", "workbench"]]),
     });
   });
 
   it("空文字なら空", () => {
-    expect(clientsFromList("")).toEqual({ ids: [], names: {} });
+    expect(clientsFromList("")).toEqual({ ids: [], names: new Map() });
+  });
+
+  // どちらかが黙って勝つと、「始めた人」の欄が黙って誤る。同じ名前の書き直しは害が無いので通す。
+  it("同じ ID に違う名前を書いたら投げる。同じ名前なら通す", () => {
+    expect(() => clientsFromList("a=abc,b=abc")).toThrow(/同じ ID に、違う名前 "a"/);
+    expect(clientsFromList("a=abc,a=abc").names).toEqual(new Map([["abc", "a"]]));
+  });
+
+  // ID が object の元から在る名前でも、名前の無い client として読む (名前を引くと関数が返る、を塞ぐ)。
+  it("constructor という ID は、名前の無い client", () => {
+    const { ids, names } = clientsFromList("constructor");
+    expect(ids).toEqual(["constructor"]);
+    expect(names.get("constructor")).toBeUndefined();
   });
 
   // 名前は行に写して画面に出す。字を限り、崩れた項目は黙って落とさずに投げる。

@@ -26,10 +26,18 @@ export const INVALID_ACTOR = {
     "X-Capture-ledger-Actor must be 1 to 64 characters: letters, digits, '.', '_' or '-', starting with a letter or digit",
 };
 
-/** 見出しから申告の名前を読む。無ければ undefined、2 つ在る・形が違うなら null (400)。 */
+/**
+ * 見出しから申告の名前を読む。無ければ undefined、2 つ在る・形が違うなら null (400)。
+ *
+ * **空の見出しは「無い」と同じ** (申告なし)。道具が「席の名前が分からなければ空」で見出しをいつも送っても、
+ * クロールは始まる。前後の空白は HTTP の決まりで値に入らないので、落として読む。
+ */
 export const actorOf = (header: string | string[] | undefined): string | undefined | null => {
   if (header === undefined) return undefined;
-  return typeof header === "string" && ACTOR_SHAPE.test(header) ? header : null;
+  if (typeof header !== "string") return null;
+  const value = header.trim();
+  if (value === "") return undefined;
+  return ACTOR_SHAPE.test(value) ? value : null;
 };
 
 /**
