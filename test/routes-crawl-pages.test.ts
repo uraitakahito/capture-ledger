@@ -3,7 +3,7 @@
  *
  * 本物の Kysely に SQL を組ませ、実行の直前で取り上げる代役 (`recording-db.ts`) で見る。返す行は試験が並べた物
  * なので、**SQL が Postgres で本当に通るかはここでは言えない** (この repo に DB の試験は無い)。ここで見るのは、
- * 組まれた SQL の形 (task_id の uuid 側を text に倒す・ページはクロールとの組で引く) と、エンドポイントが答える形 (並び・続き・
+ * 組まれた SQL の形 (task_id はどちらも uuid で cast しない・ページはクロールとの組で引く) と、エンドポイントが答える形 (並び・続き・
  * 読めない理由・認可・400・502)。保管庫は、読みに来た鍵を数える偽物。
  */
 import { describe, it, expect } from "vitest";
@@ -157,7 +157,7 @@ describe("クロールの一覧の行", () => {
 describe("クロールのページを読む", () => {
   const url = `/api/crawls/${CRAWL}/pages`;
 
-  it("ページを id の昇順で返し、WACZ は task_id の uuid 側を text に倒して繋ぐ（続きが無ければ next は null）", async () => {
+  it("ページを id の昇順で返し、WACZ は task_id で cast せずに繋ぐ（続きが無ければ next は null）", async () => {
     const pending = row({
       id: "43",
       url: "https://site.test/next",
@@ -238,7 +238,7 @@ describe("クロールのページを読む", () => {
         '"p"."task_id", "p"."log_counts", "a"."id" as "archive_id", "a"."captured_at", ' +
         '"a"."replay_bundle_rev" as "bundled_rev", "sh"."stage" as "shot_stage", "sh"."skipped" as "shot_skipped", ' +
         '"sh"."bytes" as "shot_bytes", "sh"."problem" as "shot_problem" from "crawl_pages" as "p" ' +
-        'left join "archives" as "a" on "p"."task_id" = "a"."task_id"::text ' +
+        'left join "archives" as "a" on "p"."task_id" = "a"."task_id" ' +
         // 絵は読み込みの後の 1 枚。時点は字で埋める (引数の番号をずらさない)
         'left join "archive_screenshots" as "sh" on "sh"."archive_id" = "a"."id" and "sh"."stage" = \'after-load\' ' +
         'where "p"."crawl_id" = $1 order by "p"."id", "a"."created_at" limit $2',
@@ -324,7 +324,7 @@ describe("1 ページの取り込みのログを読む", () => {
     reason,
   });
 
-  it("ページはクロールとの組で引き、capture_submissions は task_id の uuid 側を text に倒して繋ぐ", async () => {
+  it("ページはクロールとの組で引き、capture_submissions は task_id で cast せずに繋ぐ", async () => {
     const { queries } = await get(url, { results: [[row({ manifestKey: null })]] });
     expect(queries).toHaveLength(1);
     expect(queries[0]?.sql).toBe(
@@ -333,9 +333,9 @@ describe("1 ページの取り込みのログを読む", () => {
         '"a"."replay_bundle_rev" as "bundled_rev", "sh"."stage" as "shot_stage", "sh"."skipped" as "shot_skipped", ' +
         '"sh"."bytes" as "shot_bytes", "sh"."problem" as "shot_problem", "s"."manifest_key" ' +
         'from "crawl_pages" as "p" ' +
-        'left join "archives" as "a" on "p"."task_id" = "a"."task_id"::text ' +
+        'left join "archives" as "a" on "p"."task_id" = "a"."task_id" ' +
         'left join "archive_screenshots" as "sh" on "sh"."archive_id" = "a"."id" and "sh"."stage" = \'after-load\' ' +
-        'left join "capture_submissions" as "s" on "p"."task_id" = "s"."task_id"::text ' +
+        'left join "capture_submissions" as "s" on "s"."task_id" = "p"."task_id" ' +
         'where "p"."crawl_id" = $1 and "p"."id" = $2 order by "p"."id", "a"."created_at"',
     );
     expect(queries[0]?.parameters).toEqual([CRAWL, "42"]);

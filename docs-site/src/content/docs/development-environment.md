@@ -333,6 +333,8 @@ the file stops Kysely with `corrupted migrations`. To remove a table, add a migr
 
 `042` adds a stored generated column to `archives`, so Postgres rewrites the table (on a database with many rows that takes time, and the table cannot be written to meanwhile).
 
+`043` changes `crawl_pages.task_id` from text to uuid, so Postgres rewrites `crawl_pages` and rebuilds its indexes; the table cannot be read or written meanwhile. It waits at most 5 seconds for the lock and otherwise fails without changing anything (run it again once the long query has finished). If any `task_id` is not uuid-shaped it stops without changing anything and names the rows; empty strings become NULL. **Apply it together with the code of the same release** — the code before it joins `uuid::text = text`, the code after it `uuid = uuid`, and each fails against the other column type with `operator does not exist`. Roll back the same way: `db:migrate:down` while still on the release that added it, then the older code.
+
 ## Setting up an identity locally
 
 There is one entry point for identity — the API — and it **denies everyone by

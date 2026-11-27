@@ -239,6 +239,34 @@ describe("段の報告と manifest", () => {
     ).toBe(400);
   });
 
+  // `crawl_pages.task_id` は uuid (`043`)。受けてから DB で落ちる (500) 前に、報告ごと断る。
+  // `urn:uuid:` の頭は ajv-formats の uuid なら通るが、Postgres の uuid は読まない
+  it.each(["t7", "", `urn:uuid:${TASK}`, `${TASK}x`])(
+    "uuid の形でない taskId（%j）は 400",
+    async (taskId) => {
+      expect(
+        await report([
+          { url: PAGE, status: "captured", taskId, manifestLocation: "s3://b/x.result.json" },
+        ]),
+      ).toBe(400);
+      expect(inserted).toEqual([]);
+      expect(admitLevel).not.toHaveBeenCalled();
+    },
+  );
+
+  it("大文字の uuid の taskId は断らない（Postgres の uuid は読む）", async () => {
+    expect(
+      await report([
+        {
+          url: PAGE,
+          status: "captured",
+          taskId: TASK.toUpperCase(),
+          manifestLocation: "s3://b/x.result.json",
+        },
+      ]),
+    ).not.toBe(400);
+  });
+
   // 投入が通らなかったページ (taskId が無い) に結末は付かない。
   it("taskId の無い結末は 400", async () => {
     expect(

@@ -41,7 +41,7 @@
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { OpenFgaClient } from "@openfga/sdk";
 import type { FastifyInstance } from "fastify";
-import { sql, type Kysely } from "kysely";
+import type { Kysely } from "kysely";
 
 import {
   failureScreenshotKey,
@@ -177,9 +177,7 @@ export const registerTraceRoutes = (app: FastifyInstance, deps: TraceRouteDeps):
 
       const { id: crawlId, page: pageId } = request.params;
       const row = await pageRows(db, crawlId)
-        .leftJoin("captureSubmissions as s", (join) =>
-          join.onRef("p.taskId", "=", sql<string>`${sql.ref("s.taskId")}::text`),
-        )
+        .leftJoin("captureSubmissions as s", "s.taskId", "p.taskId")
         .select(["s.manifestKey", "s.orgId", "p.submittedAt", "p.finishedAt", "a.objectKey"])
         .where("p.id", "=", pageId)
         .executeTakeFirst();
@@ -241,12 +239,10 @@ export const registerTraceRoutes = (app: FastifyInstance, deps: TraceRouteDeps):
       if (!(await maySubmit(fga, identity))) return notFound();
 
       const { id: crawlId, page: pageId } = request.params;
-      // 取り込みの答えの無いページ (`task_id` が無い) は行ごと出ない。繋ぎ方は `pageRows` と同じ (uuid 側を text に倒す)
+      // 取り込みの答えの無いページ (`task_id` が無い) は行ごと出ない。繋ぎ方は `pageRows` と同じ (どちらも uuid)
       const row = await db
         .selectFrom("crawlPages as p")
-        .innerJoin("captureSubmissions as s", (join) =>
-          join.onRef("p.taskId", "=", sql<string>`${sql.ref("s.taskId")}::text`),
-        )
+        .innerJoin("captureSubmissions as s", "s.taskId", "p.taskId")
         .select(["s.orgId", "s.manifestKey"])
         .where("p.crawlId", "=", crawlId)
         .where("p.id", "=", pageId)

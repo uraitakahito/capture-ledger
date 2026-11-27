@@ -82,8 +82,8 @@ manifest_key を持ち、archives に行の無い capture_submissions の行
 **1 ページの取り込みのログのエンドポイント**（`GET /api/crawls/:id/pages/:page/log`）が、ページの行の `task_id`
 からこの表の `manifest_key` を引き、その `.result.json` の `log`
 を返します（[ページと取り込みのログ](/capture-ledger/ja/archive-ledger/#ページと取り込みのログ)）。
-`crawl_pages.task_id` は text、この表の `task_id` は uuid なので、uuid の側を text に倒して繋ぎます
-—— 逆向きは、uuid の形でない値が 1 行でもあると問い合わせごと落ちます。
+`task_id` はどちらも uuid です（`crawl_pages.task_id` は text でしたが、`043` で揃えました）。なので、この表の主キーで
+引きます。
 
 **取り込みの経緯のエンドポイント**（`GET /api/crawls/:id/pages/:page/trace`）も、同じ道で `manifest_key` を引き、
 その `.result.json` から取り込みの欄・`log`・`trace` を返します（[取り込みの経緯](/capture-ledger/ja/archive-ledger/#取り込みの経緯)）。

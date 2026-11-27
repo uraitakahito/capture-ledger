@@ -55,7 +55,6 @@
  * 古い版の失敗は書かない。次に書けたら消える。
  */
 import type { Kysely } from "kysely";
-import { sql } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
 import { putObject } from "../archive/s3.js";
 import type { Database } from "../db/database.js";
@@ -108,7 +107,7 @@ export interface WriteReplayBundleOptions {
  * 027 より前のアーカイブを、クロールに繋ぐ (`archives.crawl_id` が空で、そのクロールの頁の行が同じ task_id を
  * 持つ物)。繋いだ数を返す。作り直しの道具だけが呼ぶ —— 027 からは受けるときに入る (`archive/admit.ts`)。
  *
- * 繋ぎ方は capture-ledger の他のエンドポイント (`waczCount`・索引のエンドポイント) と同じ `crawl_pages.task_id` で、uuid 側を text に倒す。
+ * 繋ぎ方は capture-ledger の他のエンドポイント (`waczCount`・索引のエンドポイント) と同じ `crawl_pages.task_id` (どちらも uuid。`043`)。
  */
 export const linkArchivesToCrawl = async (
   db: Kysely<Database>,
@@ -124,7 +123,7 @@ export const linkArchivesToCrawl = async (
           .selectFrom("crawlPages as p")
           .select("p.id")
           .where("p.crawlId", "=", crawlId)
-          .where("p.taskId", "=", sql<string>`${sql.ref("archives.taskId")}::text`),
+          .whereRef("p.taskId", "=", "archives.taskId"),
       ),
     )
     .executeTakeFirst();
@@ -201,11 +200,9 @@ export const writeReplayBundle = async (
     // **検めていない物も読む** —— 同じ問い合わせで未検めを数える (上の「いつ署名するか」)
     const rows = await trx
       .selectFrom("archives as a")
-      // 深さは、その取り込みを報告した頁の行から。`crawl_pages.task_id` は text なので uuid 側を倒す
+      // 深さは、その取り込みを報告した頁の行から (task_id はどちらも uuid。`043`)
       .leftJoin("crawlPages as p", (join) =>
-        join
-          .onRef("p.crawlId", "=", "a.crawlId")
-          .onRef("p.taskId", "=", sql<string>`${sql.ref("a.taskId")}::text`),
+        join.onRef("p.crawlId", "=", "a.crawlId").onRef("p.taskId", "=", "a.taskId"),
       )
       .select([
         "a.id",

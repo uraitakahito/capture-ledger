@@ -31,7 +31,6 @@
  */
 import type { FastifyInstance } from "fastify";
 import type { Kysely } from "kysely";
-import { sql } from "kysely";
 import type { S3Client } from "@aws-sdk/client-s3";
 import type { OpenFgaClient } from "@openfga/sdk";
 import type { Client } from "@opensearch-project/opensearch";
@@ -79,10 +78,7 @@ export interface SearchRouteDeps {
  * クロール 1 本ぶんの、まだ索引に載せていないアーカイブ。繋ぐのは `crawl_pages.task_id` —— `archives.crawl_id`
  * (`027`。合本のために足した来歴の列) は 027 より前の行で空なので、ここでは使わない。
  *
- * **型が揃っていないので cast する。** `archives.task_id` は `uuid` (`002`)、
- * `crawl_pages.task_id` は `text` (`008`) で、素の比較は
- * `operator does not exist: text = uuid` になる。向きは uuid → text ——
- * 逆向きは UUID として読めない値が 1 行でもあると問い合わせ全体が落ちる。
+ * `task_id` はどちらも uuid (`043` で揃えた) なので、そのまま繋いで `crawl_pages_task_id_idx` で引く。
  *
  * `archives.correlation_id` で引く手もある (クロールは crawl id を
  * correlationId として投げるので一致する) が、あちらは **申し合わせ** で、
@@ -93,9 +89,7 @@ const pendingArchivesOf =
   (crawlId: string): Promise<PendingArchive[]> =>
     db
       .selectFrom("archives")
-      .innerJoin("crawlPages", (join) =>
-        join.onRef("crawlPages.taskId", "=", sql<string>`${sql.ref("archives.taskId")}::text`),
-      )
+      .innerJoin("crawlPages", "crawlPages.taskId", "archives.taskId")
       .select([
         "archives.id",
         "archives.bucket",
