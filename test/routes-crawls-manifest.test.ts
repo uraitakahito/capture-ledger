@@ -50,7 +50,11 @@ const levelChain: Record<string, unknown> = new Proxy(
   },
 );
 
-const fakeDb = {
+const fakeDb: Record<string, unknown> = {
+  // ページを閉じる書き込みと帰属の書き込みは 1 つのトランザクション (t-e5bz)。中でも同じ偽物を使う
+  transaction: () => ({
+    execute: (fn: (trx: unknown) => Promise<unknown>) => fn(fakeDb),
+  }),
   selectFrom: (table: string) => (table === "crawlLevels" ? levelChain : selectCrawl),
   updateTable: (table: string) => (table === "crawlLevels" ? levelChain : updateOther),
   insertInto: () => ({

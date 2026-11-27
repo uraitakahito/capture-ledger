@@ -187,6 +187,12 @@ jobs:
       - name: History against Postgres
         run: pnpm run build:tools && node dist/tools/history-smoke.js
 
+      # 段の報告の「ページを閉じる」と「帰属を書く」が 1 つのトランザクションか (t-e5bz) を、本物の Postgres と本物の
+      # route に当てる。帰属の INSERT を trigger で落として両方とも残らないこと・同じ段の鍵の再試行で通ることは、試験の
+      # 記録する DB では確かめられない。自分の組織 (smoke-<pid>) のクロール 1 本と、一時の trigger だけを足して、最後に消す。
+      - name: Level report against Postgres
+        run: pnpm run build:tools && node dist/tools/level-report-smoke.js
+
       # 契約 (openapi.json) から生成した型が、コミットされた物と一致するか。
       - name: OpenAPI types drift check
         run: pnpm run openapi:check

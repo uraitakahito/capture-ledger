@@ -1639,7 +1639,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // **締めた段・締めたクロールに届いた報告** (CAPTURE-77): ページは記録し (archives にも入る)、次の段は作らない。
       let closedLevel = level.state === "abandoned" || crawl.state !== "running";
       // 報告の試みの印。終わりの commit はこの印が同じときだけ通す —— 期限切れで取り直した 2 本目と、遅れた
-      // 1 本目が並んでも、片方しか書けない。1 つのトランザクションにしないのは、途中で保管庫を読むから
+      // 1 本目が並んでも、片方しか書けない。報告の全部を 1 つのトランザクションにしないのは、途中で保管庫を読むから
+      // (読む間、行の錠と接続を持たない)。保管庫を読まない「ページを閉じる」と「帰属を書く」だけは 1 つにする (下の 1・2)
       const token = randomUUID();
       /**
        * 報告中の期限を延ばす。保管庫を読む段 (manifest・リンク) の後に呼ぶ —— 頁の多い段の処理が 2 分を超えても、
@@ -1727,32 +1728,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           return reply.code(500).send({ error: "a crawl rule is not readable" });
         }
 
-        // ── 1. 報告された行を閉じる ────────────────────────────────────────
-        // 閉じた行の id は、そのページで見つけたリンクの `discovered_from` に書く (木の形を後から辿れる)。
-        const idOf = new Map<string, string>();
-        for (const page of results) {
-          const closed = await db
-            .updateTable("crawlPages")
-            .set({
-              state: page.status,
-              skipReason: page.skipReason ?? null,
-              taskId: page.taskId ?? null,
-              correlationId: page.correlationId ?? null,
-              submittedAt: page.submittedAt ?? null,
-              finishedAt: page.finishedAt ?? null,
-            })
-            .where("crawlId", "=", crawlId)
-            .where("url", "=", page.url)
-            .returning("id")
-            .executeTakeFirst();
-          if (closed !== undefined) idOf.set(page.url, closed.id);
-        }
-
-        // ── 2. 帰属を書く ────────────────────────────────────────────────
-        // 投げたのが ledger でなくても、記録はここに残す。reconciler はこの行 (帰属と
-        // manifest の鍵) だけを読む。
-        //
-        // **状態は問わない。`taskId` を持つ全件に書く。** 以前は `captured` だけに
+        // 2 で使う物を先に組む (保管庫は読まない)。
+        // **状態は問わない。`taskId` を持つ全件に帰属を書く。** 以前は `captured` だけに
         // 書いていたが、それだと失敗と報告された取り込みの帰属が残らない ——
         // 実体が S3 に在っても組織が言えず、capture-ledger に入れようがない。
         // 投入が通っている限り id は在るので、書かない理由が無い。
@@ -1764,29 +1741,62 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         const manifests = new Map(
           submitted.map((r) => [r.taskId, manifestOutcome(r, deps.bucket)]),
         );
+
+        // ── 1・2 は 1 つのトランザクション (t-e5bz) ──────────────────────────
+        // 別々に書くと、間で落ちて flow の再試行も通らなかったとき、ページは閉じて task_id も在るのに
+        // 帰属の行が無いまま残る。`reconcile` は帰属の行だけを読むので、その取り込みは誰にも拾われず
+        // `archives` から黙って欠ける。1 つにすれば、両方在るか両方無い (無ければ再試行が初めからやり直す)。
+        // 保管庫を読む 2b からは外 —— 読む間、行の錠と接続を持たない。
+        const idOf = new Map<string, string>();
+        await db.transaction().execute(async (trx) => {
+          // ── 1. 報告された行を閉じる ──────────────────────────────────────
+          // 閉じた行の id は、そのページで見つけたリンクの `discovered_from` に書く (木の形を後から辿れる)。
+          for (const page of results) {
+            const closed = await trx
+              .updateTable("crawlPages")
+              .set({
+                state: page.status,
+                skipReason: page.skipReason ?? null,
+                taskId: page.taskId ?? null,
+                correlationId: page.correlationId ?? null,
+                submittedAt: page.submittedAt ?? null,
+                finishedAt: page.finishedAt ?? null,
+              })
+              .where("crawlId", "=", crawlId)
+              .where("url", "=", page.url)
+              .returning("id")
+              .executeTakeFirst();
+            if (closed !== undefined) idOf.set(page.url, closed.id);
+          }
+
+          // ── 2. 帰属を書く ──────────────────────────────────────────────
+          // 投げたのが ledger でなくても、記録はここに残す。reconciler はこの行 (帰属と
+          // manifest の鍵) だけを読む。
+          if (submitted.length > 0) {
+            await trx
+              .insertInto("captureSubmissions")
+              .values(
+                // **戻り値の型を書く。** 無いと excess property 検査が効かず、`.map()` を
+                // 通った object literal は**存在しない列を書いても typecheck が緑になる**
+                // (`source_url` を落としたときに実測)。
+                submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
+                  taskId: r.taskId,
+                  correlationId: r.correlationId ?? crawlId,
+                  orgId: crawl.orgId,
+                  submittedBy: crawl.requestedBy,
+                  // nullable な列は `Insertable` で省略できる —— 書き忘れても typecheck は緑。
+                  // 値は `test/routes-crawls-manifest.test.ts` が見ている。
+                  manifestKey: manifests.get(r.taskId)?.key ?? null,
+                  manifestError: manifests.get(r.taskId)?.error ?? null,
+                })),
+              )
+              .onConflict((oc) => oc.column("taskId").doNothing())
+              .execute();
+          }
+        });
+
         let recovered: string[] = [];
         if (submitted.length > 0) {
-          await db
-            .insertInto("captureSubmissions")
-            .values(
-              // **戻り値の型を書く。** 無いと excess property 検査が効かず、`.map()` を
-              // 通った object literal は**存在しない列を書いても typecheck が緑になる**
-              // (`source_url` を落としたときに実測)。ledger に DB を使う試験は 1 本も
-              // 無いので、schema とのずれを静的に捕まえるのはここだけ。
-              submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
-                taskId: r.taskId,
-                correlationId: r.correlationId ?? crawlId,
-                orgId: crawl.orgId,
-                submittedBy: crawl.requestedBy,
-                // nullable な列は `Insertable` で省略できる —— 書き忘れても typecheck は緑。
-                // 値は `test/routes-crawls-manifest.test.ts` が見ている。
-                manifestKey: manifests.get(r.taskId)?.key ?? null,
-                manifestError: manifests.get(r.taskId)?.error ?? null,
-              })),
-            )
-            .onConflict((oc) => oc.column("taskId").doNothing())
-            .execute();
-
           // ── 2b. capture-ledger に載せる ──────────────────────────────────────────
           // ここが無いと、クロールしたページは `reconcile` を走らせるまで存在しない。
           // 詳しくは `crawl/admit-level.ts`。

@@ -67,6 +67,12 @@ A report that carries a `taskId` without exactly one of the two is refused with
 A `taskId` is minted by BrowserHive and never reused, but a level can be reported
 again, hence `onConflict … doNothing()`.
 
+The row is written in **the same transaction** as the update that closes the page's row
+(`crawl_pages`) and sets its `task_id`. Written separately, a crash between the two with no
+retry getting through would leave a closed page without this row, which `reconcile` cannot
+find. Reading the manifest (admitting the archive) stays outside, so that no row lock is held
+while waiting on the store.
+
 ## How it is read
 
 These are the readers.

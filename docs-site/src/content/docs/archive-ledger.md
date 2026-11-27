@@ -599,7 +599,9 @@ pages, reported, the rewritten totals, the next level row) goes through only whi
 still the level's. When a second attempt takes over an expired lease and the late first attempt
 finishes too, only one of them can write (the late one gets 409). The next level is read from the
 `pending` rows at depth n+1, not from the rows inserted this time, so a second attempt does not read
-the crawl as finished half-way.
+the crawl as finished half-way. Before reading the store, closing the reported pages and writing
+their [attribution](/capture-ledger/databases/capture-submissions/) go in one transaction of their
+own, so a page is never left closed without the row that `reconcile` reads.
 
 ### What a caller may send
 

@@ -72,6 +72,8 @@ const ONLY_IN_CI = {
     "同上。節目のスクリーンショットの在り処の表の CHECK・印・確かめの SQL を本物の DB に当てる (src/tools/screenshots-smoke.ts)",
   "History against Postgres":
     "同上。同じ URL の取り込みの一覧の SQL・`042` の生成列と索引を本物の DB に当てる (src/tools/history-smoke.ts)",
+  "Level report against Postgres":
+    "同上。段の報告のページを閉じる書き込みと帰属の書き込みが 1 つのトランザクションかを本物の DB に当てる (src/tools/level-report-smoke.ts)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

@@ -66,6 +66,10 @@ submitted.map((r): Insertable<CaptureSubmissionsTable> => ({
 `taskId` は BrowserHive が採番し、使い回されることはありませんが、段の報告が送り直される
 ことはあるので `onConflict … doNothing()` を置いています。
 
+この行は、ページの行（`crawl_pages`）を閉じて `task_id` を書く更新と**同じトランザクション**で書きます。
+別々に書くと、間で落ちて送り直しも届かなかったとき、ページは閉じたのにこの行が無いまま残り、`reconcile` が
+拾えません。manifest を読む段（アーカイブに入れる）は、保管庫を待つ間に行の錠を持たないよう、その外です。
+
 ## 読まれ方
 
 読み手は次のとおりです。

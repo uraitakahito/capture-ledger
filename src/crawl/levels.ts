@@ -1,8 +1,9 @@
 /**
  * 段の報告の鍵と数 (CAPTURE-180・`038`)。
  *
- * 段の報告は保管庫を読むので 1 つのトランザクションにしない。段の行の状態 (`reporting`)・期限 (`lease_until`)・
- * 試みの印 (`report_token`) で区切り、終わりの commit だけをトランザクションにする (`api/crawls.ts`)。
+ * 段の報告は保管庫を読むので、全部を 1 つのトランザクションにはしない。段の行の状態 (`reporting`)・期限 (`lease_until`)・
+ * 試みの印 (`report_token`) で区切る。トランザクションにするのは、保管庫を読む前の「ページを閉じる書き込みと帰属の
+ * 書き込み」(t-e5bz) と、終わりの commit の 2 つ (`api/crawls.ts`)。
  */
 import { sql, type Kysely } from "kysely";
 
