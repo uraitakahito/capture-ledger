@@ -29,7 +29,9 @@ const EXPECTED_KEYS: Record<string, readonly string[]> = {
 /** 雛形が埋める値の名前 (`{name}` と `{name, plural, …}` の頭の名前を拾う)。 */
 const namesIn = (pattern: string): string[] =>
   [
-    ...new Set([...pattern.matchAll(/\{\s*([A-Za-z][A-Za-z0-9]*)\s*[,}]/gu)].map((m) => m[1])),
+    ...new Set(
+      [...pattern.matchAll(/\{\s*([A-Za-z][A-Za-z0-9]*)\s*[,}]/gu)].map((m) => m[1] ?? ""),
+    ),
   ].sort();
 
 /** どの文も、読み解ける雛形であること (波括弧の閉じ忘れなどは、ここで投げる)。 */
