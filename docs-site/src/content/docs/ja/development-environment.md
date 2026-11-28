@@ -379,12 +379,12 @@ curl -H "authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/crawls
 scope `crawl`・`crawl.start`、群 `acme` と、その群に入れた `$(whoami)` の名前の利用者（群の名前が組織の名前です）、
 それに次の app client です。
 
-| app client  | 種類   | 使うもの                                                                                                                |
-| ----------- | ------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `workbench` | public | capture-workbench。authorization code と PKCE（Proof Key for Code Exchange）。戻り先は `http://127.0.0.1:7080/callback` |
-| `cli`       | public | `pnpm run idp:token`（パスワードの流れ）。picker や `curl` に貼るトークン                                               |
-| `windmill`  | secret | capture-scheduler のクロールの flow（client credentials）。scope `crawl`（どの route も通る）                           |
-| `ai`        | secret | AI の担当がクロールを始める道具（client credentials）。scope `crawl.start` だけ（始める・読む）・token の期限 10 分     |
+| app client  | 種類   | 使うもの                                                                                                                                                                          |
+| ----------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workbench` | public | capture-workbench。authorization code と PKCE（Proof Key for Code Exchange）。戻り先は `http://127.0.0.1:7080/callback`、サインアウトの後の戻り先は `http://127.0.0.1:7080/login` |
+| `cli`       | public | `pnpm run idp:token`（パスワードの流れ）。picker や `curl` に貼るトークン                                                                                                         |
+| `windmill`  | secret | capture-scheduler のクロールの flow（client credentials）。scope `crawl`（どの route も通る）                                                                                     |
+| `ai`        | secret | AI の担当がクロールを始める道具（client credentials）。scope `crawl.start` だけ（始める・読む）・token の期限 10 分                                                               |
 
 書くのは、`.env.local` の `CAPTURE_LEDGER_OIDC_ISSUER`（`http://127.0.0.1:4566/<プールの ID>`）と
 `CAPTURE_LEDGER_OIDC_CLIENT_IDS`（**手で書きません**。プールの ID が `iss` に入るためです）、
@@ -451,6 +451,16 @@ route が機械の主体を 403 で断ります（登録と取り消しは、人
 変わるのは `CAPTURE_LEDGER_OIDC_ISSUER`（`https://cognito-idp.<region>.amazonaws.com/<プールの ID>`）と
 `CAPTURE_LEDGER_OIDC_CLIENT_IDS` の値だけです。`jwtIdentityResolver` は 1 行も変わりません。
 プール・app client・群は AWS の側で作ります。`idp:bootstrap`・`idp:token`・`idp:grant` は Floci 専用です。
+
+`idp:bootstrap` は、在る app client の設定が違えば直します（プールは作り直しません。client の ID も、出ているトークンも
+そのままです）。前の版が作った `workbench` の client には、サインアウトの後の戻り先が無いので、capture-workbench の
+「サインアウト」が IdP の `logout_uri is not registered for this client`（400）で止まったら、`pnpm run idp:bootstrap` を
+打ち直します。
+
+capture-workbench の app client には、AWS の側で、戻り先（許可するコールバック URL）`http://127.0.0.1:<WORKBENCH_PORT>/callback`
+と、サインアウトの後の戻り先（許可するサインアウト URL）`http://127.0.0.1:<WORKBENCH_PORT>/login` を登録します
+（手元の `idp:bootstrap` と同じ形）。capture-workbench は、v0.62.0 より後の版から、「サインアウト」で IdP の logout のエンドポイントへ回し、IdP は登録した物と 1 字でも違う
+戻り先を断るので、**サインアウト URL が無いと、サインアウトが IdP の誤りの頁で止まります**。
 
 AI の担当の app client は、AWS の側で次のとおりに作ります（手元の `idp:bootstrap` と同じ形）。
 

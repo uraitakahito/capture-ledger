@@ -397,12 +397,12 @@ The reason and the steps are in [the quickstart, "Start one"](/capture-ledger/qu
 the scopes `crawl` and `crawl.start`, the group `acme` and a user named after `$(whoami)` in that group (the group's
 name is the organization's name), and these app clients:
 
-| App client  | Kind   | Used by                                                                                                                     |
-| ----------- | ------ | --------------------------------------------------------------------------------------------------------------------------- |
-| `workbench` | public | capture-workbench: authorization code with PKCE (Proof Key for Code Exchange), callback `http://127.0.0.1:7080/callback`    |
-| `cli`       | public | `pnpm run idp:token` (password flow) — the token you paste into the picker or `curl`                                        |
-| `windmill`  | secret | The crawl flow in capture-scheduler (client credentials). Scope `crawl` (every route)                                       |
-| `ai`        | secret | The tool an AI agent uses to start crawls (client credentials). Scope `crawl.start` only (start and read); 10-minute tokens |
+| App client  | Kind   | Used by                                                                                                                                                              |
+| ----------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workbench` | public | capture-workbench: authorization code with PKCE (Proof Key for Code Exchange), callback `http://127.0.0.1:7080/callback`, sign-out URL `http://127.0.0.1:7080/login` |
+| `cli`       | public | `pnpm run idp:token` (password flow) — the token you paste into the picker or `curl`                                                                                 |
+| `windmill`  | secret | The crawl flow in capture-scheduler (client credentials). Scope `crawl` (every route)                                                                                |
+| `ai`        | secret | The tool an AI agent uses to start crawls (client credentials). Scope `crawl.start` only (start and read); 10-minute tokens                                          |
 
 It writes `CAPTURE_LEDGER_OIDC_ISSUER` (`http://127.0.0.1:4566/<poolId>`) and
 `CAPTURE_LEDGER_OIDC_CLIENT_IDS` to `.env.local` — **do not write them by hand**; the pool ID is
@@ -475,6 +475,19 @@ Only the values of `CAPTURE_LEDGER_OIDC_ISSUER`
 (`https://cognito-idp.<region>.amazonaws.com/<poolId>`) and `CAPTURE_LEDGER_OIDC_CLIENT_IDS`
 change. `jwtIdentityResolver` does not change at all. The pool, app clients and groups are made on
 the AWS side; `idp:bootstrap`, `idp:token` and `idp:grant` are for Floci only.
+
+`idp:bootstrap` also brings an existing app client in line when its settings differ (it does not
+recreate the pool; the client ID and the tokens already issued stay as they are). A `workbench`
+client made by an earlier version has no sign-out URL, so if **Sign out** in capture-workbench stops
+at the IdP with `logout_uri is not registered for this client` (400), run `pnpm run idp:bootstrap`
+again.
+
+On the AWS side, register on capture-workbench's app client both the callback (allowed callback
+URL) `http://127.0.0.1:<WORKBENCH_PORT>/callback` and the sign-out URL (allowed sign-out URL)
+`http://127.0.0.1:<WORKBENCH_PORT>/login`, the same way `idp:bootstrap` does locally. From the version after v0.62.0,
+capture-workbench sends **Sign out** to the IdP's logout endpoint, and the IdP refuses a sign-out URL that differs
+from the registered one by even one character — **without the sign-out URL, signing out stops at the
+IdP's error page**.
 
 Create the AI agent's app client on the AWS side the same way `idp:bootstrap` does locally:
 
