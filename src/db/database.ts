@@ -242,7 +242,7 @@ export interface CrawlsTable {
    */
   userAgent: ColumnType<string | null, string | null, never>;
   /**
-   * 頁の JS が受け取った乱数を BrowserHive に控えさせるか (`040`)。段ごとに flow へ運ばれる。既に在った行は false。
+   * 頁の JS が受け取った乱数を BrowserHive に記録させるか (`040`)。段ごとに flow へ運ばれる。既に在った行は false。
    * 後から書き換えない。
    */
   recordRandom: ColumnType<boolean, boolean | undefined, never>;

@@ -1,5 +1,5 @@
 /**
- * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 12 個。
+ * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 13 個。
  *
  * ## なぜ要るのか
  *
@@ -70,6 +70,15 @@
  *   （Jira CAPTURE-341）、別名を決めた。「BrowserHive の WACZ」「BrowserHive's WARC」は、作り手を言うだけの句と
  *   Profile に適合することを言う句の区別が付かない。仕様の名前（「BrowserHive の WACZ Profile」）は当てない。
  *   形の並びで見る（BH_ARTIFACT）
+ * - **ページの JS が受け取った乱数を残すことは「乱数を記録する」、残した物は「乱数の記録」と書く。** 2026-11 に（t-azdk）、
+ *   「乱数を控える」「乱数の控え」から替えた（docs・コメント・試験の名前）。「控える」はふつう「やめておく」と
+ *   読まれ、`recordRandom` が乱数を使わない設定に見えた（英語はもとから record random values）。「記録」だけでは
+ *   WARC の記録・通信の記録と取り違えるので、名詞は「乱数の記録」と修飾を付ける。乱数と並ぶ形と、乱数の字の無い
+ *   よく戻る形（控えるスクリプト・控えた取り込み・控えなかった取り込み）だけを見るので（OLD_RANDOM）、
+ *   ほかの意味の「控え」（WACZ の末尾の控え・shots-manifest.json の控え・控えめ）は見ない。browserhive の契約の写し
+ *   （src/rpc/generated/）は見ない —— 写しの字は browserhive が決める（browserhive の lint:terms が見る）。走った migration の注記も
+ *   書き換えないので、040 の注記の「控えさせる」「控えそのもの」は残る（この型に当たらない）。capture-workbench・
+ *   capture-scheduler・browserhive も見張っている
  *
  * ## 見ないもの
  *
@@ -103,6 +112,15 @@ const AMI_ALLOWED = /安全網|網羅/gu;
 const BH_ARTIFACT = /BrowserHive\s*(?:の|['’]s)\s*WA(?:RC|CZ)(?!\s*Profile)/u;
 /** 「口」を、エンドポイント・ポート・phase・受け取り先の意味に取れない語。「注入口」は「入口」を含むので先に止める。 */
 const NOT_KUCHI = /切り口|入口|出口|窓口|口座/gu;
+
+/**
+ * 乱数を残す意味の「控え」（t-azdk）。乱数と並ぶ形と、乱数の字の無いよく戻る形だけ。capture-workbench と同じ並び。
+ * 足すときは、ほかの意味の「控え」（WACZ の末尾の控え・shots-manifest.json の控え・控えめ）に当たらないことを確かめる。
+ */
+const OLD_RANDOM =
+  /乱数\s*[をのは]\s*控え|控えた\s*乱数|控える\s*スクリプト|控え(?:た|なかった)\s*取り込み/u;
+/** browserhive の契約の写し。OLD_RANDOM はここを見ない（写しの字は browserhive が決め、browserhive の lint:terms が見る）。 */
+const GENERATED = "src/rpc/generated/";
 
 /**
  * その場で書く物の古い呼び名（2026-11 まで）。JS になるのは変換の後なので、走った JS・変換後の JS は当てない。
@@ -198,6 +216,12 @@ const RULES: Rule[] = [
       "「BrowserHive の WACZ」の形が残っています。BrowserHive WACZ Profile に適合する物は「BrowserHive WACZ」" +
       "「BrowserHive WARC」（英語は a BrowserHive WACZ）、作り手を言うだけなら「BrowserHive が作った WACZ」と書きます" +
       "（CAPTURE-341）。",
+  },
+  {
+    find: (line, file) => !file.startsWith(GENERATED) && OLD_RANDOM.test(line),
+    say:
+      "乱数の「控え」が残っています。ページの JS が受け取った乱数を残すことは「乱数を記録する」（記録した・記録しなかった・" +
+      "記録できなかった）、残した物は「乱数の記録」と書きます（t-azdk）。",
   },
 ];
 

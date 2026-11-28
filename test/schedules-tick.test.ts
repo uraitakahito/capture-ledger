@@ -390,7 +390,7 @@ describe("定期実行の周回", () => {
     });
   });
 
-  it("固定した撮り方の乱数の控えの頼みを、そのまま配る", async () => {
+  it("固定した撮り方の乱数の記録の頼みを、そのまま配る", async () => {
     const fake = fakeStore([schedule({ recipe: recipe({ recordRandom: true }) })]);
     const { deps, levels } = depsOf(fake.store);
     await tickSchedules(deps);

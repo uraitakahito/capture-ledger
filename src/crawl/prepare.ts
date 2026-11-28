@@ -81,7 +81,7 @@ export interface CrawlBody {
    */
   userAgent?: string;
   /**
-   * 頁の JS が受け取った乱数を BrowserHive に控えさせ、BrowserHive WACZ の `random/values.jsonl` に残すか。省けば false。
+   * 頁の JS が受け取った乱数を BrowserHive に記録させ、BrowserHive WACZ の `random/values.jsonl` に残すか。省けば false。
    * BrowserHive は WACZ の無い要求で true を断るので、配備の形式 (`config/capture-formats.ts`) に `wacz` が無ければ
    * ここで断る —— 通すと、行が立ってから全部の取り込みが 400 で落ちる。
    */
@@ -270,7 +270,7 @@ export interface PreparedCrawl {
   declaredSecrets: DeclaredSecret[];
   /** 打った字のまま (指定なしは `""`)。 */
   userAgent: string;
-  /** 頁の JS が受け取った乱数を控えるか (省いた頼みは false)。 */
+  /** 頁の JS が受け取った乱数を記録するか (省いた頼みは false)。 */
   recordRandom: boolean;
 }
 
@@ -398,7 +398,7 @@ export const prepareCrawl = async (
     return refused(400, { error: "userAgent must be printable ASCII, at most 512 characters" });
   }
 
-  // 控えを残す先は BrowserHive WACZ だけ。BrowserHive は wacz の無い要求の true を 400 で断るので、行を立てる前に断る
+  // 乱数の記録を残す先は BrowserHive WACZ だけ。BrowserHive は wacz の無い要求の true を 400 で断るので、行を立てる前に断る
   const recordRandom = body.recordRandom ?? false;
   if (recordRandom && !deps.formats.wacz) {
     return refused(400, { error: "recordRandom needs wacz in CAPTURE_LEDGER_CAPTURE_FORMATS" });
