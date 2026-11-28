@@ -8,7 +8,7 @@
     "paths": {
         "/captures": {
             "post": {
-                "description": "取り込んで、**結果を返す**。受理では返らない。\n\n断りは 2 通りで、どちらも**何も始めていない**: 走行中なら `Busy` (429)、形と値域が外れれば\n`ValidationException` (400)。model の制約 (`@range` など) で外れた欄は `fieldList` に並ぶが、\n欄をまたぐ関係 (signing には wacz が要る、など) の違反は `message` だけで伝える。\n\n**契約に無い欄も断る。** 綴りの誤り (たとえば snake_case の旧い綴り) を黙って捨てると、頼んだ\n上限や方針が効かないまま撮ってしまうため。`fieldList` に path が並び、近い欄名があれば\n`message` が提案する。形を持たない欄 (script の `options`) の中は見ない。\nbrowser に繋がらないのは断りではない —— 取り込みは始まらず、`connection` の failed の結果で返る (`.result.json` も書く)。\n\n呼ぶ側が途中で切ったら、取り込みはページごと壊されて cancelled の結果になる。\n応答は届かないが、manifest には切られた記録が書かれる。\n\n応答は、結果の記録 (manifest) を書き終えてから返す (書き込みの予算は 10 秒)。",
+                "description": "取り込んで、**結果を返す**。受理では返らない。\n\n断りは 2 通りで、どちらも**何も始めていない**: 走行中なら `Busy` (429)、形と値域が外れれば\n`ValidationException` (400)。model の制約 (`@range` など) で外れた欄は `fieldList` に並ぶが、\n欄をまたぐ関係 (signing には wacz が要る、など) の違反は `message` だけで伝える。\n\n**契約に無い欄も断る。** 綴りの誤り (たとえば snake_case の旧い綴り) を黙って捨てると、頼んだ\n上限や方針が効かないまま撮ってしまうため。`fieldList` に path が並び、近い欄名があれば\n`message` が提案する。形を持たない欄 (capture script の `options`) の中は見ない。\nbrowser に繋がらないのは断りではない —— 取り込みは始まらず、`connection` の failed の結果で返る (`.result.json` も書く)。\n\n呼ぶ側が途中で切ったら、取り込みはページごと壊されて cancelled の結果になる。\n応答は届かないが、manifest には切られた記録が書かれる。\n\n応答は、結果の記録 (manifest) を書き終えてから返す (書き込みの予算は 10 秒)。",
                 "operationId": "Capture",
                 "requestBody": {
                     "content": {
@@ -33,8 +33,8 @@
                                     }
                                 },
                                 "Capture_example2": {
-                                    "summary": "スクリプトが終わらず時間切れ。それまでの行は log に残る",
-                                    "description": "スクリプトが 1 行書いた後、終わらない await で止まった。スクリプトの段の外枠 (予算と通信の静止待ちの和) を超えて取り込みは timeout になり、WACZ は作られない。行は書いたその場で届いているので、log に残る。",
+                                    "summary": "Capture script が終わらず時間切れ。それまでの行は log に残る",
+                                    "description": "Capture script が 1 行書いた後、終わらない await で止まった。Capture scripts の段の外枠 (予算と通信の静止待ちの和) を超えて取り込みは timeout になり、WACZ は作られない。行は書いたその場で届いているので、log に残る。",
                                     "value": {
                                         "url": "https://example.com/",
                                         "captureFormats": {
@@ -192,8 +192,8 @@
                                         }
                                     },
                                     "Capture_example2": {
-                                        "summary": "スクリプトが終わらず時間切れ。それまでの行は log に残る",
-                                        "description": "スクリプトが 1 行書いた後、終わらない await で止まった。スクリプトの段の外枠 (予算と通信の静止待ちの和) を超えて取り込みは timeout になり、WACZ は作られない。行は書いたその場で届いているので、log に残る。",
+                                        "summary": "Capture script が終わらず時間切れ。それまでの行は log に残る",
+                                        "description": "Capture script が 1 行書いた後、終わらない await で止まった。Capture scripts の段の外枠 (予算と通信の静止待ちの和) を超えて取り込みは timeout になり、WACZ は作られない。行は書いたその場で届いているので、log に残る。",
                                         "value": {
                                             "taskId": "7c1d6a52-3f0e-4b8a-9d21-5e6f7a8b9c0d",
                                             "report": {
@@ -608,7 +608,7 @@
             },
             "CaptureLog": {
                 "type": "object",
-                "description": "取り込み 1 本のログ。行が上限 (1 行 4 KiB、取り込み 1 本で 1,000 行・256 KiB) を超えたら、頭と尻を残して\n間を捨て、捨てた所に `browserhive` の `warn` の 1 行を置く。取り込みのページの行は全体の半分まで。\nreport とスクリプトの例外の行は捨てない。主文書を方針が伏せた取り込みでは、取り込みのページの行を残さず、\n残さなかった数の 1 行にする。シークレットの値は、どの行のどの深さからも長さに依らず `***` に替えてある。",
+                "description": "取り込み 1 本のログ。行が上限 (1 行 4 KiB、取り込み 1 本で 1,000 行・256 KiB) を超えたら、頭と尻を残して\n間を捨て、捨てた所に `browserhive` の `warn` の 1 行を置く。取り込みのページの行は全体の半分まで。\nreport と capture scripts の例外の行は捨てない。主文書を方針が伏せた取り込みでは、取り込みのページの行を残さず、\n残さなかった数の 1 行にする。シークレットの値は、どの行のどの深さからも長さに依らず `***` に替えてある。",
                 "properties": {
                     "lines": {
                         "type": "array",
@@ -691,7 +691,7 @@
                     },
                     "script": {
                         "type": "string",
-                        "description": "書いたスクリプトの id。`source` が `script` のときだけ在る。"
+                        "description": "書いた capture script の id。`source` が `script` のときだけ在る。"
                     },
                     "level": {
                         "$ref": "#/components/schemas/CaptureLogLevel"
@@ -701,7 +701,7 @@
                         "description": "行の文。report の行は `report`。"
                     },
                     "data": {
-                        "description": "行に添えた値 (JSON)。report の行では、スクリプトが述べた data そのもの。1 行の上限で切った行では、\n元の値の JSON を切った文字になる。"
+                        "description": "行に添えた値 (JSON)。report の行では、capture script が述べた data そのもの。1 行の上限で切った行では、\n元の値の JSON を切った文字になる。"
                     },
                     "truncated": {
                         "type": "boolean",
@@ -718,7 +718,7 @@
             },
             "CaptureLogSource": {
                 "type": "string",
-                "description": "行の出どころ: `script` は送られたスクリプト (`__bh.log`・`__bh.report`・投げた例外)、`page` は取り込みの\nページ自身 (console・捕まらなかった例外と、スクリプトの id を名乗らない受け皿の行)、`browserhive` は\nBrowserHive の出来事 (段の境目・時間切れ・捨てた行の数など)。",
+                "description": "行の出どころ: `script` は送られた capture scripts (`__bh.log`・`__bh.report`・投げた例外)、`page` は取り込みの\nページ自身 (console・捕まらなかった例外と、capture script の id を名乗らない受け皿の行)、`browserhive` は\nBrowserHive の出来事 (段の境目・時間切れ・捨てた行の数など)。",
                 "enum": [
                     "script",
                     "page",
@@ -817,7 +817,7 @@
                     "behaviors": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Script"
+                            "$ref": "#/components/schemas/CaptureScript"
                         },
                         "description": "読み込み後に走らせるもの (主フレーム・DPR のパスごと)。書かれた順に走る。"
                     },
@@ -857,9 +857,9 @@
                     "preload": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/components/schemas/Script"
+                            "$ref": "#/components/schemas/CaptureScript"
                         },
-                        "description": "遷移の**前**に、書かれた順で注入するスクリプト。iframe を含む全フレームで、遷移のたびに走り、\n報告の手段を持たない。behaviors とは約束が違うので同じ列には入れない。"
+                        "description": "遷移の**前**に、書かれた順で注入する capture scripts。iframe を含む全フレームで、遷移のたびに走り、\n報告の手段を持たない。behaviors とは約束が違うので同じ列には入れない。"
                     },
                     "variables": {
                         "$ref": "#/components/schemas/Values",
@@ -867,7 +867,7 @@
                     },
                     "secrets": {
                         "$ref": "#/components/schemas/Values",
-                        "description": "この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。\narchive の `settings.secrets` には名前だけ (名前順) が残り、受け皿のコード (`behaviors/runtime.js`) は\n値を含まない。`secretArchive` に名前の無いシークレットは **隠す**: スクリプトが通信に載せた値も、サイトが\n返した値も、BrowserHive WARC と BrowserHive WACZ と答えの中では `***` に置き換わる。隠す値は 8 字以上で、短い値は 400。\n隠す値のある要求は、PNG・WebP・HTML・MHTML と web storage の値を一緒に頼めず、取り込む URL に値を書けない\n(どれも 400)。隠せるのは記録からだけで、頁の JS からは読めるし、値を受け取ったサイトには届いている。\n値から作った物 (ハッシュ・署名) と、サイトが本文で返した token は追わない。"
+                        "description": "この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。\narchive の `settings.secrets` には名前だけ (名前順) が残り、受け皿のコード (`behaviors/runtime.js`) は\n値を含まない。`secretArchive` に名前の無いシークレットは **隠す**: capture scripts が通信に載せた値も、サイトが\n返した値も、BrowserHive WARC と BrowserHive WACZ と答えの中では `***` に置き換わる。隠す値は 8 字以上で、短い値は 400。\n隠す値のある要求は、PNG・WebP・HTML・MHTML と web storage の値を一緒に頼めず、取り込む URL に値を書けない\n(どれも 400)。隠せるのは記録からだけで、頁の JS からは読めるし、値を受け取ったサイトには届いている。\n値から作った物 (ハッシュ・署名) と、サイトが本文で返した token は追わない。"
                     },
                     "userAgent": {
                         "type": "string",
@@ -986,7 +986,7 @@
                     },
                     "log": {
                         "$ref": "#/components/schemas/CaptureLog",
-                        "description": "取り込みのログ。スクリプト (`__bh.log`・`__bh.report`・投げた例外)、取り込みのページ自身の console、\nBrowserHive の出来事の行を、届いた順に持つ。成功でも、時間切れ・失敗・cancel でも入る。\n無いのは、取り込みに入る前に browser に繋がらなかったときだけ。\n行は WACZ を組む直前 (WACZ を作らない取り込みでは、結果を組むとき) に閉じる。閉じた後の出来事\n(保管庫に置く・置いた後の止め損ねの検査) の行は入らない。後から足した欄で、必須にしていない\n(足す前の版が書いた `.result.json` には無い)。"
+                        "description": "取り込みのログ。Capture scripts (`__bh.log`・`__bh.report`・投げた例外)、取り込みのページ自身の console、\nBrowserHive の出来事の行を、届いた順に持つ。成功でも、時間切れ・失敗・cancel でも入る。\n無いのは、取り込みに入る前に browser に繋がらなかったときだけ。\n行は WACZ を組む直前 (WACZ を作らない取り込みでは、結果を組むとき) に閉じる。閉じた後の出来事\n(保管庫に置く・置いた後の止め損ねの検査) の行は入らない。後から足した欄で、必須にしていない\n(足す前の版が書いた `.result.json` には無い)。"
                     },
                     "trace": {
                         "$ref": "#/components/schemas/CaptureTrace",
@@ -997,11 +997,11 @@
                         "items": {
                             "$ref": "#/components/schemas/StageScreenshot"
                         },
-                        "description": "節目のスクリーンショット (取り込みのページの viewport の絵。WebP) の、時点ごとの成り行き。`status` が\n`success` で WACZ を作ったときだけ入り、その BrowserHive WACZ の `datapackage.json` の\n`browserhive:capture.screenshots` と同じ物。項目は `after-load` と、スクリプトを送った取り込みでは\nその後に `after-behaviors`。絵を残した時点は BrowserHive WARC のレコードを名指し、残さなかった時点は理由 (`skipped`) を言う。\n絵を撮らない server (`--stage-screenshots` が切。既定) では、どの項目も `skipped: \"disabled\"`。\n後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。"
+                        "description": "節目のスクリーンショット (取り込みのページの viewport の絵。WebP) の、時点ごとの成り行き。`status` が\n`success` で WACZ を作ったときだけ入り、その BrowserHive WACZ の `datapackage.json` の\n`browserhive:capture.screenshots` と同じ物。項目は `after-load` と、capture scripts を送った取り込みでは\nその後に `after-capture-scripts`。絵を残した時点は BrowserHive WARC のレコードを名指し、残さなかった時点は理由 (`skipped`) を言う。\n絵を撮らない server (`--stage-screenshots` が切。既定) では、どの項目も `skipped: \"disabled\"`。\n後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。"
                     },
                     "failureScreenshot": {
                         "type": "string",
-                        "description": "失敗の時点の絵 (取り込みのページの viewport の WebP) の置き場所。成果物と同じ名前に `.failure.webp` を付けた\nファイルで、値は書き込み先が答えたもの。`status` が `success` 以外で、server が絵を撮る設定\n(`--stage-screenshots`) のときにだけ入りうる —— 撮るのは、取り込みのページを触っている間の失敗\n(読み込みや操作ごとの時間切れ・スクリプトの失敗・文書の 4xx と 5xx) で、取り込み全体の予算が 5 秒以上\n残っているときだけ。全体の時間切れ・cancel・renderer の crash・方針の失敗では撮らない。シークレットを渡した\n取り込み・content-type の方針を持つ取り込み・方針が文書や画像やメディアの要求に当たった取り込み・方針が\n伏せる文書でも撮らない。`artifacts` には載らない (あちらは `success` のときだけ埋まる)。WACZ の外の\nファイルで、署名の下に無い。後から足した欄で、必須にしていない。"
+                        "description": "失敗の時点の絵 (取り込みのページの viewport の WebP) の置き場所。成果物と同じ名前に `.failure.webp` を付けた\nファイルで、値は書き込み先が答えたもの。`status` が `success` 以外で、server が絵を撮る設定\n(`--stage-screenshots`) のときにだけ入りうる —— 撮るのは、取り込みのページを触っている間の失敗\n(読み込みや操作ごとの時間切れ・capture scripts の失敗・文書の 4xx と 5xx) で、取り込み全体の予算が 5 秒以上\n残っているときだけ。全体の時間切れ・cancel・renderer の crash・方針の失敗では撮らない。シークレットを渡した\n取り込み・content-type の方針を持つ取り込み・方針が文書や画像やメディアの要求に当たった取り込み・方針が\n伏せる文書でも撮らない。`artifacts` には載らない (あちらは `success` のときだけ埋まる)。WACZ の外の\nファイルで、署名の下に無い。後から足した欄で、必須にしていない。"
                     },
                     "random": {
                         "$ref": "#/components/schemas/CaptureRandom",
@@ -1014,6 +1014,35 @@
                     "taskId",
                     "timestamp",
                     "url"
+                ]
+            },
+            "CaptureScript": {
+                "type": "object",
+                "description": "走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは差し込む時（phase）だけ。",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "report と provenance に出る名前。サーバは中身を検査しない。"
+                    },
+                    "source": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "そのまま評価される JS。behavior は読み込み後に、preload は遷移の前に走る。"
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{64}$",
+                        "description": "source の SHA-256 (hex、接頭辞なし)。**サーバが照合して、違えば拒む。**\n中身は検査できないが、運ぶ途中で入れ替わっていないことだけは言える。"
+                    },
+                    "options": {
+                        "description": "その capture script に渡す値。中身が任意の JS である以上、その設定も型では守れない。"
+                    }
+                },
+                "required": [
+                    "id",
+                    "sha256",
+                    "source"
                 ]
             },
             "CaptureStatus": {
@@ -1626,39 +1655,10 @@
             },
             "ScreenshotStage": {
                 "type": "string",
-                "description": "節目のスクリーンショットを撮る時点: `after-load` は読み込みと待ちの後・スクリプトの前、`after-behaviors` は\nスクリプトの後 (スクリプトを送った取り込みだけ)。DOM の写しを撮る時点と同じ。",
+                "description": "節目のスクリーンショットを撮る時点: `after-load` は読み込みと待ちの後・capture scripts の前、`after-capture-scripts` は\ncapture scripts の後 (capture scripts を送った取り込みだけ)。DOM の写しを撮る時点と同じ。",
                 "enum": [
                     "after-load",
-                    "after-behaviors"
-                ]
-            },
-            "Script": {
-                "type": "object",
-                "description": "走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは差し込む時（phase）だけ。",
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "report と provenance に出る名前。サーバは中身を検査しない。"
-                    },
-                    "source": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "そのまま評価される JS。behavior は読み込み後に、preload は遷移の前に走る。"
-                    },
-                    "sha256": {
-                        "type": "string",
-                        "pattern": "^[0-9a-fA-F]{64}$",
-                        "description": "source の SHA-256 (hex、接頭辞なし)。**サーバが照合して、違えば拒む。**\n中身は検査できないが、運ぶ途中で入れ替わっていないことだけは言える。"
-                    },
-                    "options": {
-                        "description": "そのスクリプトに渡す値。中身が任意の JS である以上、その設定も型では守れない。"
-                    }
-                },
-                "required": [
-                    "id",
-                    "sha256",
-                    "source"
+                    "after-capture-scripts"
                 ]
             },
             "SecretArchive": {
@@ -1910,7 +1910,7 @@
                 "additionalProperties": {
                     "type": "string",
                     "maxLength": 4096,
-                    "description": "取り込みごとの値。**文字列だけ** —— 数や JSON はスクリプトが読み替える。4,096 字まで。"
+                    "description": "取り込みごとの値。**文字列だけ** —— 数や JSON は capture scripts が読み替える。4,096 字まで。"
                 },
                 "propertyNames": {
                     "type": "string",

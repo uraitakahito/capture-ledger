@@ -22,7 +22,7 @@ export interface paths {
          *
          *     **契約に無い欄も断る。** 綴りの誤り (たとえば snake_case の旧い綴り) を黙って捨てると、頼んだ
          *     上限や方針が効かないまま撮ってしまうため。`fieldList` に path が並び、近い欄名があれば
-         *     `message` が提案する。形を持たない欄 (script の `options`) の中は見ない。
+         *     `message` が提案する。形を持たない欄 (capture script の `options`) の中は見ない。
          *     browser に繋がらないのは断りではない —— 取り込みは始まらず、`connection` の failed の結果で返る (`.result.json` も書く)。
          *
          *     呼ぶ側が途中で切ったら、取り込みはページごと壊されて cancelled の結果になる。
@@ -230,7 +230,7 @@ export interface components {
         /**
          * @description 取り込み 1 本のログ。行が上限 (1 行 4 KiB、取り込み 1 本で 1,000 行・256 KiB) を超えたら、頭と尻を残して
          *     間を捨て、捨てた所に `browserhive` の `warn` の 1 行を置く。取り込みのページの行は全体の半分まで。
-         *     report とスクリプトの例外の行は捨てない。主文書を方針が伏せた取り込みでは、取り込みのページの行を残さず、
+         *     report と capture scripts の例外の行は捨てない。主文書を方針が伏せた取り込みでは、取り込みのページの行を残さず、
          *     残さなかった数の 1 行にする。シークレットの値は、どの行のどの深さからも長さに依らず `***` に替えてある。
          */
         CaptureLog: {
@@ -266,13 +266,13 @@ export interface components {
             /** @description 行が出た DPR の回の値。回の外の行 (形式・WACZ の段) には無い。 */
             dpr?: number;
             source: components["schemas"]["CaptureLogSource"];
-            /** @description 書いたスクリプトの id。`source` が `script` のときだけ在る。 */
+            /** @description 書いた capture script の id。`source` が `script` のときだけ在る。 */
             script?: string;
             level: components["schemas"]["CaptureLogLevel"];
             /** @description 行の文。report の行は `report`。 */
             msg: string;
             /**
-             * @description 行に添えた値 (JSON)。report の行では、スクリプトが述べた data そのもの。1 行の上限で切った行では、
+             * @description 行に添えた値 (JSON)。report の行では、capture script が述べた data そのもの。1 行の上限で切った行では、
              *     元の値の JSON を切った文字になる。
              */
             data?: unknown;
@@ -280,8 +280,8 @@ export interface components {
             truncated?: boolean;
         };
         /**
-         * @description 行の出どころ: `script` は送られたスクリプト (`__bh.log`・`__bh.report`・投げた例外)、`page` は取り込みの
-         *     ページ自身 (console・捕まらなかった例外と、スクリプトの id を名乗らない受け皿の行)、`browserhive` は
+         * @description 行の出どころ: `script` は送られた capture scripts (`__bh.log`・`__bh.report`・投げた例外)、`page` は取り込みの
+         *     ページ自身 (console・捕まらなかった例外と、capture script の id を名乗らない受け皿の行)、`browserhive` は
          *     BrowserHive の出来事 (段の境目・時間切れ・捨てた行の数など)。
          * @enum {string}
          */
@@ -353,7 +353,7 @@ export interface components {
              */
             fullPage?: boolean;
             /** @description 読み込み後に走らせるもの (主フレーム・DPR のパスごと)。書かれた順に走る。 */
-            behaviors?: components["schemas"]["Script"][];
+            behaviors?: components["schemas"]["CaptureScript"][];
             /** @description 前のタスクの残留物を持ち越すか。省略は `isolated`。 */
             session?: components["schemas"]["SessionMode"];
             /** @description この取り込みに限って本文の上限を締める。既定より大きい値は既定に丸める。 */
@@ -382,10 +382,10 @@ export interface components {
             artifactSink?: components["schemas"]["ArtifactSink"];
             loadWait?: components["schemas"]["LoadWait"];
             /**
-             * @description 遷移の**前**に、書かれた順で注入するスクリプト。iframe を含む全フレームで、遷移のたびに走り、
+             * @description 遷移の**前**に、書かれた順で注入する capture scripts。iframe を含む全フレームで、遷移のたびに走り、
              *     報告の手段を持たない。behaviors とは約束が違うので同じ列には入れない。
              */
-            preload?: components["schemas"]["Script"][];
+            preload?: components["schemas"]["CaptureScript"][];
             /**
              * @description この取り込みに渡す変数。受け皿の `__bh.vars` で読める (preload には渡らない)。
              *     **値は archive の `settings.variables` にそのまま残る** —— どの値で撮ったかを後から言うための欄。
@@ -395,7 +395,7 @@ export interface components {
             /**
              * @description この取り込みに渡すシークレット。受け皿の `__bh.secrets` で読める (preload には渡らない)。
              *     archive の `settings.secrets` には名前だけ (名前順) が残り、受け皿のコード (`behaviors/runtime.js`) は
-             *     値を含まない。`secretArchive` に名前の無いシークレットは **隠す**: スクリプトが通信に載せた値も、サイトが
+             *     値を含まない。`secretArchive` に名前の無いシークレットは **隠す**: capture scripts が通信に載せた値も、サイトが
              *     返した値も、BrowserHive WARC と BrowserHive WACZ と答えの中では `***` に置き換わる。隠す値は 8 字以上で、短い値は 400。
              *     隠す値のある要求は、PNG・WebP・HTML・MHTML と web storage の値を一緒に頼めず、取り込む URL に値を書けない
              *     (どれも 400)。隠せるのは記録からだけで、頁の JS からは読めるし、値を受け取ったサイトには届いている。
@@ -502,7 +502,7 @@ export interface components {
              */
             windowsNotOpened?: number;
             /**
-             * @description 取り込みのログ。スクリプト (`__bh.log`・`__bh.report`・投げた例外)、取り込みのページ自身の console、
+             * @description 取り込みのログ。Capture scripts (`__bh.log`・`__bh.report`・投げた例外)、取り込みのページ自身の console、
              *     BrowserHive の出来事の行を、届いた順に持つ。成功でも、時間切れ・失敗・cancel でも入る。
              *     無いのは、取り込みに入る前に browser に繋がらなかったときだけ。
              *     行は WACZ を組む直前 (WACZ を作らない取り込みでは、結果を組むとき) に閉じる。閉じた後の出来事
@@ -520,8 +520,8 @@ export interface components {
             /**
              * @description 節目のスクリーンショット (取り込みのページの viewport の絵。WebP) の、時点ごとの成り行き。`status` が
              *     `success` で WACZ を作ったときだけ入り、その BrowserHive WACZ の `datapackage.json` の
-             *     `browserhive:capture.screenshots` と同じ物。項目は `after-load` と、スクリプトを送った取り込みでは
-             *     その後に `after-behaviors`。絵を残した時点は BrowserHive WARC のレコードを名指し、残さなかった時点は理由 (`skipped`) を言う。
+             *     `browserhive:capture.screenshots` と同じ物。項目は `after-load` と、capture scripts を送った取り込みでは
+             *     その後に `after-capture-scripts`。絵を残した時点は BrowserHive WARC のレコードを名指し、残さなかった時点は理由 (`skipped`) を言う。
              *     絵を撮らない server (`--stage-screenshots` が切。既定) では、どの項目も `skipped: "disabled"`。
              *     後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。
              */
@@ -530,7 +530,7 @@ export interface components {
              * @description 失敗の時点の絵 (取り込みのページの viewport の WebP) の置き場所。成果物と同じ名前に `.failure.webp` を付けた
              *     ファイルで、値は書き込み先が答えたもの。`status` が `success` 以外で、server が絵を撮る設定
              *     (`--stage-screenshots`) のときにだけ入りうる —— 撮るのは、取り込みのページを触っている間の失敗
-             *     (読み込みや操作ごとの時間切れ・スクリプトの失敗・文書の 4xx と 5xx) で、取り込み全体の予算が 5 秒以上
+             *     (読み込みや操作ごとの時間切れ・capture scripts の失敗・文書の 4xx と 5xx) で、取り込み全体の予算が 5 秒以上
              *     残っているときだけ。全体の時間切れ・cancel・renderer の crash・方針の失敗では撮らない。シークレットを渡した
              *     取り込み・content-type の方針を持つ取り込み・方針が文書や画像やメディアの要求に当たった取り込み・方針が
              *     伏せる文書でも撮らない。`artifacts` には載らない (あちらは `success` のときだけ埋まる)。WACZ の外の
@@ -544,6 +544,20 @@ export interface components {
              *     後から足した欄で、必須にしていない (足す前の版が書いた `.result.json` には無い)。
              */
             random?: components["schemas"]["CaptureRandom"];
+        };
+        /** @description 走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは差し込む時（phase）だけ。 */
+        CaptureScript: {
+            /** @description report と provenance に出る名前。サーバは中身を検査しない。 */
+            id: string;
+            /** @description そのまま評価される JS。behavior は読み込み後に、preload は遷移の前に走る。 */
+            source: string;
+            /**
+             * @description source の SHA-256 (hex、接頭辞なし)。**サーバが照合して、違えば拒む。**
+             *     中身は検査できないが、運ぶ途中で入れ替わっていないことだけは言える。
+             */
+            sha256: string;
+            /** @description その capture script に渡す値。中身が任意の JS である以上、その設定も型では守れない。 */
+            options?: unknown;
         };
         /**
          * @description capture の結末。`artifacts` に場所が載るのは `success` のときだけで、それ以外は理由が
@@ -930,25 +944,11 @@ export interface components {
          */
         ScreenshotSkipped: "disabled" | "secret" | "withheld" | "task-budget" | "failed";
         /**
-         * @description 節目のスクリーンショットを撮る時点: `after-load` は読み込みと待ちの後・スクリプトの前、`after-behaviors` は
-         *     スクリプトの後 (スクリプトを送った取り込みだけ)。DOM の写しを撮る時点と同じ。
+         * @description 節目のスクリーンショットを撮る時点: `after-load` は読み込みと待ちの後・capture scripts の前、`after-capture-scripts` は
+         *     capture scripts の後 (capture scripts を送った取り込みだけ)。DOM の写しを撮る時点と同じ。
          * @enum {string}
          */
-        ScreenshotStage: "after-load" | "after-behaviors";
-        /** @description 走らせるもの 1 本。**preload も behavior も同じ形**で、違うのは差し込む時（phase）だけ。 */
-        Script: {
-            /** @description report と provenance に出る名前。サーバは中身を検査しない。 */
-            id: string;
-            /** @description そのまま評価される JS。behavior は読み込み後に、preload は遷移の前に走る。 */
-            source: string;
-            /**
-             * @description source の SHA-256 (hex、接頭辞なし)。**サーバが照合して、違えば拒む。**
-             *     中身は検査できないが、運ぶ途中で入れ替わっていないことだけは言える。
-             */
-            sha256: string;
-            /** @description そのスクリプトに渡す値。中身が任意の JS である以上、その設定も型では守れない。 */
-            options?: unknown;
-        };
+        ScreenshotStage: "after-load" | "after-capture-scripts";
         /** @description シークレットの名前 → `keep`。1 回の取り込みに 32 個まで (`Values` と同じ)。 */
         SecretArchive: {
             [key: string]: components["schemas"]["SecretArchiveMode"];
