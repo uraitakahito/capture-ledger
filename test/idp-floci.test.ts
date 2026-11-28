@@ -16,6 +16,7 @@ const ENDPOINT = process.env["CAPTURE_LEDGER_TEST_IDP_ENDPOINT"];
 if (ENDPOINT !== undefined) process.env["CAPTURE_LEDGER_IDP_ENDPOINT"] = ENDPOINT;
 
 const {
+  AI_CLIENT,
   cognito,
   syncClient,
   CRAWL_SCOPE,
@@ -235,6 +236,9 @@ describe.skipIf(ENDPOINT === undefined)(
  * 戻り先 (`LogoutURLs`) が client に無いと、IdP は 400 で断り、人が IdP の誤りの頁で止まる。前の bootstrap が作った
  * client (戻り先が無い) に `idp:bootstrap` が足せること、足しても client の ID が変わらないこと、Floci の logout のエンドポイントの
  * 形 (登録した物と 1 字でも違えば断る) を、ここで留める。
+ *
+ * **it は順に依る** —— 2 本目 (syncClient が戻り先を足す) の後の物は、戻り先が入った client を見る。1 本だけを
+ * 名指して流すと、足す前の client を見て落ちる。
  */
 describe.skipIf(ENDPOINT === undefined)(
   "workbench の client に、サインアウトの後の戻り先を足す",
@@ -343,14 +347,8 @@ describe.skipIf(ENDPOINT === undefined)(
     });
 
     it("secret つきの client: 設定が違えば直し、secret はそのまま。合えば呼ばない", async () => {
-      const settings = {
-        GenerateSecret: true,
-        AllowedOAuthFlows: ["client_credentials"],
-        AllowedOAuthScopes: [START_SCOPE],
-        AllowedOAuthFlowsUserPoolClient: true,
-        AccessTokenValidity: 10,
-        TokenValidityUnits: { AccessToken: "minutes" },
-      };
+      // idp:bootstrap が渡す本物の設定で試す (写しだと、設定を変えた時に試験が前の形のまま通る)
+      const settings = AI_CLIENT;
       await cognito("CreateResourceServer", {
         UserPoolId: pool,
         Identifier: RESOURCE_SERVER,

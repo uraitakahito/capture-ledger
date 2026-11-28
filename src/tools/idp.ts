@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { optional } from "./env.js";
+import { START_SCOPE } from "../api/scope.js";
 import { ROOT } from "./root.js";
 
 /** ホストから Floci に届く先。compose の `127.0.0.1:4566:4566`。 */
@@ -135,6 +136,19 @@ export const WORKBENCH_CLIENT = {
   CallbackURLs: [WORKBENCH_CALLBACK],
   LogoutURLs: [WORKBENCH_SIGNED_OUT],
   ExplicitAuthFlows: ["ALLOW_REFRESH_TOKEN_AUTH"],
+};
+
+/**
+ * AI の担当の app client の設定 (CAPTURE-450)。狭い scope だけを許し、token の期限を短くする —— 出た token は
+ * 期限まで止められないので (Cognito の決まり)、漏れた時の害を期限で小さくする。
+ */
+export const AI_CLIENT = {
+  GenerateSecret: true,
+  AllowedOAuthFlows: ["client_credentials"],
+  AllowedOAuthScopes: [START_SCOPE],
+  AllowedOAuthFlowsUserPoolClient: true,
+  AccessTokenValidity: 10,
+  TokenValidityUnits: { AccessToken: "minutes" },
 };
 
 /**

@@ -484,8 +484,8 @@ again.
 
 On the AWS side, register on capture-workbench's app client both the callback (allowed callback
 URL) `http://127.0.0.1:<WORKBENCH_PORT>/callback` and the sign-out URL (allowed sign-out URL)
-`http://127.0.0.1:<WORKBENCH_PORT>/login`, the same way `idp:bootstrap` does locally. The workbench
-sends **Sign out** to the IdP's logout endpoint, and the IdP refuses a sign-out URL that differs
+`http://127.0.0.1:<WORKBENCH_PORT>/login`, the same way `idp:bootstrap` does locally. From the version after v0.62.0,
+capture-workbench sends **Sign out** to the IdP's logout endpoint, and the IdP refuses a sign-out URL that differs
 from the registered one by even one character — **without the sign-out URL, signing out stops at the
 IdP's error page**.
 

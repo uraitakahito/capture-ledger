@@ -34,6 +34,7 @@ import { userInfo } from "node:os";
 
 import { guardEnv, upsertEnvLocal } from "./env.js";
 import {
+  AI_CLIENT,
   CRAWL_SCOPE,
   CognitoError,
   DEV_ORGANIZATION,
@@ -118,19 +119,6 @@ const ensureResourceServer = async (pool: string) => {
     Name: RESOURCE_SERVER,
     Scopes: [...have, ...missing],
   });
-};
-
-/**
- * AI の担当の app client の設定 (CAPTURE-450)。狭い scope だけを許し、token の期限を短くする —— 出た token は
- * 期限まで止められないので (Cognito の決まり)、漏れた時の害を期限で小さくする。
- */
-const AI_CLIENT = {
-  GenerateSecret: true,
-  AllowedOAuthFlows: ["client_credentials"],
-  AllowedOAuthScopes: [START_SCOPE],
-  AllowedOAuthFlowsUserPoolClient: true,
-  AccessTokenValidity: 10,
-  TokenValidityUnits: { AccessToken: "minutes" },
 };
 
 const ensureClient = async (pool: string, name: string, settings: object): Promise<Client> => {
