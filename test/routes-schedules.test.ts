@@ -505,6 +505,61 @@ describe("定期実行のエンドポイント", () => {
       expect(res.json()).toMatchObject({ enabled: false, health: "paused" });
     });
 
+    describe("回の失敗の文の言語 (Accept-Language)", () => {
+      const JA = "1 枚も撮れませんでした（取れず 1・見送り 0）。";
+      const EN = "No pages were captured (1 failed, 0 skipped).";
+      const failedRun = () =>
+        runOf({
+          state: "failed",
+          error: JA,
+          errorKey: "crawl.nothingCaptured",
+          errorParams: { failed: 1, skipped: 0 },
+        });
+      const errorOf = (res: { json: <T>() => T }) =>
+        res.json<{ recentRuns: { error: string | null }[] }>().recentRuns[0]?.error;
+
+      it("予定の答えを返すエンドポイントは、読むのも操作も、同じ言語で返す", async () => {
+        fake.rows.set(ID, rowOf());
+        fake.setRuns([failedRun()]);
+        for (const [language, expected] of [
+          [undefined, EN],
+          ["en", EN],
+          ["ja", JA],
+        ] as const) {
+          const headers = language === undefined ? {} : { "accept-language": language };
+          const one = await app.inject({ url: `/api/schedules/${ID}`, headers });
+          expect(errorOf(one)).toBe(expected);
+          expect(one.headers["content-language"]).toBe(language ?? "en");
+          expect(one.headers.vary).toBe("Accept-Language");
+          const all = await app.inject({ url: "/api/schedules", headers });
+          expect(
+            all.json<{ schedules: { recentRuns: { error: string }[] }[] }>().schedules[0]
+              ?.recentRuns[0]?.error,
+          ).toBe(expected);
+          // 操作 (POST) の答えも同じ形で、同じ言語
+          const paused = await app.inject({
+            method: "POST",
+            url: `/api/schedules/${ID}/pause`,
+            headers: { "content-type": "application/json", ...headers },
+            payload: {},
+          });
+          expect(paused.statusCode).toBe(200);
+          expect(errorOf(paused)).toBe(expected);
+          expect(paused.headers["content-language"]).toBe(language ?? "en");
+        }
+      });
+
+      it("鍵の無い回は、保存された字のまま", async () => {
+        fake.rows.set(ID, rowOf());
+        fake.setRuns([runOf({ state: "failed", error: "could not start: boom" })]);
+        const res = await app.inject({
+          url: `/api/schedules/${ID}`,
+          headers: { "accept-language": "ja" },
+        });
+        expect(errorOf(res)).toBe("could not start: boom");
+      });
+    });
+
     it("再開は次の期限を今から計算し直す（古い期限のまま戻さない）", async () => {
       fake.rows.set(ID, rowOf({ enabled: false, nextRunAt: jst("2026-11-01T04:00:00") }));
       const res = await post(`/api/schedules/${ID}/resume`);

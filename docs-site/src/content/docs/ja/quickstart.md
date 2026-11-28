@@ -275,6 +275,7 @@ AI の担当は、AI の担当の app client `ai` で始める CLI を使いま�
 pnpm run crawl start https://example.com/ --depth 0          # 始めて、クロールの id を出す
 pnpm run crawl start https://example.com/ --depth 0 --wait   # 終わるまで待って、結果を出す
 pnpm run crawl show <crawlId>                                 # 様子を見る
+pnpm run crawl show <crawlId> --lang ja                       # 失敗の文を日本語で（付けなければ英語）
 ```
 
 CLI は `.dev/idp-ai.env` から client の ID と secret を読み、token を取って叩きます。secret も token も出しません。

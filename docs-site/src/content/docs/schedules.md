@@ -136,6 +136,13 @@ Only runs closed within the last 48 hours are picked up (a run from before `035`
 summary, and the WACZ before and after). Both need `can_submit`, and return only pages whose two WACZ files the
 caller may view (`can_view`).
 
+A run's `error` in `recentRuns[]` is the crawl's: for a run that ended with no page captured it
+comes with `errorKey` and `errorParams`, and the ledger returns the sentence in the language the
+request asks for (`Accept-Language`; English without one) — in every answer that returns a
+schedule, whether it reads one or creates, pauses, resumes, runs or re-pins it
+([the archive ledger](/capture-ledger/archive-ledger/)). A run that could not start (`could not
+start: …`) has no key and is returned as stored.
+
 Both answers name the previous run as `prev` (`crawlId`, `startedAt`, `scheduledFor`; `null` when there is none).
 In the answer for one run, `pages` are the pages with a diff and `unchanged` are the compared pairs without one (the
 URL and the WACZ before and after). Besides pairs with the same text digest, `unchanged` holds pairs whose digests

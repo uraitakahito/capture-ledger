@@ -182,14 +182,37 @@ curl -X POST http://localhost:7070/api/archives/<id>/changes/summary \
 `maxDepth` も載るので、辿らないクロール（深さ 0）かどうかも言えます。
 
 **`succeeded` は 1 枚以上撮れたクロールです。** 1 枚も撮れずに終わると（全部のページが取れないか、robots で
-見送り）、`failed` で締め、`stopReason` は `failed`、`error` に「1 枚も撮れませんでした（取れず 1・見送り 0）。
-最初の理由: …」と書きます。機械で読む呼び手のために、行はその文の中身も持ちます: `errorKey` が文の鍵
+見送り）、`failed` で締め、`stopReason` は `failed`、`error` に、取れなかった数・見送った数と最初の理由を書きます（日本語を
+頼めば「1 枚も撮れませんでした（取れず 1・見送り 0）。最初の理由: …」）。機械で読む呼び手のために、行はその文の中身も持ちます: `errorKey` が文の鍵
 （`crawl.nothingCaptured`・`crawl.nothingCapturedBecause`。古い migration が締めた行は
 `crawl.nothingCapturedBackfilled`）、`errorParams` が文に埋めた値（`failed`・`skipped` と、在れば `reason`）です。
 **いま鍵が付くのは、この文だけです。**ほかの `error`（flow が報告した失敗・人が打った理由と、capture-ledger の
 ほかの決まった文 `Windmill did not take level …`・`could not start: …`）は、どちらも null です。
 鍵と値の名前は、一度出したら変えません。一部だけ取れなかったクロールは `succeeded` のままで、取れなかった数は `pagesFailed`
 で言います。理由は `GET /api/crawls/:id` の `failures` です（新しい 5 件）。
+
+**capture-ledger は、自分で書いた文を、頼みの言語で返します。**`Accept-Language` を読み、英語（`en`）と
+日本語（`ja`）の辞書を持ちます。`errorKey` の在る行の `error` は、鍵と値からその言語で組みます。
+`GET /api/crawls`・`GET /api/crawls/:id` と、予定を返すどの答え（読む・作る・止める・戻す・いま撮る・
+寄せ直す）の `recentRuns` でも同じです。
+
+| 頼み                                                      | 鍵の在る行の `error`                                                      |
+| --------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `Accept-Language` が無い・`*` だけ                        | 英語                                                                      |
+| `Accept-Language: ja`（`ja-JP`・`ja` の重みが一番大きい） | 日本語（「1 枚も撮れませんでした（取れず 1・見送り 0）。最初の理由: …」） |
+| `Accept-Language: en`                                     | 英語（"No pages were captured (1 failed, 0 skipped). First reason: …"）   |
+| 辞書の無い言語（`fr`）                                    | 英語                                                                      |
+
+言語の名前は頭の subtag で読み、重み（`q`）の大きい順に見ます。`q=0` の物は外します。言語を訳に、頼みを
+断ることはありません。答えは、返した言語を `Content-Language` に書き、`Vary: Accept-Language` を付けます。
+
+**鍵の無い行は、どの言語を頼んでも、保存された字のまま返します。**flow が報告した失敗・人が打った理由・
+ほかの道具の文です。英語を頼んでも、日本語の字のことがあります。`errorKey` と `errorParams` は言語で
+変わらないので、失敗を機械で読む呼び手は、字ではなくこちらを読みます。
+
+頼みを断るときの文は、別の扱いです。文（`hint`）は日本語のままで、答えに鍵と値（`hints`）を添え、読む側が
+自分の言語に組みます（[取り込みの設定](/capture-ledger/ja/capture-options/)）。断りの文は読む側が訳し、
+クロールの失敗の文は capture-ledger が訳します。
 
 `waczCount` は、そのクロールから出た WACZ の数です。`archives.crawl_id` は、列を足すより前の行で
 空なので、`crawl_pages` の `task_id` を挟んで数えています。

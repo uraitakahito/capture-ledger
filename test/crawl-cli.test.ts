@@ -9,6 +9,8 @@ import {
   refusalText,
   startBody,
   unreachableText,
+  isLang,
+  langHeader,
   summaryOf,
   tokenRequest,
   tokenStillGood,
@@ -190,5 +192,19 @@ describe("始める本文と、知らせる所", () => {
       requestedClient: "ai",
       requestedActor: "swe-seat-1",
     });
+  });
+});
+
+describe("--lang", () => {
+  it("書けるのは、capture-ledger が辞書を持つ言語", () => {
+    expect(isLang("ja")).toBe(true);
+    expect(isLang("en")).toBe(true);
+    expect(isLang("fr")).toBe(false);
+    expect(isLang("ja-JP")).toBe(false);
+  });
+
+  it("付ければ Accept-Language で頼み、付けなければ何も足さない (capture-ledger の既定で受ける)", () => {
+    expect(langHeader("ja")).toEqual({ "accept-language": "ja" });
+    expect(langHeader(undefined)).toEqual({});
   });
 });

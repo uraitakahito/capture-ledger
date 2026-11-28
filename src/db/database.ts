@@ -271,7 +271,7 @@ export interface CrawlsTable {
   /**
    * `error` の文の鍵と、埋めた値 (`048`・`i18n/messages.ts`)。**鍵の表 (`MESSAGE_KEYS`) の文にだけ入る** (いまは、
    * 1 枚も撮れずに終わった時の文) —— flow が報告した文・人が打った字・capture-ledger のほかの決まった文
-   * (`crawl/launch.ts`・`schedules/tick.ts` の英語の文) は null のままで、`error` の字をそのまま返す。鍵の在る行は、返す時に辞書で組む。
+   * (`crawl/launch.ts`・`schedules/tick.ts` の英語の文) は null のままで、`error` の字をそのまま返す。鍵の在る行は、返す時に、頼みの言語の辞書で組む (`i18n/locale.ts`)。
    *
    * 値を書くときは JSON の文字列 (`scripts` と同じ扱い)。
    */

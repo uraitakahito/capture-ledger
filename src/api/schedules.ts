@@ -7,11 +7,13 @@
  * 中継の形を 1 本の正規表現で絞れる。
  */
 import type { OpenFgaClient } from "@openfga/sdk";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { CrawlRequester, CrawlBody, PreparedCrawl, RefusedCrawl } from "../crawl/prepare.js";
 import { CRAWL_BODY_LIMIT, CRAWL_BODY_SCHEMA } from "../crawl/prepare.js";
 import type { ScheduleRecipe } from "../db/database.js";
+import { speak } from "../i18n/locale.js";
+import { errorIn, type Locale } from "../i18n/messages.js";
 import { createChildLogger } from "../logger.js";
 import { checkCron, nextRunAfter } from "../schedules/cron.js";
 import { scheduleHealth } from "../schedules/health.js";
@@ -72,6 +74,7 @@ const answerOf = (
   running: { crawlId: string; startedAt: Date } | undefined,
   latest: LatestVersions,
   now: Date,
+  locale: Locale,
 ) => {
   const last = runs[0];
   const health = scheduleHealth({
@@ -115,7 +118,8 @@ const answerOf = (
     createdBy: row.createdBy,
     createdByName: row.createdByName,
     createdAt: row.createdAt,
-    recentRuns: runs,
+    // 回の `error` は、クロールの答えと同じく頼みの言語で組む (`i18n/messages.ts`)
+    recentRuns: runs.map((run) => ({ ...run, error: errorIn(run, locale) })),
   };
 };
 
@@ -128,13 +132,18 @@ const uuidParams = {
 export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRouteDeps): void => {
   const { fga, resolveIdentity, store } = deps;
 
-  const answerFor = async (row: ScheduleRow) => {
+  /**
+   * 予定 1 つの答え。**予定の答えを返すエンドポイントは、みなここを通る** (作る・止める・戻す・いま撮る・寄せ直すも) ので、
+   * 回の `error` の言語は、どのエンドポイントでも同じに決まる。
+   */
+  const answerFor = async (row: ScheduleRow, request: FastifyRequest, reply: FastifyReply) => {
+    const locale = speak(request, reply);
     const [runs, running, latest] = await Promise.all([
       store.recentRuns(row.id),
       store.runningCrawl(),
       store.latestVersions(),
     ]);
-    return answerOf(row, runs, running, latest, deps.now());
+    return answerOf(row, runs, running, latest, deps.now(), locale);
   };
 
   const notFound = (reply: FastifyReply) => reply.code(404).send({ error: "not found" });
@@ -216,7 +225,7 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
         { subject: who.subject, scheduleId: created.row.id, cron, next: checked.next },
         "Schedule created",
       );
-      return reply.code(201).send(await answerFor(created.row));
+      return reply.code(201).send(await answerFor(created.row, request, reply));
     },
   );
 
@@ -231,8 +240,11 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
       store.latestVersions(),
     ]);
     const now = deps.now();
+    const locale = speak(request, reply);
     const schedules = await Promise.all(
-      rows.map(async (row) => answerOf(row, await store.recentRuns(row.id), running, latest, now)),
+      rows.map(async (row) =>
+        answerOf(row, await store.recentRuns(row.id), running, latest, now, locale),
+      ),
     );
     return reply.code(200).send({ schedules });
   });
@@ -245,7 +257,7 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
       if (identity === null) return reply;
       const row = await store.get(request.params.id);
       if (row === undefined) return notFound(reply);
-      return reply.code(200).send(await answerFor(row));
+      return reply.code(200).send(await answerFor(row, request, reply));
     },
   );
 
@@ -259,7 +271,7 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
       const row = await store.pause(request.params.id);
       if (row === undefined) return notFound(reply);
       log.info({ subject: identity.subject, scheduleId: row.id }, "Schedule paused");
-      return reply.code(200).send(await answerFor(row));
+      return reply.code(200).send(await answerFor(row, request, reply));
     },
   );
 
@@ -273,14 +285,14 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
       const current = await store.get(request.params.id);
       if (current === undefined) return notFound(reply);
       // 動いている予定は何も変えない (期限を計算し直すと順番待ちの回が消える)
-      if (current.enabled) return reply.code(200).send(await answerFor(current));
+      if (current.enabled) return reply.code(200).send(await answerFor(current, request, reply));
       const row = await store.resume(
         current.id,
         nextRunAfter(current.cron, current.timezone, deps.now()),
       );
       if (row === undefined) return notFound(reply);
       log.info({ subject: identity.subject, scheduleId: row.id }, "Schedule resumed");
-      return reply.code(200).send(await answerFor(row));
+      return reply.code(200).send(await answerFor(row, request, reply));
     },
   );
 
@@ -301,7 +313,7 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
       if (row === undefined) return notFound(reply);
       deps.poke();
       log.info({ subject: identity.subject, scheduleId: row.id }, "Schedule run requested");
-      return reply.code(202).send(await answerFor(row));
+      return reply.code(202).send(await answerFor(row, request, reply));
     },
   );
 
@@ -322,7 +334,7 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
       const row = await store.repin(current.id, recipeOf(prepared), deps.now());
       if (row === undefined) return notFound(reply);
       log.info({ subject: identity.subject, scheduleId: row.id }, "Schedule pinned again");
-      return reply.code(200).send(await answerFor(row));
+      return reply.code(200).send(await answerFor(row, request, reply));
     },
   );
 
