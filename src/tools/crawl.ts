@@ -171,6 +171,9 @@ program
       urls: string[],
       opts: { depth?: number; actor?: string; wait?: boolean; timeout: number; lang?: string },
     ) => {
+      // 待たない時は結果 (error) を出さないので、言語は効かない。黙って捨てずに断る
+      if (opts.lang !== undefined && !opts.wait)
+        throw new Refused("--lang は --wait と一緒に使う (待たない時は、結果を出さない)");
       const token = tokens(clientOrFail());
       // castlist は、旗と環境変数で決まらない時だけ訊く (遅い・届かない時に待たない。要らない時に session の ID を送らない)
       const actor =
