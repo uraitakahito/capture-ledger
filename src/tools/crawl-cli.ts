@@ -9,6 +9,7 @@
  */
 
 import { isActorName } from "../crawl/requester.js";
+import { LOCALES } from "../i18n/messages.js";
 
 /** AI の担当の引き渡しファイル (`.dev/idp-ai.env`) から読む物。 */
 export interface AiClient {
@@ -161,3 +162,10 @@ export const startBody = (seeds: readonly string[], depth: number | undefined) =
   seeds,
   ...(depth !== undefined && { maxDepth: depth }),
 });
+
+/** `--lang` に書ける言語か。capture-ledger が辞書を持つ言語 (`src/i18n/messages.ts` の `LOCALES`)。 */
+export const isLang = (value: string): boolean => (LOCALES as readonly string[]).includes(value);
+
+/** `--lang` を、頼みの見出しに。付けなければ何も足さない (capture-ledger の既定の言語で受ける)。 */
+export const langHeader = (lang: string | undefined): Record<string, string> =>
+  lang === undefined ? {} : { "accept-language": lang };

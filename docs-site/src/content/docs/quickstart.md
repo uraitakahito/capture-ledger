@@ -280,6 +280,7 @@ capture-workbench cannot tell who started it. An AI agent uses the CLI that star
 pnpm run crawl start https://example.com/ --depth 0          # start one and print its crawl ID
 pnpm run crawl start https://example.com/ --depth 0 --wait   # wait for it to end and print the result
 pnpm run crawl show <crawlId>                                 # see how it is going
+pnpm run crawl show <crawlId> --lang ja                       # the failure sentence in Japanese (English without it)
 ```
 
 The CLI reads the client ID and secret from `.dev/idp-ai.env`, gets a token and calls the API. It prints neither the

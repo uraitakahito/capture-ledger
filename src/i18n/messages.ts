@@ -104,3 +104,18 @@ export const say = (told: Message, locale: Locale): string => {
   if (text === undefined) throw new Error(`message ${told.key} could not be rendered`);
   return text;
 };
+
+/** 行の `error` の字と、文の鍵と埋めた値 (`048`)。 */
+export interface StoredError {
+  error: string | null;
+  errorKey: string | null;
+  errorParams: unknown;
+}
+
+/**
+ * 行の `error` を、頼みの言語で返す字にする。**鍵の在る行は辞書で組み、無い行は保存された字のまま** ——
+ * flow が報告した文・人が打った字・ほかの道具の文は、どの言語を頼まれても同じ字を返す。鍵が在っても
+ * 組めなければ (`render` が undefined)、保存された字に倒す。
+ */
+export const errorIn = (row: StoredError, locale: Locale): string | null =>
+  row.errorKey === null ? row.error : (render(row.errorKey, row.errorParams, locale) ?? row.error);

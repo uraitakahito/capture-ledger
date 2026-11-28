@@ -20,6 +20,8 @@ import {
   actorFromCastlist,
   aiClientOf,
   heldTokenOf,
+  isLang,
+  langHeader,
   refusalText,
   startBody,
   summaryOf,
@@ -29,6 +31,7 @@ import {
   type AiClient,
   type HeldToken,
 } from "./crawl-cli.js";
+import { LOCALES } from "../i18n/messages.js";
 import { guardEnv, optional } from "./env.js";
 import { IDP_AI_HANDOFF, readEnvFile } from "./idp.js";
 import { ROOT } from "./root.js";
@@ -106,19 +109,43 @@ const call = async (
   return body as Record<string, unknown>;
 };
 
-const show = async (token: () => Promise<string>, crawlId: string) =>
-  summaryOf(await call(token, "GET", `/api/crawls/${encodeURIComponent(crawlId)}`));
+/**
+ * 1 本を読む。`lang` を渡せば、capture-ledger が自分で書く文 (失敗の `error`) をその言語で受ける
+ * (`Accept-Language`)。渡さなければ capture-ledger の既定 (英語)。
+ */
+const show = async (token: () => Promise<string>, crawlId: string, lang?: string) =>
+  summaryOf(
+    await call(token, "GET", `/api/crawls/${encodeURIComponent(crawlId)}`, {
+      headers: langHeader(lang),
+    }),
+  );
 
-const waitFor = async (token: () => Promise<string>, crawlId: string, timeoutS: number) => {
+const waitFor = async (
+  token: () => Promise<string>,
+  crawlId: string,
+  timeoutS: number,
+  lang?: string,
+) => {
   const until = Date.now() + timeoutS * 1000;
   for (;;) {
-    const one = await show(token, crawlId);
+    const one = await show(token, crawlId, lang);
     if (one.state !== "running") return one;
     if (Date.now() > until)
       throw new Refused(`${String(timeoutS)} 秒待っても終わらない (crawl ${crawlId})`);
     await new Promise((done) => setTimeout(done, POLL_MS));
   }
 };
+
+const langOf = (value: string) => {
+  if (!isLang(value)) throw new InvalidArgumentError(LOCALES.join(" か "));
+  return value;
+};
+
+const LANG_OPTION = [
+  "--lang <lang>",
+  `失敗の文 (error) を受ける言語 (${LOCALES.join("・")})。付けなければ capture-ledger の既定 (英語)`,
+  langOf,
+] as const;
 
 const depthOf = (value: string) => {
   const n = Number(value);
@@ -138,11 +165,15 @@ program
   .option("--actor <name>", "申告する席の名前 (既定は CAPTURE_LEDGER_ACTOR か castlist)")
   .option("--wait", "終わるまで待って、結果を出す")
   .option("--timeout <s>", "--wait の上限 (秒)", depthOf, 1800)
+  .option(...LANG_OPTION)
   .action(
     async (
       urls: string[],
-      opts: { depth?: number; actor?: string; wait?: boolean; timeout: number },
+      opts: { depth?: number; actor?: string; wait?: boolean; timeout: number; lang?: string },
     ) => {
+      // 待たない時は結果 (error) を出さないので、言語は効かない。黙って捨てずに断る
+      if (opts.lang !== undefined && !opts.wait)
+        throw new Refused("--lang は --wait と一緒に使う (待たない時は、結果を出さない)");
       const token = tokens(clientOrFail());
       // castlist は、旗と環境変数で決まらない時だけ訊く (遅い・届かない時に待たない。要らない時に session の ID を送らない)
       const actor =
@@ -163,7 +194,7 @@ program
       if (!opts.wait) process.stdout.write(`${crawlId}\n`);
       if (opts.wait)
         process.stdout.write(
-          `${JSON.stringify(await waitFor(token, crawlId, opts.timeout), null, 2)}\n`,
+          `${JSON.stringify(await waitFor(token, crawlId, opts.timeout, opts.lang), null, 2)}\n`,
         );
     },
   );
@@ -172,9 +203,10 @@ program
   .command("show")
   .description("クロール 1 本の様子")
   .argument("<crawlId>")
-  .action(async (crawlId: string) => {
+  .option(...LANG_OPTION)
+  .action(async (crawlId: string, opts: { lang?: string }) => {
     process.stdout.write(
-      `${JSON.stringify(await show(tokens(clientOrFail()), crawlId), null, 2)}\n`,
+      `${JSON.stringify(await show(tokens(clientOrFail()), crawlId, opts.lang), null, 2)}\n`,
     );
   });
 

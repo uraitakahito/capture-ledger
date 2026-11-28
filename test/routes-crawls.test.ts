@@ -272,6 +272,9 @@ interface FakeCrawl {
   pagesDiscovered: number;
   pagesCaptured: number;
   error: string | null;
+  /** `error` の文の鍵と埋めた値 (`048`)。本物の行は必ず持つ (無ければ null)。試験の行は、要る時だけ書く。 */
+  errorKey?: string | null;
+  errorParams?: Record<string, string | number> | null;
   lastJobId?: string | null;
   lastJobDepth?: number | null;
   /**
@@ -1401,6 +1404,89 @@ describe("クロール route の認可と単一実行", () => {
     expect(body.failures).toHaveLength(5);
     expect(body.pagesFailed).toBe(7);
     await app.close();
+  });
+
+  describe("失敗の文の言語 (Accept-Language)", () => {
+    const JA = "1 枚も撮れませんでした（取れず 0・見送り 1）。最初の理由: robots";
+    const EN = "No pages were captured (0 failed, 1 skipped). First reason: robots";
+    /** 1 枚も撮れずに終わった行。字 (日本語) と、文の鍵と埋めた値を持つ。 */
+    const nothing: FakeCrawl = {
+      ...finishedCrawl,
+      state: "failed",
+      stopReason: "failed",
+      pagesCaptured: 0,
+      error: JA,
+      errorKey: "crawl.nothingCapturedBecause",
+      errorParams: { failed: 0, skipped: 1, reason: "robots" },
+    };
+    const read = async (crawl: FakeCrawl, language?: string) => {
+      const app = await buildApp(depsWith({ crawls: [crawl], allowed: true, pages: [] }));
+      const headers = language === undefined ? {} : { "accept-language": language };
+      const one = await app.inject({ method: "GET", url: `/api/crawls/${UUID}`, headers });
+      const all = await app.inject({ method: "GET", url: "/api/crawls", headers });
+      await app.close();
+      return { one, all };
+    };
+    const errorsOf = ({ one, all }: Awaited<ReturnType<typeof read>>) => [
+      one.json<{ error: string | null }>().error,
+      all.json<{ crawls: { error: string | null }[] }>().crawls[0]?.error,
+    ];
+
+    it("言語を付けなければ英語 (既定)。答えに、返した言語を書く", async () => {
+      const answers = await read(nothing);
+      expect(errorsOf(answers)).toEqual([EN, EN]);
+      for (const res of [answers.one, answers.all]) {
+        expect(res.headers["content-language"]).toBe("en");
+        expect(res.headers.vary).toBe("Accept-Language");
+      }
+    });
+
+    it("ja を頼めば、保存された字と 1 字も違わない日本語", async () => {
+      const answers = await read(nothing, "ja");
+      expect(errorsOf(answers)).toEqual([JA, JA]);
+      expect(answers.one.headers["content-language"]).toBe("ja");
+    });
+
+    it.each([
+      ["en", EN],
+      ["en-US,ja;q=0.5", EN],
+      ["ja,en-US;q=0.9,en;q=0.8", JA],
+      ["fr", EN],
+      ["*", EN],
+    ])("%s", async (language, expected) => {
+      expect(errorsOf(await read(nothing, language))).toEqual([expected, expected]);
+    });
+
+    it("鍵と値は、言語で変わらない", async () => {
+      for (const language of ["ja", "en"]) {
+        const { one } = await read(nothing, language);
+        expect(one.json()).toMatchObject({
+          errorKey: "crawl.nothingCapturedBecause",
+          errorParams: { failed: 0, skipped: 1, reason: "robots" },
+        });
+      }
+    });
+
+    it("鍵の無い行 (flow の文・人の字) は、どの言語を頼んでも保存された字のまま", async () => {
+      const reported =
+        "[compile] compile 422 CompileFailed: 型の誤り 1 件。最初の 1 件: a.ts:2:9 TS2322 x";
+      const flow: FakeCrawl = { ...nothing, error: reported, errorKey: null, errorParams: null };
+      expect(errorsOf(await read(flow, "en"))).toEqual([reported, reported]);
+      expect(errorsOf(await read(flow, "ja"))).toEqual([reported, reported]);
+    });
+
+    it("鍵が在っても組めなければ (知らない鍵・値が足りない)、保存された字に倒す", async () => {
+      const newer: FakeCrawl = { ...nothing, errorKey: "crawl.somethingNewer", errorParams: {} };
+      expect(errorsOf(await read(newer, "en"))).toEqual([JA, JA]);
+      const broken: FakeCrawl = { ...nothing, errorParams: { failed: 0 } };
+      expect(errorsOf(await read(broken, "en"))).toEqual([JA, JA]);
+    });
+
+    it("失敗していない行の error は null のまま", async () => {
+      expect(
+        errorsOf(await read({ ...finishedCrawl, errorKey: null, errorParams: null }, "en")),
+      ).toEqual([null, null]);
+    });
   });
 
   it("取れなかったページが無ければ、取れなかった数は 0", async () => {

@@ -206,6 +206,33 @@ and the names of its values do not change once released. A crawl that lost only
 some pages stays `succeeded`, and `pagesFailed` says how many; `failures` on
 `GET /api/crawls/:id` gives the reasons (the latest 5).
 
+**The ledger returns the sentences it wrote itself in the language the request asks for.** It
+reads `Accept-Language` and has dictionaries for English (`en`) and Japanese (`ja`): for a row
+with an `errorKey`, `error` is put together from the key and the values in that language, on
+`GET /api/crawls`, `GET /api/crawls/:id`, and in `recentRuns` of every answer that returns a
+schedule (reading it, and creating, pausing, resuming, running or re-pinning it).
+
+| Request                                                      | `error` of a row with a key |
+| ------------------------------------------------------------ | --------------------------- |
+| No `Accept-Language`, or only `*`                            | English                     |
+| `Accept-Language: ja` (or `ja-JP`, or `ja` weighted highest) | Japanese                    |
+| `Accept-Language: en`                                        | English                     |
+| A language with no dictionary (`fr`)                         | English                     |
+
+The language tags are read by their first subtag, in the order of their weights (`q`); a tag
+with `q=0` is left out. A request is never refused for its language. The answer says which
+language it used in `Content-Language`, and carries `Vary: Accept-Language`.
+
+**A row without a key is returned as stored, whatever the language** — a failure the flow
+reported, a reason a person typed, a sentence from another tool. Those may be Japanese even
+when English is asked for. `errorKey` and `errorParams` do not change with the language, so a
+caller that reads the failure by machine should read those, not the text.
+
+What the ledger says when it refuses a request is a different thing: there the sentence
+(`hint`) stays Japanese and the answer carries a key and values (`hints`) for the reader to put
+into its own language ([capture options](/capture-ledger/capture-options/)). The reader
+translates refusals; the ledger translates a crawl's failure.
+
 `waczCount` is how many WACZ that crawl produced. `archives.crawl_id` is empty on rows
 from before the column was added, so the count goes through `crawl_pages.task_id`.
 

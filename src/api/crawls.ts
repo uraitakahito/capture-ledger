@@ -89,7 +89,8 @@ import {
 } from "../crawl/request-key.js";
 import { ACTOR_HEADER, actorOf, INVALID_ACTOR, requesterOf } from "../crawl/requester.js";
 import { nothingCaptured as nothingCapturedMessage } from "../crawl/close.js";
-import { say } from "../i18n/messages.js";
+import { speak } from "../i18n/locale.js";
+import { errorIn, say } from "../i18n/messages.js";
 import { pagesFailed } from "../crawl/page-counts.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
 import { WindmillUnreachable, type WindmillVariables } from "../crawl/windmill-variables.js";
@@ -707,6 +708,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       if (before !== undefined) query = query.where("startedAt", "<", new Date(before));
 
       const rows = await query.execute();
+      const locale = speak(request, reply);
       return reply.code(200).send({
         crawls: rows.map((crawl) => ({
           crawlId: crawl.id,
@@ -728,7 +730,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           linksRecorded: crawl.linksRecordedAt !== null,
           pagesCaptured: crawl.pagesCaptured,
           pagesFailed: crawl.pagesFailed,
-          error: crawl.error,
+          // capture-ledger が自分で書いた文は、頼みの言語で組む。ほかは保存された字のまま (`i18n/messages.ts`)
+          error: errorIn(crawl, locale),
           // `error` の文の鍵と埋めた値 (`048`)。capture-ledger が自分で書いた文にだけ在る。無ければ null
           errorKey: crawl.errorKey,
           errorParams: crawl.errorParams,
@@ -789,6 +792,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         .limit(FAILURES_SHOWN)
         .execute();
 
+      const locale = speak(request, reply);
       return reply.code(200).send({
         crawlId: crawl.id,
         seeds: crawl.seeds,
@@ -810,7 +814,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         linksRecorded: crawl.linksRecordedAt !== null,
         pagesCaptured: crawl.pagesCaptured,
         pagesFailed: failures[0]?.total ?? 0,
-        error: crawl.error,
+        error: errorIn(crawl, locale),
         errorKey: crawl.errorKey,
         errorParams: crawl.errorParams,
         // **登録済みのスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、

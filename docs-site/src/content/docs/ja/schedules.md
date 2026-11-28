@@ -123,6 +123,11 @@ OpenFGA に訊けなかった時は、回を止めずに `none` で始めます�
 `GET /api/crawls/:id/changes`（ページごとの差分・要約・前と今の WACZ）で読み、どちらも `can_submit` で通し、
 前と今の WACZ を `can_view` で見てよいページだけを返します。
 
+`recentRuns[]` の回の `error` は、クロールの `error` です。1 枚も撮れずに終わった回には `errorKey` と `errorParams` が付き、
+capture-ledger は、その文を頼みの言語で返します（`Accept-Language`。付けなければ英語）。予定を返すどの答え（読む・作る・
+止める・戻す・いま撮る・寄せ直す）でも同じです（[アーカイブの記録](/capture-ledger/ja/archive-ledger/)）。
+始められなかった回（`could not start: …`）には鍵が無く、保存された字のまま返します。
+
 どちらの答えも、前の回を `prev`（`crawlId`・`startedAt`・`scheduledFor`。前の回が無ければ `null`）で返します。
 1 本の答えの `pages` は差分の在るページで、`unchanged` は比べた組のうち差分の無いページ（URL・前と今の WACZ）です。
 文字の digest が同じ組のほか、digest は違うが空行と字下げだけが違った組も `unchanged` に入ります（周回は差分を残さない）。
