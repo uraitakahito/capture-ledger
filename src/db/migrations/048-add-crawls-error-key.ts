@@ -10,8 +10,9 @@
  * ## `crawls.error_key`・`crawls.error_params`
  *
  * 鍵は `i18n/messages.ts` の `MESSAGE_KEYS` の名前、値はその文に埋めた物 (名前 → 字か数)。**どちらも、
- * capture-ledger が自分で書いた文にだけ入る。** flow が報告した文・人が打った字・ほかの道具の文は
- * null のまま (`error` の字をそのまま返す)。`error` の列は消さない —— 鍵の無い行の答えで、鍵の在る行でも
+ * 鍵の表に在る文にだけ入る** (この migration の時点では、1 枚も撮れずに終わった時の文だけ)。flow が報告した文・
+ * 人が打った字・capture-ledger のほかの決まった文 (`Windmill did not take level …` など) は null のまま
+ * (`error` の字をそのまま返す)。`error` の列は消さない —— 鍵の無い行の答えで、鍵の在る行でも
  * 文を組めなかった時の倒れ先になる。
  *
  * ## 既に在る行を埋める

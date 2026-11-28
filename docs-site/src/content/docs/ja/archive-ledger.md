@@ -186,7 +186,8 @@ curl -X POST http://localhost:7070/api/archives/<id>/changes/summary \
 最初の理由: …」と書きます。機械で読む呼び手のために、行はその文の中身も持ちます: `errorKey` が文の鍵
 （`crawl.nothingCaptured`・`crawl.nothingCapturedBecause`。古い migration が締めた行は
 `crawl.nothingCapturedBackfilled`）、`errorParams` が文に埋めた値（`failed`・`skipped` と、在れば `reason`）です。
-`error` が capture-ledger の書いた文でないとき（flow が報告した失敗・人が打った理由）は、どちらも null です。
+**いま鍵が付くのは、この文だけです。**ほかの `error`（flow が報告した失敗・人が打った理由と、capture-ledger の
+ほかの決まった文 `Windmill did not take level …`・`could not start: …`）は、どちらも null です。
 鍵と値の名前は、一度出したら変えません。一部だけ取れなかったクロールは `succeeded` のままで、取れなかった数は `pagesFailed`
 で言います。理由は `GET /api/crawls/:id` の `failures` です（新しい 5 件）。
 

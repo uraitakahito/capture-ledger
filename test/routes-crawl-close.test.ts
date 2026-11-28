@@ -252,6 +252,23 @@ describe("nothingCaptured", () => {
     });
   });
 
+  it("200 字の境で割れた絵文字 (片割れのサロゲート) は、U+FFFD に替える", () => {
+    // 片割れは JSON で \\ud83d と書かれ、Postgres の jsonb が断る (値を書く UPDATE ごと落ちる)
+    const told = nothingCaptured([{ status: "failed", skipReason: `${"あ".repeat(199)}😀の後ろ` }]);
+    const reason = String(told.params["reason"]);
+    expect(reason).toBe(`${"あ".repeat(199)}\uFFFD`);
+    expect(JSON.stringify(told.params)).not.toMatch(/\\ud[89a-f]/iu);
+    // 字 (`error`) も、同じ理由から組む —— 値から日本語で組み直した字と 1 字も違わない
+    expect(
+      nothingCapturedError([{ status: "failed", skipReason: `${"あ".repeat(199)}😀の後ろ` }]),
+    ).toBe(`1 枚も撮れませんでした（取れず 1・見送り 0）。最初の理由: ${"あ".repeat(199)}\uFFFD`);
+  });
+
+  it("もともと片割れを含む理由も、U+FFFD に替える。揃った対はそのまま", () => {
+    const told = nothingCaptured([{ status: "failed", skipReason: "a\uD83Db\uDE00c 😀" }]);
+    expect(told.params["reason"]).toBe("a\uFFFDb\uFFFDc 😀");
+  });
+
   it("理由は 200 字で切って値に入れる", () => {
     expect(
       nothingCaptured([{ status: "failed", skipReason: "あ".repeat(201) }]).params["reason"],

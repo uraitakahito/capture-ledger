@@ -269,8 +269,9 @@ export interface CrawlsTable {
   pagesCaptured: ColumnType<number, number | undefined, number>;
   error: ColumnType<string | null, string | null | undefined, string | null>;
   /**
-   * `error` の文の鍵と、埋めた値 (`048`・`i18n/messages.ts`)。**capture-ledger が自分で書いた文にだけ入る** ——
-   * flow が報告した文や人が打った字は null のままで、`error` の字をそのまま返す。鍵の在る行は、返す時に辞書で組む。
+   * `error` の文の鍵と、埋めた値 (`048`・`i18n/messages.ts`)。**鍵の表 (`MESSAGE_KEYS`) の文にだけ入る** (いまは、
+   * 1 枚も撮れずに終わった時の文) —— flow が報告した文・人が打った字・capture-ledger のほかの決まった文
+   * (`crawl/launch.ts`・`schedules/tick.ts` の英語の文) は null のままで、`error` の字をそのまま返す。鍵の在る行は、返す時に辞書で組む。
    *
    * 値を書くときは JSON の文字列 (`scripts` と同じ扱い)。
    */

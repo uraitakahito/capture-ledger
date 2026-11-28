@@ -117,13 +117,14 @@ is and the values in it (`048`), so that the sentence can be put together again 
 
 ```
 
-| Column         | What it holds                                                                                                                            |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `error`        | The sentence as text. Kept for every failed row; the answer for rows without a key                                                       |
-| `error_key`    | Which sentence it is (a name in `MESSAGE_KEYS`, `src/i18n/messages.ts`). NULL when the `error` is not a sentence the ledger wrote itself |
-| `error_params` | The values in that sentence, name to string or number (a CHECK keeps it an object). Written together with `error_key`                    |
+| Column         | What it holds                                                                                                                      |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `error`        | The sentence as text. Kept for every failed row; the answer for rows without a key                                                 |
+| `error_key`    | Which sentence it is (a name in `MESSAGE_KEYS`, `src/i18n/messages.ts`). NULL for every `error` that is not one of those sentences |
+| `error_params` | The values in that sentence, name to string or number (a CHECK keeps it an object). Written together with `error_key`              |
 
-A failure the flow reported, or a reason a person typed, has no key: the row keeps only `error`.
+A failure the flow reported, a reason a person typed, and the ledger's other fixed sentences
+(`Windmill did not take level …`, `could not start: …`) have no key: the row keeps only `error`.
 `048` also filled the key and the values of rows that already held one of the ledger's own
 sentences, and only where putting them back together gave the stored text character for
 character; it did not rewrite `error`.
