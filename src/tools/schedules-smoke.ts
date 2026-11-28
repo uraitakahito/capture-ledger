@@ -402,7 +402,7 @@ try {
   // ── 版 ─────────────────────────────────────────────────
   const latest = await store.latestVersions();
   check(
-    "スクリプトの版は数で返る",
+    "capture scripts の版は数で返る",
     [...latest.named.values(), ...latest.byDefault.values()].every(
       (version) => typeof version === "number",
     ),

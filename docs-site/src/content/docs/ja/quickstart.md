@@ -135,15 +135,15 @@ pnpm run search:connect   # OpenSearch が答えるのを待ち、CAPTURE_LEDGER
 ```sh
 pnpm install         # 初回のみ
 pnpm run db:migrate  # テーブルを作成
-pnpm run scripts import .upstream/capture-scripts  # ページの中で走らせるものを入れる
+pnpm run capture-scripts import .upstream/capture-scripts  # ページの中で走らせるものを入れる
 ```
 
-:::caution[スクリプトを入れ忘れない]
-BrowserHive は**走らせるものの顔ぶれを持ちません**。登録済みのスクリプトが無いと、クロールはページの中で
+:::caution[Capture scripts を入れ忘れない]
+BrowserHive は**走らせるものの顔ぶれを持ちません**。登録済みの capture scripts が無いと、クロールはページの中で
 何も走らせず —— スクロールも遅延読み込みも起きないまま、**成功したアーカイブが出ます**。
 BrowserHive が自分で入れるのは乱数を記録するスクリプトだけで（頁の JS より先）、それも
 [`recordRandom`](/capture-ledger/ja/capture-options/#乱数を記録する) を渡したクロールに限ります。
-入っているかは `pnpm run scripts list` が言います。
+入っているかは `pnpm run capture-scripts list` が言います。
 :::
 
 ## 5. 認可を準備する
@@ -287,10 +287,10 @@ CLI は `.dev/idp-ai.env` から client の ID と secret を読み、token を�
 `TOKEN=$(pnpm run --silent idp:token --user ai-cli --org acme)`）。
 :::
 
-サイト用のスクリプトを試すなら、起点を `https://laws.e-gov.go.jp/` にし、本文に `"variables":{"query":"個人情報"}` を足します。
+サイト用の capture scripts を試すなら、起点を `https://laws.e-gov.go.jp/` にし、本文に `"variables":{"query":"個人情報"}` を足します。
 `scripts` を書かなければ、capture-scripts から入れた `egov-law-search`（対象サイト `laws.e-gov.go.jp`）が既定に入り、頁の中で法令名を
 `query` の語で検索します。`query` は必須で、渡さなければ `400 missing variables` です
-（[キャプチャオプション](/capture-ledger/ja/capture-options/)の「サイト用のスクリプト」）。
+（[キャプチャオプション](/capture-ledger/ja/capture-options/)の「サイト用の capture scripts」）。
 
 クロールがどう終わったかは、同じヘッダで `GET /api/crawls/<crawlId>` に訊きます。落ちたなら `error`
 に「[段] 文」が、取れなかったページは `failures` に理由とページの id（`page`）つきで、

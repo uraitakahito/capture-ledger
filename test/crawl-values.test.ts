@@ -10,7 +10,7 @@ import {
 import type { CrawlScript, CrawlSecret, ScriptParam } from "../src/db/database.js";
 
 /**
- * クロールごとの値 (変数とシークレット) を、スクリプトの宣言に照らす判断。
+ * クロールごとの値 (変数とシークレット) を、capture scripts の宣言に照らす判断。
  *
  * route (`POST /api/crawls`) はこの答えをそのまま 400 の本文にし、シークレットが Windmill に在るかだけを
  * 別に訊く。DB を使う試験はこの repo に無いので、断る条件は全部ここで見る。
@@ -35,8 +35,8 @@ const secret = (name: string, required = false): ScriptParam => ({
   required,
 });
 
-describe("頼みの変数を、スクリプトの宣言に照らす", () => {
-  it("宣言した変数は通り、シークレットは名前順に path と宣言したスクリプトの id を添えて返す", () => {
+describe("頼みの変数を、capture scripts の宣言に照らす", () => {
+  it("宣言した変数は通り、シークレットは名前順に path と宣言した capture script の id を添えて返す", () => {
     const result = checkValues(
       [
         script("egov-law-search", [variable("query"), secret("zeta_token", true)]),
@@ -71,14 +71,14 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
     });
   });
 
-  it("どのスクリプトも宣言していない名前は unknown variables で名指す（綴りの誤りを黙って通さない）", () => {
+  it("どの capture script も宣言していない名前は unknown variables で名指す（綴りの誤りを黙って通さない）", () => {
     expect(checkValues([script("a", [variable("query")])], { qeury: "x", query: "y" })).toEqual({
       kind: "refused",
       body: { error: "unknown variables", names: ["qeury"] },
     });
   });
 
-  it("宣言を読めないスクリプトが在れば、知らない名前を通す —— 理由は flow の compile の段が BH0002 で言う", () => {
+  it("宣言を読めない capture script が在れば、知らない名前を通す —— 理由は flow の compile の段が BH0002 で言う", () => {
     expect(
       checkValues([script("a", [variable("query")])], { k: "v" }, { unreadable: true }),
     ).toEqual({ kind: "ok", secrets: [] });
@@ -178,14 +178,14 @@ describe("頼みの変数を、スクリプトの宣言に照らす", () => {
     expect(checkValues([script("a", [a]), script("b", [a])], { q: "xx" }).kind).toBe("ok");
   });
 
-  it("宣言の無い登録済みのスクリプト（古い写し）は、その場の TS ではないので例外にしない", () => {
+  it("宣言の無い登録済みの capture scripts（古い写し）は、その場の TS ではないので例外にしない", () => {
     expect(checkValues([script("autoscroll")], { k: "v" })).toEqual({
       kind: "refused",
       body: { error: "unknown variables", names: ["k"] },
     });
   });
 
-  it("シークレットの名前を変数で渡すと断る（記録に値が残る）。宣言を読めないスクリプトが在っても", () => {
+  it("シークレットの名前を変数で渡すと断る（記録に値が残る）。宣言を読めない capture script が在っても", () => {
     expect(
       checkValues([script("a", [secret("api_token")])], { api_token: "x" }, { unreadable: true }),
     ).toEqual({
@@ -335,7 +335,7 @@ describe("compile の答えの宣言を、行に固定する写しへ", () => {
     expect(plain).not.toHaveProperty("params");
   });
 
-  it("答えに無いスクリプトの変数は残さない —— 正は source の宣言", () => {
+  it("答えに無い capture scripts の変数は残さない —— 正は source の宣言", () => {
     expect(pinDeclarations([script("a", [variable("old")])], [])[0]?.params).toEqual([]);
   });
 });

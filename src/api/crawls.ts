@@ -255,7 +255,7 @@ export interface CrawlRouteDeps {
   dispatchRetryDelaysMs?: readonly number[];
   /**
    * Windmill の変数に在るかを訊くクライアント (`crawl/windmill-variables.ts`)。webhook と同じ設定から作るので、
-   * 無いのは URL が flow の webhook の形でないときだけ —— そのとき、シークレットを宣言したスクリプトの
+   * 無いのは URL が flow の webhook の形でないときだけ —— そのとき、シークレットを宣言した capture script の
    * クロールは 400 で止まる (値を解く flow が無いので)。
    */
   windmill?: WindmillVariables;
@@ -606,7 +606,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           subject: identity.subject,
           crawlId: launched.crawlId,
           // **何を走らせるかは、始めたときにしか見えない。** 版まで出す ——
-          // id だけだと、後から登録済みのスクリプトを書き換えたときに「何が走ったのか」を
+          // id だけだと、後から登録済みの capture scripts を書き換えたときに「何が走ったのか」を
           // このログから言えなくなる。
           scripts: prepared.scripts.map((script) => `${script.id}@${String(script.version)}`),
           // 値は出さない。変数は行と BrowserHive WACZ の settings.variables に在り、シークレットの値は capture-ledger を通らない
@@ -817,8 +817,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         error: errorIn(crawl, locale),
         errorKey: crawl.errorKey,
         errorParams: crawl.errorParams,
-        // **登録済みのスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
-        // 中身はスクリプトの 1 版のエンドポイント (`GET /api/capture-scripts/:id/versions/:version`)・`pnpm run capture-scripts show`・
+        // **登録済みの capture scripts は身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
+        // 中身は capture script の 1 版のエンドポイント (`GET /api/capture-scripts/:id/versions/:version`)・`pnpm run capture-scripts show`・
         // archive に在る。**その場の TS には頼まれた
         // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は workbench が 2 秒ごとに引き直すので、
         // 1 MiB の TS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
@@ -868,7 +868,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
   /**
    * その場の TS 1 本の source。**「欄に戻す」のためのエンドポイント** ——直して撮り直すときに、書いた物を
-   * 取り戻せるのはここだけ（archive に在るのは変換後の JS）。登録済みのスクリプトは capture-ledger と archive に在るので
+   * 取り戻せるのはここだけ（archive に在るのは変換後の JS）。登録済みの capture scripts は capture-ledger と archive に在るので
    * 返さない（404）。名前の綴りは`POST /api/crawls` の本文と同じ schema で、合わなければ許可を見る前に 400。
    */
   app.get<{ Params: { id: string; name: string } }>(
@@ -917,7 +917,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
    *
    * 送るのは、始めたときに行へ固定した写しを webhook と同じ形 (`toDispatched`) にした物で、flow の
    * compile の段が送ったのと同じ組み合わせ。だから同じ版のサービスなら、同じ誤りが返る。通る
-   * 組み合わせなら `diagnostics` は空。`script` は誤りの在るスクリプトの id (受け皿の型や lib の
+   * 組み合わせなら `diagnostics` は空。`script` は誤りの在る capture scripts の id (受け皿の型や lib の
    * 誤りは `file` のまま)。Claude は呼ばない —— 読むだけのエンドポイントなので GET。
    */
   app.get<{ Params: { id: string } }>(
@@ -1112,7 +1112,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   /**
    * 型で落ちたクロールの、その場の TS の直し方。**Claude の案は、クロールと同じ検査に通った物だけを返す**
    * (`scripts/fix.ts`)。お金の掛かる Claude の前に、ただの検査と上限を済ませる —— 組み合わせが通る (409)・
-   * 誤りが登録済みのスクリプトにだけ在る (422)・組織の月の上限に届いた (429) ときは、Claude を呼ばない。
+   * 誤りが登録済みの capture scripts にだけ在る (422)・組織の月の上限に届いた (429) ときは、Claude を呼ばない。
    * Claude を呼んだ回は、答えがどれでも派生の層 (`026`) に残す。本文は `{}` (何も選ばせない)。
    */
   if (claude !== undefined && derivations !== undefined) {
@@ -1832,7 +1832,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           }
         }
 
-        // ── 0. 走った JS の hash を、固定したスクリプトに写す ────────────
+        // ── 0. 走った JS の hash を、固定した capture scripts に写す ────────────
         // capture-ledger の `sha256` は TS の物で、archive に残るのは JS。その間を継ぐ JS の hash は
         // 報告にしか無い。揃っていなければ断る (400/409) —— **capture-ledger と flow の片方だけを新しく
         // すると 1 段目でここに当たる。** 黙って通すより、報告の形が違うことを最初に言う。
@@ -2344,7 +2344,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               hostParallelism: crawl.hostParallelism,
               captureFormats: capture.formats,
               signing: capture.signing,
-              // 登録済みのスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
+              // 登録済みの capture scripts は引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
               scripts: crawl.captureScripts.map(toDispatched),
               // 値も行に固定した物をそのまま。変数は値ごと、シークレットは名前 → path と、残す名前 (読み直した写しから)
               variables: crawl.variables,

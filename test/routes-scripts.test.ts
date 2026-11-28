@@ -12,7 +12,7 @@ import {
 import { recordingDb } from "./recording-db.js";
 
 /**
- * スクリプトを読むエンドポイント (`src/api/scripts.ts`) の検査。
+ * Capture scripts を読むエンドポイント (`src/api/scripts.ts`) の検査。
  *
  * DB は Kysely に SQL を組ませて記録する代役 (`recording-db.ts`)。だから「許可が無ければ SQL を
  * 1 本も出さない」と「1 版のエンドポイントは版で絞る」を、組んだ SQL で言える。Postgres で本当に通るかは
@@ -64,7 +64,7 @@ describe.each(["/api/capture-scripts", "/api/scripts"])("%s", (BASE) => {
     "/api/host-types",
   ];
 
-  describe("スクリプトを読むエンドポイントの認可", () => {
+  describe("Capture scripts を読むエンドポイントの認可", () => {
     it.each(ROUTES)("名乗りが無ければ 401 で、OpenFGA には訊かない: %s", async (url) => {
       const { res, queries } = await get(url, {
         fga: untouchable,
@@ -238,7 +238,7 @@ describe.each(["/api/capture-scripts", "/api/scripts"])("%s", (BASE) => {
       });
     });
 
-    it("既定に入らないスクリプトも enabled: false で返す（名指しすれば走るので）", async () => {
+    it("既定に入らない capture scripts も enabled: false で返す（名指しすれば走るので）", async () => {
       const row = {
         id: "autofetch",
         version: 1,
@@ -253,7 +253,7 @@ describe.each(["/api/capture-scripts", "/api/scripts"])("%s", (BASE) => {
       expect(res.json<{ scripts: unknown[] }>().scripts).toEqual([row]);
     });
 
-    it("サイト用のスクリプトも返す（既定で走る物だけではない）。対象サイトで絞らない", async () => {
+    it("サイト用の capture scripts も返す（既定で走る物だけではない）。対象サイトで絞らない", async () => {
       const rows = [
         {
           id: "autoscroll",

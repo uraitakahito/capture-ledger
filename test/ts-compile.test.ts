@@ -189,7 +189,7 @@ describe("設定からクライアントを作る", () => {
   });
 });
 
-describe("誤りをスクリプトに結ぶ", () => {
+describe("誤りを capture scripts に結ぶ", () => {
   it("<id>.ts は送った id に直し、送っていない file はそのまま残す", () => {
     expect(
       attributeDiagnostics(

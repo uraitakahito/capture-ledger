@@ -2,13 +2,13 @@
 /**
  * いま何が立っているかを 1 画面で言う。**何も変えない。**
  *
- * 見るのは、コンテナ・ホストのプロセス・設定・検索・IdP・ビューア・保管庫・定期実行・スクリプト。どれも「立ち上げの
+ * 見るのは、コンテナ・ホストのプロセス・設定・検索・IdP・ビューア・保管庫・定期実行・capture scripts。どれも「立ち上げの
  * どこまで済んでいるか」を答えるためのもので、`pnpm run dev:up` が止まったとき
  * (段 6) と、朝いちばんに「昨日のが残っているか」を見るときに使う。
  *
  * **読めないことと、無いことを混ぜない。** コンテナを数えられない (container が
- * 入っていない) のと 0 件は別だし、スクリプトが読めない (DB が起きていない) のと
- * スクリプトが 0 本なのも別。前者は理由を書く。
+ * 入っていない) のと 0 件は別だし、capture scripts が読めない (DB が起きていない) のと
+ * capture scripts が 0 本なのも別。前者は理由を書く。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -297,11 +297,11 @@ if (databaseUrl === undefined) {
   }
 }
 
-// ── スクリプト ──────────────────────────────────────────────────────
+// ── capture scripts ──────────────────────────────────────────────────────
 // ページで走らせる JavaScript。**空だと、撮れているのに何も走らない。**
 const cli = resolve(ROOT, "dist/scripts/cli.js");
 if (!existsSync(cli)) {
-  console.log(row("スクリプト", "読めない (pnpm run build がまだ)"));
+  console.log(row("capture scripts", "読めない (pnpm run build がまだ)"));
 } else {
   const listed = spawnSync(
     process.execPath,
@@ -310,10 +310,10 @@ if (!existsSync(cli)) {
   );
   if (listed.status !== 0) {
     const why = `${listed.stderr ?? ""}`.trim().split("\n").at(-1) ?? "理由が出ない";
-    console.log(row("スクリプト", `読めない (${why})`));
+    console.log(row("capture scripts", `読めない (${why})`));
   } else {
     const lines = `${listed.stdout ?? ""}`.trim().split("\n").filter(Boolean);
-    console.log(row("スクリプト", lines[0] ?? "空 (何も走らない)"));
+    console.log(row("capture scripts", lines[0] ?? "空 (何も走らない)"));
     for (const line of lines.slice(1)) console.log(row("", line));
   }
 }

@@ -136,15 +136,15 @@ pnpm run search:connect   # waits for OpenSearch, then writes CAPTURE_LEDGER_OPE
 ```sh
 pnpm install         # first time only
 pnpm run db:migrate  # create the tables
-pnpm run scripts import .upstream/capture-scripts  # what runs inside the page
+pnpm run capture-scripts import .upstream/capture-scripts  # what runs inside the page
 ```
 
-:::caution[Do not forget the scripts]
-BrowserHive has **no roster of its own**. With no scripts in the ledger, a crawl runs nothing inside
+:::caution[Do not forget the capture scripts]
+BrowserHive has **no roster of its own**. With no capture scripts in the ledger, a crawl runs nothing inside
 the page — no scrolling, no lazy loading — and still **produces a successful archive**. The one thing
 BrowserHive puts in on its own is its recorder of random values, before the page's JS, and only for a crawl
 that sends [`recordRandom`](/capture-ledger/capture-options/#recording-random-values).
-`pnpm run scripts list` says what is in there.
+`pnpm run capture-scripts list` says what is in there.
 :::
 
 ## 5. Prepare authorization
@@ -293,11 +293,11 @@ used, get a token as the dedicated user `ai-cli` (`pnpm run idp:grant --user ai-
 `TOKEN=$(pnpm run --silent idp:token --user ai-cli --org acme)`).
 :::
 
-To try a site script, seed `https://laws.e-gov.go.jp/` and add `"variables":{"query":"個人情報"}` to the body.
-Without `scripts`, the registered script `egov-law-search` (for `laws.e-gov.go.jp`, from capture-scripts) joins the
+To try a site capture script, seed `https://laws.e-gov.go.jp/` and add `"variables":{"query":"個人情報"}` to the body.
+Without `scripts`, the registered capture script `egov-law-search` (for `laws.e-gov.go.jp`, from capture-scripts) joins the
 default set and searches law titles for the word in `query` within the page. `query` is required; without it the
 answer is `400 missing variables`
-(see "Site scripts" in [Capture options](/capture-ledger/capture-options/)).
+(see "Site capture scripts" in [Capture options](/capture-ledger/capture-options/)).
 
 Ask `GET /api/crawls/<crawlId>`, with the same header, how the crawl ended. A failed crawl carries
 `error` as `[step] message`, pages that could not be captured are in `failures` with their reasons and

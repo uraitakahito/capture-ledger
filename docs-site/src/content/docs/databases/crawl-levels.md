@@ -22,7 +22,7 @@ description: The levels of a crawl. Each holds the Windmill job id as its level 
 
 ## It keeps the arguments
 
-`args` is the level as the webhook sends it (the level's URLs `frontier`, scripts, variables, secret names with their Windmill variable paths, User-Agent and so on). Sending again, and sending a level that was never sent before the API restarted, need it. It holds no secret values. Nor does it keep the sink's token (the `artifactSink` bearer): the level clock makes a new one, with a new expiry, when it sends again.
+`args` is the level as the webhook sends it (the level's URLs `frontier`, capture scripts, variables, secret names with their Windmill variable paths, User-Agent and so on). Sending again, and sending a level that was never sent before the API restarted, need it. It holds no secret values. Nor does it keep the sink's token (the `artifactSink` bearer): the level clock makes a new one, with a new expiry, when it sends again.
 
 ## Counts are written per level
 

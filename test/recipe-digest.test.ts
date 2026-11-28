@@ -36,7 +36,7 @@ describe("撮り方の digest (recipeDigestOf)", () => {
     );
   });
 
-  it("スクリプトの版・sha256・並び・User-Agent・シークレットの名前が違えば違う", () => {
+  it("Capture scripts の版・sha256・並び・User-Agent・シークレットの名前が違えば違う", () => {
     const d = recipeDigestOf(BASE);
     expect(
       recipeDigestOf({ ...BASE, scripts: [{ ...BASE.scripts[0]!, version: 3 }, BASE.scripts[1]!] }),
@@ -52,7 +52,7 @@ describe("撮り方の digest (recipeDigestOf)", () => {
     expect(recipeDigestOf({ ...BASE, secretNames: ["token"] })).not.toBe(d);
   });
 
-  it("スクリプトの写しに付く source や compiled は入れない", () => {
+  it("Capture scripts の写しに付く source や compiled は入れない", () => {
     const withExtra = {
       ...BASE,
       scripts: BASE.scripts.map((s) => ({

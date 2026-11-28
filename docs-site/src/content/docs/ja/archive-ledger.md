@@ -149,22 +149,22 @@ curl -X POST http://localhost:7070/api/archives/<id>/changes/summary \
 どのリクエストも形は route の JSON Schema で決まっています。説明ではなく
 検査そのものが契約です。
 
-|                                                            |                      |                                                                                  |
-| ---------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`                               | `id`                 | UUID。違えば **400**（認可より前に落ちる）                                       |
-| `GET /api/archives`                                        | `before`             | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
-| `GET /api/archives/:id/screenshots/:stage`                 | `id`・`stage`        | UUID と、`after-load` か `after-behaviors`。違えば **400**（認可より前に落ちる） |
-| `GET /api/history`                                         | `url`                | 1 字以上。http(s) の URL として読めなければ **400**                              |
-|                                                            | `before`             | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
-| `GET /api/archives/:id/changes`                            | `id`・`since`        | どちらも UUID で、`since` は必須。違えば **400**（認可より前に落ちる）           |
-| `POST /api/archives/:id/changes/summary`                   | `id`・本文の `since` | 同じ                                                                             |
-| `GET /api/crawls`                                          | `state`              | `running` / `succeeded` / `failed`。違えば **400**                               |
-|                                                            | `before`             | ISO 8601 の日時。違えば **400**。省略すると最新から                              |
-| `GET /api/crawls/:id/pages`                                | `after`              | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                          |
-|                                                            | `limit`              | 1〜500。既定 100。外れは **400**                                                 |
-| `GET /api/crawls/:id/pages/:page/log`                      | `page`               | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる）          |
-| `GET /api/crawls/:id/pages/:page/trace`                    | `page`               | 同じ                                                                             |
-| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`               | 同じ                                                                             |
+|                                                            |                      |                                                                                        |
+| ---------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`                               | `id`                 | UUID。違えば **400**（認可より前に落ちる）                                             |
+| `GET /api/archives`                                        | `before`             | ISO 8601 の日時。違えば **400**。省略すると最新から                                    |
+| `GET /api/archives/:id/screenshots/:stage`                 | `id`・`stage`        | UUID と、`after-load` か `after-capture-scripts`。違えば **400**（認可より前に落ちる） |
+| `GET /api/history`                                         | `url`                | 1 字以上。http(s) の URL として読めなければ **400**                                    |
+|                                                            | `before`             | ISO 8601 の日時。違えば **400**。省略すると最新から                                    |
+| `GET /api/archives/:id/changes`                            | `id`・`since`        | どちらも UUID で、`since` は必須。違えば **400**（認可より前に落ちる）                 |
+| `POST /api/archives/:id/changes/summary`                   | `id`・本文の `since` | 同じ                                                                                   |
+| `GET /api/crawls`                                          | `state`              | `running` / `succeeded` / `failed`。違えば **400**                                     |
+|                                                            | `before`             | ISO 8601 の日時。違えば **400**。省略すると最新から                                    |
+| `GET /api/crawls/:id/pages`                                | `after`              | 前の答えの `next`。数字だけで 18 桁まで。違えば **400**                                |
+|                                                            | `limit`              | 1〜500。既定 100。外れは **400**                                                       |
+| `GET /api/crawls/:id/pages/:page/log`                      | `page`               | ページの id。数字だけで 18 桁まで。違えば **400**（認可より前に落ちる）                |
+| `GET /api/crawls/:id/pages/:page/trace`                    | `page`               | 同じ                                                                                   |
+| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`               | 同じ                                                                                   |
 
 `before` はカーソルで、直前に受け取った最後の行の `capturedAt`（クロールなら
 `startedAt`）を渡します。`GET /api/history` だけは、答えの `next` を渡します。
@@ -239,7 +239,8 @@ S3 は署名しか見ないので、URL を署名した瞬間に判断は確定�
 
 アーカイブ 1 本の、節目のスクリーンショット（取り込みのページの viewport の絵。WebP）を返すエンドポイントです
 （CAPTURE-8）。絵は BrowserHive WACZ の中の WARC の `resource` レコードで、BrowserHive v30.2.0 から、絵を撮る設定の
-配備が入れます。時点は `after-load`（読み込みの後）と `after-behaviors`（スクリプトの後）です。
+配備が入れます。時点は `after-load`（読み込みの後）と `after-capture-scripts`（capture scripts の後）です。BrowserHive WACZ Profile 1.30.0 より前の
+WACZ は後の方を `after-behaviors` と書きます。capture-ledger は読む時に `after-capture-scripts` に寄せるので、答えはいつも新しい名です。
 
 ```sh
 curl -o after-load.webp http://localhost:7070/api/archives/<id>/screenshots/after-load
@@ -307,7 +308,7 @@ capture-workbench のタブ「変化」の「URL の履歴」が読みます。�
       "origin": { "kind": "schedule", "scheduleId": "<uuid>", "scheduleName": "毎朝の 5 サイト" },
       "recipeSha256": "<64 hex>", // 分からなければ null
       "browserhiveVersion": "32.0.0", // 分からなければ null
-      "text": { "stage": "after-behaviors", "sha256": "<64 hex>", "chars": 6543 },
+      "text": { "stage": "after-capture-scripts", "sha256": "<64 hex>", "chars": 6543 },
       "notComparable": null,
     },
   ],
@@ -319,7 +320,7 @@ capture-workbench のタブ「変化」の「URL の履歴」が読みます。�
   絞るので、返る行はそれより少ないことがあります。**続きが在るかは `next` で見ます**（見てよい行が 0 でも、
   続きが在れば `next` は時刻です）。
 - `origin.kind` は、予定の回なら `schedule`、手で始めたクロールなら `manual`、クロールに繋がらなければ `unknown` です。
-- `text` は比べる行です。選び方は自動の比べと同じで、after-behaviors の写し、無ければ文書の行（`stage` は `null`）です。
+- `text` は比べる行です。選び方は自動の比べと同じで、after-capture-scripts の写し、無ければ文書の行（`stage` は `null`）です。
   「1 つ前から変わったか」は、隣どうしの `text.sha256` を見比べれば分かります。capture-ledger は数えません
   （見てよくない取り込みと同じ文字かどうかを漏らさないためです）。
 - 比べられない行は `text` が `null` で、`notComparable` に訳が入ります。上から順に見ます。
@@ -357,7 +358,7 @@ capture-workbench のタブ「変化」の「URL の履歴」が読みます。�
     "sourceUrl": "…",
     "capturedAt": "…",
     "browserhiveVersion": "28.0.1",
-    "stage": "after-behaviors",
+    "stage": "after-capture-scripts",
   },
   "after": {
     "archiveId": "<uuid>",
@@ -365,7 +366,7 @@ capture-workbench のタブ「変化」の「URL の履歴」が読みます。�
     "sourceUrl": "…",
     "capturedAt": "…",
     "browserhiveVersion": "32.0.0",
-    "stage": "after-behaviors",
+    "stage": "after-capture-scripts",
   },
   "summary": null, // 要約が在れば { "evidence": false, "model": "…", "promptVersion": "change-pair-v1", "usd": 0.0123 }
   "significance": null,
@@ -392,7 +393,7 @@ capture-workbench のタブ「変化」の「URL の履歴」が読みます。�
 
 - `recipeDiffers` は、2 本のクロールの撮り方の digest（`crawls.recipe_sha256`）が違えば `true` です。自動の比べは
   撮り方が同じ回どうしだけを比べますが、こちらは違う 2 本も比べ、印を付けます。
-- `stageDiffers` は、比べた行の種類が違えば `true` です（片方が after-behaviors の写し、片方が文書の行）。
+- `stageDiffers` は、比べた行の種類が違えば `true` です（片方が after-capture-scripts の写し、片方が文書の行）。
   `before.stage`・`after.stage` が、それぞれの比べた行です（文書の行は `null`）。
 - `summary`・`significance`・`headline`・`quotes` は、同じ差分の要約が派生の層（`derivations`）に在るときだけ
   載ります。この GET は Claude を呼びません。**要約は証拠ではありません**（`evidence: false`）。
@@ -424,7 +425,7 @@ capture-workbench のタブ「変化」の「URL の履歴」が読みます。�
 - **同じ差分に 2 度払いません。** 差分から作る入力の digest と、決まりの文の版が同じ要約が在れば、Claude を呼ばずに
   それを返します（`reused: true`）。自動の比べが残した要約でも、同じ差分なら当たります。
 - 費用は、「今」の取り込みを撮ったクロールの組織に数えます。月の上限（`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`）は、
-  自動の要約・スクリプトの直し方を訊く機能と分け合います。
+  自動の要約・capture scripts の直し方を訊く機能と分け合います。
 - 残す行は、`archive_id` が「今」の取り込み、`target` が `{ archiveId, prevArchiveId }`、`created_by` が頼んだ人です。
 - Claude が答えない・断るときも、自動のやり直しはしません（頼み直します）。払った試みは、月の上限に数えます。
 
@@ -567,7 +568,7 @@ Windmill の job の id を乱数で決めて持ちます。この id が **段�
 
 `seeds`（1 本以上の配列）は必須で、無ければ **400**。ほかに
 `rules` / `maxDepth` / `maxPages` / `perHostDelayMs` / `hostParallelism` / `scripts`（ページで
-走らせるもの）/ `variables`（スクリプトが宣言した、クロールごとの値。
+走らせるもの）/ `variables`（capture scripts が宣言した、クロールごとの値。
 [キャプチャオプション](/capture-ledger/ja/capture-options/#クロールごとの値)を参照）/ `userAgent` / `recordRandom`（同じ頁を参照）。
 知らない鍵は**黙って落とさず** **400**。
 
@@ -925,7 +926,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/log
 枚数が尽きたページは、`state` が `skipped`、`reason` が `robots-exemption-limit` で、番号は持ちません。
 
 **capture-ledger は行を持ちません。** 行は取り込みのログ ——
-ページで走ったスクリプトが書いた物（`__bh.log`・`__bh.report`・投げた例外）、取り込みのページ自身の
+ページで走った capture scripts が書いた物（`__bh.log`・`__bh.report`・投げた例外）、取り込みのページ自身の
 console、BrowserHive の出来事 —— で、BrowserHive（v24.0.0 から）が答えと、成果物の隣の
 `.result.json` に載せます。シークレットの値は、長さに依らず `***` に替えてあります。
 ログのエンドポイントはそのたびに保管庫からこの file を読み、`log` を書かれたまま、届いた順で返します。
@@ -952,7 +953,7 @@ id（`page`）を持つので、取れなかったページからそのまま行
 穴が 2 つ残っています。`timeout`・`connection`・`internal` で落ちた取り込みは 1 度だけ撮り直され、
 capture-ledger が持つのは 2 回目の `taskId` だけなので、1 回目のログは保管庫に在っても、ここからは辿れません。
 またエンドポイントの認可は組織を見ない `maySubmit` で、クロールを始められる者は、どのクロールの行も ——
-スクリプトが報告した値も、取り込みのページが出した文も —— 読めます。`GET /api/crawls/:id`
+capture scripts が報告した値も、取り込みのページが出した文も —— 読めます。`GET /api/crawls/:id`
 と同じ性質です。
 
 ### 取り込みの経緯
@@ -968,7 +969,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 #                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … },
 #                  "screenshots": [ { "stage": "after-load", "url": "urn:browserhive:screenshot:after-load:https://…/",
 #                                     "date": "2026-11-04T05:12:09.120Z", "record": "urn:uuid:5b0c…", "bytes": 48213 },
-#                                   { "stage": "after-behaviors", "skipped": "task-budget" } ],
+#                                   { "stage": "after-capture-scripts", "skipped": "task-budget" } ],
 #                  "failureScreenshot": false },
 #     "log": { …ログのエンドポイントと同じ物… },
 #     "trace": { "lines": [ { "kind": "request", "id": "3246.2", "hop": 0, "url": "https://…/app.js", "ms": 670,
@@ -1041,7 +1042,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace/failure-scre
 答えは JSON で、絵は base64 です —— capture-workbench の `/api/*` の中継が、文字の答えだけを通すためです。
 
 **絵が在るのは、取り込みのページを触っている間の失敗だけです。** 文書が 4xx・5xx だった取り込みと、文書が届いた後に
-失敗した取り込み（操作ごとの時間切れ・スクリプトの失敗）で、取り込み全体の予算が残っているときに置かれます。
+失敗した取り込み（操作ごとの時間切れ・capture scripts の失敗）で、取り込み全体の予算が残っているときに置かれます。
 **文書が取り込みのページに届く前に読み込みが時間切れになった取り込みには、ありません**（どの文書の絵かを言えないため）。
 取り込み全体の時間切れ・途中で切られた呼び出し・renderer の crash・方針の失敗と、絵を残さない取り込み（上の条件）にも
 ありません。経緯の答えの `capture.failureScreenshot` が `true` のときにだけ、ここを読んでください。
@@ -1250,14 +1251,15 @@ BrowserHive が WACZ の `pages/pages.jsonl` に `title` と `text` を書いて
 前者は調べるべき異常で、後者は正常な運用です。
 
 BrowserHive は、頁を写した時点ごとにページ一覧の行を書きます（読み込みの後が
-`after-load`、スクリプトの後が `after-behaviors`）。行の `url` は写しの urn
+`after-load`、capture scripts の後が `after-capture-scripts`。BrowserHive WACZ Profile 1.30.0 より前の WACZ は `after-behaviors` と
+書き、capture-ledger は `after-capture-scripts` として索引します）。行の `url` は写しの urn
 （`urn:browserhive:snapshot:after-load:https://…` の形で、文書の URL はその後ろ）です。
 capture-ledger は行ごとに 1 件として載せ、時点を `stage` に入れます。同じアーカイブの
 検索前と検索後が両方当たれば 2 件返ります。認可はアーカイブで決まるので、2 件の答えは
 同じです。
 
 WACZ Profile 1.18.0 から、1 行目はいつでも取り込んだ文書の行です。`stage` が無く、`url` は
-要求の URL で、題と本文はスクリプトの後に読んだ物 —— `after-behaviors` の行とほぼ同じ文です。
+要求の URL で、題と本文は capture scripts の後に読んだ物 —— `after-capture-scripts` の行とほぼ同じ文です。
 両方を載せると同じ語が 1 アーカイブで 2 回当たるので、写しの行があるアーカイブでは、文書の行を
 載せません。写しが 1 つも無い取り込み（本文を伏せた文書など）は文書の行だけで、その行を載せ、
 `stage` は `null` です。
@@ -1375,7 +1377,7 @@ digest が同じページの WACZ を開かずに「同じ」と言えます。�
 先頭に、続けて深さ・撮った時刻の順です（決まった順にするためです。replay が、頁が持たない物を探す
 3 本は、この並びではなく WACZ の名前の順で選ばれます）。
 `initialPages`（replay が最初に見せる一覧）は、`pages.json` の行を replayweb-player の `/q/` が問いなしで
-答える並び（深さ → 時刻 → `id`）にした先頭の 25 行です。文書の行も DOM の写しの行（after-load・after-behaviors）も
+答える並び（深さ → 時刻 → `id`）にした先頭の 25 行です。文書の行も DOM の写しの行（after-load・after-capture-scripts）も
 入ります。起点が先頭に来て、replay は一覧の 2 ページ目を `/q/` の 26 行目から読むので、切れ目なく続きます。写しの行の
 `isSeed` は同じ頁の文書の行と同じです（深さ 0 なら true）。起点と起点でない行が混ざると、replay は既定で `isSeed` の
 行だけを並べるからです。

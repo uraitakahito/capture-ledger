@@ -58,7 +58,7 @@ export const RULES_MAX = 32;
  * `POST /api/crawls` が受ける本文の上限。**capture-workbench の門（その src/lib.mjs の WRITE_LIMIT）と
  * 同じ 1 MiB** —— 片方だけを変えると、workbench が通すのに capture-ledger が 413、の形になる。Fastify の既定と同じ値だが、
  * 既定に頼らずにこのエンドポイントに書く。その先の BrowserHive の本文の上限は 4 MiB だが、収まる保証は無い ——
- * この 1 MiB が見るのは頼みの本文 (その場の TS を含む) だけで、登録済みのスクリプト (`scripts` 表) には
+ * この 1 MiB が見るのは頼みの本文 (その場の TS を含む) だけで、登録済みの capture scripts (`capture_scripts` 表) には
  * 大きさの検査が無く、変換 (tsc の印字し直し) で JS は大きくなりうる。
  */
 export const CRAWL_BODY_LIMIT = 1024 * 1024;
@@ -70,7 +70,7 @@ export interface CrawlBody {
   /** 起点の URL。**必須** だが、断るのは handler (`CRAWL_BODY_SCHEMA` の注記) なので型では省ける。 */
   seeds?: string[];
   /**
-   * クロールごとの変数 (名前 → 文字列)。スクリプトが宣言した名前 (`params` の `variable`) だけを渡せ、
+   * クロールごとの変数 (名前 → 文字列)。Capture scripts が宣言した名前 (`params` の `variable`) だけを渡せ、
    * 行に固定されて段ごとに配られ、BrowserHive WACZ の `settings.variables` に**値が残る**。シークレットには欄が無い ——
    * 宣言した名前を Windmill の変数に結ぶ (`crawl/values.ts`)。
    */
@@ -96,10 +96,10 @@ export interface CrawlBody {
   perHostDelayMs?: number;
   hostParallelism?: number;
   /**
-   * ページの中で走らせるもの。**並びがそのまま実行順**。要素は登録済みのスクリプトの名指し (`{ catalog }`) か、
+   * ページの中で走らせるもの。**並びがそのまま実行順**。要素は登録済みの capture script の名指し (`{ catalog }`) か、
    * その場で書いた TS (`{ inline }`)。その場の TS は登録されず、この行の写しにだけ固定される。
    *
-   * 省くと登録済みのスクリプトの**有効な各 id の最新版**のうち、対象サイトの無い物と、起点に合うサイト用の物が走る
+   * 省くと登録済みの capture scripts の**有効な各 id の最新版**のうち、対象サイトの無い物と、起点に合うサイト用の物が走る
    * (`017`・`021`)。空配列を渡せば何も走らない ——
    * 「既定でよい」と「何も走らせない」は別の意思なので、書き分けられるようにしてある。
    */
@@ -282,7 +282,7 @@ const refused = (status: number, body: Record<string, unknown>): RefusedCrawl =>
 
 /**
  * 人に見せる文つきの断り。本文の `hint` は文を ` / ` で繋いだ字 (今までと同じ)、`hints` は文ごとの組
- * (`types/hint.ts`)。命令の例やスクリプトの id の並びのように、訳す物でない文は鍵なし (`{ text }` だけ)。
+ * (`types/hint.ts`)。命令の例や capture scripts の id の並びのように、訳す物でない文は鍵なし (`{ text }` だけ)。
  */
 const refusedWithHints = (
   status: number,
@@ -297,7 +297,7 @@ export const INLINE_PARAMS_SECRETS_ONLY: Hint = hint(
   "params に書けるのはシークレットだけ。変数は source の defineParams で宣言する",
 );
 
-/** スクリプトを省いた頼みを断る文の終わりに添える案内。何も走らせないのは、明示の `scripts: []`。 */
+/** Capture scripts を省いた頼みを断る文の終わりに添える案内。何も走らせないのは、明示の `scripts: []`。 */
 const RUN_NOTHING_ON_PURPOSE = "(run nothing on purpose: send scripts: [])";
 
 export type ResolvedSecrets =
@@ -318,7 +318,7 @@ export const resolveSecrets = async (
 ): Promise<ResolvedSecrets> => {
   // **宣言したシークレットが Windmill に在るか。** 値は読まない (`crawl/windmill-variables.ts`)。required の
   // 物が無ければ 400 で名前と path を言い、secret でない変数が置かれていれば 400。required でない物が無ければ
-  // 渡さないだけ (スクリプトは undefined を読む)。訊けなければ 503 で始めない —— Windmill に届かないなら
+  // 渡さないだけ (capture scripts は undefined を読む)。訊けなければ 503 で始めない —— Windmill に届かないなら
   // flow も動かない。
   const secrets: Record<string, CrawlSecret> = {};
   if (declared.length > 0) {
@@ -427,7 +427,7 @@ export const prepareCrawl = async (
   // 読んだ形で固定する (前方一致は正規化した URL)。報告のたびにこれを読み直して当てる
   const rules = checked.read.filter((rule) => rule !== undefined).map(ruleOf);
 
-  // 走らせるものを **いま 1 度だけ** 決める。登録済みのスクリプトは後から変わりうるが、
+  // 走らせるものを **いま 1 度だけ** 決める。登録済みの capture scripts は後から変わりうるが、
   // このクロールが走らせるものは変わらない (`018`)。対象サイト (`021`) と比べるのは起点のホスト名で、
   // ポートは見ない —— 省いた頼みでは、対象サイトの無い物と、起点に合うサイト用の物が走る
   const seedHosts = [...new Set(parsedSeeds.map((parsed) => parsed.hostname))];
@@ -471,8 +471,8 @@ export const prepareCrawl = async (
     return refused(400, { error: "duplicate script ids", ids: resolved.ids });
   }
 
-  // **名指しで入れたサイト用のスクリプトは、起点のどれかがそのサイトにあること。** 通すと、どの頁でも
-  // 冒頭の見分けで何もせずに終わるスクリプトを、走らせたと記録することになる。外す (名指さない) のは自由
+  // **名指しで入れたサイト用の capture scripts は、起点のどれかがそのサイトにあること。** 通すと、どの頁でも
+  // 冒頭の見分けで何もせずに終わる capture scripts を、走らせたと記録することになる。外す (名指さない) のは自由
   const offsite = offsiteScripts(resolved.scripts, seedHosts);
   if (offsite.length > 0) {
     const theirSites = offsite.map((script) => `${script.id}: ${script.sites.join(", ")}`);
@@ -484,14 +484,14 @@ export const prepareCrawl = async (
     );
   }
 
-  // **既定を頼まれたのに、既定が空。** スクリプトを登録し忘れた配備はここで止まる ——
+  // **既定を頼まれたのに、既定が空。** Capture scripts を登録し忘れた配備はここで止まる ——
   // 通すと、スクロールも遅延読み込みもしないクロールが「成功」として出ていく。
   // アーカイブは出るし `completeness` も緑なので、**後から見分ける手が無い**。
   //
   // 明示の `scripts: []` は通す: 設定漏れと「何も走らせない」という意思は別物で、
-  // 後者を表せなくすると、素の取り込みが欲しい配備がスクリプトを登録させられることになる。
+  // 後者を表せなくすると、素の取り込みが欲しい配備が capture scripts を登録させられることになる。
   if (body.scripts === undefined && resolved.scripts.length === 0) {
-    // スクリプトは在るのに、全部が別のサイト用 —— 「スクリプトが無い」とは言わない (取り込み直しても直らない)
+    // Capture scripts は在るのに、全部が別のサイト用 —— 「capture scripts が無い」とは言わない (取り込み直しても直らない)
     const enabled = await enabledLatest(db);
     if (enabled.length > 0) {
       const theirSites = enabled.map((script) => `${script.id}: ${script.sites.join(", ")}`);

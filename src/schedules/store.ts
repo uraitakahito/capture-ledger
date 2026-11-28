@@ -126,7 +126,7 @@ export interface ScheduleStore {
   runningCrawl(): Promise<{ crawlId: string; startedAt: Date } | undefined>;
   /** 直近に始まったクロールの時刻。手で始めた物も数える。 */
   lastCrawlStartedAt(): Promise<Date | undefined>;
-  /** スクリプトの id ごとの最新の版。 */
+  /** Capture scripts の id ごとの最新の版。 */
   latestVersions(): Promise<LatestVersions>;
   /** 次に始める候補を 1 つ。「いま撮る」の頼みが先で、次に期限の古い順。 */
   candidate(now: Date): Promise<ScheduleRow | undefined>;

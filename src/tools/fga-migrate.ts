@@ -13,7 +13,7 @@
  * 成功し、テーブルに触った時点で初めて失敗する。
  *
  * 冪等: 既に migration 済みのデータベースに対して再実行しても何も起きないので、
- * セットアップのスクリプトからも CI からも安全に呼べる。
+ * セットアップの capture scripts からも CI からも安全に呼べる。
  */
 import { spawnSync } from "node:child_process";
 import { guardEnv, optional } from "./env.js";

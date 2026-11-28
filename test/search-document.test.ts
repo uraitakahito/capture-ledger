@@ -35,7 +35,7 @@ const PAGE_AFTER_CAPTURE_SCRIPTS =
 
 /**
  * WACZ Profile 1.18.0 の文書の行（1 行目。`stage` が無く、`url` は要求の URL）。上の 2 行と同じ取り込みを、
- * 1.18.0 の形に組んだ物（題と本文はスクリプトの後に読んだ物で、after-capture-scripts の行と同じ文）。
+ * 1.18.0 の形に組んだ物（題と本文は capture scripts の後に読んだ物で、after-capture-scripts の行と同じ文）。
  */
 const PAGE_DOCUMENT =
   '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa","url":"http://capture-fixtures-1-a.browserhive:8080/marked/search/public?tag=sn1","ts":"2026-11-02T12:10:53.912Z","title":"search","text":"search\\n\\nafter-public-sn1\\n\\nquery  token  search\\n個人 情報 1\\n個人 情報 2\\n個人 情報 3"}';

@@ -1,9 +1,9 @@
 /**
- * スクリプトを読むエンドポイント。**一覧は身元だけ、中身は 1 版のエンドポイント。**
+ * Capture scripts を読むエンドポイント。**一覧は身元だけ、中身は 1 版のエンドポイント。**
  *
  * | エンドポイント | 返すもの |
  * | --- | --- |
- * | `GET /api/capture-scripts` | 有効な各 id の最新版の身元と対象サイトと宣言 (サイト用のスクリプトも。何も指定しないクロールが走らせるのは、対象サイトの無い物と起点に合う物) |
+ * | `GET /api/capture-scripts` | 有効な各 id の最新版の身元と対象サイトと宣言 (サイト用の capture scripts も。何も指定しないクロールが走らせるのは、対象サイトの無い物と起点に合う物) |
  * | `GET /api/capture-scripts/:id/versions` | 1 つの id の版の並び (新しい順)。**source は返さない** |
  * | `GET /api/capture-scripts/:id/versions/:version` | 1 版を丸ごと (source・渡す値・対象サイト・宣言・有効か・取り込んだ時刻) |
  * | `GET /api/host-types` | 受け皿 `__bh` の型のいちばん新しい版 (読む人に見せる写し。`020`) |
@@ -17,14 +17,14 @@
  *
  * ## なぜ顔ぶれのエンドポイントが要るのか
  *
- * 登録済みのスクリプトが無いと、クロールはページの中で何も走らせない —— スクロールも遅延読み込みも
+ * 登録済みの capture scripts が無いと、クロールはページの中で何も走らせない —— スクロールも遅延読み込みも
  * 起きないまま、`complete: true` のアーカイブが出る。`POST /api/crawls` はそれを
  * 400 で止めるが、**止まるのは頼んだ後**。capture-scheduler の `doctor` は
  * 「全部 ✓ なら、クロールを始めれば最後まで走る設定になっている」と名乗っているので、
  * 頼む前に空かどうかを言えなければ、その約束が嘘になる。
  *
  * 一覧は `pickable(db)` —— 各 id に 1 行、既定で走る版（有効な版の中の最新）か、無ければ最新版を、
- * サイト用のスクリプト（対象サイトのある物。`021`）も含めて返す。`enabled` が既定に入るかで、既定に入らない物
+ * サイト用の capture scripts（対象サイトのある物。`021`）も含めて返す。`enabled` が既定に入るかで、既定に入らない物
  * （カタログの `default: false`）も名指しすれば走るので載せる。既定で走るのは `enabled` の物のうち対象サイトの無い物と、
  * 起点に合う物で、選ぶのはクロールを始めるときの `resolveScripts`（起点を見る）。workbench はこの一覧で対象サイトと
  * `enabled` を見せ、新しいクロールの画面で同じ決まりのとおりに選ぶ。`enabled` の物が 1 つも無いときや、対象サイトのある
@@ -57,7 +57,7 @@ export interface ScriptsRouteDeps {
 /** 検査のエンドポイントが受ける本文の上限。`POST /api/crawls` の上限と同じ 1 MiB。 */
 const CHECK_BODY_LIMIT = 1024 * 1024;
 
-/** 登録済みのスクリプトの id。綴りは `scripts` の表の CHECK (`017`) が決めるので、ここは空でないことだけを見る */
+/** 登録済みの capture script の id。綴りは `capture_scripts` の表の CHECK (`017`) が決めるので、ここは空でないことだけを見る */
 const ID = { type: "string", minLength: 1 } as const;
 
 /**
@@ -93,7 +93,7 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
     app.get(base, async (request, reply) => {
       if (!(await allowed(request, reply))) return reply;
 
-      // 各 id に 1 行 (サイト用のスクリプトも、既定に入らない物も)。既定で走るのは enabled の物のうち、対象サイトの無い物と起点に合う物
+      // 各 id に 1 行 (サイト用の capture scripts も、既定に入らない物も)。既定で走るのは enabled の物のうち、対象サイトの無い物と起点に合う物
       const scripts = await pickable(db);
       return reply.code(200).send({
         scripts: scripts.map(({ id, version, phase, sha256, sites, params, enabled }) => ({

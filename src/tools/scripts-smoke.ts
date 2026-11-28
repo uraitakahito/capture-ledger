@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * スクリプトの CLI (`pnpm run capture-scripts`) を、本物の Postgres に当てる。
+ * Capture scripts の CLI (`pnpm run capture-scripts`) を、本物の Postgres に当てる。
  *
  * 試験は DB を立てない。`test/recording-db.ts` は Kysely が組んだ SQL を記録するが、その SQL が
- * Postgres で本当に通るか、版を本当に絞るか、`020` の表が本当に版を足すかは見られない。スクリプトを読むエンドポイント
+ * Postgres で本当に通るか、版を本当に絞るか、`020` の表が本当に版を足すかは見られない。Capture scripts を読むエンドポイント
  * (`GET /api/capture-scripts/:id/versions/:version` など) は CLI と同じ関数 (`readScript`・`listScripts` の id・
  * `addHostTypes`・`readHostTypes`) を呼ぶので、**それを Postgres で見るのは、ここだけ。**
  *

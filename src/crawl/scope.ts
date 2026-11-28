@@ -32,7 +32,7 @@ export type Scope = "same-origin" | "same-host" | "same-site" | "any";
 /**
  * 小文字の ASCII のホスト名 (IDN は punycode)。ポート・scheme・`*` は書けない。
  *
- * スクリプトの対象サイト (`021` の CHECK・capture-scripts の check と同じ式) と、規則のドメイン (`rules.ts`) が
+ * Capture scripts の対象サイト (`021` の CHECK・capture-scripts の check と同じ式) と、規則のドメイン (`rules.ts`) が
  * この形を使う。どちらも `new URL(…).hostname` とそのまま比べるため。
  */
 export const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
@@ -41,7 +41,7 @@ export interface ParsedUrl {
   /** フラグメントを落とした、比較と保存に使う形。 */
   normalized: string;
   host: string;
-  /** ポートを除いたホスト名。スクリプトの対象サイト（`021`）と比べるのはこちら (対象サイトにポートは書けない) */
+  /** ポートを除いたホスト名。Capture scripts の対象サイト（`021`）と比べるのはこちら (対象サイトにポートは書けない) */
   hostname: string;
   origin: string;
 }

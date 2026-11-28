@@ -29,7 +29,7 @@ export interface Diagnostic {
   message: string;
 }
 
-/** スクリプト 1 本の変数の宣言 (source の `defineParams`)。`unreadable` は宣言を読めなかった本 (BH0002)。 */
+/** Capture script 1 本の変数の宣言 (source の `defineParams`)。`unreadable` は宣言を読めなかった本 (BH0002)。 */
 export interface DeclaredScript {
   id: string;
   params: ScriptParam[];
@@ -154,7 +154,7 @@ export const tsCompileAt = ({
 });
 
 /**
- * 誤りの `file` (`<id>.ts`) を、送ったスクリプトの id に直す。送った id に無い file
+ * 誤りの `file` (`<id>.ts`) を、送った capture scripts の id に直す。送った id に無い file
  * (lib や受け皿の型の file) は `script` を付けずに `file` のまま残す。
  */
 export const attributeDiagnostics = (

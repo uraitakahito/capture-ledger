@@ -27,7 +27,7 @@ const SUBJECT = { "x-capture-ledger-subject": "alice", "x-capture-ledger-organiz
 
 /** `capture_submissions` に書こうとした行。insert の `values` が受け取ったもの。 */
 let inserted: unknown[];
-/** クロールが固定したスクリプト。報告の `compiled` と突き合わされる (`crawl/compiled.ts`)。 */
+/** クロールが固定した capture scripts。報告の `compiled` と突き合わされる (`crawl/compiled.ts`)。 */
 let fakeScripts: CrawlScript[] = [];
 /** 走った JS の hash と変換の記録。capture-ledger 側で必須なので、どの報告にも載せる。 */
 const COMPILED = { typescript: "6.0.3", hostTypes: "v0.2.0", scripts: [] };

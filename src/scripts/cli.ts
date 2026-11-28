@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ページの中で走らせるスクリプト (`scripts`) を足す・見る・切り替える・消す、
+ * ページの中で走らせる capture scripts (`capture_scripts`) を足す・見る・切り替える・消す、
  * 開発用の CLI。
  *
  *   pnpm run capture-scripts import .upstream/capture-scripts               # catalog.json と受け皿の型
@@ -23,7 +23,7 @@
  *
  * **DB に直接書く開発用の道具で、認可は通らない。** 中身は `store.ts`。
  *
- * ## なぜ capture-ledger がスクリプトを持つのか
+ * ## なぜ capture-ledger が capture scripts を持つのか
  *
  * BrowserHive v11.0.0 で、サーバは走らせるものの顔ぶれを持たなくなった。送らなければ
  * ページでは何も走らない —— そして **それは成功した取り込みと見分けが付かない**。
@@ -99,7 +99,7 @@ const parseParams = (raw: string): ScriptParam[] => {
 /** 何度でも書ける旗 (`--site`・`--seed`) を、書いた順の列に集める */
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value];
 
-/** 対象サイトを 1 行の終わりに添える。対象サイトの無いスクリプト (どこでも走る) には何も添えない */
+/** 対象サイトを 1 行の終わりに添える。対象サイトの無い capture script (どこでも走る) には何も添えない */
 const sitesNote = (sites: readonly string[]): string =>
   sites.length === 0 ? "" : `  対象サイト:${sites.join(",")}`;
 
@@ -142,13 +142,13 @@ const withDb = async (
 const program = new Command()
   .name("capture-scripts")
   .description(
-    "ページで走らせるスクリプト (表 scripts) を足す・見る・切り替える・消す。DB に直接書く開発用の道具で、認可は通らない",
+    "ページで走らせる capture scripts (表 capture_scripts) を足す・見る・切り替える・消す。DB に直接書く開発用の道具で、認可は通らない",
   )
   .showHelpAfterError(true);
 
 program
   .command("add")
-  .description("スクリプトを 1 本足す。版は自動で採番する (中身が同じなら足さない)")
+  .description("Capture script を 1 本足す。版は自動で採番する (中身が同じなら足さない)")
   .argument("<id>", "報告と archive に出る名前 (例: autoscroll)")
   .requiredOption(
     "--file <path>",
@@ -159,7 +159,7 @@ program
       .choices(["behavior", "preload"])
       .default("behavior"),
   )
-  .addOption(new Option("--options <json>", "そのスクリプトに渡す値").argParser(parseOptions))
+  .addOption(new Option("--options <json>", "その capture script に渡す値").argParser(parseOptions))
   .option(
     "--site <host>",
     "対象サイト: 起点のどれかがこのホスト名のクロールでだけ走る (何度でも。小文字のホスト名)",
@@ -220,7 +220,7 @@ program
 /**
  * `catalog.json` を読んで、書かれているものを全部足す。
  *
- * **`phase` を手で打たないためのもの。** phase はそのスクリプトの性質 (遷移の前か、
+ * **`phase` を手で打たないためのもの。** phase はその capture script の性質 (遷移の前か、
  * 読み込みの後か) であって、打つ人の選択ではない。`--phase` を打ち間違えると、
  * 遷移の前に入れるはずのコードが読み込みの後に 1 回だけ走り、**しかも成功する**。
  *
@@ -235,8 +235,8 @@ program
  * **既定の実行順もカタログが正。** 項目の並びの添字を、各 id の全部の版に書く (`setScriptPositions`)。
  * 版が増えなくても書くので、並びだけを変えたカタログも流し直せば効く。
  *
- * 同じ置き場所の types/host.d.ts (受け皿 `__bh` の型) も写す (`host_types`・`020`)。スクリプトの source を
- * 読む人に見せる写しで、走るものではない —— 無ければ言って、スクリプトだけを入れる。
+ * 同じ置き場所の types/host.d.ts (受け皿 `__bh` の型) も写す (`host_types`・`020`)。Capture scripts の source を
+ * 読む人に見せる写しで、走るものではない —— 無ければ言って、capture scripts だけを入れる。
  */
 interface CatalogEntry {
   id: string;
@@ -253,7 +253,7 @@ interface CatalogEntry {
 
 /**
  * 読む形。`/6` (capture-scripts v0.13.0) はシークレットの宣言に `archive` (値を BrowserHive WARC に残すか) を足した形で、それより前は
- * 断る —— 宣言 (`params`) を知らない catalog を読むと、宣言の無いスクリプトとして取り込み、変数を渡すクロールが
+ * 断る —— 宣言 (`params`) を知らない catalog を読むと、宣言の無い capture scripts として取り込み、変数を渡すクロールが
  * 「知らない名前」で止まる。`archive` を知らない形を読んでも、取り込んだ物は隠す側に倒れるが、どちらの形かを
  * 黙って取り違えない。
  */
@@ -321,7 +321,7 @@ const readCatalog = async (dir: string): Promise<CatalogEntry[] | string> => {
 
 program
   .command("import")
-  .description("catalog.json を読んで、書かれているスクリプトを全部足す")
+  .description("catalog.json を読んで、書かれている capture scripts を全部足す")
   .argument("<dir>", "capture-scripts の置き場所 (例: .upstream/capture-scripts)")
   .addOption(databaseUrlOption)
   .action(async (dir: string, opts: { databaseUrl: string }) => {
@@ -330,7 +330,7 @@ program
     if (catalog.length === 0) return fail(`${dir}/catalog.json に 1 本も書かれていない`);
 
     // **先に全部読む。** 1 本でも読めなければ、1 本も足さない ——
-    // 途中まで入ったスクリプトは、入れた人から見ると「入った」と区別が付かない。
+    // 途中まで入った capture scripts は、入れた人から見ると「入った」と区別が付かない。
     const sources: { entry: CatalogEntry; source: string }[] = [];
     for (const entry of catalog) {
       const source = await readFile(join(dir, entry.file), "utf-8").catch(() => undefined);
@@ -338,7 +338,7 @@ program
       if (source.trim() === "") return fail(`中身が空: ${join(dir, entry.file)}`);
       sources.push({ entry, source });
     }
-    // 受け皿の型も先に読む。無いのは許す (スクリプトだけの置き場所もある) が、空なら何も足さない
+    // 受け皿の型も先に読む。無いのは許す (capture scripts だけの置き場所もある) が、空なら何も足さない
     const typesPath = join(dir, "types", "host.d.ts");
     const hostTypes = await readFile(typesPath, "utf-8").catch(() => undefined);
     if (hostTypes?.trim() === "") return fail(`中身が空: ${typesPath}`);
@@ -398,7 +398,7 @@ const describeRow = (row: ScriptRow): string =>
 
 program
   .command("list")
-  .description("スクリプトを並べる。既定は各 id の最新版だけ")
+  .description("Capture scripts を並べる。既定は各 id の最新版だけ")
   .argument("[id]", "この id だけ (--all と合わせると、その id の版の並び)")
   .option("--all", "版を全部")
   .option("--json", "JSON で出す")
@@ -451,7 +451,7 @@ program
           allVersions: opts.all === true,
           ...(id === undefined ? {} : { id }),
         });
-        // 名指しした id が無いのは誤り (show と同じ)。名指ししないときは、スクリプトが無くても 0 行と言う
+        // 名指しした id が無いのは誤り (show と同じ)。名指ししないときは、capture scripts が無くても 0 行と言う
         if (id !== undefined && rows.length === 0) return fail(`登録されていない: ${id}`);
         if (opts.json) {
           process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);
@@ -471,7 +471,7 @@ program
 program
   .command("show")
   .description("source をそのまま出す。版を省くと最新版、書けばその版 (無効な版も)")
-  .argument("<id>", "スクリプトの id")
+  .argument("<id>", "capture script の id")
   .addOption(new Option("--version <n>", "この版").argParser(parseVersion))
   .addOption(databaseUrlOption)
   .action(async (rawId: string, opts: { version?: number; databaseUrl: string }) => {
@@ -514,7 +514,7 @@ const toggle = (name: "enable" | "disable", enabled: boolean): void => {
         ? "既定の顔ぶれに戻す (版を省くと、その id の全版)"
         : "既定の顔ぶれから外す (消さない。クロールの scripts で名指しすれば走る)",
     )
-    .argument("<id...>", "スクリプトの id")
+    .argument("<id...>", "capture script の id")
     .addOption(
       new Option(
         "--version <n>",
@@ -546,7 +546,7 @@ toggle("disable", false);
 program
   .command("rm")
   .description("行を消す。版を省くと、その id の全版。履歴を残したいなら disable する")
-  .argument("<id...>", "スクリプトの id")
+  .argument("<id...>", "capture script の id")
   .addOption(new Option("--version <n>", "この版だけ").argParser(parseVersion))
   .addOption(databaseUrlOption)
   .action(async (ids: string[], opts: { version?: number; databaseUrl: string }) => {

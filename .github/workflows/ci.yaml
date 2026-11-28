@@ -150,9 +150,9 @@ jobs:
       - name: Capture scripts rename against Postgres
         run: pnpm run build:tools && node dist/tools/capture-scripts-rename-smoke.js
 
-      # スクリプトの CLI (pnpm run capture-scripts) を、本物の Postgres に当てる。
+      # Capture scripts の CLI (pnpm run capture-scripts) を、本物の Postgres に当てる。
       #
-      # スクリプトを読むエンドポイントと同じ関数 (readScript・listScripts の id・受け皿の型) が Postgres で本当に
+      # Capture scripts を読むエンドポイントと同じ関数 (readScript・listScripts の id・受け皿の型) が Postgres で本当に
       # 通るか、版を本当に絞るか、`020` の表が版を足すかを見るのは、ここだけ。自分の id
       # (smoke-<pid>) の行と、自分で足した型だけを足して、最後に消す。
       - name: Scripts CLI against Postgres

@@ -14,7 +14,7 @@
  * 古い名の頭も受ける。
  */
 
-/** capture scripts の後の時点。 */
+/** Capture scripts の後の時点。 */
 export const CAPTURE_SCRIPTS_STAGE = "after-capture-scripts";
 
 /** BrowserHive WACZ Profile 1.30.0 より前の、同じ時点の名。 */
