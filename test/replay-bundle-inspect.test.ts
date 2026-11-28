@@ -282,6 +282,42 @@ describe("アーカイブ 1 本を検めて書く", () => {
   });
 });
 
+describe("検める時の写しの行の時点の名（CAPTURE-506）", () => {
+  const lineAt = (stage: string) =>
+    JSON.stringify({
+      id: `${TASK}-${stage}`,
+      url: `urn:browserhive:snapshot:${stage}:http://site.test/landed`,
+      ts: "2026-11-05T01:03:59.100Z",
+      title: "a",
+      stage,
+    });
+  const waczWith = (stage: string) =>
+    storedZip({
+      "datapackage.json": DATAPACKAGE,
+      "indexes/index.cdxj": "com,site)/a 20261105010357 {}\n",
+      "pages/pages.jsonl": `${pagesJsonl}\n${lineAt(stage)}\n`,
+    });
+
+  it.each(["after-behaviors", "after-capture-scripts"])(
+    "%s の行は、archive_pages に after-capture-scripts で書く（url は撮った字のまま）",
+    async (stage) => {
+      const { queries } = await inspect({ [`browserhive/${WACZ_KEY}`]: waczWith(stage) });
+      const params = queries[2]?.parameters ?? [];
+      // 3 行目の欄: archive_id・ordinal・page_id・url・ts・title・stage …
+      expect(params.slice(22, 29)).toEqual([
+        ARCHIVE,
+        2,
+        `${TASK}-${stage}`,
+        `urn:browserhive:snapshot:${stage}:http://site.test/landed`,
+        "2026-11-05T01:03:59.100Z",
+        "a",
+        "after-capture-scripts",
+      ]);
+      expect(params).not.toContain("after-behaviors");
+    },
+  );
+});
+
 describe("検める時に、節目のスクリーンショットの在り処も書く", () => {
   const shot = {
     stage: "after-load",
@@ -295,7 +331,7 @@ describe("検める時に、節目のスクリーンショットの在り処も�
     const { queries } = await inspect({
       [`browserhive/${WACZ_KEY}`]: screenshotWacz([
         shot,
-        { stage: "after-behaviors", skipped: "withheld" },
+        { stage: "after-capture-scripts", skipped: "withheld" },
       ]),
     });
     expect(queries.map((query) => query.sql.split(" ").slice(0, 3).join(" "))).toEqual([
@@ -309,12 +345,25 @@ describe("検める時に、節目のスクリーンショットの在り処も�
     ]);
     expect(queries[4]?.parameters).toEqual([NOW.toISOString(), ARCHIVE]);
     const inserted = queries[5]?.parameters ?? [];
-    // 2 行: 位置の在る after-load と、理由だけの after-behaviors
+    // 2 行: 位置の在る after-load と、理由だけの after-capture-scripts
     expect(inserted).toContain("after-load");
     expect(inserted).toContain(shot.record);
     expect(inserted).toContain(shot.picture.length);
-    expect(inserted).toContain("after-behaviors");
+    expect(inserted).toContain("after-capture-scripts");
     expect(inserted).toContain("withheld");
+  });
+
+  // CAPTURE-506: 古い取り込みの時点の名は、新しい名で書く
+  it("古い時点の名 after-behaviors の項目も、after-capture-scripts の行として書く", async () => {
+    const { queries } = await inspect({
+      [`browserhive/${WACZ_KEY}`]: screenshotWacz([
+        shot,
+        { stage: "after-behaviors", skipped: "withheld" },
+      ]),
+    });
+    const inserted = queries[5]?.parameters ?? [];
+    expect(inserted).toContain("after-capture-scripts");
+    expect(inserted).not.toContain("after-behaviors");
   });
 
   it("欄の無い WACZ は、行を書かずに印だけ立てる", async () => {

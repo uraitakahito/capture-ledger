@@ -88,7 +88,7 @@ export interface ChangeStore {
   claimRunToCompare(now: Date, leaseMs: number): Promise<RunToCompare | undefined>;
   /** 同じ予定・同じ撮り方の、締まった 1 つ前の回。 */
   previousRun(run: RunToCompare): Promise<string | undefined>;
-  /** 回のページ。URL ごとに 1 つ、比べる行 (after-behaviors の写し、無ければ文書の行)。 */
+  /** 回のページ。URL ごとに 1 つ、比べる行 (after-capture-scripts の写し、無ければ文書の行)。 */
   comparedPages(crawlId: string): Promise<ComparedPage[]>;
   finishCompare(crawlId: string, outcome: CompareOutcome, now: Date): Promise<void>;
   /** 要約を待つ回 (差分あり・上限で待つ・期限の切れた要約中) を 1 本拾い、要約中にする。 */

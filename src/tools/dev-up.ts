@@ -140,7 +140,7 @@ const STEPS: Step[] = [
     run: "pnpm run db:migrate",
     waitFor: { label: "postgres", port: 5432 },
   },
-  { id: "catalog", run: "pnpm run scripts import .upstream/capture-scripts" },
+  { id: "catalog", run: "pnpm run capture-scripts import .upstream/capture-scripts" },
   {
     id: "fga",
     run: "pnpm run fga:migrate && pnpm run fga:deploy",

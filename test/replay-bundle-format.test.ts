@@ -352,7 +352,7 @@ describe("合本を組む", () => {
             "s",
             2,
             "task-s",
-            "after-behaviors",
+            "after-capture-scripts",
             "http://site.test/",
             "2026-11-05T01:00:04.000Z",
           ),
@@ -388,8 +388,8 @@ describe("合本を組む", () => {
       ),
       initial(
         "s",
-        "task-s-after-behaviors",
-        "urn:browserhive:snapshot:after-behaviors:http://site.test/",
+        "task-s-after-capture-scripts",
+        "urn:browserhive:snapshot:after-capture-scripts:http://site.test/",
         "2026-11-05T01:00:04.000Z",
         true,
       ),
@@ -511,7 +511,14 @@ describe("合本を組む", () => {
           return [
             docRow(one.id, one.id, url, ts),
             snapshotRow(one.id, 1, one.id, "after-load", url, ts),
-            snapshotRow(one.id, 2, one.id, "after-behaviors", url, "2026-11-05T01:00:30.000Z"),
+            snapshotRow(
+              one.id,
+              2,
+              one.id,
+              "after-capture-scripts",
+              url,
+              "2026-11-05T01:00:30.000Z",
+            ),
           ];
         });
         const bundle = composeReplayBundle(input({ archives, pages }));

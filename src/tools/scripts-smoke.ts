@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * スクリプトの CLI (`pnpm run scripts`) を、本物の Postgres に当てる。
+ * スクリプトの CLI (`pnpm run capture-scripts`) を、本物の Postgres に当てる。
  *
  * 試験は DB を立てない。`test/recording-db.ts` は Kysely が組んだ SQL を記録するが、その SQL が
  * Postgres で本当に通るか、版を本当に絞るか、`020` の表が本当に版を足すかは見られない。スクリプトを読むエンドポイント
- * (`GET /api/scripts/:id/versions/:version` など) は CLI と同じ関数 (`readScript`・`listScripts` の id・
+ * (`GET /api/capture-scripts/:id/versions/:version` など) は CLI と同じ関数 (`readScript`・`listScripts` の id・
  * `addHostTypes`・`readHostTypes`) を呼ぶので、**それを Postgres で見るのは、ここだけ。**
  *
  * CI の check job が、migration を当てた後に走らせる (`.github/workflows/ci.yaml`)。手元でも走る:
@@ -98,7 +98,7 @@ try {
 
   // 021: 対象サイトを書かずに足した版の対象サイトは空。CHECK は形を見る
   const sitesOf = await pool.query<{ sites: string[] }>(
-    "SELECT sites FROM scripts WHERE id = $1 AND version = 1",
+    "SELECT sites FROM capture_scripts WHERE id = $1 AND version = 1",
     [id],
   );
   check(
@@ -111,7 +111,7 @@ try {
   const insertSites = (sites: string[]) =>
     pool
       .query(
-        "INSERT INTO scripts (id, version, phase, source, sites) VALUES ($1, $2, 'behavior', 'x;', $3)",
+        "INSERT INTO capture_scripts (id, version, phase, source, sites) VALUES ($1, $2, 'behavior', 'x;', $3)",
         [sited, (siteVersion += 1), sites],
       )
       .then(
@@ -221,7 +221,7 @@ try {
   check("型の行は 1 つだけ", rows[0]?.n === 1, `行=${String(rows[0]?.n)}`);
 
   const importedSites = await pool.query<{ sites: string[] }>(
-    "SELECT sites FROM scripts WHERE id = $1",
+    "SELECT sites FROM capture_scripts WHERE id = $1",
     [imported],
   );
   check(
@@ -315,7 +315,7 @@ try {
   );
   // bool_or は行が無ければ null
   const off = await pool.query<{ any: boolean | null }>(
-    "SELECT bool_or(enabled) AS any FROM scripts WHERE id = $1",
+    "SELECT bool_or(enabled) AS any FROM capture_scripts WHERE id = $1",
     [imported],
   );
   check("default: false の id は全版が無効", off.rows[0]?.any === false, JSON.stringify(off.rows));
@@ -328,7 +328,7 @@ try {
   // default を省いた catalog を取り込み直すと、取り込んだ版が有効に戻る (カタログが正)
   run = cli(["import", dir]);
   const on = await pool.query<{ any: boolean | null }>(
-    "SELECT bool_or(enabled) AS any FROM scripts WHERE id = $1",
+    "SELECT bool_or(enabled) AS any FROM capture_scripts WHERE id = $1",
     [imported],
   );
   check(
@@ -400,7 +400,7 @@ try {
     why(run),
   );
   const paramsOf = await pool.query<{ params: unknown }>(
-    "SELECT params FROM scripts WHERE id = $1",
+    "SELECT params FROM capture_scripts WHERE id = $1",
     [withDecl],
   );
   check(
@@ -501,14 +501,14 @@ try {
   // 024: CHECK を DB に直に当てる。params は配列、crawls の variables と secrets は object
   said = await pool
     .query(
-      "INSERT INTO scripts (id, version, phase, source, params) VALUES ($1, 1, 'behavior', 'x;', '{}'::jsonb)",
+      "INSERT INTO capture_scripts (id, version, phase, source, params) VALUES ($1, 1, 'behavior', 'x;', '{}'::jsonb)",
       [`${id}-pcheck`],
     )
     .then(
       () => "ok",
       (err: { code?: unknown }) => String(err.code),
     );
-  check("024: scripts.params の CHECK は配列でない物を断る", said === "23514", said);
+  check("024: capture_scripts.params の CHECK は配列でない物を断る", said === "23514", said);
   /** クロールの行を、値の列だけ変えて 1 行足す。断られたら Postgres の誤りの code */
   const insertCrawl = (column: "variables" | "secrets", value: string) =>
     pool
@@ -594,7 +594,7 @@ try {
   check("rm で消せる", run.status === 0, why(run));
 } finally {
   await pool.query(
-    "DELETE FROM scripts WHERE id IN ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+    "DELETE FROM capture_scripts WHERE id IN ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
     [
       id,
       imported,

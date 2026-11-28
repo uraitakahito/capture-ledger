@@ -109,6 +109,33 @@ describe("reconcile は記録された鍵だけを読む", () => {
     expect(result).toEqual({ pending: 1, registered: 1, skipped: 0, missing: 0, counted: 0 });
   });
 
+  // CAPTURE-506: 本物の照らしに通す。古い取り込みの時点の名 (after-behaviors) で飛ばさない
+  it("screenshots の時点が after-behaviors の manifest も、本物の照らしを通って入る", async () => {
+    const actual = await vi.importActual<typeof import("../src/archive/manifest.js")>(
+      "../src/archive/manifest.js",
+    );
+    vi.mocked(readManifest).mockImplementation(actual.readManifest);
+    const { db } = fakeDb([row("t.result.json")]);
+    vi.mocked(getJsonObject).mockResolvedValue({
+      taskId: TASK,
+      url: "https://site.test/",
+      labels: [],
+      status: "success",
+      timestamp: "2026-08-30T00:00:00.000Z",
+      captureProcessingTimeMs: 100,
+      artifacts: { wacz: `s3://b/${TASK}.wacz` },
+      screenshots: [{ stage: "after-behaviors", skipped: "disabled" }],
+    });
+    vi.mocked(admitArchive).mockResolvedValue({ archiveId: "a1" });
+
+    const result = await reconcile(db, S3, "b");
+
+    expect(result).toMatchObject({ registered: 1, skipped: 0 });
+    expect(vi.mocked(admitArchive).mock.calls[0]?.[1]).toMatchObject({
+      screenshots: [{ stage: "after-capture-scripts", skipped: "disabled" }],
+    });
+  });
+
   // 一覧を挟まないので「消えた」とは言えない。報告された場所に無い、と数える。
   it("場所に無ければ missing に数え、capture-ledger には触らない", async () => {
     const { db } = fakeDb([row("nothing-here.result.json")]);

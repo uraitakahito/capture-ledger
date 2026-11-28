@@ -36,13 +36,13 @@ const backfill = async (opts: { databaseUrl: string; schedule?: string }): Promi
     // ---- 撮り方の digest ----
     let crawlsQuery = db
       .selectFrom("crawls")
-      .select(["id", "scripts", "variables", "secrets", "userAgent"])
+      .select(["id", "captureScripts", "variables", "secrets", "userAgent"])
       .where("recipeSha256", "is", null);
     if (opts.schedule !== undefined)
       crawlsQuery = crawlsQuery.where("scheduleId", "=", opts.schedule);
     const crawls = await crawlsQuery.execute();
     for (const crawl of crawls) {
-      const scripts: readonly CrawlScript[] = crawl.scripts;
+      const scripts: readonly CrawlScript[] = crawl.captureScripts;
       await db
         .updateTable("crawls")
         .set({

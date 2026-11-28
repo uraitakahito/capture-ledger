@@ -86,7 +86,7 @@ const selectCrawl = {
           pagesDiscovered: 1,
           pagesCaptured: 0,
           artifactKeyPrefix: null,
-          scripts: fakeScripts,
+          captureScripts: fakeScripts,
           // 本物の行は必ず持つ (024 の NOT NULL DEFAULT)。偽物も同じ形で
           variables: {},
           secrets: {},

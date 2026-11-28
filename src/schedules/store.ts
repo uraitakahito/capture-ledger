@@ -257,7 +257,7 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
 
   async latestVersions() {
     const rows = await db
-      .selectFrom("scripts")
+      .selectFrom("captureScripts")
       .select([
         "id",
         sql<number>`max(version)::int`.as("latest"),

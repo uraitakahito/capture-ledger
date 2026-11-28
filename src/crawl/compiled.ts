@@ -4,7 +4,7 @@ import type { CrawlScript } from "../db/database.js";
  * 段の報告が運ぶ「何が走ったか」の後半 —— 変換サービスが返した JS の sha256 と、
  * 何で (typescript の版)・何に向けて (受け皿の型の tag) 変換したか。
  *
- * capture-ledger の `crawls.scripts` が持つ `sha256` は TS のバイト列に打った物で、archive に残るのは JS。
+ * capture-ledger の `crawls.capture_scripts` が持つ `sha256` は TS のバイト列に打った物で、archive に残るのは JS。
  * その間を継ぐ JS の sha256 は、これが来るまで Windmill の job の結果にしか無かった。
  */
 export interface CompiledReport {

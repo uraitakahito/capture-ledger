@@ -1,6 +1,6 @@
 /**
  * ページの中で走らせるスクリプト (`scripts`) を足す・見る・切り替える・消す。
- * `pnpm run scripts` の芯で、クロールを始めるときの解決もここが持つ。
+ * `pnpm run capture-scripts` の芯で、クロールを始めるときの解決もここが持つ。
  *
  * **開発用の道具の中身で、認可は通らない。** DB に直接書く。
  *
@@ -368,7 +368,7 @@ export const addScript = async (
   const opinionated = input.options !== undefined;
   return db.transaction().execute(async (trx) => {
     const latest = await trx
-      .selectFrom("scripts")
+      .selectFrom("captureScripts")
       .select(["version", "source", "sha256", "options", "sites", "params", "position"])
       .where("id", "=", input.id)
       .orderBy("version", "desc")
@@ -392,7 +392,7 @@ export const addScript = async (
     }
 
     const inserted = await trx
-      .insertInto("scripts")
+      .insertInto("captureScripts")
       .values({
         id: input.id,
         version: (latest?.version ?? 0) + 1,
@@ -425,7 +425,7 @@ export const listScripts = async (
   db: Kysely<Database>,
   input: { allVersions?: boolean; id?: string } = {},
 ): Promise<ScriptRow[]> => {
-  let query = db.selectFrom("scripts").select([
+  let query = db.selectFrom("captureScripts").select([
     "id",
     "version",
     "phase",
@@ -442,14 +442,14 @@ export const listScripts = async (
   if (input.allVersions !== true) {
     query = query.distinctOn("id");
   }
-  // 1 つの id の版だけ (`GET /api/scripts/:id/versions` と `list <id>`)
+  // 1 つの id の版だけ (`GET /api/capture-scripts/:id/versions` と `list <id>`)
   if (input.id !== undefined) query = query.where("id", "=", input.id);
   return query.orderBy("id").orderBy("version", "desc").execute();
 };
 
 /**
  * スクリプトの 1 版を丸ごと (source を含む)。**有効かどうかは見ない** —— 無効な版も、過去のクロールが
- * 走らせた物。`GET /api/scripts/:id/versions/:version` と `show --version` の芯。
+ * 走らせた物。`GET /api/capture-scripts/:id/versions/:version` と `show --version` の芯。
  */
 export const readScript = async (
   db: Kysely<Database>,
@@ -457,7 +457,7 @@ export const readScript = async (
   version: number,
 ): Promise<ScriptVersion | undefined> =>
   db
-    .selectFrom("scripts")
+    .selectFrom("captureScripts")
     .select([
       "id",
       "version",
@@ -540,7 +540,7 @@ export const setScriptEnabled = async (
 
     for (const target of targets.rows) {
       let query = trx
-        .updateTable("scripts")
+        .updateTable("captureScripts")
         .set({ enabled: input.enabled })
         .where("id", "=", target.id);
       // 版を名指ししたときだけ絞る。省いたら id の全版。
@@ -561,7 +561,7 @@ export const setScriptPositions = async (
 ): Promise<void> => {
   await db.transaction().execute(async (trx) => {
     for (const [position, id] of ids.entries()) {
-      await trx.updateTable("scripts").set({ position }).where("id", "=", id).execute();
+      await trx.updateTable("captureScripts").set({ position }).where("id", "=", id).execute();
     }
   });
 };
@@ -577,7 +577,7 @@ const inRunOrder = <Row extends { id: string; position: number }>(rows: readonly
 /**
  * 行を消す。版を指定しなければ**その id の全版**が消える。
  *
- * `crawls.scripts` は解決済みの写しを持つので、消しても過去のクロールの記録は
+ * `crawls.capture_scripts` は解決済みの写しを持つので、消しても過去のクロールの記録は
  * 壊れない (`018` を見ること)。それでも既定から外すだけで済むなら
  * `setScriptEnabled` のほうがよい。
  */
@@ -590,7 +590,7 @@ export const removeScripts = async (
     if (targets.kind === "missing") return targets;
 
     for (const target of targets.rows) {
-      let query = trx.deleteFrom("scripts").where("id", "=", target.id);
+      let query = trx.deleteFrom("captureScripts").where("id", "=", target.id);
       if (input.version !== undefined) query = query.where("version", "=", input.version);
       await query.execute();
     }
@@ -608,7 +608,7 @@ export const enabledLatest = async (
   { id: string; version: number; phase: ScriptPhase; sha256: string; sites: string[] }[]
 > =>
   db
-    .selectFrom("scripts")
+    .selectFrom("captureScripts")
     .select(["id", "version", "phase", "sha256", "sites"])
     .distinctOn("id")
     .where("enabled", "=", true)
@@ -617,7 +617,7 @@ export const enabledLatest = async (
     .execute();
 
 /**
- * 選べるスクリプト (`GET /api/scripts`)。各 id に 1 行で、**既定で走る版があればそれ** (有効な版の中の最新)、
+ * 選べるスクリプト (`GET /api/capture-scripts`)。各 id に 1 行で、**既定で走る版があればそれ** (有効な版の中の最新)、
  * 無ければ最新版を `enabled: false` で返す。既定に入らないスクリプト (カタログの `default: false`) も、
  * 名指しすれば走るので見せる —— capture-workbench はこれで新しいクロールの画面のチェックを並べ、`enabled` で
  * 初めのチェックを決める。並べ替えの `enabled desc` が「有効な版を先に」で、`distinct on` がその先頭を取る。
@@ -639,7 +639,7 @@ export const pickable = async (
 > =>
   inRunOrder(
     await db
-      .selectFrom("scripts")
+      .selectFrom("captureScripts")
       .select(["id", "version", "phase", "sha256", "sites", "params", "enabled", "position"])
       .distinctOn("id")
       .orderBy("id")
@@ -682,7 +682,7 @@ export const resolveScripts = async (
 
   if (requested === undefined) {
     const rows = await db
-      .selectFrom("scripts")
+      .selectFrom("captureScripts")
       .select([...columns, "position"])
       .distinctOn("id")
       .where("enabled", "=", true)
@@ -708,7 +708,7 @@ export const resolveScripts = async (
     named.length === 0
       ? []
       : await db
-          .selectFrom("scripts")
+          .selectFrom("captureScripts")
           .select(columns)
           .distinctOn("id")
           .where("id", "in", named)
@@ -779,7 +779,7 @@ const resolveVersions = async (
   if (ids.length === 0) return { kind: "ok", rows: [] };
 
   let query = trx
-    .selectFrom("scripts")
+    .selectFrom("captureScripts")
     .select(["id", "version"])
     .where("id", "in", [...ids]);
   query = version === undefined ? query.distinctOn("id") : query.where("version", "=", version);

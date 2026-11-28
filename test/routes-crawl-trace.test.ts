@@ -329,8 +329,12 @@ const screenshots = [
     record: "urn:uuid:5b0c3f0e-2f0f-4a43-9d58-5c2f4c1f7a10",
     bytes: 48213,
   },
-  { stage: "after-behaviors", skipped: "task-budget" },
+  { stage: "after-capture-scripts", skipped: "task-budget" },
 ];
+/** 同じ物を、BrowserHive WACZ Profile 1.30.0 より前の時点の名で (CAPTURE-506)。 */
+const legacyScreenshots = screenshots.map((shot) =>
+  shot.stage === "after-capture-scripts" ? { ...shot, stage: "after-behaviors" } : shot,
+);
 
 const url = `/api/crawls/${CRAWL}/pages/42/trace`;
 const pictureUrl = `${url}/failure-screenshot`;
@@ -436,6 +440,16 @@ describe("取り込み 1 回の経緯を読む", () => {
     // 項目の欄を選び直さない。残さなかった時点は、理由だけを持つ
     expect(body.capture.screenshots).toEqual(screenshots);
     expect(body.capture.failureScreenshot).toBe(false);
+  });
+
+  it("古い時点の名 after-behaviors の .result.json も 200 で、時点は after-capture-scripts で返す", async () => {
+    const { res } = await get(url, {
+      results: [[row()]],
+      store: { [KEY]: { ...success, screenshots: legacyScreenshots } },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json<{ capture: { screenshots: unknown } }>();
+    expect(body.capture.screenshots).toEqual(screenshots);
   });
 
   it("乱数の記録の要約（BrowserHive v31.1.0 から）を、書かれたまま返す。無い取り込みでは鍵ごと無い", async () => {

@@ -33,7 +33,7 @@
 #   .upstream/replayweb-player   改変していない ReplayWeb.page のビューア (ここから建てる)
 #   .upstream/capture-player     ReplayWeb.page を改変した Web Capture のビューア (ここから建てる)
 #   .upstream/capture-fixtures   取り込み対象のフィクスチャ (profile: capture-fixtures。ここから建てる)
-#   .upstream/capture-scripts    登録済みのスクリプトの元 (pnpm run scripts import が読む)
+#   .upstream/capture-scripts    登録済みのスクリプトの元 (pnpm run capture-scripts import が読む)
 #
 # capture-fixtures を browserhive 越しではなく **直接** vendor しているのは、あちらの pin が
 # 別の都合で動くため。capture-ledger の試験が要る頁 (`/links/*` など) が browserhive の pin に入るとは

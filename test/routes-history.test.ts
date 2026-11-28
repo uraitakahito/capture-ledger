@@ -154,7 +154,7 @@ describe("同じ URL の取り込みの一覧", () => {
     expect(batchAsked).toEqual([]);
   });
 
-  it("比べる行は after-behaviors の写し、無ければ文書の行。比べられない行には訳が付く", async () => {
+  it("比べる行は after-capture-scripts の写し、無ければ文書の行。比べられない行には訳が付く", async () => {
     const seeds: ArchiveSeed[] = [
       // 文書の行と写しの両方 → 写し
       archiveOf(id(1), { doc: "文書", behaviors: "スクリプトの後" }),
@@ -170,7 +170,7 @@ describe("同じ URL の取り込みの一覧", () => {
         crawl: CRAWL,
         pages: [
           { stage: null, textSha256: sha256("文書"), textChars: 2 },
-          { stage: "after-behaviors", textSha256: null, textWithheld: "no-archive" },
+          { stage: "after-capture-scripts", textSha256: null, textWithheld: "no-archive" },
         ],
       },
       // まだ検めていない (ページの行が無い)
@@ -186,7 +186,7 @@ describe("同じ URL の取り込みの一覧", () => {
     const { res, queries } = await call({ archives: seeds }, { url: historyUrl(URL_A) });
     const rows = res.json<Answer>().archives;
     expect(rows.map((row) => [row.text, row.notComparable])).toEqual([
-      [{ stage: "after-behaviors", sha256: sha256("スクリプトの後"), chars: 7 }, null],
+      [{ stage: "after-capture-scripts", sha256: sha256("スクリプトの後"), chars: 7 }, null],
       [{ stage: null, sha256: sha256("文書だけ"), chars: 4 }, null],
       [null, "no_text"],
       [null, "no_text"],

@@ -17,6 +17,7 @@ import { unauthorized } from "./authorization.js";
 import { mayViewArchive, viewableArchiveIds } from "./archive-visibility.js";
 import { onListedScreenshot, SCREENSHOT_COLUMNS, screenshotOf } from "./stage-screenshot.js";
 import { getObjectRange } from "../archive/s3.js";
+import { CAPTURE_SCRIPTS_STAGE } from "../archive/stage-name.js";
 import { pictureOf, ScreenshotRecordError } from "../archive/stage-screenshots.js";
 import { PICTURE_MAX_BYTES } from "../archive/webp.js";
 import { createChildLogger } from "../logger.js";
@@ -34,7 +35,7 @@ export interface RouteDeps {
 const PAGE_SIZE = 50;
 
 /** 返せる時点 (BrowserHive WACZ Profile の `#screenshots`)。 */
-const SCREENSHOT_STAGES = ["after-load", "after-behaviors"];
+const SCREENSHOT_STAGES = ["after-load", CAPTURE_SCRIPTS_STAGE];
 
 /** 絵のレコード (gzip の member) の長さの上限。絵の上限に、WARC の見出しと gzip のぶんを足す。 */
 const SCREENSHOT_MEMBER_MAX_BYTES = PICTURE_MAX_BYTES + 64 * 1024;

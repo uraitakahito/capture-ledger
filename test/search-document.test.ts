@@ -29,10 +29,13 @@ const PAGE_AFTER_LOAD =
   '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa-after-load","url":"urn:browserhive:snapshot:after-load:http://capture-fixtures-1-a.browserhive:8080/marked/search/public?tag=sn1","ts":"2026-11-02T12:10:54.239Z","stage":"after-load","title":"search","text":"search\\n\\nbefore-public-sn1\\n\\nquery  token  search"}';
 const PAGE_AFTER_BEHAVIORS =
   '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa-after-behaviors","url":"urn:browserhive:snapshot:after-behaviors:http://capture-fixtures-1-a.browserhive:8080/marked/search/public/result?tag=sn1","ts":"2026-11-02T12:10:54.800Z","stage":"after-behaviors","title":"search","text":"search\\n\\nafter-public-sn1\\n\\nquery  token  search\\n個人 情報 1\\n個人 情報 2\\n個人 情報 3"}';
+/** 同じ行を、capture scripts の後の時点の名で書いた物 (CAPTURE-506 の後の BrowserHive)。 */
+const PAGE_AFTER_CAPTURE_SCRIPTS =
+  '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa-after-capture-scripts","url":"urn:browserhive:snapshot:after-capture-scripts:http://capture-fixtures-1-a.browserhive:8080/marked/search/public/result?tag=sn1","ts":"2026-11-02T12:10:54.800Z","stage":"after-capture-scripts","title":"search","text":"search\\n\\nafter-public-sn1\\n\\nquery  token  search\\n個人 情報 1\\n個人 情報 2\\n個人 情報 3"}';
 
 /**
  * WACZ Profile 1.18.0 の文書の行（1 行目。`stage` が無く、`url` は要求の URL）。上の 2 行と同じ取り込みを、
- * 1.18.0 の形に組んだ物（題と本文はスクリプトの後に読んだ物で、after-behaviors の行と同じ文）。
+ * 1.18.0 の形に組んだ物（題と本文はスクリプトの後に読んだ物で、after-capture-scripts の行と同じ文）。
  */
 const PAGE_DOCUMENT =
   '{"id":"6d67beaf-8bcc-44aa-b7e3-2af7ca55c0fa","url":"http://capture-fixtures-1-a.browserhive:8080/marked/search/public?tag=sn1","ts":"2026-11-02T12:10:53.912Z","title":"search","text":"search\\n\\nafter-public-sn1\\n\\nquery  token  search\\n個人 情報 1\\n個人 情報 2\\n個人 情報 3"}';
@@ -50,6 +53,20 @@ const ARCHIVE: ArchiveRow = {
 };
 
 describe("pages.jsonl の解析", () => {
+  // CAPTURE-506: v23.0.0 の行は時点を after-behaviors と書いた
+  it("時点の名は after-capture-scripts に寄せ、url（写しの urn）は撮った字のまま", () => {
+    const [old] = parsePagesJsonl(`${HEADER}\n${PAGE_AFTER_BEHAVIORS}\n`);
+    const [renamed] = parsePagesJsonl(`${HEADER}\n${PAGE_AFTER_CAPTURE_SCRIPTS}\n`);
+    expect(old?.stage).toBe("after-capture-scripts");
+    expect(old?.url.startsWith("urn:browserhive:snapshot:after-behaviors:")).toBe(true);
+    expect(renamed?.stage).toBe("after-capture-scripts");
+    expect({ ...old, id: undefined, url: undefined }).toEqual({
+      ...renamed,
+      id: undefined,
+      url: undefined,
+    });
+  });
+
   it("ヘッダ行を落とす", () => {
     // **これが肝。** 1 行目はページではない。載せると「All Pages」という題の
     // ドキュメントが検索に出る —— しかも URL を持たないので、開くこともできない。
@@ -119,10 +136,10 @@ describe("時点ごとの行", () => {
     // archive の id だけを _id にすると、後の行が前の行を上書きして 1 件しか残らない。
     const pages = parsePagesJsonl(`${HEADER}\n${PAGE_AFTER_LOAD}\n${PAGE_AFTER_BEHAVIORS}\n`);
     const docs = pages.map((page) => searchDocument(page, ARCHIVE));
-    expect(docs.map((doc) => doc.stage)).toEqual(["after-load", "after-behaviors"]);
+    expect(docs.map((doc) => doc.stage)).toEqual(["after-load", "after-capture-scripts"]);
     expect(docs.map(searchDocumentId)).toEqual([
       `${ARCHIVE.id}:after-load`,
-      `${ARCHIVE.id}:after-behaviors`,
+      `${ARCHIVE.id}:after-capture-scripts`,
     ]);
   });
 
@@ -141,10 +158,10 @@ describe("載せる行を選ぶ（WACZ Profile 1.18.0 の文書の行）", () =>
     );
 
   it("写しの行があれば文書の行を載せず、時点ごとの 2 件だけ —— 同じ語が 1 アーカイブで 2 回当たらない", () => {
-    // 文書の行の本文は after-behaviors の行と同じ文。載せると「個人 情報」が 2 件当たる。
+    // 文書の行の本文は after-capture-scripts の行と同じ文。載せると「個人 情報」が 2 件当たる。
     expect(
       idsOf(`${HEADER}\n${PAGE_DOCUMENT}\n${PAGE_AFTER_LOAD}\n${PAGE_AFTER_BEHAVIORS}\n`),
-    ).toEqual([`${ARCHIVE.id}:after-load`, `${ARCHIVE.id}:after-behaviors`]);
+    ).toEqual([`${ARCHIVE.id}:after-load`, `${ARCHIVE.id}:after-capture-scripts`]);
   });
 
   it("写しの行が無ければ、文書の行の 1 件（_id の後ろは page）—— 伏せた理由も運ぶ", () => {
@@ -158,7 +175,7 @@ describe("載せる行を選ぶ（WACZ Profile 1.18.0 の文書の行）", () =>
   it("写しの行だけの WACZ（1.17.0 まで）は、前と同じ時点ごとの 2 件", () => {
     expect(idsOf(`${HEADER}\n${PAGE_AFTER_LOAD}\n${PAGE_AFTER_BEHAVIORS}\n`)).toEqual([
       `${ARCHIVE.id}:after-load`,
-      `${ARCHIVE.id}:after-behaviors`,
+      `${ARCHIVE.id}:after-capture-scripts`,
     ]);
   });
 });

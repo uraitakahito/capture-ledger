@@ -19,7 +19,7 @@ const load: Shot = {
   picture: webpBytes("L"),
 };
 const behaviors: Shot = {
-  stage: "after-behaviors",
+  stage: "after-capture-scripts",
   documentUrl: DOC,
   date: "2026-11-15T01:00:05.300Z",
   record: "urn:uuid:22222222-2222-4222-8222-222222222222",
@@ -38,7 +38,7 @@ describe("節目のスクリーンショットの在り処", () => {
     const rows = await locateStageScreenshots(zip);
     expect(rows?.map((row) => [row.stage, row.kind])).toEqual([
       ["after-load", "located"],
-      ["after-behaviors", "located"],
+      ["after-capture-scripts", "located"],
     ]);
     for (const [row, shot] of [
       [rows?.[0], load],
@@ -55,13 +55,45 @@ describe("節目のスクリーンショットの在り処", () => {
     const rows = await locateStageScreenshots(
       screenshotWacz([
         { stage: "after-load", skipped: "secret" },
-        { stage: "after-behaviors", skipped: "withheld" },
+        { stage: "after-capture-scripts", skipped: "withheld" },
       ]),
     );
     expect(rows).toEqual([
       { stage: "after-load", kind: "skipped", skipped: "secret" },
-      { stage: "after-behaviors", kind: "skipped", skipped: "withheld" },
+      { stage: "after-capture-scripts", kind: "skipped", skipped: "withheld" },
     ]);
+  });
+
+  // CAPTURE-506: 古い取り込みは、時点を after-behaviors と書いた (URI の頭も)
+  it("古い時点の名 after-behaviors は after-capture-scripts の行にし、絵は古い名の URI のまま照らして取れる", async () => {
+    const old: Shot = { ...behaviors, stage: "after-behaviors" };
+    const zip = screenshotWacz([load, old]);
+    const rows = await locateStageScreenshots(zip);
+    expect(rows?.map((row) => [row.stage, row.kind])).toEqual([
+      ["after-load", "located"],
+      ["after-capture-scripts", "located"],
+    ]);
+    const row = rows?.[1];
+    if (row?.kind !== "located") throw new Error("not located");
+    expect(pictureAt(zip, row).equals(old.picture)).toBe(true);
+  });
+
+  it("古い時点の名の skipped も、新しい名の行にする", async () => {
+    expect(
+      await locateStageScreenshots(
+        screenshotWacz([{ stage: "after-behaviors", skipped: "withheld" }]),
+      ),
+    ).toEqual([{ stage: "after-capture-scripts", kind: "skipped", skipped: "withheld" }]);
+  });
+
+  it("新しい時点の名で照らしても、after-load の絵の URI は通さない", async () => {
+    const zip = screenshotWacz([load]);
+    const rows = await locateStageScreenshots(zip);
+    const row = rows?.[0];
+    if (row?.kind !== "located") throw new Error("not located");
+    expect(() => pictureAt(zip, { ...row, stage: "after-capture-scripts" })).toThrow(
+      ScreenshotRecordError,
+    );
   });
 
   it("欄の無い datapackage は undefined（行を書かない）", async () => {
@@ -164,7 +196,7 @@ describe("位置の member から絵を取り出す", () => {
     // 読み込みの後の位置を、スクリプトの後として読む
     expect(() =>
       pictureOf(zip.subarray(first.waczOffset, first.waczOffset + first.waczLength), {
-        stage: "after-behaviors",
+        stage: "after-capture-scripts",
         recordId: first.recordId,
       }),
     ).toThrow(ScreenshotRecordError);

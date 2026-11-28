@@ -13,7 +13,7 @@
  *   版どうしで比べられる形にするため。replay (ReplayWeb.page 2.5.0) が頁の中で見つからない物 (favicon など) を
  *   探す 3 本は、この並びではなく WACZ の名前の順で選ばれる (replayweb-player の docs/replay-bundle.md。段 1 で確かめた)
  * - `initialPages`: `pages.json` の行を、**`/q/` の問いなしの並び (深さ → 時刻 → id)** で 25 行まで。文書の行も
- *   DOM の写しの行 (after-load・after-behaviors) も入れる。replay は一覧の 1 ページ目をここから作り (問い合わせの
+ *   DOM の写しの行 (after-load・after-capture-scripts) も入れる。replay は一覧の 1 ページ目をここから作り (問い合わせの
  *   エンドポイントは検索と 2 ページ目以降だけ)、2 ページ目は `/q/` の 26 行目から読む —— 並びが `/q/` と違うと、
  *   行が抜けたり 2 度出たりする。写しの行を外すと、合本の一覧に写しが出ず、押して開く所が無い (WACZ 1 本で開いた
  *   一覧には在る)。写しの行の `isSeed` は同じ頁の文書の行と同じ (深さ 0 なら true): 起点と起点でない行が混ざると、

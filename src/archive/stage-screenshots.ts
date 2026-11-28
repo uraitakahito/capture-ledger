@@ -1,6 +1,6 @@
 /**
  * 節目のスクリーンショット (CAPTURE-8・CAPTURE-432)。BrowserHive は v30.2.0 から、取り込みの節目 (`after-load`・
- * `after-behaviors`) の viewport の絵 (WebP) を、BrowserHive WARC の `resource` レコードとして WACZ に入れる
+ * `after-capture-scripts`) の viewport の絵 (WebP) を、BrowserHive WARC の `resource` レコードとして WACZ に入れる
  * (BrowserHive WACZ Profile の `#screenshots`)。`datapackage.json` の `browserhive:capture.screenshots[]` が時点ごとに
  * 「絵の url・date・record・bytes」か「残さなかった理由 (`skipped`)」を言い、索引 (`indexes/index.cdxj`) の
  * `<url> <14 桁>` の行が、絵のレコードの WARC のファイルと `offset`・`length` を言う。
@@ -15,6 +15,7 @@
  * **求めた位置は、その場で解いて確かめる** (名指しのレコードか・時点が合うか・WebP か)。合わなければ位置を書かず、
  * 理由 (`problem`) を書く。間違った絵を返すより、絵が無いと言うほうがよい。
  */
+import { normalizeStage, recordStageNames } from "./stage-name.js";
 import { gunzipMember, parseWarcRecord } from "./warc-record.js";
 import { INDEX_ENTRY_PATH, readEntry, storedEntryRange } from "./wacz.js";
 import { isWebp, PICTURE_MAX_BYTES } from "./webp.js";
@@ -92,7 +93,12 @@ export const pictureOf = (member: Buffer, expected: ExpectedPicture): Buffer => 
   if (headers.get("warc-type") !== "resource")
     fail(`is not a resource (${String(headers.get("warc-type"))})`);
   const target = headers.get("warc-target-uri") ?? "";
-  if (!target.startsWith(`${SCREENSHOT_URN_PREFIX}${expected.stage}:`)) {
+  // 古い取り込みの絵は、URI の頭が古い時点の名のまま (`stage-name.ts`)
+  if (
+    !recordStageNames(expected.stage).some((name) =>
+      target.startsWith(`${SCREENSHOT_URN_PREFIX}${name}:`),
+    )
+  ) {
     fail(`is not the ${expected.stage} screenshot (${target.slice(0, 60)})`);
   }
   const recordId = (headers.get("warc-record-id") ?? "").replace(/^<|>$/g, "");
@@ -177,7 +183,8 @@ const locateLine = async (
 
 /**
  * WACZ (丸ごとのバイト列) の節目のスクリーンショットの記録。`datapackage.json` に `screenshots` の欄が無ければ
- * `undefined` (BrowserHive v30.2.0 より前の WACZ・BrowserHive でない WACZ)。時点の並びは欄の順。
+ * `undefined` (BrowserHive v30.2.0 より前の WACZ・BrowserHive でない WACZ)。時点の並びは欄の順。時点の名は新しい名に
+ * 寄せて返す (`stage-name.ts`)。
  *
  * 形の壊れた項目 (時点が文字でない・同じ時点の 2 つ目) は捨てる。zip として読めなければ投げる。
  */
@@ -191,8 +198,10 @@ export const locateStageScreenshots = async (
   const seen = new Set<string>();
   for (const item of entries) {
     if (!isRecord(item)) continue;
-    const stage = item["stage"];
-    if (typeof stage !== "string" || stage === "" || seen.has(stage)) continue;
+    const raw = item["stage"];
+    if (typeof raw !== "string" || raw === "") continue;
+    const stage = normalizeStage(raw);
+    if (seen.has(stage)) continue;
     seen.add(stage);
     const skipped = item["skipped"];
     if (typeof skipped === "string" && skipped !== "") {

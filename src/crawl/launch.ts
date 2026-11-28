@@ -78,7 +78,7 @@ export interface DispatchedCrawl {
   signing: boolean;
   /**
    * ページの中で走らせるもの。**クロールを始めた時点で解決して固定したもの**を、
-   * 段ごとにそのまま配る (`crawls.scripts`)。
+   * 段ごとにそのまま配る (`crawls.capture_scripts`)。
    *
    * **必ず載せる。** BrowserHive は顔ぶれを持たないので、送らなければページでは
    * 何も走らない —— そしてそれは、成功した取り込みと archive を見分けられない形の
@@ -532,7 +532,7 @@ export const crawlValues = (
     requestedClient: who.client ?? null,
     requestedActor: who.actor ?? null,
     // 解決済みの写し。並びが実行順。
-    scripts: JSON.stringify(prepared.scripts),
+    captureScripts: JSON.stringify(prepared.scripts),
     // クロールごとの値。変数は値ごと、シークレットは path と更新時刻だけ (値は capture-ledger を通らない)
     variables: JSON.stringify(prepared.variables),
     secrets: JSON.stringify(prepared.secrets),

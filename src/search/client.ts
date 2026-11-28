@@ -73,7 +73,7 @@ export const ensureIndex = async (client: Client, index: string): Promise<void> 
         properties: {
           // 認可の単位。検索の後にこの id で `can_view` を訊く。
           archiveId: { type: "keyword" },
-          // 行の時点 (`after-load`・`after-behaviors`)。完全一致で絞るための物。
+          // 行の時点 (`after-load`・`after-capture-scripts`)。完全一致で絞るための物。
           stage: { type: "keyword" },
           // 引く対象は題と本文だけ。URL は完全一致で絞るためのもので、
           // 分かち書きすると「同じホストの別ページ」まで当たる。

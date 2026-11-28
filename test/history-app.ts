@@ -73,9 +73,14 @@ const WARC = Buffer.alloc(TAIL_BYTES + 8 * 1024, "W");
 
 /**
  * BrowserHive WACZ と同じ並びの作り物 (WARC が前、`pages.jsonl` はその後ろ)。`doc` は文書の行の文字、`behaviors` は
- * after-behaviors の写しの文字 (省けば写しの行を入れない)。
+ * after-capture-scripts の写しの文字 (省けば写しの行を入れない)。
  */
-export const pagesWacz = (text: { doc?: string; behaviors?: string }, url = URL_A): Buffer =>
+export const pagesWacz = (
+  text: { doc?: string; behaviors?: string },
+  url = URL_A,
+  /** 写しの行に書く時点の名。BrowserHive WACZ Profile 1.30.0 より前の取り込みは `after-behaviors` (CAPTURE-506)。 */
+  stage = "after-capture-scripts",
+): Buffer =>
   storedZip(
     {
       "archive/data.browserhive.warc.gz": WARC,
@@ -91,8 +96,8 @@ export const pagesWacz = (text: { doc?: string; behaviors?: string }, url = URL_
           ? []
           : [
               JSON.stringify({
-                url: `urn:browserhive:snapshot:after-behaviors:${url}`,
-                stage: "after-behaviors",
+                url: `urn:browserhive:snapshot:${stage}:${url}`,
+                stage,
                 text: text.behaviors,
               }),
             ]),
@@ -102,7 +107,7 @@ export const pagesWacz = (text: { doc?: string; behaviors?: string }, url = URL_
     { deflate: [PAGES_ENTRY_PATH] },
   );
 
-/** 検め済みで、文書の行と after-behaviors の写しを持つ取り込み。WACZ も同じ文字で作る。 */
+/** 検め済みで、文書の行と after-capture-scripts の写しを持つ取り込み。WACZ も同じ文字で作る。 */
 export const archiveOf = (
   id: string,
   text: { doc?: string; behaviors?: string },
@@ -121,7 +126,7 @@ export const archiveOf = (
       ? []
       : [
           {
-            stage: "after-behaviors",
+            stage: "after-capture-scripts",
             textSha256: sha256(text.behaviors),
             textChars: text.behaviors.length,
           },

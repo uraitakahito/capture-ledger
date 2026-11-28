@@ -35,6 +35,7 @@ import openapi from "../rpc/generated/browserhive/openapi.json" with { type: "js
 import type { components } from "../rpc/generated/browserhive/openapi.js";
 import type { LogCounts } from "../db/database.js";
 import { parseS3Uri, type S3Location } from "./s3-uri.js";
+import { normalizeStage, recordStageNames } from "./stage-name.js";
 
 export type CaptureResultReport = components["schemas"]["CaptureResultReport"];
 
@@ -50,8 +51,44 @@ const validate = ajv.compile<CaptureResultReport>({
   $ref: "#/components/schemas/CaptureResultReport",
 });
 
+/** 契約が知る時点の名 (`ScreenshotStage`)。 */
+const CONTRACT_STAGES: readonly string[] = openapi.components.schemas.ScreenshotStage.enum;
+
+/**
+ * 照らす時の時点の名。新しい名に寄せ、契約がそれを知らなければ、同じ時点の名のうち契約が知る物にする
+ * (契約の写しが替わる前後のどちらでも、古い名と新しい名の `.result.json` を通すため)。
+ */
+const contractStageOf = (stage: string): string => {
+  const normalized = normalizeStage(stage);
+  if (CONTRACT_STAGES.includes(normalized)) return normalized;
+  return recordStageNames(normalized).find((name) => CONTRACT_STAGES.includes(name)) ?? stage;
+};
+
+/** `screenshots[].stage` を替えた写し。欄が無い・形が違う時は、そのまま返す (形の誤りは Ajv が言う)。 */
+const withScreenshotStages = (raw: unknown, rename: (stage: string) => string): unknown => {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const screenshots = (raw as { screenshots?: unknown }).screenshots;
+  if (!Array.isArray(screenshots)) return raw;
+  return {
+    ...raw,
+    screenshots: screenshots.map((item: unknown) => {
+      if (typeof item !== "object" || item === null) return item;
+      const stage = (item as { stage?: unknown }).stage;
+      return typeof stage === "string" ? { ...item, stage: rename(stage) } : item;
+    }),
+  };
+};
+
+/**
+ * 契約に照らして返す。`screenshots[].stage` は照らす前に寄せ、返す物は新しい名 (`stage-name.ts`)。CAPTURE-506 より前の BrowserHive の
+ * `.result.json` は `after-behaviors` と書き、それより後の契約はその名を持たない —— 寄せずに照らすと、古い取り込みのログ・経緯・
+ * 段の登録・reconcile がみな `manifest-invalid` になる。
+ */
 export const readManifest = (raw: unknown): CaptureResultReport => {
-  if (validate(raw)) return raw;
+  const candidate = withScreenshotStages(raw, contractStageOf);
+  if (validate(candidate)) {
+    return withScreenshotStages(candidate, normalizeStage) as CaptureResultReport;
+  }
   throw new Error(
     `manifest is not a BrowserHive CaptureResultReport: ${ajv.errorsText(validate.errors)}`,
   );

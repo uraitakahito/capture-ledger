@@ -3,23 +3,23 @@
  * ページの中で走らせるスクリプト (`scripts`) を足す・見る・切り替える・消す、
  * 開発用の CLI。
  *
- *   pnpm run scripts import .upstream/capture-scripts               # catalog.json と受け皿の型
- *   pnpm run scripts add autoscroll --file ./autoscroll.ts
- *   pnpm run scripts add autoscroll --file - < ./autoscroll.ts      # 標準入力から
- *   pnpm run scripts add hide-webdriver --file ./x.ts --phase preload
- *   pnpm run scripts add autoscroll --file ./x.ts --options '{"maxSteps":60}'
- *   pnpm run scripts add my-search --file ./x.ts --site www.example.com   # サイト用 (対象サイト)。--site は何度でも
- *   pnpm run scripts add my-search --file ./x.ts --params '[{"name":"query","kind":"variable","summary":"検索語"}]'   # 読む値の宣言
- *   pnpm run scripts list                                           # 各 id の最新版
- *   pnpm run scripts list --all --json                              # 版を全部、機械向け
- *   pnpm run scripts list autoscroll --all                          # 1 つの id の版の並び
- *   pnpm run scripts list --seed https://example.com/               # その起点で既定が走らせる物
- *   pnpm run scripts show autoscroll                                # source をそのまま出す
- *   pnpm run scripts show autoscroll --version 1                    # 古い版 (無効な版も)
- *   pnpm run scripts types                                          # 受け皿 __bh の型
- *   pnpm run scripts disable autoscroll                             # 既定の顔ぶれから外す (次の import でカタログの default に戻る)
- *   pnpm run scripts enable autoscroll
- *   pnpm run scripts rm autoscroll --version 2
+ *   pnpm run capture-scripts import .upstream/capture-scripts               # catalog.json と受け皿の型
+ *   pnpm run capture-scripts add autoscroll --file ./autoscroll.ts
+ *   pnpm run capture-scripts add autoscroll --file - < ./autoscroll.ts      # 標準入力から
+ *   pnpm run capture-scripts add hide-webdriver --file ./x.ts --phase preload
+ *   pnpm run capture-scripts add autoscroll --file ./x.ts --options '{"maxSteps":60}'
+ *   pnpm run capture-scripts add my-search --file ./x.ts --site www.example.com   # サイト用 (対象サイト)。--site は何度でも
+ *   pnpm run capture-scripts add my-search --file ./x.ts --params '[{"name":"query","kind":"variable","summary":"検索語"}]'   # 読む値の宣言
+ *   pnpm run capture-scripts list                                           # 各 id の最新版
+ *   pnpm run capture-scripts list --all --json                              # 版を全部、機械向け
+ *   pnpm run capture-scripts list autoscroll --all                          # 1 つの id の版の並び
+ *   pnpm run capture-scripts list --seed https://example.com/               # その起点で既定が走らせる物
+ *   pnpm run capture-scripts show autoscroll                                # source をそのまま出す
+ *   pnpm run capture-scripts show autoscroll --version 1                    # 古い版 (無効な版も)
+ *   pnpm run capture-scripts types                                          # 受け皿 __bh の型
+ *   pnpm run capture-scripts disable autoscroll                             # 既定の顔ぶれから外す (次の import でカタログの default に戻る)
+ *   pnpm run capture-scripts enable autoscroll
+ *   pnpm run capture-scripts rm autoscroll --version 2
  *
  * **DB に直接書く開発用の道具で、認可は通らない。** 中身は `store.ts`。
  *
@@ -140,7 +140,7 @@ const withDb = async (
 };
 
 const program = new Command()
-  .name("scripts")
+  .name("capture-scripts")
   .description(
     "ページで走らせるスクリプト (表 scripts) を足す・見る・切り替える・消す。DB に直接書く開発用の道具で、認可は通らない",
   )
@@ -483,7 +483,7 @@ program
       if (resolved.kind !== "ok") return fail(`登録されていない: ${resolved.ids.join(", ")}`);
       const latest = resolved.scripts[0];
       if (latest === undefined) return fail(`登録されていない: ${id}`);
-      // 読むのは capture-ledger のエンドポイント (`GET /api/scripts/:id/versions/:version`) と同じ readScript
+      // 読むのは capture-ledger のエンドポイント (`GET /api/capture-scripts/:id/versions/:version`) と同じ readScript
       const script = await readScript(db, id, opts.version ?? latest.version);
       if (script === undefined) return fail(`${id} に v${String(opts.version)} は無い`);
       process.stdout.write(script.source.endsWith("\n") ? script.source : `${script.source}\n`);
@@ -499,7 +499,7 @@ program
       const types = await readHostTypes(db);
       if (types === undefined) {
         return fail(
-          "受け皿の型はまだ無い (pnpm run scripts import .upstream/capture-scripts で入る)",
+          "受け皿の型はまだ無い (pnpm run capture-scripts import .upstream/capture-scripts で入る)",
         );
       }
       process.stdout.write(types.source.endsWith("\n") ? types.source : `${types.source}\n`);

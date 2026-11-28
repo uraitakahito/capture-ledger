@@ -43,7 +43,7 @@ const crawlRow = (
   pagesDiscovered: 0,
   pagesCaptured: 0,
   artifactKeyPrefix: null,
-  scripts: [],
+  captureScripts: [],
   variables: {},
   secrets: {},
   ...over,

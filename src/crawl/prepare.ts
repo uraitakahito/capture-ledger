@@ -502,7 +502,7 @@ export const prepareCrawl = async (
         [...theirSites, RUN_NOTHING_ON_PURPOSE].map((text) => ({ text })),
       );
     }
-    const command = "pnpm run scripts import .upstream/capture-scripts";
+    const command = "pnpm run capture-scripts import .upstream/capture-scripts";
     return refusedWithHints(
       400,
       { error: "no scripts are registered" },

@@ -818,13 +818,13 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         errorKey: crawl.errorKey,
         errorParams: crawl.errorParams,
         // **登録済みのスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
-        // 中身はスクリプトの 1 版のエンドポイント (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
+        // 中身はスクリプトの 1 版のエンドポイント (`GET /api/capture-scripts/:id/versions/:version`)・`pnpm run capture-scripts show`・
         // archive に在る。**その場の TS には頼まれた
         // 要素 (`inline`) を返すが、source は載せない** —— 走行中の行は workbench が 2 秒ごとに引き直すので、
         // 1 MiB の TS なら 2 秒に 1 MiB を運ぶことになる。書いた物を取り戻すのは「欄に戻す」の
         // ときだけで、`GET /api/crawls/:id/inline/:name` から取る。
         // `jsSha256` と `compiledWith` は最初の段の報告で埋まる。それまでは null。
-        scripts: crawl.scripts.map((script) => ({
+        scripts: crawl.captureScripts.map((script) => ({
           id: script.id,
           version: script.version,
           phase: script.phase,
@@ -894,11 +894,11 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       const crawl = await db
         .selectFrom("crawls")
-        .select(["scripts"])
+        .select(["captureScripts"])
         .where("id", "=", request.params.id)
         .executeTakeFirst();
       const id = INLINE_PREFIX + request.params.name;
-      const script = crawl?.scripts.find((s) => s.id === id);
+      const script = crawl?.captureScripts.find((s) => s.id === id);
       if (script === undefined) return reply.code(404).send({ error: "not found" });
 
       return reply.code(200).send({
@@ -940,12 +940,12 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
       const crawl = await db
         .selectFrom("crawls")
-        .select(["scripts", "variables"])
+        .select(["captureScripts", "variables"])
         .where("id", "=", request.params.id)
         .executeTakeFirst();
       if (crawl === undefined) return reply.code(404).send({ error: "not found" });
 
-      const scripts = crawl.scripts.map(toDispatched);
+      const scripts = crawl.captureScripts.map(toDispatched);
       let answer;
       try {
         answer = await tsCompile.compile(scripts, Object.keys(crawl.variables));
@@ -1169,15 +1169,15 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
 
         const crawl = await db
           .selectFrom("crawls")
-          .select(["scripts", "orgId", "variables"])
+          .select(["captureScripts", "orgId", "variables"])
           .where("id", "=", request.params.id)
           .executeTakeFirst();
         const inlineId = INLINE_PREFIX + request.params.name;
-        if (!crawl?.scripts.some((s) => s.id === inlineId)) {
+        if (!crawl?.captureScripts.some((s) => s.id === inlineId)) {
           return reply.code(404).send({ error: "not found" });
         }
 
-        const scripts = crawl.scripts.map(toDispatched);
+        const scripts = crawl.captureScripts.map(toDispatched);
         const variableNames = Object.keys(crawl.variables);
         let checked;
         try {
@@ -1224,7 +1224,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           inlineId,
           diagnostics,
           typescript: checked.typescript,
-          hostTypes: host?.source ?? "(受け皿の型が登録されていない。scripts import を流すと入る)",
+          hostTypes:
+            host?.source ?? "(受け皿の型が登録されていない。capture-scripts import を流すと入る)",
           tsCompile,
           variableNames,
           claude,
@@ -1835,7 +1836,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // capture-ledger の `sha256` は TS の物で、archive に残るのは JS。その間を継ぐ JS の hash は
         // 報告にしか無い。揃っていなければ断る (400/409) —— **capture-ledger と flow の片方だけを新しく
         // すると 1 段目でここに当たる。** 黙って通すより、報告の形が違うことを最初に言う。
-        const merge = mergeCompiled(crawl.scripts, compiled);
+        const merge = mergeCompiled(crawl.captureScripts, compiled);
         if ("status" in merge) {
           log.warn({ crawlId, depth, scriptId: merge.scriptId }, merge.error);
           return reply.code(merge.status).send({ error: merge.error, scriptId: merge.scriptId });
@@ -1843,7 +1844,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         if (merge.changed) {
           await db
             .updateTable("crawls")
-            .set({ scripts: JSON.stringify(merge.scripts) })
+            .set({ captureScripts: JSON.stringify(merge.scripts) })
             .where("id", "=", crawlId)
             .execute();
         }
@@ -2344,7 +2345,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               captureFormats: capture.formats,
               signing: capture.signing,
               // 登録済みのスクリプトは引き直さない —— 行に固定したものをそのまま配る (報告で写した JS の hash は渡さない)。
-              scripts: crawl.scripts.map(toDispatched),
+              scripts: crawl.captureScripts.map(toDispatched),
               // 値も行に固定した物をそのまま。変数は値ごと、シークレットは名前 → path と、残す名前 (読み直した写しから)
               variables: crawl.variables,
               ...secretsForFlow(secrets),

@@ -12,11 +12,15 @@ const NOW = new Date("2026-11-12T04:05:00.000Z");
 const CRAWL = "11111111-1111-4111-8111-111111111111";
 
 describe("前回からの変化の store", () => {
-  it("比べる行は after-behaviors の写し、無ければ文書の行 (after-load だけなら文書の行)", () => {
+  it("比べる行は after-capture-scripts の写し、無ければ文書の行 (after-load だけなら文書の行)", () => {
     expect(
-      comparedLineOf([{ stage: null }, { stage: "after-load" }, { stage: "after-behaviors" }]),
+      comparedLineOf([
+        { stage: null },
+        { stage: "after-load" },
+        { stage: "after-capture-scripts" },
+      ]),
     ).toEqual({
-      stage: "after-behaviors",
+      stage: "after-capture-scripts",
     });
     expect(comparedLineOf([{ stage: "after-load" }, { stage: null }])).toEqual({ stage: null });
     expect(comparedLineOf([{ stage: "after-load" }])).toBeUndefined();
@@ -73,12 +77,12 @@ describe("前回からの変化の store", () => {
     const { db } = recordingDb([
       [
         { ...row, stage: null },
-        { ...row, stage: "after-behaviors", textSha256: "y" },
+        { ...row, stage: "after-capture-scripts", textSha256: "y" },
         { ...row, archiveId: "a2", objectKey: "k2", stage: null, textSha256: "z" },
       ],
     ]);
     const pages = await changeStoreOf(db).comparedPages(CRAWL);
-    expect(pages).toEqual([{ ...row, stage: "after-behaviors", textSha256: "y" }]);
+    expect(pages).toEqual([{ ...row, stage: "after-capture-scripts", textSha256: "y" }]);
   });
 
   it("比べ終えたら差分の行を入れ (重なれば何もしない)、比べ中の回だけを進める", async () => {

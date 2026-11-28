@@ -17,7 +17,7 @@ const page = (url: string, over: Partial<ComparedPage> = {}): ComparedPage => ({
   bucket: "browserhive",
   objectKey: `${url}.wacz`,
   url,
-  stage: "after-behaviors",
+  stage: "after-capture-scripts",
   textSha256: "x",
   textWithheld: null,
   ...over,
@@ -84,7 +84,7 @@ describe("比べる組", () => {
     ).toEqual(["https://a.test/", "https://b.test/"]);
   });
 
-  it("回のページは、WACZ ごとに after-behaviors の写し、無ければ文書の行を選び、同じ URL は先の WACZ の物", async () => {
+  it("回のページは、WACZ ごとに after-capture-scripts の写し、無ければ文書の行を選び、同じ URL は先の WACZ の物", async () => {
     const at = new Date("2026-11-12T04:00:00.000Z");
     const row = (archiveId: string, url: string, stage: string | null, sha: string) => ({
       archiveId,
@@ -101,16 +101,16 @@ describe("比べる組", () => {
       [
         row("a1", "https://a.test/", null, "doc"),
         row("a1", "https://a.test/", "after-load", "load"),
-        row("a1", "https://a.test/", "after-behaviors", "behaviors"),
+        row("a1", "https://a.test/", "after-capture-scripts", "behaviors"),
         row("b1", "https://b.test/", "after-load", "load"),
         row("b1", "https://b.test/", null, "doc"),
         row("c1", "https://c.test/", "after-load", "load"),
-        row("a2", "https://a.test/", "after-behaviors", "later"),
+        row("a2", "https://a.test/", "after-capture-scripts", "later"),
       ],
     ]);
     const pages = await comparedPagesOf(db, "crawl");
     expect(pages.map((p) => [p.archiveId, p.stage, p.textSha256])).toEqual([
-      ["a1", "after-behaviors", "behaviors"],
+      ["a1", "after-capture-scripts", "behaviors"],
       ["b1", null, "doc"],
     ]);
     expect(pages[0]).toMatchObject({
@@ -133,14 +133,14 @@ describe("WACZ の行から、比べる行の文字を取る", () => {
       text: "読み込みの後",
     },
     {
-      url: "urn:browserhive:snapshot:after-behaviors:https://a.test/",
-      stage: "after-behaviors",
+      url: "urn:browserhive:snapshot:after-capture-scripts:https://a.test/",
+      stage: "after-capture-scripts",
       text: "スクリプトの後",
     },
   ];
 
   it("時点を言えば、その時点の写しの文字", () => {
-    expect(comparedTextOf(lines, "after-behaviors")).toBe("スクリプトの後");
+    expect(comparedTextOf(lines, "after-capture-scripts")).toBe("スクリプトの後");
   });
 
   it("時点が null なら、文書の行（stage の無い行）の文字", () => {
@@ -151,7 +151,7 @@ describe("WACZ の行から、比べる行の文字を取る", () => {
   });
 
   it("その行が無い・文字が無ければ空", () => {
-    expect(comparedTextOf(lines.slice(0, 2), "after-behaviors")).toBe("");
+    expect(comparedTextOf(lines.slice(0, 2), "after-capture-scripts")).toBe("");
     expect(comparedTextOf([{ url: "https://a.test/" }], null)).toBe("");
   });
 });
