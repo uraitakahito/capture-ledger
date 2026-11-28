@@ -6,7 +6,13 @@
  */
 import type { Kysely } from "kysely";
 import type { CaptureFormats } from "../config/capture-formats.js";
-import type { CrawlRule, CrawlScript, CrawlSecret, Database } from "../db/database.js";
+import type {
+  CrawlRule,
+  CrawlScript,
+  CrawlSecret,
+  Database,
+  ExemptionEligibility,
+} from "../db/database.js";
 import { createChildLogger } from "../logger.js";
 import {
   enabledLatest,
@@ -225,6 +231,11 @@ export interface CrawlRequester {
   client?: string;
   /** 呼び手が申告した名前。確かめていない。 */
   actor?: string;
+  /**
+   * robots.txt の例外の資格 (`exemptions/eligibility.ts`)。行を足す側 (`POST /api/crawls` と定期の周回) が、
+   * 始める時に 1 度決めて載せる。無ければ `none` (どの行も当てない)。
+   */
+  exemptionEligibility?: ExemptionEligibility;
 }
 
 export interface PrepareDeps {

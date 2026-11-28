@@ -147,6 +147,7 @@ const row = (over: Record<string, unknown> = {}) => ({
   skipReason: null,
   taskId: TASK,
   logCounts: { debug: 3, info: 12, warn: 1, error: 0, dropped: 0 },
+  robotsExemptionId: null,
   archiveId: ARCHIVE,
   capturedAt: new Date(CAPTURED_AT),
   bundledRev: 2,
@@ -170,6 +171,8 @@ const page = (over: Record<string, unknown> = {}) => ({
   capturedAt: CAPTURED_AT,
   bundledRev: 2,
   logCounts: { debug: 3, info: 12, warn: 1, error: 0, dropped: 0 },
+  // robots.txt を例外で外した頁だけが、行の番号を持つ (`047`)
+  robotsExemptionId: null,
   // 行の見本は絵の列を持たない (列の無い行は NULL と同じ)
   screenshot: null,
   submittedAt: SUBMITTED_AT,

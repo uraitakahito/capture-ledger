@@ -694,6 +694,10 @@ curl http://localhost:7070/api/crawls/9072b625-…
 1 ページが相手には数十本のバーストに見える。2000ms はそれを踏まえた値で、robots.txt の
 `Crawl-delay` が長ければそちらが勝つ —— 相手が言っている値をこちらの都合で縮めない。
 
+robots.txt が断ったページは見送る。組織の admin が登録した[例外の行](#robotstxt-の例外)に当たるページだけは
+撮るが、そのときも robots.txt は読み、`Crawl-delay` は効き、外したページの在るホストの間隔は 2000ms より
+詰めない。行ごとに、24 時間と 1 クロールの枚数の上限がある。
+
 :::note[間隔は信じるものではなく、測るもの]
 `crawl_pages` がページごとに `submitted_at` と `finished_at` を持つのは、まさに後から
 確かめるため:
@@ -806,7 +810,10 @@ curl http://localhost:7070/api/crawls/9072b625-…/decisions
 # → { "rules": [ …クロールに固定した規則… ],
 #     "decisions": [{ "depth": 1, "rule": 1, "action": "skip", "hostname": "ads.example.com",
 #                     "links": 12, "samples": ["https://ads.example.com/…", …] }, …],
-#     "robots": [{ "hostname": "www.example.com", "pages": 1, "samples": ["https://www.example.com/private"] }] }
+#     "robots": [{ "hostname": "www.example.com", "pages": 1, "limited": 0,
+#                  "samples": ["https://www.example.com/private"] }],
+#     "robotsOverridden": [{ "exemptionId": "7", "hostname": "www.example.com", "pages": 2, "failed": 0,
+#                            "samples": ["https://www.example.com/status/1", …] }] }
 
 curl 'http://localhost:7070/api/decisions?domain=ads.example.com&days=90&action=skip'
 # → { "decisions": [{ "crawlId": "…", "startedAt": "…", "seeds": [ … ], "rule": 1, "action": "skip",
@@ -815,7 +822,10 @@ curl 'http://localhost:7070/api/decisions?domain=ads.example.com&days=90&action=
 ```
 
 規則 `0` は、どの規則にも当たらなかったリンク。`robots` は robots.txt のために取らなかった
-ページで、「なぜ撮らなかったか」を 1 か所で読める。ホスト名はポートを外す。ドメインで引くエンドポイントは、
+ページで、「なぜ撮らなかったか」を 1 か所で読める。`limited` は、そのうち[例外の行](#robotstxt-の例外)の型に
+当たったが残りの枚数が尽きて見送った数（ページの理由は `robots-exemption-limit`）。`robotsOverridden` は、
+robots.txt が断ったが例外の行で外したページを、行とホスト名で束ねた物。`pages` は撮れた数、`failed` は外して
+撮りに行き撮れなかった数で、行の枚数の上限は両方を数える。ホスト名はポートを外す。ドメインで引くエンドポイントは、
 そのホストとその下をラベルの境目で照らし、新しいクロールから並べる。`days` の既定は 90、
 `action` の既定は `skip` で、500 行で切ったときは `truncated` が言う。Windmill は run の中身を
 最長 30 日で消すが、この行はクロールの行がある限り残る。
@@ -866,6 +876,7 @@ curl 'http://localhost:7070/api/crawls/9072b625-…/pages?limit=100'
 #                 "taskId": "6f1c…", "archiveId": "a1b2…",
 #                 "capturedAt": "2026-11-04T05:12:09.812Z", "bundledRev": 1,
 #                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 },
+#                 "robotsExemptionId": null,
 #                 "screenshot": { "stage": "after-load", "bytes": 47692 } }, …],
 #     "next": "1300" }
 
@@ -881,6 +892,9 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/log
 に渡して引きます（終わりなら `next` は `null`）。続きをヘッダでなく本文で言うのは、[capture-workbench](https://github.com/uraitakahito/capture-workbench)
 の中継が状態・content-type・本文のほかを落とすからです。`id` は `bigserial` を文字列にした物で、
 `reason` は `skip_reason` —— 取らなかった理由も、取れなかった理由も入ります。
+`robotsExemptionId` は、robots.txt が断っていて[例外の行](#robotstxt-の例外)で外したページの、行の番号（字）です。
+外して撮りに行き、撮れなかったページにも入ります。外していないページは `null` です。行の型に当たったが残りの
+枚数が尽きたページは、`state` が `skipped`、`reason` が `robots-exemption-limit` で、番号は持ちません。
 
 **capture-ledger は行を持ちません。** 行は取り込みのログ ——
 ページで走ったスクリプトが書いた物（`__bh.log`・`__bh.report`・投げた例外）、取り込みのページ自身の
@@ -1034,8 +1048,8 @@ WACZ は `can_view` で絞りますが、失敗した取り込みには WACZ が
 
 クロールは robots.txt に従います（[相手に負荷をかけないために](#相手に負荷をかけないために)）。それでも撮る必要のあるページ —— 公開の投稿を証拠として残す、など —— のために、組織の admin が「このホストのこの path の型は、robots.txt が断っていても撮る」を、理由・期限・名乗る User-Agent と一緒に登録できます。行は [`robots_exemptions`](/capture-ledger/ja/databases/robots-exemptions/) に残ります。
 
-:::caution[この版では、行を登録してもクロールにはまだ効きません]
-この版が入れるのは表と API だけです。クロールは今までどおり robots.txt に従い、断られたページを見送ります。登録した行がクロールに効くのは次の版です。
+:::note[v0.117.0 から、行がクロールに効きます]
+v0.116.0 が入れたのは表と API だけでした。v0.117.0 から、capture-ledger は段を起こすたびに効く行を引き、flow の引数 `robots_exemptions` で渡します（[クロールへの効き方](#クロールへの効き方)）。robots.txt と path の型で判じるのは capture-scheduler の flow なので、**例外を判じる版の capture-scheduler が要ります**。入力を持たない古い flow は引数を黙って捨て、行を登録していても、今までどおり robots.txt に従います。
 :::
 
 入れない物も決めてあります。ログインの壁・CAPTCHA・rate limit を避ける仕組みと、browser の名に見せかける名乗りは、例外の対象にしません。相手の利用規約は、登録する人が別に確かめます。
@@ -1055,6 +1069,42 @@ WACZ は `can_view` で絞りますが、失敗した取り込みには WACZ が
 | `dailyLimit`・`linkLimit` | この行で外して撮る枚数の上限。24 時間で（1〜10000。既定 100）と、1 クロールの辿ったリンクで（1〜1000。既定 20）                                   |
 
 同じ組織・ホスト・path の型で効いている行は 1 つまでです。同じ組織・ホストで効いている行の名乗りは 1 つに揃えます。どちらも、破る登録は 409 で断ります。
+
+### クロールへの効き方
+
+行が当たるのは、**robots.txt が断っていて、URL の path が行の型に当たるページだけ**です。robots.txt は今までどおり読み、`Crawl-delay` も効きます。断られていないページには何も起きません（そのホストを行の名乗りで撮ること、を除きます。下記）。
+
+**どのクロールに効くか。** 行はクロールの組織（`crawls.org_id`）の物だけが当たります。そのうえで、クロールを始める時に「資格」を 1 度だけ決めて行に残します（`crawls.exemption_eligibility`）。
+
+| 資格      | 当たる行                  | どのクロールか                                                                                                                                |
+| --------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `human`   | 全ての行                  | 人が `POST /api/crawls` で始め、クロールの組織で始めてよい（`can_submit`）                                                                    |
+| `machine` | `appliesTo` が `all` の行 | 機械の主体（client credentials のトークン）が始めた。または定期の回（[誰の回か](/capture-ledger/ja/schedules/#誰の回か)。「いま撮る」の回も） |
+| `none`    | 無し（robots.txt に従う） | 主体がクロールの組織で `can_submit` を持たない。またはヘッダで名乗る経路（`CAPTURE_LEDGER_DEV_IDENTITY=1`）で始めた                           |
+
+資格を別に訊くのは、クロールの組織が名乗りの 1 つ目で決まり、始めてよいと許した組織とは限らないためです（[誰が始めてよいか](#誰が始めてよいか)）。名乗りが A・B で許しは B だけの主体のクロールは A の物になりますが、A で許しを持たないので `none` になり、A の行は当たりません。訊くのは、クロールの組織 1 つについての保存された関係だけです（所属の申告は一緒に渡しません）。
+
+**範囲と深さ。** `scope` が `seeds` の行は起点（深さ 0）にだけ、`links` の行は起点にも辿ったリンクにも当たります。
+
+**残りの枚数。** 行ごとに、段を起こす時に残りを数えて渡します。24 時間でその行で外した数を `dailyLimit` から引き、深さ 1 から先では、そのクロールの辿ったリンクで外した数を `linkLimit` から引いた物との小さい方です。**外して撮りに行き、撮れなかったページも数えます**（相手に要求は届いています）。残りが尽きると、型に当たったページは理由 `robots-exemption-limit` で見送ります。
+
+**名乗り。** その段で効く行の在るホストのページは、robots.txt が断っていないページも、行の `userAgent` で撮ります（クロールの `userAgent` は、そのホストでは使いません）。robots.txt を照らす名前も、その名乗りから決まります。外したページの在るホストの間隔は、2000 ms より詰めません。
+
+**取り消しと期限切れは、次に起こす段から効きます。** 引いた行は段の行（[`crawl_levels`](/capture-ledger/ja/databases/crawl-levels/) の `args`）に残り、段の送り直し（10 分まで）は残した引数をそのまま送ります。もう起こした段には効きません。走っているクロールも、次の段からは外れます。全ての行を取り消せば、次の段からどのクロールも robots.txt に従います。
+
+**記録。** 外したページは、ページの行に行の番号が残ります（[ページと取り込みのログ](#ページと取り込みのログ)の `robotsExemptionId`、[規則が何を決めたか](#規則が何を決めたか)の `robotsOverridden`）。WACZ には、flow が撮る要求に付けた申告（BrowserHive の `robotsOverride`）が、`datapackage.json` の `browserhive:capture.robotsOverride` に残ります。申告は行から組んだ 7 つの欄です。
+
+| 欄            | 中身                                            |
+| ------------- | ----------------------------------------------- |
+| `exemptionId` | 行の番号                                        |
+| `reason`      | 行の理由                                        |
+| `pathPattern` | 行の path の型                                  |
+| `scope`       | 行の範囲                                        |
+| `grantedBy`   | 登録した人の読める名前。名前が無ければ主体の ID |
+| `grantedAt`   | 登録の時刻（UTC の ISO 8601。`Z` で終わる）     |
+| `expiresAt`   | 期限（同じ形）                                  |
+
+申告は求めた側（capture-ledger）の言い分で、BrowserHive は確かめずに書きます。申告を受けるのは BrowserHive v32.2.0 からです。配備の形式に WACZ が無い時は、flow は申告を付けません（その時も、ページの行の番号は残ります）。
 
 ### 名乗りは偽らない
 
@@ -1076,7 +1126,7 @@ BrowserHive/1.0 (+https://example.test/bot)
 ```sh
 # 一覧（効いている行・切れた行・取り消した行）
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-exemptions
-# → { "exemptions": [ { "id": "7", "orgId": "acme", "host": "example.test", …, "state": "active" } ] }
+# → { "exemptions": [ { "id": "7", "orgId": "acme", "host": "example.test", …, "state": "active", "usedLast24h": 3 } ] }
 
 # 登録
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
@@ -1091,7 +1141,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-
 # → 200 と、取り消した行
 ```
 
-行は `id`（字）・`orgId`・`host`・`pathPattern`・`scope`・`appliesTo`・`userAgent`・`reason`・`dailyLimit`・`linkLimit`・`createdBy`・`createdByName`・`createdAt`・`expiresAt`・`revokedAt`・`revokedBy`・`revokedByName`・`state` を持ちます。`state` は `active`（効いている）・`expired`（期限が過ぎた）・`revoked`（取り消した）のどれかです。
+行は `id`（字）・`orgId`・`host`・`pathPattern`・`scope`・`appliesTo`・`userAgent`・`reason`・`dailyLimit`・`linkLimit`・`createdBy`・`createdByName`・`createdAt`・`expiresAt`・`revokedAt`・`revokedBy`・`revokedByName`・`state` を持ちます。`state` は `active`（効いている）・`expired`（期限が過ぎた）・`revoked`（取り消した）のどれかです。一覧の行だけが `usedLast24h` を持ちます。24 時間の内に、その行で robots.txt を外したページの数で、`dailyLimit` と比べる数です（外して撮りに行き、撮れなかったページも含みます）。
 
 | 答え | いつ                                                                                                                                                      |
 | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |

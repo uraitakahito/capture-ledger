@@ -782,6 +782,11 @@ a burst of dozens from the far side. 2000 ms is chosen against that, and a
 `Crawl-delay` in robots.txt wins if it is longer — a value the other end states is
 not ours to shorten.
 
+A page robots.txt disallows is skipped. Only a page that matches an
+[exemption row](#exemptions-from-robotstxt) registered by an organization admin is captured anyway, and
+even then robots.txt is read, `Crawl-delay` holds, and the delay on a host with an exempted page never
+goes below 2000 ms. Each row has a limit per 24 hours and per crawl.
+
 :::note[The pacing is measured, not assumed]
 `crawl_pages` stores `submitted_at` and `finished_at` per page precisely so this can
 be checked afterwards rather than believed:
@@ -907,7 +912,10 @@ curl http://localhost:7070/api/crawls/9072b625-…/decisions
 # → { "rules": [ …as fixed on the crawl… ],
 #     "decisions": [{ "depth": 1, "rule": 1, "action": "skip", "hostname": "ads.example.com",
 #                     "links": 12, "samples": ["https://ads.example.com/…", …] }, …],
-#     "robots": [{ "hostname": "www.example.com", "pages": 1, "samples": ["https://www.example.com/private"] }] }
+#     "robots": [{ "hostname": "www.example.com", "pages": 1, "limited": 0,
+#                  "samples": ["https://www.example.com/private"] }],
+#     "robotsOverridden": [{ "exemptionId": "7", "hostname": "www.example.com", "pages": 2, "failed": 0,
+#                            "samples": ["https://www.example.com/status/1", …] }] }
 
 curl 'http://localhost:7070/api/decisions?domain=ads.example.com&days=90&action=skip'
 # → { "decisions": [{ "crawlId": "…", "startedAt": "…", "seeds": [ … ], "rule": 1, "action": "skip",
@@ -916,7 +924,11 @@ curl 'http://localhost:7070/api/decisions?domain=ads.example.com&days=90&action=
 ```
 
 Rule `0` is a link no rule matched. `robots` lists the pages robots.txt kept the crawl from
-taking, so "why was this not captured" has one place to look. Host names drop the port.
+taking, so "why was this not captured" has one place to look. `limited` is how many of them matched an
+[exemption row](#exemptions-from-robotstxt) that had nothing left (the page's reason is
+`robots-exemption-limit`). `robotsOverridden` lists the pages robots.txt disallowed and an exemption row
+exempted, per row and host name: `pages` were captured, `failed` were exempted and then failed to capture,
+and a row's limits count both. Host names drop the port.
 The domain query covers the host and its subdomains at a label boundary, newest crawl
 first; `days` defaults to 90 and `action` to `skip`, and `truncated` says when the answer
 was cut at 500 rows. Windmill keeps a run's details for 30 days at most; these rows last as
@@ -971,6 +983,7 @@ curl 'http://localhost:7070/api/crawls/9072b625-…/pages?limit=100'
 #                 "taskId": "6f1c…", "archiveId": "a1b2…",
 #                 "capturedAt": "2026-11-04T05:12:09.812Z", "bundledRev": 1,
 #                 "logCounts": { "debug": 0, "info": 12, "warn": 1, "error": 0, "dropped": 0 },
+#                 "robotsExemptionId": null,
 #                 "screenshot": { "stage": "after-load", "bytes": 47692 } }, …],
 #     "next": "1300" }
 
@@ -987,6 +1000,10 @@ previous answer's `next` as `after` for the rest (`next` is `null` at the end). 
 continuation is in the body rather than a header because [capture-workbench](https://github.com/uraitakahito/capture-workbench)'s relay passes on
 only the status, the content type and the body. `id` is the `bigserial` as a string, and
 `reason` is `skip_reason`, so it says why a page failed as well as why it was skipped.
+`robotsExemptionId` is the number (a string) of the [exemption row](#exemptions-from-robotstxt) that
+exempted a page robots.txt disallowed. A page that was exempted and then failed to capture has it too; a
+page that was not exempted has `null`. A page that matched a row with nothing left has `state` `skipped`
+and `reason` `robots-exemption-limit`, and no number.
 
 **capture-ledger does not keep the lines.** They are the capture's log — what the page's
 scripts wrote (`__bh.log`, `__bh.report`, the exceptions they threw), the captured page's own
@@ -1155,8 +1172,8 @@ nothing can be taken out of it afterwards.
 
 Crawls obey robots.txt ([Not overloading the other end](#not-overloading-the-other-end)). For pages that still have to be captured — keeping a public post as evidence, say — an organization admin can register "capture this path pattern on this host even where robots.txt disallows it", with a reason, an expiry and the User-Agent to announce. The rows live in [`robots_exemptions`](/capture-ledger/databases/robots-exemptions/).
 
-:::caution[In this version, a registered row does not affect crawls yet]
-This version adds the table and the API only. Crawls keep obeying robots.txt and skip the pages it disallows. Registered rows take effect on crawls in the next version.
+:::note[From v0.117.0, rows take effect on crawls]
+v0.116.0 added the table and the API only. From v0.117.0, capture-ledger looks up the rows in effect each time it starts a level and hands them to the flow as the `robots_exemptions` argument ([How rows reach a crawl](#how-rows-reach-a-crawl)). The flow in capture-scheduler is what judges a page against robots.txt and the path pattern, so **this needs a capture-scheduler version that judges exemptions**. An older flow has no such input and drops the argument silently: rows may be registered, and crawls still obey robots.txt as before.
 :::
 
 What stays out is decided too: nothing here gets around a login wall, a CAPTCHA or a rate limit, and a User-Agent that poses as a browser is not accepted. Whoever registers a row checks the other side's terms of service separately.
@@ -1176,6 +1193,42 @@ What stays out is decided too: nothing here gets around a login wall, a CAPTCHA 
 | `dailyLimit`, `linkLimit` | How many pages this row may exempt: per 24 hours (1 to 10000, default 100), and among the followed links of one crawl (1 to 1000, default 20)                                                     |
 
 Within one organization and host, at most one row is in effect per path pattern, and the rows in effect share one User-Agent. A registration that breaks either is refused with 409.
+
+### How rows reach a crawl
+
+A row applies **only to a page that robots.txt disallows and whose URL path matches the row's pattern**. robots.txt is still read, and `Crawl-delay` still holds. Nothing changes for a page that is not disallowed (except that the host is captured under the row's User-Agent; see below).
+
+**Which crawls.** Only rows of the crawl's organization (`crawls.org_id`) apply. On top of that, an "eligibility" is decided once when the crawl starts and kept on its row (`crawls.exemption_eligibility`).
+
+| Eligibility | Rows that apply                 | Which crawls                                                                                                                                                          |
+| ----------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `human`     | All rows                        | A person started it with `POST /api/crawls` and may start crawls (`can_submit`) in the crawl's organization                                                           |
+| `machine`   | Rows whose `appliesTo` is `all` | A machine subject (a client-credentials token) started it, or it is a scheduled run ([Whose run it is](/capture-ledger/schedules/#whose-run-it-is); run-now included) |
+| `none`      | None (robots.txt is obeyed)     | The subject has no `can_submit` in the crawl's organization, or the crawl was started over the header identity path (`CAPTURE_LEDGER_DEV_IDENTITY=1`)                 |
+
+Eligibility is asked separately because the crawl's organization is the first one the caller presents, which is not necessarily the one that allowed the start ([Who may start one](#who-may-start-one)). A subject presenting A and B and allowed only in B starts a crawl that belongs to A; having no permission in A, it gets `none`, and A's rows do not apply. The question is about one organization, the crawl's, and only stored relations answer it (the caller's claimed memberships are not passed along).
+
+**Scope and depth.** A row whose `scope` is `seeds` applies to seeds (depth 0) only; a `links` row applies to seeds and to followed links.
+
+**What is left.** For each row, what is left is counted when a level starts and handed over with it: `dailyLimit` minus the pages that row exempted in the last 24 hours and, from depth 1 on, the smaller of that and `linkLimit` minus the followed links that row exempted in this crawl. **A page that was exempted and then failed to capture counts too** (the request reached the other end). When nothing is left, a page that matches the pattern is skipped with the reason `robots-exemption-limit`.
+
+**The User-Agent.** On a host with a row in effect for the level, every page is captured under the row's `userAgent`, including pages robots.txt does not disallow (the crawl's own `userAgent` is not used on that host). The name robots.txt is matched against follows from it. Where a page was exempted, the per-host delay never goes below 2000 ms.
+
+**Revoking and expiry take effect from the next level that starts.** The rows looked up are kept on the level's row ([`crawl_levels`](/capture-ledger/databases/crawl-levels/), `args`), and a resend of a level (for up to 10 minutes) sends the kept arguments as they are. A level already started is not affected. A running crawl loses the row from its next level. Revoking every row makes every crawl obey robots.txt from its next level.
+
+**The record.** An exempted page keeps the row's number on its page row (`robotsExemptionId` in [Pages and their capture logs](#pages-and-their-capture-logs), `robotsOverridden` in [What the rules decided](#what-the-rules-decided)). The WACZ keeps the declaration the flow attached to the capture request (BrowserHive's `robotsOverride`) in `datapackage.json`, under `browserhive:capture.robotsOverride`. The declaration is seven fields built from the row.
+
+| Field         | Contents                                                             |
+| ------------- | -------------------------------------------------------------------- |
+| `exemptionId` | The row's number                                                     |
+| `reason`      | The row's reason                                                     |
+| `pathPattern` | The row's path pattern                                               |
+| `scope`       | The row's scope                                                      |
+| `grantedBy`   | The registrant's readable name, or the subject's ID when it has none |
+| `grantedAt`   | When it was registered (ISO 8601 in UTC, ending in `Z`)              |
+| `expiresAt`   | The expiry (same form)                                               |
+
+The declaration is the requester's (capture-ledger's) statement; BrowserHive writes it without checking it. BrowserHive accepts it from v32.2.0. When the deployment's formats do not include WACZ, the flow attaches no declaration (the number on the page row stays).
 
 ### The User-Agent does not pretend
 
@@ -1197,7 +1250,7 @@ BrowserHive/1.0 (+https://example.test/bot)
 ```sh
 # The list (rows in effect, expired rows, revoked rows)
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-exemptions
-# → { "exemptions": [ { "id": "7", "orgId": "acme", "host": "example.test", …, "state": "active" } ] }
+# → { "exemptions": [ { "id": "7", "orgId": "acme", "host": "example.test", …, "state": "active", "usedLast24h": 3 } ] }
 
 # Register
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
@@ -1212,7 +1265,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-
 # → 200 and the revoked row
 ```
 
-A row carries `id` (a string), `orgId`, `host`, `pathPattern`, `scope`, `appliesTo`, `userAgent`, `reason`, `dailyLimit`, `linkLimit`, `createdBy`, `createdByName`, `createdAt`, `expiresAt`, `revokedAt`, `revokedBy`, `revokedByName` and `state`. `state` is one of `active` (in effect), `expired` (past its expiry) and `revoked`.
+A row carries `id` (a string), `orgId`, `host`, `pathPattern`, `scope`, `appliesTo`, `userAgent`, `reason`, `dailyLimit`, `linkLimit`, `createdBy`, `createdByName`, `createdAt`, `expiresAt`, `revokedAt`, `revokedBy`, `revokedByName` and `state`. `state` is one of `active` (in effect), `expired` (past its expiry) and `revoked`. Only rows in the list carry `usedLast24h`: the number of pages that row exempted from robots.txt in the last 24 hours, the number `dailyLimit` is compared with (a page that was exempted and then failed to capture is included).
 
 | Answer | When                                                                                                                                                                                                                         |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

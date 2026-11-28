@@ -197,6 +197,7 @@ jobs:
       #
       # 同時の登録が 1 本だけ通ること (行が 1 つも無い所から並べて撃つ。advisory lock を外すと赤くなる)・同時の
       # 取り消し・CHECK と既定・bigserial と timestamptz の読み返しは、試験の記録する DB では確かめられない。
+      # `047` の列と部分 index・頁が指す行への参照・段ごとに引く SQL と枚数の数え方 (24 時間・1 クロールのリンク) も、ここで見る。
       # 自分の組織 (smoke-<pid>) の行だけを足して、最後に消す。
       - name: Robots exemptions against Postgres
         run: pnpm run build:tools && node dist/tools/robots-exemptions-smoke.js

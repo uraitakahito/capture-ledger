@@ -10,6 +10,7 @@ import { crawlKeyPrefix, sinkForCrawl, type SinkConfig } from "../api/sink.js";
 import { isUniqueViolation } from "../api/authorization.js";
 import type { CaptureFormats, CaptureSettings } from "../config/capture-formats.js";
 import type { CrawlScript, CrawlSecret, CrawlsTable, Database } from "../db/database.js";
+import { exemptionsForLevel, type DispatchedRobotsExemption } from "../exemptions/dispatch.js";
 import { createChildLogger } from "../logger.js";
 import type { ReplayBundleResult } from "../replay-bundle/write.js";
 import type { CrawlRequester, PreparedCrawl } from "./prepare.js";
@@ -111,6 +112,12 @@ export interface DispatchedCrawl {
    * 頁の JS が受け取った乱数を BrowserHive に控えさせるか。**必ず載せる** (頼まなければ false)。行に固定した物を段ごとに配る。
    */
   recordRandom: boolean;
+  /**
+   * この段に効きうる robots.txt の例外の行と、残りの枚数 (`exemptions/dispatch.ts`)。**必ず載せる** (当たる行が
+   * 無ければ `[]`)。段を起こす時に引いた物で、段の行に残るので、送り直しでは変わらない。判じるのは flow の
+   * `plan_level` —— 入力を持たない古い flow は黙って捨て、今までどおり robots.txt に従う (守る側に倒れる)。
+   */
+  robotsExemptions: DispatchedRobotsExemption[];
 }
 
 /**
@@ -533,6 +540,8 @@ export const crawlValues = (
     userAgent: prepared.userAgent === "" ? null : prepared.userAgent,
     // 控えは BrowserHive WACZ の random/values.jsonl に、数は .result.json の random に残る
     recordRandom: prepared.recordRandom,
+    // robots.txt の例外の資格 (`047`)。始める側が 1 度決めた物を残す。決めていなければ none (どの行も当てない)
+    exemptionEligibility: who.exemptionEligibility ?? "none",
     // 撮り方の digest (`035`)。前回からの変化が「同じ撮り方の前の回」を引く鍵。行の列から埋め直す道具と同じ関数
     recipeSha256: recipeDigestOf({
       scripts: prepared.scripts,
@@ -555,6 +564,9 @@ export const crawlValues = (
  * 行と起点のページと、最初の段の行 (`038`) を足し、最初の段を返す (投げるのは呼ぶ側。commit の後に)。`db` は
  * トランザクションでもよい —— 3 つが同じトランザクションに入れば、API が投げる前に落ちても、段の行から時計が送る。
  * **走行中の 1 本とぶつかると投げる** (`crawls_single_active`)。呼ぶ側が読み替える。
+ *
+ * 最初の段に効く robots.txt の例外も、ここで (同じ `db` で) 引く。段の行に残す物なので、段の行を足すのと同じ
+ * トランザクションで読む。期限は API の時計で測る。
  */
 export const insertCrawl = async (
   db: Kysely<Database>,
@@ -566,7 +578,15 @@ export const insertCrawl = async (
   mark?: ScheduleMark,
 ): Promise<DispatchedCrawl> => {
   const seeded = await insertCrawlRows(db, prepared, crawlId, who, sink, mark);
-  const level = firstLevel(prepared, crawlId, seeded, capture, sink);
+  const robotsExemptions = await exemptionsForLevel(db, {
+    crawlId,
+    orgId: who.orgId,
+    eligibility: who.exemptionEligibility ?? "none",
+    depth: 0,
+    hosts: seeded.map((row) => row.host),
+    now: new Date(),
+  });
+  const level = firstLevel(prepared, crawlId, seeded, capture, sink, robotsExemptions);
   await insertLevel(db, level);
   return level;
 };
@@ -610,6 +630,7 @@ export const firstLevel = (
   seeded: readonly SeededPage[],
   capture: CaptureSettings,
   sink: SinkConfig | undefined,
+  robotsExemptions: DispatchedRobotsExemption[],
   levelKey: string = randomUUID(),
 ): DispatchedCrawl => ({
   crawlId,
@@ -629,6 +650,7 @@ export const firstLevel = (
   ...secretsForFlow(prepared.secrets),
   userAgent: prepared.userAgent,
   recordRandom: prepared.recordRandom,
+  robotsExemptions,
   ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
 });
 

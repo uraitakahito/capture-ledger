@@ -1,10 +1,10 @@
 /**
- * robots.txt の例外のエンドポイント (`046`・t-6bc6)。**この版では、行を登録してもクロールにはまだ効かない** ——
- * 表と、登録・取り消しの手続きだけを先に入れる (クロールが行を読むのは次の版)。
+ * robots.txt の例外のエンドポイント (`046`・t-6bc6)。登録した行は、次に起こす段からクロールに効く
+ * (`exemptions/dispatch.ts`・`047`)。取り消しも同じ —— もう起こした段には効かない。
  *
  * | エンドポイント | 誰が | 返すもの |
  * | --- | --- | --- |
- * | `GET /api/robots-exemptions` | 名乗りの組織のうち、始めてよい (`can_submit`) 組織の者 | その組織の行 (効いている・切れた・取り消した) |
+ * | `GET /api/robots-exemptions` | 名乗りの組織のうち、始めてよい (`can_submit`) 組織の者 | その組織の行 (効いている・切れた・取り消した) と、行ごとの 24 時間で外した枚数 |
  * | `POST /api/robots-exemptions` | 本文の `orgId` の admin (人だけ) | 登録した行 (201) |
  * | `POST /api/robots-exemptions/:id/revoke` | その行の組織の admin (人だけ) | 取り消した行 (200) |
  *
@@ -124,9 +124,13 @@ export const registerRobotsExemptionsRoute = (
     const identity = await resolveIdentity(request);
     if (!identity) return unauthorized(reply);
 
-    const rows = await listExemptions(db, await submittableOrganizations(fga, identity));
     const now = deps.now();
-    return reply.code(200).send({ exemptions: rows.map((row) => answerOf(row, now)) });
+    const rows = await listExemptions(db, await submittableOrganizations(fga, identity), now);
+    return reply.code(200).send({
+      // `usedLast24h` は、この行で 24 時間の内に robots.txt を外した頁の数 (`daily_limit` と比べる数。外して撮りに行き、
+      // 撮れなかった頁も含む)。一覧だけが持つ
+      exemptions: rows.map((row) => ({ ...answerOf(row, now), usedLast24h: row.usedLast24h })),
+    });
   });
 
   app.post<{ Body: CreateBody }>(
@@ -175,7 +179,7 @@ export const registerRobotsExemptionsRoute = (
           ...checked.exemption,
           createdBy: identity.subject,
           // 名は表示の物で、無いことがある (`config/identity.ts`)。無い人の登録も受け、null のまま残す。
-          // WACZ の申告の `grantedBy` (1 字以上) は、名が無ければ主体の ID (`created_by`) を書く (行を読む次の版)。
+          // WACZ の申告の `grantedBy` (1 字以上) は、名が無ければ主体の ID (`created_by`) を書く (`exemptions/dispatch.ts`)。
           ...(identity.name !== undefined && { createdByName: identity.name }),
         },
         now,

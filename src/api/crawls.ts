@@ -119,6 +119,8 @@ import { readPageLinks } from "../crawl/links-source.js";
 import { readLinkGraph, readPageLinksOf } from "../crawl/links-read.js";
 import { getJsonObject } from "../archive/s3.js";
 import { manifestOutcome, readManifest } from "../archive/manifest.js";
+import { exemptionsForLevel } from "../exemptions/dispatch.js";
+import { exemptionEligibility } from "../exemptions/eligibility.js";
 import { maySubmit, unauthorized } from "./authorization.js";
 import type { CaptureSettings } from "../config/capture-formats.js";
 import { createChildLogger } from "../logger.js";
@@ -237,6 +239,11 @@ export interface CrawlRouteDeps {
   s3: S3Client;
   bucket: string;
   resolveIdentity: IdentityResolver;
+  /**
+   * どの名乗り方で起きたか (`selectIdentity` の `mode`)。robots.txt の例外の資格を決めるのに要る —— ヘッダの経路で
+   * 始めたクロールには、どの行も当てない (`exemptions/eligibility.ts`)。
+   */
+  identityMode: "jwt" | "header" | "deny";
   /** 受け取り先の設定。無ければ送り先を配らない。 */
   sink?: SinkConfig;
   dispatch: CrawlDispatcher;
@@ -283,6 +290,12 @@ interface PageReport {
   finishedAt?: string;
   /** `.links.json` の置き場所 (`s3://bucket/key`)。中身を読むのはこちら。 */
   linksLocation?: string;
+  /**
+   * robots.txt が断っていて、例外の行で外した頁の、行の番号 (`robots_exemptions.id`)。flow は、外した頁にだけ付ける
+   * (capture-scheduler の `report_level`)。外して撮りに行き、撮れなかった頁 (`failed`) にも付く —— 相手に要求は
+   * 届いている。見送った頁 (`skipped`) には付かない。
+   */
+  robotsExemptionId?: string;
   /**
    * `.result.json` を書けた場所 (`s3://bucket/key`)。BrowserHive (または受け取り先) の答えのまま。
    * **capture-ledger はこれを組み直さない。**
@@ -344,6 +357,7 @@ export const pageRows = (db: Kysely<Database>, crawlId: string) =>
       "p.skipReason",
       "p.taskId",
       "p.logCounts",
+      "p.robotsExemptionId",
       "a.id as archiveId",
       "a.capturedAt",
       "a.replayBundleRev as bundledRev",
@@ -362,6 +376,7 @@ interface PageRow {
   skipReason: string | null;
   taskId: string | null;
   logCounts: LogCounts | null;
+  robotsExemptionId: string | null;
   archiveId: string | null;
   capturedAt: Date | null;
   bundledRev: number | null;
@@ -374,7 +389,8 @@ interface PageRow {
 /**
  * ページ 1 つの答えの形。`state` は行のまま (読み手は字として出すだけ)、`reason` は `skip_reason` ——
  * 取らなかった理由も、取れなかった理由も入る。`logCounts` の null は「この行の取り込みの `.result.json` から
- * 数を読んでいない」(`025`)。
+ * 数を読んでいない」(`025`)。`robotsExemptionId` は、robots.txt が断っていて例外の行で外した頁の、行の番号
+ * (`047`。外していない頁は null)。
  *
  * `capturedAt` と `bundledRev` は WACZ の物 (無ければ null)。`bundledRev` はその WACZ が最初に入った合本の版で、
  * `bundledRev ≤ replayBundle.rev` なら、そのページは capture-ledger が指す合本の中で開ける (workbench が replay の
@@ -392,6 +408,7 @@ export const pageOf = (row: PageRow) => ({
   capturedAt: row.capturedAt,
   bundledRev: row.bundledRev,
   logCounts: row.logCounts,
+  robotsExemptionId: row.robotsExemptionId,
   screenshot: screenshotOf(row),
 });
 
@@ -563,10 +580,17 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       );
       if (prepared.kind === "refused") return reply.code(prepared.status).send(prepared.body);
 
+      // robots.txt の例外の資格を、行を足す直前に 1 度決めて行に残す (`exemptions/eligibility.ts`)。上の `maySubmit` は
+      // 名乗りの組織のどれか 1 つの許しで通すので、クロールの組織 (名乗りの 1 つ目) での許しを、ここで別に訊く
+      const eligibility = await exemptionEligibility(fga, who, {
+        kind: "request",
+        machine: identity.machine === true,
+        identityMode: deps.identityMode,
+      });
       const launched = await launchCrawl(
         { db, capture, ...(sink && { sink }), dispatchLevel },
         prepared,
-        who,
+        { ...who, exemptionEligibility: eligibility },
         asked,
       );
       if (launched.kind === "remembered") return answerRemembered(launched.request);
@@ -586,6 +610,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           // 値は出さない。変数は行と BrowserHive WACZ の settings.variables に在り、シークレットの値は capture-ledger を通らない
           variables: Object.keys(prepared.variables),
           secrets: Object.keys(prepared.secrets),
+          exemptionEligibility: eligibility,
         },
         "Crawl started",
       );
@@ -1255,6 +1280,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
   /**
    * クロール 1 本で、規則がリンクをどう決めたか。**固定した規則と、段 × 規則 × ホスト名の数と、
    * robots.txt で取らなかったページ**を 1 度に返す —— 「なぜ取らなかったか」を 1 か所で読めるように。
+   * robots.txt が断ったが例外の行 (`046`) で外したページは、落とした物とは別の並び `robotsOverridden` で返す。
    *
    * `decisions` の `rule` は `rules` の並びの番号 (1 から) で、0 はどれにも当たらずに落とした物。
    * 撮るだけのページのリンクは見ていないので、ここには来ない。認可と 404 は `GET /api/crawls/:id` と同じ。
@@ -1296,20 +1322,54 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       // robots.txt で取らなかったページ。plan の段が見送り、報告が `skipped` と理由 `robots` で閉じた
       // `crawl_pages` の行。ホスト名は `crawl_decisions` と揃えてポートを外す (`crawl_pages.host` は含む)。
       // `count` は int8 で、node-pg は文字列で返すので int に倒す (`waczCount` と同じ)。
-      const robots = await sql<{ hostname: string; pages: number; samples: string[] }>`
+      //
+      // **例外の行の型に当たったが、残りの枚数が尽きて見送ったページ** (理由 `robots-exemption-limit`) もここに数える ——
+      // robots.txt が断って取らなかったページであることは同じ。そのうちの数を `limited` で言う。欄を足すだけなので、
+      // `hostname`・`pages`・`samples` を読む今の読み手 (capture-scheduler の inspect_crawl・capture-workbench) は変わらない
+      const robots = await sql<{
+        hostname: string;
+        pages: number;
+        limited: number;
+        samples: string[];
+      }>`
         select regexp_replace(host, ':[0-9]+$', '') as hostname,
                count(*)::int as pages,
+               (count(*) filter (where skip_reason = 'robots-exemption-limit'))::int as limited,
                (array_agg(url order by id))[1:${sql.lit(SAMPLES)}] as samples
           from crawl_pages
-         where crawl_id = ${crawl.id} and state = 'skipped' and skip_reason = 'robots'
+         where crawl_id = ${crawl.id} and state = 'skipped'
+           and skip_reason in ('robots', 'robots-exemption-limit')
          group by 1
          order by 1`.execute(db);
+
+      // robots.txt が断ったが、例外の行で外したページ (`crawl_pages.robots_exemption_id`・`047`)。行とホスト名で束ねる。
+      // **撮れた数 (`pages`) と、外して撮りに行き撮れなかった数 (`failed`) を分ける** —— flow は、撮れなかった頁にも
+      // 番号を付けて報告する (相手に要求は届いている)。行の枚数の上限は両方を数える (`exemptions/dispatch.ts`) ので、
+      // 上限と比べる数は `pages + failed`。例は両方から、入った順に。
+      // 番号は bigint なので字に倒す (node-pg が返す形と、段の報告の `robotsExemptionId` と同じ)
+      const robotsOverridden = await sql<{
+        exemptionId: string;
+        hostname: string;
+        pages: number;
+        failed: number;
+        samples: string[];
+      }>`
+        select robots_exemption_id::text as "exemptionId",
+               regexp_replace(host, ':[0-9]+$', '') as hostname,
+               (count(*) filter (where state = 'captured'))::int as pages,
+               (count(*) filter (where state <> 'captured'))::int as failed,
+               (array_agg(url order by id))[1:${sql.lit(SAMPLES)}] as samples
+          from crawl_pages
+         where crawl_id = ${crawl.id} and robots_exemption_id is not null
+         group by robots_exemption_id, 2
+         order by robots_exemption_id, 2`.execute(db);
 
       return reply.code(200).send({
         crawlId: crawl.id,
         rules: crawl.rules,
         decisions,
         robots: robots.rows,
+        robotsOverridden: robotsOverridden.rows,
       });
     },
   );
@@ -1614,6 +1674,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                   submittedAt: { type: "string", format: "date-time" },
                   finishedAt: { type: "string", format: "date-time" },
                   linksLocation: { type: "string" },
+                  // 例外の行の番号 (bigint の連番。18 桁まで —— `POST /api/robots-exemptions/:id/revoke` と同じ形)
+                  robotsExemptionId: { type: "string", pattern: "^[1-9][0-9]{0,17}$" },
                   manifestLocation: { type: "string", minLength: 1 },
                   manifestError: { type: "string", minLength: 1 },
                 },
@@ -1731,6 +1793,32 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
       }
       /** 報告を記録する。`token` が無いのは締めた段 (次の段を作らない)。 */
       const recordLevel = async (token: string | undefined) => {
+        // ── 例外の行の番号は、このクロールの組織の行だけ ─────────────────
+        // flow が付けるのは、段の引数 (`robots_exemptions`) で渡した行の番号だけのはずで、渡すのはクロールの組織の
+        // 行だけ (`exemptions/dispatch.ts`)。**違う番号は 400 で断り、何も書かない** (下の 0 の JS の hash と同じ扱い) ——
+        // 黙って落として頁だけを記録すると、robots.txt を外して撮った頁が外した記録を持たずに残り、行の枚数の上限
+        // (この列で数える) も数え損なう。無い番号を書きに行けば参照の違反で 500 になり、訳が読めない。
+        // **この段に渡した行かまでは見ない** (見るのは組織だけ)。同じ組織の、この段に渡していない行の番号は通る ——
+        // 起きるのは flow の誤りの時だけで、害は記録と枚数の数え違いに限られる。
+        // 欄を持つ頁が無い報告 (ほとんどの段) は、ここで何も引かない。
+        const reportedExemptions = [...new Set(results.flatMap((r) => r.robotsExemptionId ?? []))];
+        if (reportedExemptions.length > 0) {
+          const known = await db
+            .selectFrom("robotsExemptions")
+            .select("id")
+            .where("orgId", "=", crawl.orgId)
+            .where("id", "in", reportedExemptions)
+            .execute();
+          const knownIds = new Set(known.map((row) => row.id));
+          const unknown = reportedExemptions.filter((id) => !knownIds.has(id));
+          if (unknown.length > 0) {
+            const error =
+              "robotsExemptionId is not a robots exemption of this crawl's organization";
+            log.warn({ crawlId, depth, robotsExemptionIds: unknown }, error);
+            return reply.code(400).send({ error, robotsExemptionIds: unknown });
+          }
+        }
+
         // ── 0. 走った JS の hash を、固定したスクリプトに写す ────────────
         // capture-ledger の `sha256` は TS の物で、archive に残るのは JS。その間を継ぐ JS の hash は
         // 報告にしか無い。揃っていなければ断る (400/409) —— **capture-ledger と flow の片方だけを新しく
@@ -1797,6 +1885,10 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                 correlationId: page.correlationId ?? null,
                 submittedAt: page.submittedAt ?? null,
                 finishedAt: page.finishedAt ?? null,
+                // 外した頁にだけ (`047`)。欄の無い頁では列に触らない —— 例外を使わない段の SQL は今までと同じ
+                ...(page.robotsExemptionId !== undefined && {
+                  robotsExemptionId: page.robotsExemptionId,
+                }),
               })
               .where("crawlId", "=", crawlId)
               .where("url", "=", page.url)
@@ -2198,6 +2290,19 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           // (`budget.ts`) と同じ場所に置くため —— そして Windmill の while ループが
           // 止まらなかったため (`DispatchedCrawl` の注記を見ること)。
           if (!done) {
+            // 次の段に効く robots.txt の例外を引く (`exemptions/dispatch.ts`)。**このトランザクションの中で引く** ——
+            // 次の段のホストが決まるのは上の `next` (深さ n+1 の pending の行) で、錠を取る前には分からない
+            // (取り直した 2 回目では、今回入れる行ではなく前の試みが入れた行が次の段になる)。引くのは読むだけの
+            // 1 本で、外へ訊きに行かないので、錠を持つ時間はほとんど延びない (Windmill に訊くシークレットの読み直しは、
+            // だから錠の前に在る)。資格の無いクロール (`none`) は DB を引かない。期限は API の時計で測る。
+            const robotsExemptions = await exemptionsForLevel(trx, {
+              crawlId,
+              orgId: crawl.orgId,
+              eligibility: crawl.exemptionEligibility,
+              depth: nextDepth,
+              hosts: next.map((row) => row.host),
+              now: new Date(),
+            });
             nextLevel = {
               crawlId,
               depth: nextDepth,
@@ -2218,6 +2323,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
               ...secretsForFlow(secrets),
               userAgent: crawl.userAgent ?? "",
               recordRandom: crawl.recordRandom,
+              robotsExemptions,
               ...(sink && { artifactSink: sinkForCrawl(sink, crawlId) }),
             };
             await insertLevel(trx, nextLevel);

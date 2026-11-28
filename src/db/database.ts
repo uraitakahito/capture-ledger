@@ -326,7 +326,18 @@ export interface CrawlsTable {
    * クロールは、行が無くてもここが立つ。
    */
   linksRecordedAt: ColumnType<Date | null, never, string | null>;
+  /**
+   * robots.txt の例外の資格 (`047`・`exemptions/eligibility.ts`)。始める時に 1 度決めて残し、段ごとに効く行を引くときに
+   * 読む (`exemptions/dispatch.ts`)。書かなければ `none` (どの行も当てない)。後から書き換えない。
+   */
+  exemptionEligibility: ColumnType<ExemptionEligibility, ExemptionEligibility | undefined, never>;
 }
+
+/**
+ * クロールに、robots.txt の例外のどの行を当ててよいか (`047`)。`none` はどの行も当てない、`machine` は
+ * `applies_to = 'all'` の行だけ、`human` は全ての行。
+ */
+export type ExemptionEligibility = "none" | "machine" | "human";
 
 /** 解決して固定した撮り方 (`032`)。シークレットは宣言だけを持ち、回ごとに Windmill へ訊き直す。 */
 export type ScheduleRecipe = Omit<PreparedCrawl, "kind" | "secrets" | "recordRandom"> & {
@@ -555,6 +566,11 @@ export interface CrawlPagesTable {
    * 書くときは JSON の文字列 (`crawls.variables` と同じ扱い)。
    */
   logCounts: ColumnType<LogCounts | null, string | null | undefined, string | null>;
+  /**
+   * robots.txt が断っていて、例外の行で外した頁にだけ入る、その行の番号 (`047`・`robots_exemptions.id`)。段の報告の
+   * `robotsExemptionId` から写す。行の枚数の上限は、この列で数える (`exemptions/dispatch.ts`)。
+   */
+  robotsExemptionId: ColumnType<string | null, string | null | undefined, string | null>;
 }
 
 /** 取り込みのログの数 (`crawl_pages.log_counts`・`025`)。`log.counts` の 4 つに `log.dropped` を足した物。 */
@@ -693,7 +709,7 @@ export type RobotsExemptionAppliesTo = "all" | "human";
 
 /**
  * robots.txt の例外 1 つ (`046`・t-6bc6。`exemptions/store.ts`)。組織の admin が登録し、行は消さない (取り消しは
- * `revokedAt` を立てる)。**この版では、クロールはまだこの表を読まない。**
+ * `revokedAt` を立てる)。クロールは、段を起こすたびに効く行をここから引く (`exemptions/dispatch.ts`・`047`)。
  */
 export interface RobotsExemptionsTable {
   /** 連番。bigserial なので node-pg は文字列で返す。 */

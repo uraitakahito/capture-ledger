@@ -102,6 +102,10 @@ const FLOW_ARGS: { readonly [K in keyof DispatchedCrawl]-?: string } = {
   // **これも必ず送る** (頼まなければ false)。読むのは capture-scheduler v0.41.0 からの flow で、入力を持たない古い flow は
   // 黙って捨てる (Windmill は既定で引数を schema に照らさない) —— BrowserHive に届かず、控えずに撮る。flow を先に上げる
   recordRandom: "record_random",
+  // **これも必ず送る** (当たる行が無ければ `[]`)。この段に効きうる robots.txt の例外の行。読むのは capture-scheduler の
+  // `plan_level` で、入力を持たない古い flow は黙って捨てる —— 行を登録していても、今までどおり robots.txt に従う。
+  // この欄が入る前に起こした段 (欄を持たない `crawl_levels.args`) の送り直しでは、値が無いので鍵ごと送らない (`flowArgs`)
+  robotsExemptions: "robots_exemptions",
 };
 
 /**

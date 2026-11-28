@@ -15,10 +15,17 @@
  * 秘密を解く (Windmill に訊く) → 1 つのトランザクションで行を足して期限を進める → commit の後で webhook。
  * 行のロックを持ったまま外へ訊きに行かないため、秘密が先。投げられなければ行を failed で閉じる (`levelDispatcher`)。
  *
+ * ## robots.txt の例外の資格
+ *
+ * 回を始める前に、予定を作った主体が予定の組織で始めてよいか (`can_submit`) を訊き、資格を回の行に残す
+ * (`exemptions/eligibility.ts`)。定期の回は、「いま撮る」の回も含めて `machine` か `none` —— `human` にはならない。
+ * OpenFGA に訊けなければ `none` で始める (回は止めない。例外を当てず、今までどおり robots.txt に従う)。
+ *
  * ## 走ったまま止まった行
  *
  * 勝手に閉じない。本当に走っている回を閉じないため。`health.ts` の `stuck` と画面の「締める」に任せる。
  */
+import type { OpenFgaClient } from "@openfga/sdk";
 import { randomUUID } from "node:crypto";
 
 import type { SinkConfig } from "../api/sink.js";
@@ -26,7 +33,8 @@ import type { CaptureSettings } from "../config/capture-formats.js";
 import type { DispatchedCrawl } from "../crawl/launch.js";
 import { resolveSecrets, type PreparedCrawl, type RefusedCrawl } from "../crawl/prepare.js";
 import type { WindmillVariables } from "../crawl/windmill-variables.js";
-import type { CrawlSecret } from "../db/database.js";
+import type { CrawlSecret, ExemptionEligibility } from "../db/database.js";
+import { exemptionEligibility } from "../exemptions/eligibility.js";
 import { createChildLogger } from "../logger.js";
 import { missedSince, nextRunAfter } from "./cron.js";
 import type { FirePlan, FireResult, ScheduleStore } from "./store.js";
@@ -38,6 +46,8 @@ export const TICK_INTERVAL_MS = 30_000;
 
 export interface TickDeps {
   store: ScheduleStore;
+  /** robots.txt の例外の資格を訊く (`exemptions/eligibility.ts`)。 */
+  fga: OpenFgaClient;
   capture: CaptureSettings;
   sink?: SinkConfig;
   windmill?: WindmillVariables;
@@ -91,12 +101,25 @@ export const tickSchedules = async (deps: TickDeps): Promise<TickResult> => {
   const isDue = row.enabled && row.nextRunAt.getTime() <= now.getTime();
   // **主体は予定を作った主体。**「いま撮る」の回でも変えない —— 下でシークレットをこの名前で解く。押した者は、`fire` が
   // 掴んだ予定の行から回の行へ写す (`045`)
-  const who = {
+  const requester = {
     orgId: row.orgId,
     subject: row.createdBy,
     ...(row.createdByName !== null && { name: row.createdByName }),
   };
   const crawlId = randomUUID();
+
+  // robots.txt の例外の資格。予定の組織と、予定を作った主体で訊く (予定の組織も、作った時の名乗りの 1 つ目)。
+  // **訊けなくても回は始める** —— 例外を使わない予定まで OpenFGA の不調で止めない。当てない側 (none) に倒す
+  let eligibility: ExemptionEligibility = "none";
+  try {
+    eligibility = await exemptionEligibility(deps.fga, requester, { kind: "schedule" });
+  } catch (err) {
+    log.warn(
+      { err, scheduleId: row.id, crawlId },
+      "Could not ask about robots exemptions; starting the run without them",
+    );
+  }
+  const who = { ...requester, exemptionEligibility: eligibility };
 
   // **この予定の問題で、周回を止めない。** Windmill の変な答えや大きすぎる行で投げたまま次の周回へ渡すと、同じ予定を
   // 選び続けて、ほかの予定も始まらない。どれも failed の行にして次の回へ進める

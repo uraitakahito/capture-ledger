@@ -93,6 +93,8 @@ const create = async (name: string, nextRunAt: Date, now: Date): Promise<Schedul
 const dispatched: string[] = [];
 const tickDeps = (now: Date, overrides: Partial<TickDeps> = {}): TickDeps => ({
   store,
+  // 資格 (`exemptions/eligibility.ts`) を訊く相手の代役。ここが見るのは DB で、認可ではない
+  fga: { check: () => Promise.resolve({ allowed: true }) } as unknown as TickDeps["fga"],
   capture: parseCaptureFormats("wacz", false),
   dispatchLevel: (level) => {
     dispatched.push(level.crawlId);
