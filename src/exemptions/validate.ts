@@ -89,7 +89,8 @@ const OTHER_AGENT_WORDS = [
   "fxios",
   "{chrome}",
   "compatible",
-  "googlebot",
+  // 並びに無い名 (AdsBot-Google・Google-InspectionTool・Googlebot-Image など) も、この 1 語で塞ぐ
+  "google",
   "bingbot",
   "twitterbot",
   "facebookexternalhit",

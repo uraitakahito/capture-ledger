@@ -144,6 +144,7 @@ describe("userAgentProblem", () => {
     // 語は字のどこに在っても断る (URL の中も)。短い印は語の境目で当てる
     "BrowserHive/1.0 (+https://site.test/chrome)",
     "BrowserHive/1.0 (+https://site.test/Googlebot)",
+    "BrowserHive/1.0 (+https://site.test/AdsBot-Google)",
     "BrowserHive/1.0 (+https://site.test/Edg/131.0)",
     "BrowserHive/1.0 (+https://site.test/OPR/115.0)",
     "BrowserHive/1.0 (+https://opera.test/bot)",

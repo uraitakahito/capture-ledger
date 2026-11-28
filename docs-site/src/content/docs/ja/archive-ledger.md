@@ -1068,7 +1068,7 @@ BrowserHive/1.0 (+https://example.test/bot)
 - 頭は `BrowserHive/<版>`。版は英数字と `.+-` で 32 字まで。
 - 注は任意で 1 つ。中身は `+https://…`（か `+http://…`）の URL ちょうど 1 つです。地の文は書けません（`(compatible; Googlebot)` のように、ほかのクローラや browser の名を並べて名乗れてしまうため）。
 - 全体で 512 字まで。
-- 字のどこにも（URL の中も）、browser とよく知られたクローラの名を含められません（`mozilla`・`chrome`・`safari`・`applewebkit`・`gecko`・`firefox`・`msie`・`trident`・`crios`・`fxios`・`compatible`・`googlebot`・`bingbot`・`twitterbot`・`facebookexternalhit`・`applebot` など。大文字小文字を問わない。`{chrome}` と、語としての `edg`・`edge`・`edga`・`edgios`・`opr`・`opera` も）。
+- 字のどこにも（URL の中も）、browser とよく知られたクローラの名を含められません（`mozilla`・`chrome`・`safari`・`applewebkit`・`gecko`・`firefox`・`msie`・`trident`・`crios`・`fxios`・`compatible`・`google`・`bingbot`・`twitterbot`・`facebookexternalhit`・`applebot` など。大文字小文字を問わない。`{chrome}` と、語としての `edg`・`edge`・`edga`・`edgios`・`opr`・`opera` も）。
 - URL の path に、英字の直後の `/` と数字は置けません。製品の印の形（`/Edg/131.0`）で、日付や番号の段（`/docs/2024`）もこれと見分けられないので、同じく断ります。
 
 ### API

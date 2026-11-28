@@ -1189,7 +1189,7 @@ BrowserHive/1.0 (+https://example.test/bot)
 - It starts with `BrowserHive/<version>`; the version is letters, digits and `.+-`, at most 32 characters.
 - One optional comment, which is exactly one `+https://…` (or `+http://…`) URL. Free text is not accepted: it would let the string line up the name of another crawler or of a browser (`(compatible; Googlebot)`).
 - At most 512 characters in all.
-- Nowhere in it, the URL included, may the name of a browser or of a well-known crawler appear (`mozilla`, `chrome`, `safari`, `applewebkit`, `gecko`, `firefox`, `msie`, `trident`, `crios`, `fxios`, `compatible`, `googlebot`, `bingbot`, `twitterbot`, `facebookexternalhit`, `applebot` and the like, in any case; `{chrome}`; the words `edg`, `edge`, `edga`, `edgios`, `opr`, `opera`).
+- Nowhere in it, the URL included, may the name of a browser or of a well-known crawler appear (`mozilla`, `chrome`, `safari`, `applewebkit`, `gecko`, `firefox`, `msie`, `trident`, `crios`, `fxios`, `compatible`, `google`, `bingbot`, `twitterbot`, `facebookexternalhit`, `applebot` and the like, in any case; `{chrome}`; the words `edg`, `edge`, `edga`, `edgios`, `opr`, `opera`).
 - The path of the URL may not hold a letter followed by `/` and a digit. That is the form of a product token (`/Edg/131.0`), and a date or number segment (`/docs/2024`) cannot be told from it, so it is refused as well.
 
 ### API
