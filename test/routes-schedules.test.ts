@@ -272,7 +272,7 @@ describe("定期実行のエンドポイント", () => {
       expect(fake.created[0]).not.toHaveProperty("createdByName");
     });
 
-    it("乱数の控えの頼みも、固定した撮り方に残す", async () => {
+    it("乱数の記録の頼みも、固定した撮り方に残す", async () => {
       prepare.mockResolvedValueOnce({ ...prepared, recordRandom: true });
       const res = await post("/api/schedules", VALID);
       expect(res.statusCode).toBe(201);

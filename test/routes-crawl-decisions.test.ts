@@ -468,7 +468,7 @@ describe("次の段を送る前に、シークレットの更新時刻を読み�
     expect(none.dispatched[0]).toMatchObject({ depth: 1, userAgent: "" });
   });
 
-  it("次の段にも、行に固定した乱数の控えの頼みを配る。頼まなかった行は false", async () => {
+  it("次の段にも、行に固定した乱数の記録の頼みを配る。頼まなかった行は false", async () => {
     const asked = await build({
       results: results(crawlRow(rules, [seed], { recordRandom: true })),
       links,

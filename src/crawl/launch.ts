@@ -109,7 +109,7 @@ export interface DispatchedCrawl {
    */
   userAgent: string;
   /**
-   * 頁の JS が受け取った乱数を BrowserHive に控えさせるか。**必ず載せる** (頼まなければ false)。行に固定した物を段ごとに配る。
+   * 頁の JS が受け取った乱数を BrowserHive に記録させるか。**必ず載せる** (頼まなければ false)。行に固定した物を段ごとに配る。
    */
   recordRandom: boolean;
   /**
@@ -538,7 +538,7 @@ export const crawlValues = (
     secrets: JSON.stringify(prepared.secrets),
     // 打った字のまま。解いた字は BrowserHive WACZ の settings.userAgent に残る
     userAgent: prepared.userAgent === "" ? null : prepared.userAgent,
-    // 控えは BrowserHive WACZ の random/values.jsonl に、数は .result.json の random に残る
+    // 乱数の記録は BrowserHive WACZ の random/values.jsonl に、数は .result.json の random に残る
     recordRandom: prepared.recordRandom,
     // robots.txt の例外の資格 (`047`)。始める側が 1 度決めた物を残す。決めていなければ none (どの行も当てない)
     exemptionEligibility: who.exemptionEligibility ?? "none",

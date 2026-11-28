@@ -438,7 +438,7 @@ describe("取り込み 1 回の経緯を読む", () => {
     expect(body.capture.failureScreenshot).toBe(false);
   });
 
-  it("乱数の控えの要約（BrowserHive v31.1.0 から）を、書かれたまま返す。無い取り込みでは鍵ごと無い", async () => {
+  it("乱数の記録の要約（BrowserHive v31.1.0 から）を、書かれたまま返す。無い取り込みでは鍵ごと無い", async () => {
     const random = { recorded: true, documents: 2, draws: 731, truncated: false };
     const recorded = await get(url, {
       results: [[row()]],

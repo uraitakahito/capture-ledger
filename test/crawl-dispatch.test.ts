@@ -141,7 +141,7 @@ describe("webhook の本文", () => {
     expect(flowArgs({ ...CRAWL, userAgent: "" })).toMatchObject({ user_agent: "" });
   });
 
-  it("乱数の控えを頼まなければ、false を鍵ごと送る（省くと flow が null を受ける）", () => {
+  it("乱数の記録を頼まなければ、false を鍵ごと送る（省くと flow が null を受ける）", () => {
     expect(flowArgs({ ...CRAWL, recordRandom: false })).toMatchObject({ record_random: false });
   });
 

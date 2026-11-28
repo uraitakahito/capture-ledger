@@ -1003,11 +1003,11 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
   決めます。**絵そのものは、この答えには入りません。** BrowserHive WACZ の中に在り、WACZ を見てよい者（`can_view`）が
   [節目のスクリーンショットのエンドポイント](#節目のスクリーンショット)で読みます。
   それより前の取り込みと、成功しなかった取り込みでは、鍵ごとありません。
-- `capture.random` は、BrowserHive が頁の JS の乱数を控えたか（クロールの
-  [`recordRandom`](/capture-ledger/ja/capture-options/#乱数を控える)）の要約です。BrowserHive v31.1.0 から、成功して WACZ を作った
-  取り込みの `.result.json` に、頼んだかどうかに関わらず載ります。控えた取り込みは `recorded: true` と `documents`・`draws`・
-  `truncated`、控えなかった取り込みは `recorded: false` と理由（`skipped`: `not-requested`・`withheld`・`failed`）を持ちます。
-  capture-ledger は書かれたまま返します —— 形は BrowserHive の契約（写しの `CaptureRandom`）が決めます。控えた値そのものは
+- `capture.random` は、BrowserHive が頁の JS の乱数を記録したか（クロールの
+  [`recordRandom`](/capture-ledger/ja/capture-options/#乱数を記録する)）の要約です。BrowserHive v31.1.0 から、成功して WACZ を作った
+  取り込みの `.result.json` に、頼んだかどうかに関わらず載ります。乱数を記録した取り込みは `recorded: true` と `documents`・`draws`・
+  `truncated`、記録しなかった取り込みは `recorded: false` と理由（`skipped`: `not-requested`・`withheld`・`failed`）を持ちます。
+  capture-ledger は書かれたまま返します —— 形は BrowserHive の契約（写しの `CaptureRandom`）が決めます。記録した値そのものは
   BrowserHive WACZ の中の `random/values.jsonl` に在り、同じ要約が `datapackage.json` の `browserhive:capture.random` にも在ります
   （WACZ Profile 1.26.0）。それより前の取り込みと、成功しなかった取り込みでは、鍵ごとありません。
 - `capture.failureScreenshot` は、**呼び出し元が受け取れる**失敗の時点の絵が在るかどうかの真偽です。`.result.json`

@@ -383,7 +383,7 @@ describe("readManifest", () => {
     [{ recorded: false, skipped: "withheld" }],
     [{ recorded: false, skipped: "failed" }],
   ])(
-    "v31.1.0 の manifest（乱数の控えの要約 random が在る）を読み、random は書かれたまま: %o",
+    "v31.1.0 の manifest（乱数の記録の要約 random が在る）を読み、random は書かれたまま: %o",
     (random) => {
       const report = readManifest({ ...v12Manifest, random: structuredClone(random) });
       expect(report.random).toEqual(random);
