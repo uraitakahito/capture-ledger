@@ -1030,6 +1030,100 @@ WACZ は `can_view` で絞りますが、失敗した取り込みには WACZ が
 
 **絵は WACZ の外のファイルで、署名の下にありません。** 取り込みのページが見せていた物をそのまま持ち、後から何も消せません。
 
+## robots.txt の例外
+
+クロールは robots.txt に従います（[相手に負荷をかけないために](#相手に負荷をかけないために)）。それでも撮る必要のあるページ —— 公開の投稿を証拠として残す、など —— のために、組織の admin が「このホストのこの path の型は、robots.txt が断っていても撮る」を、理由・期限・名乗る User-Agent と一緒に登録できます。行は [`robots_exemptions`](/capture-ledger/ja/databases/robots-exemptions/) に残ります。
+
+:::caution[この版では、行を登録してもクロールにはまだ効きません]
+この版が入れるのは表と API だけです。クロールは今までどおり robots.txt に従い、断られたページを見送ります。登録した行がクロールに効くのは次の版です。
+:::
+
+入れない物も決めてあります。ログインの壁・CAPTCHA・rate limit を避ける仕組みと、browser の名に見せかける名乗りは、例外の対象にしません。相手の利用規約は、登録する人が別に確かめます。
+
+### 行が言うこと
+
+| 欄                        | 中身                                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `orgId`                   | どの組織の例外か。本文で名指す（名乗りの 1 つ目の組織に頼りません）                                                                               |
+| `host`                    | ホスト。`example.test` や `example.test:8443` の形で、scheme・path・wildcard は書けません。`url.host` の形（小文字・punycode）に整えて残します    |
+| `pathPattern`             | robots.txt と同じ書き方の path の型（`*` と末尾の `$`）。省くと `/`（ホストの全て）。`/` で始まる 1 行で、空白と `#` を含まない ASCII、256 字まで |
+| `scope`                   | `seeds`（起点だけ）か `links`（辿ったリンクも）                                                                                                   |
+| `appliesTo`               | `all`（どのクロールにも。既定）か `human`（人が始めたクロールにだけ）                                                                             |
+| `userAgent`               | このホストで名乗る名（下記）                                                                                                                      |
+| `reason`                  | 理由。1〜500 字                                                                                                                                   |
+| `expiresAt`               | 期限。offset つきの ISO 8601 の時刻で、登録より後・90 日以内。延ばす時は新しい行を登録します                                                      |
+| `dailyLimit`・`linkLimit` | この行で外して撮る枚数の上限。24 時間で（1〜10000。既定 100）と、1 クロールの辿ったリンクで（1〜1000。既定 20）                                   |
+
+同じ組織・ホスト・path の型で効いている行は 1 つまでです。同じ組織・ホストで効いている行の名乗りは 1 つに揃えます。どちらも、破る登録は 409 で断ります。
+
+### 名乗りは偽らない
+
+`userAgent` は必須で、形は道具の名と括弧の注 1 つに限ります。
+
+```text
+BrowserHive/1.0
+BrowserHive/1.0 (web archiving; user-directed capture)
+BrowserHive/1.0 (evidence capture; +https://example.test/bot)
+```
+
+- 頭は `BrowserHive/<版>`。版は英数字と `.+-` で 32 字まで。
+- 注は任意で 1 つ。英数字・空白・`.,;:_+-` の並びで、終わりに `+https://…`（か `+http://…`）の URL を 1 つだけ置けます。
+- 全体で 512 字まで。
+- 字のどこにも、`mozilla`・`chrome`・`safari`・`applewebkit`・`gecko`・`firefox`（大文字小文字を問わない）と `{chrome}` を含められません。ほかの製品の印を並べた字（`BrowserHive/1.0 Chrome/131.0`）も、形で断ります。
+
+### API
+
+```sh
+# 一覧（効いている行・切れた行・取り消した行）
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-exemptions
+# → { "exemptions": [ { "id": "7", "orgId": "acme", "host": "example.test", …, "state": "active" } ] }
+
+# 登録
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  http://127.0.0.1:7070/api/robots-exemptions \
+  -d '{"orgId":"acme","host":"example.test","pathPattern":"/*/status/*","scope":"seeds",
+       "userAgent":"BrowserHive/1.0 (evidence capture; +https://example.test/bot)",
+       "reason":"公開の投稿を証拠として残す","expiresAt":"2026-12-28T00:00:00+09:00"}'
+# → 201 と、登録した行
+
+# 取り消し（行は消えず、state が revoked になる）
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-exemptions/7/revoke
+# → 200 と、取り消した行
+```
+
+行は `id`（字）・`orgId`・`host`・`pathPattern`・`scope`・`appliesTo`・`userAgent`・`reason`・`dailyLimit`・`linkLimit`・`createdBy`・`createdByName`・`createdAt`・`expiresAt`・`revokedAt`・`revokedBy`・`revokedByName`・`state` を持ちます。`state` は `active`（効いている）・`expired`（期限が過ぎた）・`revoked`（取り消した）のどれかです。
+
+| 答え | いつ                                                                                                                                                      |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401  | 名乗りが無い                                                                                                                                              |
+| 403  | 登録・取り消しを、機械の主体が頼んだ／ヘッダで名乗る経路で頼んだ／その組織の admin でない者が頼んだ（訳は下の句）                                         |
+| 400  | 本文の中身が駄目。`{ "error": "<訳>", "field": "<欄の名前>" }` で、最初に見つけた 1 つを返す。知らない鍵も 400                                            |
+| 404  | 取り消しで、行が無い。呼び手の名乗りの組織に無い行も同じ答え（在ることを漏らしません）                                                                    |
+| 409  | 登録が、効いている行と重なる（同じ path の型。答えに行の `id`）／名乗りが違う（答えに今の `userAgent`）。取り消しで、もう取り消してある／期限が過ぎている |
+
+403 の `error` は決まった句です。
+
+| 句                                                           | 意味                                                                              |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `not an organization admin`                                  | その組織の admin でない（本文の `orgId` が名乗りの組織に無い時も同じ句）          |
+| `machine identities cannot manage robots exemptions`         | 機械の主体（client credentials のトークン）は登録・取り消しができない             |
+| `robots exemptions are not available with header identities` | ヘッダで名乗る経路（`CAPTURE_LEDGER_DEV_IDENTITY=1`）では登録・取り消しができない |
+
+### 誰が登録できるか
+
+- **読む**（`GET`）のは、名乗りの組織のうち、クロールを始めてよい（`can_submit`）組織の者です。その組織の行だけが返り、そういう組織が無ければ空の一覧が返ります。
+- **登録と取り消し**は、その組織の **admin** で、人だけです。`can_submit` より狭く、OpenFGA に保存した関係 `admin` を直に訊きます（所属の申告は一緒に渡しません）。
+
+admin は、次の命令で付けます。
+
+```sh
+pnpm run fga:grant admin <user> <org>
+```
+
+`<user>` は呼び出し元の主体（JWT ならトークンの `sub`）です。admin は `can_submit` も持つので、付けるとその人はその組織のクロールも始められます。
+
+機械の主体とヘッダの経路を断るのは、次の訳です。例外を足すのは人の判断で、道具に任せません（AI の担当の狭い scope は、[scope の門](/capture-ledger/ja/development-environment/)が先に断ります）。ヘッダの経路では主体そのものが呼び手の申告なので、admin の主体を名乗れば検査が通ってしまいます。手元で登録を試す時は、JWT の経路（Floci）で名乗ります。
+
 ## 全文検索
 
 **必須です。** API は `CAPTURE_LEDGER_OPENSEARCH_URL` をほかの必須の設定と一緒に読み、

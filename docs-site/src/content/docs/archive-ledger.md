@@ -1151,6 +1151,100 @@ answer's `capture.failureScreenshot` is decided on the same line, so a caller ou
 **The picture is a file outside the WACZ and is not covered by a signature.** It holds whatever the page showed, and
 nothing can be taken out of it afterwards.
 
+## Exemptions from robots.txt
+
+Crawls obey robots.txt ([Not overloading the other end](#not-overloading-the-other-end)). For pages that still have to be captured — keeping a public post as evidence, say — an organization admin can register "capture this path pattern on this host even where robots.txt disallows it", with a reason, an expiry and the User-Agent to announce. The rows live in [`robots_exemptions`](/capture-ledger/databases/robots-exemptions/).
+
+:::caution[In this version, a registered row does not affect crawls yet]
+This version adds the table and the API only. Crawls keep obeying robots.txt and skip the pages it disallows. Registered rows take effect on crawls in the next version.
+:::
+
+What stays out is decided too: nothing here gets around a login wall, a CAPTCHA or a rate limit, and a User-Agent that poses as a browser is not accepted. Whoever registers a row checks the other side's terms of service separately.
+
+### What a row says
+
+| Field                     | What it holds                                                                                                                                                                                     |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `orgId`                   | Whose exemption it is. Named in the body (the caller's first organization is not assumed)                                                                                                         |
+| `host`                    | The host, as `example.test` or `example.test:8443`; no scheme, path or wildcard. Stored in the `url.host` form (lower case, punycode)                                                             |
+| `pathPattern`             | A path pattern written the way robots.txt writes one (`*` and a trailing `$`). `/` (the whole host) when omitted. One line starting with `/`, ASCII without spaces or `#`, at most 256 characters |
+| `scope`                   | `seeds` (seeds only) or `links` (followed links too)                                                                                                                                              |
+| `appliesTo`               | `all` (every crawl; the default) or `human` (only crawls a person started)                                                                                                                        |
+| `userAgent`               | The name to announce on this host (below)                                                                                                                                                         |
+| `reason`                  | The reason, 1 to 500 characters                                                                                                                                                                   |
+| `expiresAt`               | The expiry: an ISO 8601 date-time with an offset, later than now and within 90 days. To extend, register a new row                                                                                |
+| `dailyLimit`, `linkLimit` | How many pages this row may exempt: per 24 hours (1 to 10000, default 100), and among the followed links of one crawl (1 to 1000, default 20)                                                     |
+
+Within one organization and host, at most one row is in effect per path pattern, and the rows in effect share one User-Agent. A registration that breaks either is refused with 409.
+
+### The User-Agent does not pretend
+
+`userAgent` is required, and its form is limited to the tool's name and one comment in parentheses.
+
+```text
+BrowserHive/1.0
+BrowserHive/1.0 (web archiving; user-directed capture)
+BrowserHive/1.0 (evidence capture; +https://example.test/bot)
+```
+
+- It starts with `BrowserHive/<version>`; the version is letters, digits and `.+-`, at most 32 characters.
+- One optional comment: letters, digits, spaces and `.,;:_+-`, which may end with exactly one `+https://…` (or `+http://…`) URL.
+- At most 512 characters in all.
+- Nowhere in it may `mozilla`, `chrome`, `safari`, `applewebkit`, `gecko`, `firefox` (in any case) or `{chrome}` appear. A string that lines up another product token (`BrowserHive/1.0 Chrome/131.0`) is refused by its form as well.
+
+### API
+
+```sh
+# The list (rows in effect, expired rows, revoked rows)
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-exemptions
+# → { "exemptions": [ { "id": "7", "orgId": "acme", "host": "example.test", …, "state": "active" } ] }
+
+# Register
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  http://127.0.0.1:7070/api/robots-exemptions \
+  -d '{"orgId":"acme","host":"example.test","pathPattern":"/*/status/*","scope":"seeds",
+       "userAgent":"BrowserHive/1.0 (evidence capture; +https://example.test/bot)",
+       "reason":"keep a public post as evidence","expiresAt":"2026-12-28T00:00:00+09:00"}'
+# → 201 and the registered row
+
+# Revoke (the row stays; its state becomes revoked)
+curl -X POST -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-exemptions/7/revoke
+# → 200 and the revoked row
+```
+
+A row carries `id` (a string), `orgId`, `host`, `pathPattern`, `scope`, `appliesTo`, `userAgent`, `reason`, `dailyLimit`, `linkLimit`, `createdBy`, `createdByName`, `createdAt`, `expiresAt`, `revokedAt`, `revokedBy`, `revokedByName` and `state`. `state` is one of `active` (in effect), `expired` (past its expiry) and `revoked`.
+
+| Answer | When                                                                                                                                                                                                                         |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401    | No identity                                                                                                                                                                                                                  |
+| 403    | Registering or revoking was asked by a machine identity, over the header identity path, or by someone who is not an admin of that organization (the phrases are below)                                                       |
+| 400    | The body is wrong. `{ "error": "<why>", "field": "<field name>" }` names the first problem found. An unknown key is a 400 too                                                                                                |
+| 404    | Revoking a row that does not exist. A row outside the caller's organizations gets the same answer (its existence is not revealed)                                                                                            |
+| 409    | Registering overlaps a row in effect (same path pattern; the answer carries that row's `id`) or uses a different User-Agent (the answer carries the current `userAgent`). Revoking a row already revoked, or already expired |
+
+The `error` of a 403 is a fixed phrase.
+
+| Phrase                                                       | Meaning                                                                                                              |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `not an organization admin`                                  | Not an admin of that organization (the same phrase when the body's `orgId` is not one of the caller's organizations) |
+| `machine identities cannot manage robots exemptions`         | A machine identity (a client credentials token) cannot register or revoke                                            |
+| `robots exemptions are not available with header identities` | Registering and revoking are not available over the header identity path (`CAPTURE_LEDGER_DEV_IDENTITY=1`)           |
+
+### Who may register
+
+- **Reading** (`GET`) is for callers with `can_submit` (may start crawls) in one of their organizations. Only those organizations' rows come back; with no such organization the list is empty.
+- **Registering and revoking** is for an **admin** of that organization, and for people only. This is narrower than `can_submit`: the relation `admin` stored in OpenFGA is asked directly (the caller's claimed membership is not passed along).
+
+Grant admin with:
+
+```sh
+pnpm run fga:grant admin <user> <org>
+```
+
+`<user>` is the caller's subject (with a JWT, the token's `sub`). An admin also has `can_submit`, so granting it lets that person start the organization's crawls too.
+
+Machine identities and the header path are refused for these reasons. Adding an exemption is a person's decision and is not left to a tool (the narrow scope of an AI agent is refused earlier, by [the scope gate](/capture-ledger/development-environment/)). On the header path the subject itself is the caller's claim, so naming an admin's subject would pass the check. To try registering locally, use the JWT path (Floci).
+
 ## Full-text search
 
 **Required.** The API reads `CAPTURE_LEDGER_OPENSEARCH_URL` with its other required

@@ -435,7 +435,9 @@ route を scope で絞ります（`src/api/scope.ts`。人のトークンとヘ�
 （`test/scope.test.ts` が、src の書き込みの route を全部どちらかに分けます）。`GET` の route はみな届きます（組織の許可が絞ります）。
 `GET` で書き込みや費用を起こす route を足すなら、門（`src/api/scope.ts`）を見直します。
 機械の token は、`crawl` か `crawl.start` を頼んで取ります。どちらも持たない token は、`GET` でも 403 です。行を締める `POST /api/crawls/:id/failed` は、クロールを止める route ではない
-（flow は走り続ける）ので、`ai` には開きません。
+（flow は走り続ける）ので、`ai` には開きません。[robots.txt の例外](/capture-ledger/ja/archive-ledger/#robotstxt-の例外)の登録と取り消し
+（`POST /api/robots-exemptions`・`POST /api/robots-exemptions/:id/revoke`）も `ai` には開きません。広い scope（`crawl`）の機械の token は門を通りますが、
+route が機械の主体を 403 で断ります（登録と取り消しは、人の admin だけ）。
 
 **止め方は 3 段です。** Cognito には、機械の token を期限の前に止める手段がありません。
 
