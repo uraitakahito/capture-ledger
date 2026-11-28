@@ -117,7 +117,7 @@ export interface AppClient {
 export const WORKBENCH_CALLBACK = "http://127.0.0.1:7080/callback";
 
 /**
- * workbench のサインアウトの後の戻り先 (t-6nje)。workbench は「サインアウト」で IdP の logout の口
+ * workbench のサインアウトの後の戻り先 (t-6nje)。workbench は「サインアウト」で IdP の logout のエンドポイント
  * (`…/logout?client_id=…&logout_uri=…`) へ回し、IdP は自分のサインイン (cookie) を消して、ここへ戻す ——
  * `/login` がいつものサインインを 1 から始めるので、人はサインインのフォームに着く。**IdP は、登録した物と
  * 1 字でも違う戻り先を断る** (query を足しても 400。Floci 2.4.0 で実測) ので、workbench が作る値と揃える。

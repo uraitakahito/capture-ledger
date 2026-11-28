@@ -231,9 +231,9 @@ describe.skipIf(ENDPOINT === undefined)(
 );
 
 /**
- * workbench の client の、サインアウトの後の戻り先 (t-6nje)。workbench は「サインアウト」で IdP の logout の口へ回す ——
+ * workbench の client の、サインアウトの後の戻り先 (t-6nje)。workbench は「サインアウト」で IdP の logout のエンドポイントへ回す ——
  * 戻り先 (`LogoutURLs`) が client に無いと、IdP は 400 で断り、人が IdP の誤りの頁で止まる。前の bootstrap が作った
- * client (戻り先が無い) に `idp:bootstrap` が足せること、足しても client の ID が変わらないこと、Floci の logout の口の
+ * client (戻り先が無い) に `idp:bootstrap` が足せること、足しても client の ID が変わらないこと、Floci の logout のエンドポイントの
  * 形 (登録した物と 1 字でも違えば断る) を、ここで留める。
  */
 describe.skipIf(ENDPOINT === undefined)(
@@ -261,7 +261,7 @@ describe.skipIf(ENDPOINT === undefined)(
         })
       ).UserPoolClient;
 
-    /** logout の口を引く (回された先へは行かない)。 */
+    /** logout のエンドポイントを引く (回された先へは行かない)。 */
     const logout = (clientId: string, uri: string) =>
       fetch(
         `${ENDPOINT ?? ""}/cognito-idp/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(uri)}`,
@@ -294,7 +294,7 @@ describe.skipIf(ENDPOINT === undefined)(
       ).UserPoolClient;
     });
 
-    it("戻り先の無い client では、logout の口が断る", async () => {
+    it("戻り先の無い client では、logout のエンドポイントが断る", async () => {
       expect((await logout(made.ClientId, WORKBENCH_SIGNED_OUT)).status).toBe(400);
     });
 
@@ -323,7 +323,7 @@ describe.skipIf(ENDPOINT === undefined)(
       expect(await managementCalls(() => syncClient(pool, now, WORKBENCH_CLIENT))).toBe(0);
     });
 
-    it("logout の口は、登録した戻り先へ回し、IdP のサインインの cookie を消す", async () => {
+    it("logout のエンドポイントは、登録した戻り先へ回し、IdP のサインインの cookie を消す", async () => {
       const res = await logout(made.ClientId, WORKBENCH_SIGNED_OUT);
       expect(res.status).toBe(302);
       expect(res.headers.get("location")).toBe(WORKBENCH_SIGNED_OUT);
@@ -332,7 +332,7 @@ describe.skipIf(ENDPOINT === undefined)(
       );
     });
 
-    it("logout の口は、登録した物と 1 字でも違う戻り先を断る (query も足せない)", async () => {
+    it("logout のエンドポイントは、登録した物と 1 字でも違う戻り先を断る (query も足せない)", async () => {
       for (const uri of [
         "http://127.0.0.1:7080/",
         `${WORKBENCH_SIGNED_OUT}?back=%2Fcrawls`,

@@ -459,7 +459,7 @@ route が機械の主体を 403 で断ります（登録と取り消しは、人
 
 capture-workbench の app client には、AWS の側で、戻り先（許可するコールバック URL）`http://127.0.0.1:<WORKBENCH_PORT>/callback`
 と、サインアウトの後の戻り先（許可するサインアウト URL）`http://127.0.0.1:<WORKBENCH_PORT>/login` を登録します
-（手元の `idp:bootstrap` と同じ形）。workbench は「サインアウト」で IdP の logout の口へ回し、IdP は登録した物と 1 字でも違う
+（手元の `idp:bootstrap` と同じ形）。workbench は「サインアウト」で IdP の logout のエンドポイントへ回し、IdP は登録した物と 1 字でも違う
 戻り先を断るので、**サインアウト URL が無いと、サインアウトが IdP の誤りの頁で止まります**。
 
 AI の担当の app client は、AWS の側で次のとおりに作ります（手元の `idp:bootstrap` と同じ形）。
