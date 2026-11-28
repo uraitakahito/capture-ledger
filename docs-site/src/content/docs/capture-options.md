@@ -256,9 +256,6 @@ The registered capture scripts' sources can be read over HTTP by whoever may sta
 | `GET /api/host-types`                            | The newest receptacle types `import` copied: `version`, `sha256`, `createdAt`, `source`, `bytes`                                                                                                                                                                                                                                                                                                                                                 |
 | `POST /api/capture-scripts/check`                | The variable declarations and errors of a capture script still being written: `params`, `diagnostics` ([per-crawl values](#per-crawl-values)). Absent where no ts-compile-service address is set                                                                                                                                                                                                                                                 |
 
-The old paths `/api/scripts`, `/api/scripts/:id/versions`, `/api/scripts/:id/versions/:version` and `POST /api/scripts/check`
-give the same answers for now and are removed in the next release.
-
 All of them ask the crawl route's question (`can_submit` on one of the caller's organizations). No
 identity is a 401; no permission is a 404, the same answer as an id or version that does not exist.
 A version that is not an integer of 1 or more is a 400 before anything else. `bytes` is the size in

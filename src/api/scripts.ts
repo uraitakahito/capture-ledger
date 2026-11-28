@@ -60,12 +60,6 @@ const CHECK_BODY_LIMIT = 1024 * 1024;
 /** 登録済みの capture script の id。綴りは `capture_scripts` の表の CHECK (`017`) が決めるので、ここは空でないことだけを見る */
 const ID = { type: "string", minLength: 1 } as const;
 
-/**
- * capture scripts のエンドポイントの頭。新しい path (`/api/capture-scripts`) と、呼び手が移るまで残す古い path
- * (`/api/scripts`)。答えは同じ (CAPTURE-506)。古い path は次の release で消す。
- */
-const PATH_BASES = ["/api/capture-scripts", "/api/scripts"] as const;
-
 /** 書きかけの TS を検める本文。 */
 interface CheckBody {
   source: string;
@@ -89,80 +83,78 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
     return true;
   };
 
-  for (const base of PATH_BASES) {
-    app.get(base, async (request, reply) => {
+  app.get("/api/capture-scripts", async (request, reply) => {
+    if (!(await allowed(request, reply))) return reply;
+
+    // 各 id に 1 行 (サイト用の capture scripts も、既定に入らない物も)。既定で走るのは enabled の物のうち、対象サイトの無い物と起点に合う物
+    const scripts = await pickable(db);
+    return reply.code(200).send({
+      scripts: scripts.map(({ id, version, phase, sha256, sites, params, enabled }) => ({
+        id,
+        version,
+        phase,
+        sha256,
+        sites,
+        params,
+        enabled,
+      })),
+    });
+  });
+
+  /** 1 つの id の版。新しい順。**source は返さない**（読むのは 1 版のエンドポイント）。無い id は 404。 */
+  app.get<{ Params: { id: string } }>(
+    "/api/capture-scripts/:id/versions",
+    {
+      schema: {
+        params: { type: "object", properties: { id: ID }, required: ["id"] },
+      },
+    },
+    async (request, reply) => {
       if (!(await allowed(request, reply))) return reply;
 
-      // 各 id に 1 行 (サイト用の capture scripts も、既定に入らない物も)。既定で走るのは enabled の物のうち、対象サイトの無い物と起点に合う物
-      const scripts = await pickable(db);
+      const rows = await listScripts(db, { allVersions: true, id: request.params.id });
+      if (rows.length === 0) return reply.code(404).send({ error: "not found" });
       return reply.code(200).send({
-        scripts: scripts.map(({ id, version, phase, sha256, sites, params, enabled }) => ({
-          id,
-          version,
-          phase,
-          sha256,
-          sites,
-          params,
-          enabled,
-        })),
+        id: request.params.id,
+        versions: rows.map(
+          ({ version, phase, sha256, sites, params, enabled, bytes, createdAt }) => ({
+            version,
+            phase,
+            sha256,
+            sites,
+            params,
+            enabled,
+            bytes,
+            createdAt,
+          }),
+        ),
       });
-    });
+    },
+  );
 
-    /** 1 つの id の版。新しい順。**source は返さない**（読むのは 1 版のエンドポイント）。無い id は 404。 */
-    app.get<{ Params: { id: string } }>(
-      `${base}/:id/versions`,
-      {
-        schema: {
-          params: { type: "object", properties: { id: ID }, required: ["id"] },
+  /**
+   * 1 版を丸ごと。**有効かどうかは見ない**（`readScript`）。版は 1 以上の整数で、数でなければ
+   * 許可を見る前に 400。
+   */
+  app.get<{ Params: { id: string; version: number } }>(
+    "/api/capture-scripts/:id/versions/:version",
+    {
+      schema: {
+        params: {
+          type: "object",
+          properties: { id: ID, version: { type: "integer", minimum: 1 } },
+          required: ["id", "version"],
         },
       },
-      async (request, reply) => {
-        if (!(await allowed(request, reply))) return reply;
+    },
+    async (request, reply) => {
+      if (!(await allowed(request, reply))) return reply;
 
-        const rows = await listScripts(db, { allVersions: true, id: request.params.id });
-        if (rows.length === 0) return reply.code(404).send({ error: "not found" });
-        return reply.code(200).send({
-          id: request.params.id,
-          versions: rows.map(
-            ({ version, phase, sha256, sites, params, enabled, bytes, createdAt }) => ({
-              version,
-              phase,
-              sha256,
-              sites,
-              params,
-              enabled,
-              bytes,
-              createdAt,
-            }),
-          ),
-        });
-      },
-    );
-
-    /**
-     * 1 版を丸ごと。**有効かどうかは見ない**（`readScript`）。版は 1 以上の整数で、数でなければ
-     * 許可を見る前に 400。
-     */
-    app.get<{ Params: { id: string; version: number } }>(
-      `${base}/:id/versions/:version`,
-      {
-        schema: {
-          params: {
-            type: "object",
-            properties: { id: ID, version: { type: "integer", minimum: 1 } },
-            required: ["id", "version"],
-          },
-        },
-      },
-      async (request, reply) => {
-        if (!(await allowed(request, reply))) return reply;
-
-        const script = await readScript(db, request.params.id, request.params.version);
-        if (script === undefined) return reply.code(404).send({ error: "not found" });
-        return reply.code(200).send(script);
-      },
-    );
-  }
+      const script = await readScript(db, request.params.id, request.params.version);
+      if (script === undefined) return reply.code(404).send({ error: "not found" });
+      return reply.code(200).send(script);
+    },
+  );
 
   /** いちばん新しい受け皿の型。`capture-scripts import` が 1 度も型を読んでいなければ 404。 */
   app.get("/api/host-types", async (request, reply) => {
@@ -218,7 +210,5 @@ export const registerScriptsRoute = (app: FastifyInstance, deps: ScriptsRouteDep
     };
     // 書き込みの route は、path を字で書く (test/scope.test.ts が字で拾い、狭い scope の門の一覧と突き合わせる)
     app.post<{ Body: CheckBody }>("/api/capture-scripts/check", checkOptions, check);
-    // 呼び手が移るまで残す古い path (PATH_BASES)。同じ答え
-    app.post<{ Body: CheckBody }>("/api/scripts/check", checkOptions, check);
   }
 };

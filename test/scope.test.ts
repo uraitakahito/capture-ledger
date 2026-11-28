@@ -85,8 +85,8 @@ describe("scopeRefusal", () => {
  * —— 狭い scope に開くかどうかを、足す人が選ぶ (一覧に無い書き込みは、門が既定で断る)。GET はみな通す。
  *
  * **拾える形には限りがある。** `src/api/` の直下の `.ts` で、`<何か>.get|post|put|delete|patch(` の後に path の字が
- * そのまま書いてある登録だけ。下の folder・`app.route({…})`・定数の path で登録した route は拾えない (今の src では、
- * `api/scripts.ts` の読む route (GET) だけが `${base}/…` で登録する。GET は門がみな通すので、ここで拾わなくてよい)。書き込みの route をそう書く日には、組んだ app から `onRoute` で並べる形に替える。
+ * そのまま書いてある登録だけ。下の folder・`app.route({…})`・定数の path で登録した route は拾えない (今の src には
+ * どれも無い)。そう書く日には、組んだ app から `onRoute` で並べる形に替える。
  */
 describe("狭い scope で届く route の一覧", () => {
   const API = join(import.meta.dirname, "../src/api");
@@ -122,7 +122,6 @@ describe("狭い scope で届く route の一覧", () => {
     "POST /api/schedules/:id/resume",
     "POST /api/capture-scripts/check",
     "POST /api/schedules/:id/run",
-    "POST /api/scripts/check",
   ];
 
   it("src の route を拾えている (拾い方が壊れたら赤)", () => {

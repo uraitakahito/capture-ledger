@@ -235,8 +235,6 @@ Capture scripts の source は、クロールを始められる人が HTTP で�
 | `GET /api/host-types`                            | `import` が写した、いちばん新しい受け皿の型: `version`・`sha256`・`createdAt`・`source`・`bytes`                                                                                                                                                                                                                                                                                             |
 | `POST /api/capture-scripts/check`                | 書きかけの TS の変数の宣言と誤り: `params`・`diagnostics`（[クロールごとの値](#クロールごとの値)）。ts-compile-service の宛先が無い配備には無い                                                                                                                                                                                                                                              |
 
-古い path の `/api/scripts`・`/api/scripts/:id/versions`・`/api/scripts/:id/versions/:version`・`POST /api/scripts/check` は、今は同じ答えを返し、次の release で消します。
-
 どれもクロールのエンドポイントと同じ問い（呼び出し元の組織のどれかに `can_submit`）を訊きます。名乗りが
 無ければ 401、許可が無ければ 404 で、在らない id や版と同じ答えです。版が 1 以上の整数でなければ、
 何より先に 400 です。`bytes` は UTF-8 の大きさです。`pnpm run capture-scripts show --version` は 1 版のエンドポイントと
