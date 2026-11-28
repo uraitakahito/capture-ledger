@@ -19,6 +19,11 @@
  * 足した行を見る。錠は commit か rollback で勝手に外れる。hash がぶつかった別の組は、余計に待つだけで誤らない。
  * 行のロックは重ねない (advisory lock だけで登録どうしは並ばず、取り消しは効いている行を減らすだけなので、
  * 登録と並んでも不変条件を壊さない)。
+ *
+ * **READ COMMITTED に頼る。** 錠を取った後の SELECT が、前の持ち主の commit した行を見るのは、文ごとに snapshot を
+ * 取る READ COMMITTED (Postgres と Kysely の既定) だから。REPEATABLE READ 以上にすると、snapshot は最初の文
+ * (錠の select) で取られ、待つ間に commit された行が見えず、2 本とも通る。`db.transaction()` に分離の度合いを
+ * 足さないこと (smoke の「同時の登録は 1 本だけ」が見張る)。
  */
 import { sql, type Kysely, type Selectable } from "kysely";
 

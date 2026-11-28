@@ -208,8 +208,8 @@ try {
   // ── CHECK と既定 ───────────────────────────────────────
   const raw = (columns: RawBuilder<unknown>, values: RawBuilder<unknown>) =>
     sql`
-      insert into robots_exemptions (org_id, host, user_agent, reason, expires_at, ${columns})
-      values (${org}, 'raw.test', ${UA}, 'smoke', now() + interval '1 day', ${values})
+      insert into robots_exemptions (org_id, host, user_agent, reason, created_by, expires_at, ${columns})
+      values (${org}, 'raw.test', ${UA}, 'smoke', 'smoke', now() + interval '1 day', ${values})
     `.execute(db);
   for (const [name, columns, values] of [
     ["scope は seeds か links", sql`scope`, sql`'all'`],

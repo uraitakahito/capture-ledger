@@ -44,6 +44,8 @@ describe("normalizeHost", () => {
     "site.test\nother.test",
     "site.test\\path",
     "site.test:port",
+    // 末尾の点は url.host に残り、起点のホストと字で当たらない
+    "site.test.",
     `${"a".repeat(300)}.test`,
   ])("%j は断る", (input) => {
     expect(normalizeHost(input)).toBeUndefined();
@@ -84,6 +86,7 @@ describe("userAgentProblem", () => {
     "BrowserHive/1.0 (+http://example.test/bot)",
     // browser の印の語を一部に含むだけの語は断らない
     "BrowserHive/1.0 (knowledge archive)",
+    "BrowserHive/1.0 (cooperate; operation)",
   ])("%s は通る", (userAgent) => {
     expect(userAgentProblem(userAgent)).toBeUndefined();
   });
@@ -109,6 +112,8 @@ describe("userAgentProblem", () => {
     "BrowserHive/1.0 (+https://example.test/bot; contact)",
     "BrowserHive/1.0 (+ftp://example.test/bot)",
     "BrowserHive/1.0 (+https://)",
+    // URL の中の、製品の印の形 (<語>/<数字>)
+    "BrowserHive/1.0 (+https://site.test/Version/17.0)",
   ])("%j は形で断る", (userAgent) => {
     expect(userAgentProblem(userAgent)).toContain("must be BrowserHive/<version>");
   });
@@ -123,6 +128,14 @@ describe("userAgentProblem", () => {
     "BrowserHive/1.0 (safari compatible)",
     "BrowserHive/1.0 (AppleWebKit)",
     "BrowserHive/1.0 (firefox)",
+    // IE の名乗りの注の形
+    "BrowserHive/1.0 (compatible; MSIE 10.0; Windows NT 6.2)",
+    "BrowserHive/1.0 (Trident 7.0)",
+    // 短い印は語の境目で当てる。注の中でも URL の中でも
+    "BrowserHive/1.0 (Edg 131)",
+    "BrowserHive/1.0 (+https://site.test/Edg/131.0)",
+    "BrowserHive/1.0 (Windows NT 10.0; Win64; x64 +https://site.test/OPR/115.0)",
+    "BrowserHive/1.0 (Opera 12)",
     // 語は字のどこに在っても断る (URL の中も)
     "BrowserHive/1.0 (+https://example.test/chrome)",
   ])("%j は browser の印の語で断る", (userAgent) => {

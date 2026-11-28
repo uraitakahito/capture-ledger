@@ -174,6 +174,8 @@ export const registerRobotsExemptionsRoute = (
           orgId,
           ...checked.exemption,
           createdBy: identity.subject,
+          // 名は表示の物で、無いことがある (`config/identity.ts`)。無い人の登録も受け、null のまま残す。
+          // WACZ の申告の `grantedBy` (1 字以上) は、名が無ければ主体の ID (`created_by`) を書く (行を読む次の版)。
           ...(identity.name !== undefined && { createdByName: identity.name }),
         },
         now,

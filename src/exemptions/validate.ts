@@ -31,13 +31,14 @@ const HOST_INPUT_MAX = 255;
  * 受けるのはホストの名前 (とポート) だけ。scheme・path・userinfo・query・空白・wildcard (`*`) を含む字は断る ——
  * URL として読めても、利用者の書いた物とは別のホストに整ってしまう (`a@b` は `b` になる)。
  *
- * `https://` を前に付けて読むので、`:443` は落ちる (https の既定のポート)。
+ * `https://` を前に付けて読むので、`:443` は落ちる (https の既定のポート)。末尾の点のある名 (`site.test.`) も断る ——
+ * `url.host` は点を残すので、クロールの起点のホスト (`site.test`) と字で当たらず、どこにも効かない行になる。
  */
 export const normalizeHost = (input: string): string | undefined => {
   const text = input.trim();
   if (text === "" || text.length > HOST_INPUT_MAX) return undefined;
   // URL の読み手は tab と改行を黙って落とし、`\` を `/` と読む。読ませる前に断る
-  if (/[\s*/\\@?#]/.test(text)) return undefined;
+  if (/[\s*/\\@?#]/.test(text) || text.endsWith(".")) return undefined;
   let url: URL;
   try {
     url = new URL(`https://${text}`);
@@ -67,8 +68,8 @@ const USER_AGENT_FORM = /^BrowserHive\/[0-9A-Za-z.+-]{1,32}(?: \(([^()]*)\))?$/;
 /** 注: 英数字・空白・`.,;:_+-` の並びで、終わりに `+https://…` (か `+http://…`) の URL を 1 つだけ置ける。 */
 const NOTE = /^[0-9A-Za-z .,;:_+-]*(?:\+(https?:\/\/[\x21-\x27\x2a-\x7e]+))?$/;
 /**
- * browser の印の語。字のどこに在っても断る (大文字小文字を問わない)。`{chrome}` はクロールの User-Agent の欄の
- * 置き換えの字で、`chrome` に含まれるが、意図を残すために並べる。
+ * browser の印の語。字のどこに在っても断る (大文字小文字を問わない。URL の中も)。`{chrome}` はクロールの
+ * User-Agent の欄の置き換えの字で、`chrome` に含まれるが、意図を残すために並べる。
  */
 const BROWSER_WORDS = [
   "mozilla",
@@ -77,8 +78,22 @@ const BROWSER_WORDS = [
   "applewebkit",
   "gecko",
   "firefox",
+  "msie",
+  "trident",
+  "crios",
+  "fxios",
   "{chrome}",
 ];
+/**
+ * 短くて、ほかの語の一部にもなる印 (`knowledge` の edg、`cooperate` の opera)。語の境目で当てる。
+ * UA を見分ける側は `Edg/131`・`OPR/115`・`MSIE 10` のように字のどこかの形を探すので、注の中でも URL の中でも断る。
+ */
+const BROWSER_SHORT_WORDS = /\b(?:edg|edge|edga|edgios|opr|opera)\b/i;
+/**
+ * 注の URL の中の、製品の印の形 (`<語>/<数字>`: `…/Edg/131.0`・`…/Version/17`)。注の地の文は `/` を許さないので、
+ * 印の形を置けるのは URL だけ。
+ */
+const PRODUCT_TOKEN_IN_URL = /[A-Za-z]\/\d/;
 
 /** 名乗る User-Agent のどこが駄目か。良ければ undefined。 */
 export const userAgentProblem = (userAgent: string): string | undefined => {
@@ -86,8 +101,8 @@ export const userAgentProblem = (userAgent: string): string | undefined => {
     return `userAgent must be at most ${String(USER_AGENT_MAX)} characters`;
   }
   const lower = userAgent.toLowerCase();
-  if (BROWSER_WORDS.some((word) => lower.includes(word))) {
-    return "userAgent must not contain a browser token (mozilla, chrome, safari, applewebkit, gecko, firefox)";
+  if (BROWSER_WORDS.some((word) => lower.includes(word)) || BROWSER_SHORT_WORDS.test(userAgent)) {
+    return "userAgent must not contain a browser token (mozilla, chrome, safari, applewebkit, gecko, firefox, msie, trident, crios, fxios, edg, edge, opr, opera)";
   }
   const form = "userAgent must be BrowserHive/<version>, optionally followed by one (comment)";
   const matched = USER_AGENT_FORM.exec(userAgent);
@@ -97,7 +112,8 @@ export const userAgentProblem = (userAgent: string): string | undefined => {
   if (note === "" || note !== note.trim()) return form;
   const url = NOTE.exec(note);
   if (url === null) return form;
-  if (url[1] !== undefined && !URL.canParse(url[1])) return form;
+  if (url[1] !== undefined && (!URL.canParse(url[1]) || PRODUCT_TOKEN_IN_URL.test(url[1])))
+    return form;
   return undefined;
 };
 

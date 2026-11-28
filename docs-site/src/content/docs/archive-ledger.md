@@ -1190,7 +1190,7 @@ BrowserHive/1.0 (evidence capture; +https://example.test/bot)
 - It starts with `BrowserHive/<version>`; the version is letters, digits and `.+-`, at most 32 characters.
 - One optional comment: letters, digits, spaces and `.,;:_+-`, which may end with exactly one `+https://…` (or `+http://…`) URL.
 - At most 512 characters in all.
-- Nowhere in it may `mozilla`, `chrome`, `safari`, `applewebkit`, `gecko`, `firefox` (in any case) or `{chrome}` appear. A string that lines up another product token (`BrowserHive/1.0 Chrome/131.0`) is refused by its form as well.
+- Nowhere in it may `mozilla`, `chrome`, `safari`, `applewebkit`, `gecko`, `firefox`, `msie`, `trident`, `crios`, `fxios` (in any case) or `{chrome}` appear, nor the words `edg`, `edge`, `edga`, `edgios`, `opr`, `opera`. The URL may not hold the form of a product token (`<word>/<digit>`, as in `/Edg/131.0`). A string that lines up another product token (`BrowserHive/1.0 Chrome/131.0`) is refused by its form as well.
 
 ### API
 

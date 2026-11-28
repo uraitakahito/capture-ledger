@@ -1069,7 +1069,7 @@ BrowserHive/1.0 (evidence capture; +https://example.test/bot)
 - 頭は `BrowserHive/<版>`。版は英数字と `.+-` で 32 字まで。
 - 注は任意で 1 つ。英数字・空白・`.,;:_+-` の並びで、終わりに `+https://…`（か `+http://…`）の URL を 1 つだけ置けます。
 - 全体で 512 字まで。
-- 字のどこにも、`mozilla`・`chrome`・`safari`・`applewebkit`・`gecko`・`firefox`（大文字小文字を問わない）と `{chrome}` を含められません。ほかの製品の印を並べた字（`BrowserHive/1.0 Chrome/131.0`）も、形で断ります。
+- 字のどこにも、`mozilla`・`chrome`・`safari`・`applewebkit`・`gecko`・`firefox`・`msie`・`trident`・`crios`・`fxios`（大文字小文字を問わない）と `{chrome}` を含められません。語としての `edg`・`edge`・`edga`・`edgios`・`opr`・`opera` も同じです。URL には、製品の印の形（`<語>/<数字>`。`/Edg/131.0` など）を置けません。ほかの製品の印を並べた字（`BrowserHive/1.0 Chrome/131.0`）も、形で断ります。
 
 ### API
 
