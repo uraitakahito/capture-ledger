@@ -76,7 +76,8 @@
  *   WARC の記録・通信の記録と取り違えるので、名詞は「乱数の記録」と修飾を付ける。乱数と並ぶ形と、乱数の字の無い
  *   よく戻る形（控えるスクリプト・控えた取り込み・控えなかった取り込み）だけを見るので（OLD_RANDOM）、
  *   ほかの意味の「控え」（WACZ の末尾の控え・shots-manifest.json の控え・控えめ）は見ない。browserhive の契約の写し
- *   （src/rpc/generated/）は見ない —— 写しは browserhive の tag から作り直すまで古い字を持つ。capture-workbench・
+ *   （src/rpc/generated/）は見ない —— 写しの字は browserhive が決める（browserhive の lint:terms が見る）。走った migration の注記も
+ *   書き換えないので、040 の注記の「控えさせる」「控えそのもの」は残る（この型に当たらない）。capture-workbench・
  *   capture-scheduler・browserhive も見張っている
  *
  * ## 見ないもの
@@ -118,7 +119,7 @@ const NOT_KUCHI = /切り口|入口|出口|窓口|口座/gu;
  */
 const OLD_RANDOM =
   /乱数\s*[をのは]\s*控え|控えた\s*乱数|控える\s*スクリプト|控え(?:た|なかった)\s*取り込み/u;
-/** browserhive の契約の写し。OLD_RANDOM はここを見ない（browserhive の tag から作り直すまで古い字を持つ）。 */
+/** browserhive の契約の写し。OLD_RANDOM はここを見ない（写しの字は browserhive が決め、browserhive の lint:terms が見る）。 */
 const GENERATED = "src/rpc/generated/";
 
 /**
