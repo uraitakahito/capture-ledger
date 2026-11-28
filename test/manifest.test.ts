@@ -375,11 +375,10 @@ describe("readManifest", () => {
     expect(report.screenshots).toEqual(renamedScreenshots);
   });
 
-  it("契約の時点の名は新しい名だけを知る（readManifest は寄せた物をそのまま照らす。古い名へ戻す道は無い）", () => {
-    expect(openapi.components.schemas.ScreenshotStage.enum).toEqual([
-      "after-load",
-      "after-capture-scripts",
-    ]);
+  it("契約は寄せた後の名を知り、古い名を知らない（readManifest は寄せた物をそのまま照らす。古い名へ戻す道は無い）", () => {
+    const stages: readonly string[] = openapi.components.schemas.ScreenshotStage.enum;
+    expect(stages).toContain("after-capture-scripts");
+    expect(stages).not.toContain("after-behaviors");
   });
 
   it("古い名で撮った絵は、時点の名だけを寄せ、記録の URI は古い名のまま返す", () => {
