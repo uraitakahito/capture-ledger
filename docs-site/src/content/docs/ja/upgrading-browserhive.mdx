@@ -78,9 +78,10 @@ container build -f .upstream/browserhive/Dockerfile.prod -t bh-probe .upstream/b
 
 ## capture-ledger 側で何が変わるか
 
-API の追加だけの変更 (オプショナルなリクエストフィールドが増える等) なら、手順 2
+API の追加だけの変更 (オプショナルなリクエストフィールドや、答えの任意の欄が増える等) なら、手順 2
 以外は何も要りません。再生成した型はそのままコンパイルが通り、テストも無修正で
-通ります。1.6.0 はまさにこれでした。upstream は変更のたびに前のリリースとの
+通ります。1.6.0 と 32.3.0 (`GET /status` の `browser.userAgent`。capture-ledger は読まない) が
+まさにこれでした。upstream は変更のたびに前のリリースとの
 `smithy diff` を回しているので、項目が増えただけの更新で既存の項目の名前や型が
 写しの下から変わることはありません。
 

@@ -79,9 +79,10 @@ container build -f .upstream/browserhive/Dockerfile.prod -t bh-probe .upstream/b
 
 ## What changes on the capture-ledger side
 
-An additive API change — new optional request fields — needs nothing beyond
-step 2: the regenerated types still compile and the tests pass untouched. That
-was the case for 1.6.0. Upstream runs `smithy diff` against the previous release
+An additive API change — new optional request fields, or new optional fields in
+an answer — needs nothing beyond step 2: the regenerated types still compile and
+the tests pass untouched. That was the case for 1.6.0, and for 32.3.0 (`browser.userAgent`
+in `GET /status`, which capture-ledger does not read). Upstream runs `smithy diff` against the previous release
 on every change, so a bump that only adds members cannot have renamed or retyped
 an existing one out from under the copy.
 

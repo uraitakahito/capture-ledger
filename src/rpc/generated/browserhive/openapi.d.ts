@@ -85,6 +85,16 @@ export interface components {
             connected: boolean;
             /** @description Chromium が自称する版 (例 `Chrome/150.0.7871.181`)。接続していないときは無い。 */
             version?: string;
+            /**
+             * @description 要求が `userAgent` を持たない取り込みで、オリジンに送る User-Agent (browser の字そのまま。
+             *     例 `Mozilla/5.0 (X11; Linux x86_64) … HeadlessChrome/156.0.0.0 Safari/537.36`)。要求の `userAgent` の
+             *     `{chrome}` は、この字の `HeadlessChrome/` を `Chrome/` にした物に置き換わる。
+             *
+             *     **切れても消えない。** 最後に繋いだ browser の字を答え続け、次に繋いだ時に読み直す (`connected` が false の
+             *     間に browser が別の image に替わっていれば、繋ぎ直すまで古い字のまま)。起動の時に繋げない server は立たないので、
+             *     動いている server は必ず答える。robots.txt を撮る時と同じ名乗りで読む呼び手のため (CAPTURE-508)。
+             */
+            userAgent?: string;
         };
         /**
          * @description この server の build の指紋。build のときに焼き込んだ値で、実行時に git には訊かない。3 つとも
