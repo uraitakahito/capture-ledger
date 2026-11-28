@@ -88,7 +88,8 @@ import {
   type RequestKey,
 } from "../crawl/request-key.js";
 import { ACTOR_HEADER, actorOf, INVALID_ACTOR, requesterOf } from "../crawl/requester.js";
-import { nothingCapturedError } from "../crawl/close.js";
+import { nothingCaptured as nothingCapturedMessage } from "../crawl/close.js";
+import { say } from "../i18n/messages.js";
 import { pagesFailed } from "../crawl/page-counts.js";
 import { mergeCompiled, type CompiledReport } from "../crawl/compiled.js";
 import { WindmillUnreachable, type WindmillVariables } from "../crawl/windmill-variables.js";
@@ -678,6 +679,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           "linksRecordedAt",
           "pagesCaptured",
           "error",
+          "errorKey",
+          "errorParams",
           "lastJobId",
           "lastJobDepth",
           "replayBundleKey",
@@ -726,6 +729,9 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
           pagesCaptured: crawl.pagesCaptured,
           pagesFailed: crawl.pagesFailed,
           error: crawl.error,
+          // `error` の文の鍵と埋めた値 (`048`)。capture-ledger が自分で書いた文にだけ在る。無ければ null
+          errorKey: crawl.errorKey,
+          errorParams: crawl.errorParams,
           waczCount: crawl.waczCount,
           lastJob:
             crawl.lastJobId === null ? null : { id: crawl.lastJobId, depth: crawl.lastJobDepth },
@@ -805,6 +811,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         pagesCaptured: crawl.pagesCaptured,
         pagesFailed: failures[0]?.total ?? 0,
         error: crawl.error,
+        errorKey: crawl.errorKey,
+        errorParams: crawl.errorParams,
         // **登録済みのスクリプトは身元だけ出す。** 何が走っているかを知るのに要るのは「どれの何版か」で、
         // 中身はスクリプトの 1 版のエンドポイント (`GET /api/scripts/:id/versions/:version`)・`pnpm run scripts show`・
         // archive に在る。**その場の TS には頼まれた
@@ -2222,6 +2230,7 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
             (done ? (noLinks ? ("no_links" as const) : ("completed" as const)) : null);
           // **`succeeded` は 1 枚以上撮れたクロールだけ** (`crawl/close.ts`)
           const nothingCaptured = done && totals.pagesCaptured === 0;
+          const closed = nothingCapturedMessage(results);
           if (reason !== null || done) {
             await trx
               .updateTable("crawls")
@@ -2256,9 +2265,23 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
                             error: eb
                               .case()
                               .when("state", "=", "running")
-                              .then(eb.val(nothingCapturedError(results)))
+                              .then(eb.val(say(closed, "ja")))
                               .else(eb.ref("error"))
                               .end(),
+                            // 文の鍵と埋めた値 (`048`)。返す時に、頼まれた言語で組むための物
+                            errorKey: eb
+                              .case()
+                              .when("state", "=", "running")
+                              .then(eb.val<string | null>(closed.key))
+                              .else(eb.ref("errorKey"))
+                              .end(),
+                            errorParams: eb
+                              .case()
+                              .when("state", "=", "running")
+                              .then(sql<string | null>`${JSON.stringify(closed.params)}::jsonb`)
+                              .else(eb.ref("errorParams"))
+                              .end()
+                              .$castTo<string | null>(),
                           }
                         : {}),
                     }

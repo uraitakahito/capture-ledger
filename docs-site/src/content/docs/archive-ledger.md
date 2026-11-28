@@ -195,7 +195,14 @@ to follow links (depth 0).
 
 **A `succeeded` crawl captured at least one page.** A crawl that ends with none (every page
 failed or was skipped by robots) closes as `failed`, with `stopReason` `failed` and an `error`
-saying how many pages failed and were skipped, and the first reason. A crawl that lost only
+saying how many pages failed and were skipped, and the first reason. The row also carries what
+that sentence is made of, for a caller that reads it by machine: `errorKey` names the sentence
+(`crawl.nothingCaptured`, `crawl.nothingCapturedBecause`, or `crawl.nothingCapturedBackfilled`
+for a row an old migration closed) and `errorParams` holds the values in it (`failed`,
+`skipped`, and `reason` when there is one). **Today only that sentence has a key.** Both are
+null for every other `error` — a failure the flow reported, a reason a person typed, and the
+ledger's other fixed sentences (`Windmill did not take level …`, `could not start: …`). A key
+and the names of its values do not change once released. A crawl that lost only
 some pages stays `succeeded`, and `pagesFailed` says how many; `failures` on
 `GET /api/crawls/:id` gives the reasons (the latest 5).
 

@@ -40,6 +40,9 @@ export interface ScheduleRun {
   pagesCaptured: number;
   pagesFailed: number;
   error: string | null;
+  /** `error` の文の鍵と埋めた値 (`048`)。capture-ledger が自分で書いた文にだけ在る。 */
+  errorKey: string | null;
+  errorParams: Record<string, string | number> | null;
   /** 前回からの変化 (`036`・CAPTURE-167)。まだ比べていなければ null。 */
   change: RunChange | null;
 }
@@ -198,6 +201,8 @@ export const scheduleStoreOf = (db: Kysely<Database>): ScheduleStore => ({
         "crawls.pagesCaptured",
         pagesFailed.as("pagesFailed"),
         "crawls.error",
+        "crawls.errorKey",
+        "crawls.errorParams",
         "crawlChanges.state as changeState",
         "crawlChanges.pagesCompared",
         "crawlChanges.pagesChanged",
