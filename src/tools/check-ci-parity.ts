@@ -26,6 +26,12 @@
  *   2. 並び   —— 順序が違えば落ちる
  *   3. 素性   —— `pnpm run <script>` でない `run:` step は、下の表に無ければ落ちる
  *
+ * ## push の前の確かめとも揃える (t-fcp8)
+ *
+ * `.claude/roles/config.jsonc` の `push.checks` (roster push が push の前に流す一覧) の顔ぶれも
+ * `check` と突き合わせ、`NOT_IN_PUSH` に理由つきで書いた物のほかは両方に在ることを求める。
+ * 並びは見ない —— push の一覧は check と別の順に並べてある。
+ *
  * ## 例外表は両方向で検める
  *
  * 「書いたのに実在しない例外」も落とす。片方向だけの検査は、**消したものが表に
@@ -46,9 +52,13 @@
  * 入れ替えて走らせ直すこと。
  */
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+import ts from "typescript";
 
 const WORKFLOW = ".github/workflows/ci.yaml";
 const JOB = "check";
+const CONFIG = ".claude/roles/config.jsonc";
 
 /**
  * `check` に入れられない `run:` step。**名前で引く。**
@@ -86,6 +96,91 @@ const ONLY_IN_CHECK = {
   "check:store-name":
     "contract-sync job。検査の実体 (check-store-name.sh) が submodule の中にあり、submodule を取る job がそこだけ",
   "site:check": "site.yaml。submodule とタグの取得が要る",
+};
+
+/**
+ * `check` に在るのに、push の前に流さない script。**ここに書いた物だけが** push の一覧から
+ * 外れてよい。書いたのに `check` に無ければ、それも落とす。
+ */
+export const NOT_IN_PUSH: Record<string, string> = {
+  audit: "通信に依る（registry に訊く）",
+};
+
+interface RosterConfig {
+  push?: { checks?: { name?: string; run?: string[] }[] };
+}
+
+/**
+ * roster の設定の `push.checks` を、script の名前に直す。`pnpm run X` は X、`pnpm test` は test。
+ * それ以外の形は problem にする。一覧が読めなければ `push` は null。
+ */
+const pushMembers = (configText: string): { push: string[] | null; problems: string[] } => {
+  const parsed = ts.parseConfigFileTextToJson(CONFIG, configText);
+  if (parsed.error !== undefined) {
+    const why = ts.flattenDiagnosticMessageText(parsed.error.messageText, " ");
+    return { push: null, problems: [`  ${CONFIG} が読めない: ${why}`] };
+  }
+  const checks = (parsed.config as RosterConfig | undefined)?.push?.checks;
+  if (!Array.isArray(checks)) {
+    return { push: null, problems: [`  ${CONFIG} に push.checks の一覧が無い`] };
+  }
+  const push: string[] = [];
+  const problems: string[] = [];
+  for (const { name, run = [] } of checks) {
+    const [tool, verb, script, ...rest] = run;
+    if (tool === "pnpm" && verb === "run" && script !== undefined && rest.length === 0) {
+      push.push(script);
+    } else if (tool === "pnpm" && verb === "test" && run.length === 2) {
+      push.push("test");
+    } else {
+      problems.push(
+        `  ${CONFIG} の push の "${name ?? "(名前なし)"}" は pnpm の script ではない: ${run.join(" ")}`,
+      );
+    }
+  }
+  return { push, problems };
+};
+
+/**
+ * ⑤〜⑧ —— `check` の顔ぶれ (`members`) と push の一覧の突き合わせ。**並びは見ない。**
+ */
+export const pushProblems = ({
+  members,
+  configText,
+}: {
+  members: readonly string[];
+  configText: string;
+}): { push: string[]; problems: string[] } => {
+  const { push, problems } = pushMembers(configText);
+  // 読めない一覧と比べると、check の全部が「push に無い」と出て、読めないことが埋もれる
+  if (push === null) return { push: [], problems };
+  for (const [script, why] of Object.entries(NOT_IN_PUSH)) {
+    // ⑤ 書いたのに check に無い例外
+    if (!members.includes(script)) {
+      problems.push(`  NOT_IN_PUSH の "${script}" が check に無い（表が腐っている: ${why}）`);
+    }
+    // ⑥ 外すと書いたのに push に在る
+    if (push.includes(script)) {
+      problems.push(`  "${script}" は ${CONFIG} の push に在る。push か NOT_IN_PUSH から外すこと`);
+    }
+  }
+  // ⑦ check に在って push に無い
+  for (const script of members) {
+    if (!(script in NOT_IN_PUSH) && !push.includes(script)) {
+      problems.push(
+        `  check の "${script}" が ${CONFIG} の push に無い（入れないなら NOT_IN_PUSH に理由つきで書くこと）`,
+      );
+    }
+  }
+  // ⑧ push に在って check に無い
+  for (const script of push) {
+    if (!members.includes(script)) {
+      problems.push(
+        `  ${CONFIG} の push の "${script}" が check に無い（CI に無い検査を push だけで走らせない）`,
+      );
+    }
+  }
+  return { push, problems };
 };
 
 interface PackageJson {
@@ -142,68 +237,84 @@ const ciSteps = (): Step[] => {
   return steps;
 };
 
-const problems: string[] = [];
-const steps = ciSteps();
+const main = (): void => {
+  const problems: string[] = [];
+  const steps = ciSteps();
 
-// ① CI の step を、検査 (script) と それ以外 に仕分ける
-const ciMembers: string[] = [];
-const seenExceptions = new Set<string>();
-for (const step of steps) {
-  const m = /^pnpm run ([a-z][a-z0-9:._-]*)$|^pnpm (test)$/.exec(step.run);
-  const script = m?.[1] ?? m?.[2];
-  if (script !== undefined) {
-    ciMembers.push(script);
-    continue;
+  // ① CI の step を、検査 (script) と それ以外 に仕分ける
+  const ciMembers: string[] = [];
+  const seenExceptions = new Set<string>();
+  for (const step of steps) {
+    const m = /^pnpm run ([a-z][a-z0-9:._-]*)$|^pnpm (test)$/.exec(step.run);
+    const script = m?.[1] ?? m?.[2];
+    if (script !== undefined) {
+      ciMembers.push(script);
+      continue;
+    }
+    // 名前で引き、無ければ実行文字列で引く。名前を付けない repo があるため。
+    const key = step.name !== null && step.name in ONLY_IN_CI ? step.name : step.run;
+    if (key in ONLY_IN_CI) {
+      seenExceptions.add(key);
+      continue;
+    }
+    problems.push(
+      `  ${WORKFLOW} の "${step.name ?? "(名前なし)"}" は script ではない: ${step.run.slice(0, 48)}\n` +
+        `      script にするか、ONLY_IN_CI に理由つきで書くこと`,
+    );
   }
-  // 名前で引き、無ければ実行文字列で引く。名前を付けない repo があるため。
-  const key = step.name !== null && step.name in ONLY_IN_CI ? step.name : step.run;
-  if (key in ONLY_IN_CI) {
-    seenExceptions.add(key);
-    continue;
+
+  // ② 書いたのに実在しない例外 —— 表が腐る穴
+  for (const name of Object.keys(ONLY_IN_CI)) {
+    if (!seenExceptions.has(name)) {
+      problems.push(`  ONLY_IN_CI の "${name}" が ${WORKFLOW} に無い（表が腐っている）`);
+    }
   }
-  problems.push(
-    `  ${WORKFLOW} の "${step.name ?? "(名前なし)"}" は script ではない: ${step.run.slice(0, 48)}\n` +
-      `      script にするか、ONLY_IN_CI に理由つきで書くこと`,
+
+  // ③ 別 job が持つと宣言したものが、本当に check に在り、本体 job に無いか
+  const members = checkMembers();
+  for (const [script, why] of Object.entries(ONLY_IN_CHECK)) {
+    if (!members.includes(script)) {
+      problems.push(`  ONLY_IN_CHECK の "${script}" が check に無い（表が腐っている: ${why}）`);
+    }
+    if (ciMembers.includes(script)) {
+      problems.push(`  "${script}" は本体 job にも在る。ONLY_IN_CHECK から外すこと`);
+    }
+  }
+
+  // ④ 顔ぶれと並び
+  const expected = members.filter((s) => !(s in ONLY_IN_CHECK));
+  if (expected.join(" → ") !== ciMembers.join(" → ")) {
+    problems.push(
+      `  本体 job と check の一覧が違う\n` +
+        `      check : ${expected.join(" → ")}\n` +
+        `      CI    : ${ciMembers.join(" → ")}`,
+    );
+  }
+
+  // ⑤〜⑧ push の一覧
+  const { push, problems: pushFound } = pushProblems({
+    members,
+    configText: readFileSync(CONFIG, "utf8"),
+  });
+  problems.push(...pushFound);
+
+  if (problems.length > 0) {
+    console.error(
+      `${WORKFLOW} の ${JOB}・package.json の check・${CONFIG} の push がずれている:\n`,
+    );
+    for (const p of problems) console.error(p);
+    console.error(
+      `\n── ${String(problems.length)} 件。二度書いた一覧は、片方だけ直すと必ずずれる。`,
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    `✓ ci-parity: ${WORKFLOW} の ${JOB} job と package.json の check が一致、${CONFIG} の push も揃う ` +
+      `(検査 ${String(ciMembers.length)} 本、` +
+      `CI のみ ${String(Object.keys(ONLY_IN_CI).length)} 本、別 job ${String(Object.keys(ONLY_IN_CHECK).length)} 本、` +
+      `push ${String(push.length)} 本、push に入れない ${String(Object.keys(NOT_IN_PUSH).length)} 本)`,
   );
-}
+};
 
-// ② 書いたのに実在しない例外 —— 表が腐る穴
-for (const name of Object.keys(ONLY_IN_CI)) {
-  if (!seenExceptions.has(name)) {
-    problems.push(`  ONLY_IN_CI の "${name}" が ${WORKFLOW} に無い（表が腐っている）`);
-  }
-}
-
-// ③ 別 job が持つと宣言したものが、本当に check に在り、本体 job に無いか
-const members = checkMembers();
-for (const [script, why] of Object.entries(ONLY_IN_CHECK)) {
-  if (!members.includes(script)) {
-    problems.push(`  ONLY_IN_CHECK の "${script}" が check に無い（表が腐っている: ${why}）`);
-  }
-  if (ciMembers.includes(script)) {
-    problems.push(`  "${script}" は本体 job にも在る。ONLY_IN_CHECK から外すこと`);
-  }
-}
-
-// ④ 顔ぶれと並び
-const expected = members.filter((s) => !(s in ONLY_IN_CHECK));
-if (expected.join(" → ") !== ciMembers.join(" → ")) {
-  problems.push(
-    `  本体 job と check の一覧が違う\n` +
-      `      check : ${expected.join(" → ")}\n` +
-      `      CI    : ${ciMembers.join(" → ")}`,
-  );
-}
-
-if (problems.length > 0) {
-  console.error(`${WORKFLOW} の ${JOB} と package.json の check がずれている:\n`);
-  for (const p of problems) console.error(p);
-  console.error(`\n── ${String(problems.length)} 件。二度書いた一覧は、片方だけ直すと必ずずれる。`);
-  process.exit(1);
-}
-
-console.log(
-  `✓ ci-parity: ${WORKFLOW} の ${JOB} job と package.json の check が一致 ` +
-    `(検査 ${String(ciMembers.length)} 本、` +
-    `CI のみ ${String(Object.keys(ONLY_IN_CI).length)} 本、別 job ${String(Object.keys(ONLY_IN_CHECK).length)} 本)`,
-);
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();

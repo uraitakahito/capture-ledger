@@ -2,7 +2,7 @@
 {
   // roster push が、push の前に流す確かめ（書き方は roster の docs-site の設定のページの「push の前の確かめ」）。
   // CI（ci.yaml の contract-sync と check・site.yaml）の中で、通信に依らず手元で流せる物。
-  // 入れない物: migration と smoke（Postgres）・idp（Floci）・image・audit（通信に依る）・release-version。package.json の check は audit を含むので呼ばず、1 つずつ書く。
+  // 入れない物: migration と smoke（Postgres）・idp（Floci）・image・audit（通信に依る）・release-version。このうち package.json の check に在る script は src/tools/check-ci-parity.ts の NOT_IN_PUSH に理由つきで書き、check:ci-parity がこの一覧と check の顔ぶれを突き合わせる（並びは見ない）。package.json の check は audit を含むので呼ばず、1 つずつ書く。
   // 要る用意（worktree を作ったら、roster push の前に）: git submodule update --init --recursive（.upstream/ を openapi-diff・store-name・site が読む）・pnpm install（docs-site も workspace の中）・PATH に fga。無いと、コードに依らず確かめが落ちる。
   // roster push は origin/main のこの欄を読むので、変えた一覧は merge の後から効く。
   "push": {
