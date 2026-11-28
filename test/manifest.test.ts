@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import openapi from "../src/rpc/generated/browserhive/openapi.json" with { type: "json" };
 import { failureScreenshotKey, readManifest } from "../src/archive/manifest.js";
 
 /**
@@ -372,6 +373,25 @@ describe("readManifest", () => {
       screenshots: structuredClone(renamedScreenshots),
     });
     expect(report.screenshots).toEqual(renamedScreenshots);
+  });
+
+  it("契約の時点の名は新しい名だけを知る（readManifest は寄せた物をそのまま照らす。古い名へ戻す道は無い）", () => {
+    expect(openapi.components.schemas.ScreenshotStage.enum).toEqual([
+      "after-load",
+      "after-capture-scripts",
+    ]);
+  });
+
+  it("古い名で撮った絵は、時点の名だけを寄せ、記録の URI は古い名のまま返す", () => {
+    const shot = {
+      stage: "after-behaviors",
+      url: "urn:browserhive:screenshot:after-behaviors:https://site.test/",
+      date: "2026-11-13T07:33:20.000Z",
+      record: "urn:uuid:0f0e1d2c-3b4a-4958-8776-655443322110",
+      bytes: 51200,
+    };
+    const report = readManifest({ ...v12Manifest, screenshots: [structuredClone(shot)] });
+    expect(report.screenshots).toEqual([{ ...shot, stage: "after-capture-scripts" }]);
   });
 
   it("v30.2.0 より前の manifest（screenshots も failureScreenshot も無い）も読み、どちらも無いまま（既定で補わない）", () => {
