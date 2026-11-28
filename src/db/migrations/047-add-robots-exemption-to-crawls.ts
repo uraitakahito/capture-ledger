@@ -18,7 +18,7 @@
  * 既定のまま (消そうとすれば断る)。
  *
  * 枚数の上限 (`daily_limit`・`link_limit`) は、この列で数える。24 時間の数は行の番号と `finished_at` で引くので、
- * その 2 つの部分 index を足す (外した頁はごく僅かなので、入っている行だけ)。
+ * その 2 つの列の部分 index を 1 つ足す (外した頁はごく僅かなので、入っている行だけ)。
  */
 import { sql, type Kysely, type SqlBool } from "kysely";
 

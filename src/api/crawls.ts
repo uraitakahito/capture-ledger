@@ -1798,6 +1798,8 @@ export const registerCrawlRoutes = (app: FastifyInstance, deps: CrawlRouteDeps):
         // 行だけ (`exemptions/dispatch.ts`)。**違う番号は 400 で断り、何も書かない** (下の 0 の JS の hash と同じ扱い) ——
         // 黙って落として頁だけを記録すると、robots.txt を外して撮った頁が外した記録を持たずに残り、行の枚数の上限
         // (この列で数える) も数え損なう。無い番号を書きに行けば参照の違反で 500 になり、訳が読めない。
+        // **この段に渡した行かまでは見ない** (見るのは組織だけ)。同じ組織の、この段に渡していない行の番号は通る ——
+        // 起きるのは flow の誤りの時だけで、害は記録と枚数の数え違いに限られる。
         // 欄を持つ頁が無い報告 (ほとんどの段) は、ここで何も引かない。
         const reportedExemptions = [...new Set(results.flatMap((r) => r.robotsExemptionId ?? []))];
         if (reportedExemptions.length > 0) {
