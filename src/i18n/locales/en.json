@@ -1,0 +1,5 @@
+{
+  "crawl.nothingCaptured": "No pages were captured ({failed} failed, {skipped} skipped).",
+  "crawl.nothingCapturedBecause": "No pages were captured ({failed} failed, {skipped} skipped). First reason: {reason}",
+  "crawl.nothingCapturedBackfilled": "No pages were captured (a past row fixed by migration 030)."
+}

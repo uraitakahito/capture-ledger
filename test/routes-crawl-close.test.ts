@@ -10,7 +10,7 @@
 import { describe, it, expect, vi } from "vitest";
 import Fastify from "fastify";
 import type { CrawlRouteDeps } from "../src/api/crawls.js";
-import { nothingCapturedError } from "../src/crawl/close.js";
+import { nothingCaptured, nothingCapturedError } from "../src/crawl/close.js";
 import { LEVEL_KEY, levelResponder } from "./level-responder.js";
 import { recordingDb, type RecordedQuery } from "./recording-db.js";
 
@@ -125,7 +125,10 @@ describe("1 枚も撮れずに終わったクロール", () => {
       'update "crawls" set "stop_reason" = case when "state" = $1 then $2 else "stop_reason" end, ' +
         '"state" = case when "state" = $3 then $4 else "state" end, ' +
         '"finished_at" = case when "state" = $5 then $6 else "finished_at" end, ' +
-        '"error" = case when "state" = $7 then $8 else "error" end where "id" = $9',
+        '"error" = case when "state" = $7 then $8 else "error" end, ' +
+        '"error_key" = case when "state" = $9 then $10 else "error_key" end, ' +
+        '"error_params" = case when "state" = $11 then $12::jsonb else "error_params" end ' +
+        'where "id" = $13',
     );
     const parameters = update?.parameters ?? [];
     expect(parameters.slice(0, 5)).toEqual(["running", "failed", "running", "failed", "running"]);
@@ -133,7 +136,12 @@ describe("1 枚も撮れずに終わったクロール", () => {
     expect(parameters[7]).toBe(
       `1 枚も撮れませんでした（取れず 2・見送り 0）。最初の理由: ${reason}`,
     );
-    expect(parameters[8]).toBe(CRAWL);
+    // 文の鍵と埋めた値 (`048`)。字と同じく、走っている行にだけ書く
+    expect(parameters[8]).toBe("running");
+    expect(parameters[9]).toBe("crawl.nothingCapturedBecause");
+    expect(parameters[10]).toBe("running");
+    expect(JSON.parse(String(parameters[11]))).toEqual({ failed: 2, skipped: 0, reason });
+    expect(parameters[12]).toBe(CRAWL);
   });
 
   it("全部を見送っても failed で締め、見送りの数と理由を書く", async () => {
@@ -142,6 +150,10 @@ describe("1 枚も撮れずに終わったクロール", () => {
     expect(update?.parameters).toContain("failed");
     expect(update?.parameters).toContain(
       "1 枚も撮れませんでした（取れず 0・見送り 1）。最初の理由: robots",
+    );
+    expect(update?.parameters).toContain("crawl.nothingCapturedBecause");
+    expect(update?.parameters).toContain(
+      JSON.stringify({ failed: 0, skipped: 1, reason: "robots" }),
     );
   });
 });
@@ -217,6 +229,33 @@ describe("締めたクロールに届いた、1 枚も撮れていない報告",
     expect(body).toEqual({ next: [], stopReason: null });
     expect(update).toBeUndefined();
     expect(totals).toBeDefined();
+  });
+});
+
+describe("nothingCaptured", () => {
+  it("理由が在れば、数と理由を値に持つ鍵", () => {
+    expect(
+      nothingCaptured([
+        { status: "failed", skipReason: "http_error: HTTP 404: Not Found" },
+        { status: "skipped", skipReason: "robots" },
+      ]),
+    ).toEqual({
+      key: "crawl.nothingCapturedBecause",
+      params: { failed: 1, skipped: 1, reason: "http_error: HTTP 404: Not Found" },
+    });
+  });
+
+  it("理由が無ければ、数だけの鍵", () => {
+    expect(nothingCaptured([{ status: "failed" }])).toEqual({
+      key: "crawl.nothingCaptured",
+      params: { failed: 1, skipped: 0 },
+    });
+  });
+
+  it("理由は 200 字で切って値に入れる", () => {
+    expect(
+      nothingCaptured([{ status: "failed", skipReason: "あ".repeat(201) }]).params["reason"],
+    ).toBe("あ".repeat(200));
   });
 });
 

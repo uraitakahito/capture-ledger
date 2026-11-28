@@ -183,7 +183,11 @@ curl -X POST http://localhost:7070/api/archives/<id>/changes/summary \
 
 **`succeeded` は 1 枚以上撮れたクロールです。** 1 枚も撮れずに終わると（全部のページが取れないか、robots で
 見送り）、`failed` で締め、`stopReason` は `failed`、`error` に「1 枚も撮れませんでした（取れず 1・見送り 0）。
-最初の理由: …」と書きます。一部だけ取れなかったクロールは `succeeded` のままで、取れなかった数は `pagesFailed`
+最初の理由: …」と書きます。機械で読む呼び手のために、行はその文の中身も持ちます: `errorKey` が文の鍵
+（`crawl.nothingCaptured`・`crawl.nothingCapturedBecause`。古い migration が締めた行は
+`crawl.nothingCapturedBackfilled`）、`errorParams` が文に埋めた値（`failed`・`skipped` と、在れば `reason`）です。
+`error` が capture-ledger の書いた文でないとき（flow が報告した失敗・人が打った理由）は、どちらも null です。
+鍵と値の名前は、一度出したら変えません。一部だけ取れなかったクロールは `succeeded` のままで、取れなかった数は `pagesFailed`
 で言います。理由は `GET /api/crawls/:id` の `failures` です（新しい 5 件）。
 
 `waczCount` は、そのクロールから出た WACZ の数です。`archives.crawl_id` は、列を足すより前の行で

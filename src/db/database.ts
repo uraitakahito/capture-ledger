@@ -269,6 +269,18 @@ export interface CrawlsTable {
   pagesCaptured: ColumnType<number, number | undefined, number>;
   error: ColumnType<string | null, string | null | undefined, string | null>;
   /**
+   * `error` の文の鍵と、埋めた値 (`048`・`i18n/messages.ts`)。**capture-ledger が自分で書いた文にだけ入る** ——
+   * flow が報告した文や人が打った字は null のままで、`error` の字をそのまま返す。鍵の在る行は、返す時に辞書で組む。
+   *
+   * 値を書くときは JSON の文字列 (`scripts` と同じ扱い)。
+   */
+  errorKey: ColumnType<string | null, string | null | undefined, string | null>;
+  errorParams: ColumnType<
+    Record<string, string | number> | null,
+    string | null | undefined,
+    string | null
+  >;
+  /**
    * 成果物を置いた場所の接頭辞 (`org/<orgId>/<YYYY-MM>/`)。**置く側 (受け取り先) が読む
    * 唯一の出どころ。** 探す側 (段の登録と reconcile) は読まない —— 報告が運んだ manifest の場所
    * (`capture_submissions.manifest_key`・`014`) を読む。

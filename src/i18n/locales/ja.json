@@ -1,0 +1,5 @@
+{
+  "crawl.nothingCaptured": "1 枚も撮れませんでした（取れず {failed}・見送り {skipped}）。",
+  "crawl.nothingCapturedBecause": "1 枚も撮れませんでした（取れず {failed}・見送り {skipped}）。最初の理由: {reason}",
+  "crawl.nothingCapturedBackfilled": "1 枚も撮れませんでした（030 で直した過去の行）"
+}
