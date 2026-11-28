@@ -48,6 +48,26 @@ const CRAWL: DispatchedCrawl = {
   secretArchive: { api_token: "keep" },
   userAgent: "{chrome} BrowserHive",
   recordRandom: true,
+  // robots.txt の例外の行。段を起こす時に引いた物 (`exemptions/dispatch.ts`)
+  robotsExemptions: [
+    {
+      id: "7",
+      host: "fixtures.test",
+      pathPattern: "/exempt/",
+      scope: "links",
+      userAgent: "BrowserHive/1.0 (+https://site.test/bot)",
+      remaining: 19,
+      declaration: {
+        exemptionId: "7",
+        reason: "証拠として残す",
+        pathPattern: "/exempt/",
+        scope: "links",
+        grantedBy: "alice",
+        grantedAt: "2026-11-28T03:00:00.000Z",
+        expiresAt: "2026-12-28T03:00:00.000Z",
+      },
+    },
+  ],
 };
 
 const SINK = {
@@ -90,7 +110,18 @@ describe("webhook の本文", () => {
       secret_archive: CRAWL.secretArchive,
       user_agent: CRAWL.userAgent,
       record_random: true,
+      robots_exemptions: CRAWL.robotsExemptions,
     });
+  });
+
+  it("robots.txt の例外の行が無くても、空の並びを鍵ごと送る（省くと flow が null を受ける）", () => {
+    expect(flowArgs({ ...CRAWL, robotsExemptions: [] })).toMatchObject({ robots_exemptions: [] });
+  });
+
+  it("例外の欄が入る前に起こした段（欄の無い args）の送り直しでは、鍵ごと送らない", () => {
+    const older = { ...CRAWL } as Partial<DispatchedCrawl>;
+    delete older.robotsExemptions;
+    expect(flowArgs(older as DispatchedCrawl)).not.toHaveProperty("robots_exemptions");
   });
 
   /**
@@ -266,6 +297,9 @@ describe("投げる係の時計", () => {
     );
     expect(await levels.tick()).toEqual({ sent: 1, abandoned: 0 });
     expect(sent).toEqual([CRAWL]);
+    // robots.txt の例外の行も、残した引数のまま (引き直さない。取り消しと期限切れは、次に起こす段から効く)
+    expect(sent[0]?.robotsExemptions).toEqual(CRAWL.robotsExemptions);
+    expect(queries.some((q) => q.sql.includes("robots_exemptions"))).toBe(false);
     // 受け取られたので受け取り確認済みに。**進めるのは投げる前・投げたの行だけ** (報告済みを戻さない)
     const [accepted] = levelUpdates(queries);
     expect(accepted?.parameters[0]).toBe("accepted");

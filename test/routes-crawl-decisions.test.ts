@@ -552,17 +552,29 @@ describe("クロール 1 本の判断を読む", () => {
       samples: ["http://skipped.invalid/page"],
     },
   ];
+  // `limited` は、そのうち例外の行の残りの枚数が尽きて見送った数 (理由 `robots-exemption-limit`)
   const robots = [
     {
       hostname: "capture-fixtures.capture-ledger",
-      pages: 1,
-      samples: [`${FIXTURES}/links/hidden`],
+      pages: 3,
+      limited: 2,
+      samples: [`${FIXTURES}/links/hidden`, `${FIXTURES}/exempt/a`, `${FIXTURES}/exempt/b`],
+    },
+  ];
+  // 例外の行で外した頁。撮れた数と、外して撮りに行き撮れなかった数を分ける
+  const robotsOverridden = [
+    {
+      exemptionId: "7",
+      hostname: "capture-fixtures.capture-ledger",
+      pages: 2,
+      failed: 1,
+      samples: [`${FIXTURES}/exempt/`, `${FIXTURES}/exempt/c`, `${FIXTURES}/exempt/d`],
     },
   ];
 
   it("固定した規則と、段 × 規則 × ホスト名の数と、robots.txt で取らなかったページを返す", async () => {
     const { app, queries } = await build({
-      results: [[{ id: CRAWL, rules }], decided, robots],
+      results: [[{ id: CRAWL, rules }], decided, robots, robotsOverridden],
     });
     const res = await app.inject({
       method: "GET",
@@ -571,18 +583,38 @@ describe("クロール 1 本の判断を読む", () => {
     });
     await app.close();
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ crawlId: CRAWL, rules, decisions: decided, robots });
+    expect(res.json()).toEqual({
+      crawlId: CRAWL,
+      rules,
+      decisions: decided,
+      robots,
+      robotsOverridden,
+    });
 
     expect(queries[1]?.sql).toBe(
       'select "depth", "rule", "action", "hostname", "links", "samples" from "crawl_decisions" ' +
         'where "crawl_id" = $1 order by "depth", "rule", "hostname"',
     );
-    // robots で見送った行だけ。ホスト名はポートを外して表と揃え、例は 10 本まで
+    // robots で見送った行だけ (例外の行の上限で止まった物も)。ホスト名はポートを外して表と揃え、例は 10 本まで
     const robotsSql = queries[2]?.sql ?? "";
-    expect(robotsSql).toContain("state = 'skipped' and skip_reason = 'robots'");
+    expect(robotsSql).toContain("state = 'skipped'");
+    expect(robotsSql).toContain("skip_reason in ('robots', 'robots-exemption-limit')");
+    expect(robotsSql).toContain(
+      "(count(*) filter (where skip_reason = 'robots-exemption-limit'))::int as limited",
+    );
     expect(robotsSql).toContain("regexp_replace(host, ':[0-9]+$', '')");
     expect(robotsSql).toContain("[1:10]");
     expect(queries[2]?.parameters).toEqual([CRAWL]);
+
+    // 例外の行で外した頁 (`047`)。行とホスト名で束ね、撮れた数と撮れなかった数を分ける。番号は字で返す
+    const overriddenSql = queries[3]?.sql ?? "";
+    expect(overriddenSql).toContain("robots_exemption_id is not null");
+    expect(overriddenSql).toContain('robots_exemption_id::text as "exemptionId"');
+    expect(overriddenSql).toContain("(count(*) filter (where state = 'captured'))::int as pages");
+    expect(overriddenSql).toContain("(count(*) filter (where state <> 'captured'))::int as failed");
+    expect(overriddenSql).toContain("group by robots_exemption_id, 2");
+    expect(overriddenSql).toContain("[1:10]");
+    expect(queries[3]?.parameters).toEqual([CRAWL]);
   });
 
   it("無いクロールは 404", async () => {

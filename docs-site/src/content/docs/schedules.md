@@ -79,6 +79,12 @@ A due run is `null` even when a request overlapped it, because the clock started
 the readable name at creation and is copied to the run's `requestedByName`. All of these are for display, not
 authorization ([Recording who started it, and from where](/capture-ledger/archive-ledger/#recording-who-started-it-and-from-where)).
 
+The eligibility for [exemptions from robots.txt](/capture-ledger/archive-ledger/#how-rows-reach-a-crawl) is decided by the
+schedule's creator as well. When a run starts, capture-ledger asks whether that subject may start crawls (`can_submit`)
+in the schedule's organization, and keeps `machine` on the run's row if so and `none` if not. **A scheduled run is never
+`human`**, a run-now a person pressed included, so rows whose `appliesTo` is `human` do not apply. When OpenFGA cannot
+be asked, the run still starts, with `none` (no exemption applies; robots.txt is obeyed).
+
 ## Health words
 
 `health` is read from the top down. capture-workbench writes the sentences; the ledger only returns

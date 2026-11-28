@@ -73,6 +73,11 @@ options、変数の値、User-Agent、宣言したシークレットの名前で
 予定の `createdByName` は作った時の読める名前で、回の `requestedByName` に写ります。どれも表示のための物で、認可には使いません
 （[誰が・どこから始めたかを残す](/capture-ledger/ja/archive-ledger/#誰がどこから始めたかを残す)）。
 
+[robots.txt の例外](/capture-ledger/ja/archive-ledger/#クロールへの効き方)の資格も、予定を作った主体で決めます。回を始める時に、
+その主体が予定の組織でクロールを始めてよい（`can_submit`）かを訊き、持てば `machine`、持たなければ `none` を回の行に残します。
+**定期の回は `human` になりません**。人が「いま撮る」を押した回も同じで、`appliesTo` が `human` の行は当たりません。
+OpenFGA に訊けなかった時は、回を止めずに `none` で始めます（例外を当てず、robots.txt に従います）。
+
 ## 状態の語
 
 `health` は上から順に見ます。文は capture-workbench が作り、capture-ledger は語だけを返します。

@@ -50,19 +50,33 @@ describe("exemptionState", () => {
 describe("robots.txt の例外の store", () => {
   it("一覧は渡した組織の行だけを、新しい順に (状態では絞らない)", async () => {
     const { db, queries } = recordingDb([[]]);
-    await listExemptions(db, ["acme", "contoso"]);
+    await listExemptions(db, ["acme", "contoso"], NOW);
     const { sql, parameters } = queries[0]!;
     expect(sql).toContain('from "robots_exemptions"');
-    expect(sql).toContain('where "org_id" in ($1, $2)');
+    expect(sql).toContain('where "org_id" in ($2, $3)');
     expect(sql).toContain('order by "created_at" desc, "id" desc');
     expect(sql).not.toContain("revoked_at");
     expect(sql).not.toContain("expires_at");
-    expect(parameters).toEqual(["acme", "contoso"]);
+    expect(parameters.slice(1)).toEqual(["acme", "contoso"]);
+  });
+
+  it("一覧は行ごとに、24 時間の内にその行で外した頁を crawl_pages から数える (047)", async () => {
+    const { db, queries } = recordingDb([[{ id: "7", usedLast24h: 3 }, { id: "6" }]]);
+    const rows = await listExemptions(db, ["acme"], NOW);
+    const { sql, parameters } = queries[0]!;
+    expect(sql).toContain(
+      '(select count(*)::int as "n" from "crawl_pages" ' +
+        'where "crawl_pages"."robots_exemption_id" = "robots_exemptions"."id" ' +
+        'and "crawl_pages"."finished_at" >= $1) as "used_last24h"',
+    );
+    // 渡した時計から 24 時間前
+    expect(parameters[0]).toEqual(new Date("2026-11-27T03:00:00.000Z"));
+    expect(rows.map((row) => row.usedLast24h)).toEqual([3, 0]);
   });
 
   it("組織が無ければ、一覧は SQL を出さない", async () => {
     const { db, queries } = recordingDb();
-    await expect(listExemptions(db, [])).resolves.toEqual([]);
+    await expect(listExemptions(db, [], NOW)).resolves.toEqual([]);
     expect(queries).toEqual([]);
   });
 

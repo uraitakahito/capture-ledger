@@ -232,6 +232,15 @@ describe("nothingCapturedError", () => {
     );
   });
 
+  it("例外の行の上限で見送った頁だけのクロールも、理由の字のまま読める", () => {
+    expect(
+      nothingCapturedError([
+        { status: "skipped", skipReason: "robots-exemption-limit" },
+        { status: "skipped", skipReason: "robots" },
+      ]),
+    ).toBe("1 枚も撮れませんでした（取れず 0・見送り 2）。最初の理由: robots-exemption-limit");
+  });
+
   it("理由が無ければ数だけを言う", () => {
     expect(nothingCapturedError([{ status: "failed" }])).toBe(
       "1 枚も撮れませんでした（取れず 1・見送り 0）。",

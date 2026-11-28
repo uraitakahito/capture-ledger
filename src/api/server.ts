@@ -266,6 +266,8 @@ const start = async (options: ServerOptions): Promise<void> => {
       s3,
       bucket: storage.bucket,
       resolveIdentity,
+      // robots.txt の例外の資格を決めるのに要る (ヘッダの経路で始めたクロールには、どの行も当てない)
+      identityMode: identity.mode,
       dispatch,
       levels,
       ...(sink && { sink }),
@@ -286,6 +288,7 @@ const start = async (options: ServerOptions): Promise<void> => {
     const { dispatchLevel } = levels;
     const scheduleClockHere = scheduleClock({
       store,
+      fga,
       capture,
       ...(sink && { sink }),
       ...(windmill && { windmill }),

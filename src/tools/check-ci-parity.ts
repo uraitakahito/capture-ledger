@@ -75,7 +75,7 @@ const ONLY_IN_CI = {
   "Level report against Postgres":
     "同上。段の報告のページを閉じる書き込みと帰属の書き込みが 1 つのトランザクションかを本物の DB に当てる (src/tools/level-report-smoke.ts)",
   "Robots exemptions against Postgres":
-    "同上。robots.txt の例外の表の CHECK と、同時の登録が 1 本だけ通ることを本物の DB に当てる (src/tools/robots-exemptions-smoke.ts)",
+    "同上。robots.txt の例外の表の CHECK・同時の登録が 1 本だけ通ること・`047` の列と枚数を数える SQL を本物の DB に当てる (src/tools/robots-exemptions-smoke.ts)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

@@ -113,6 +113,7 @@ const fakeStore = (rows: ScheduleRow[]) => {
           plan.prepared.seeds.map((seed) => ({ url: seed.normalized, host: seed.host })),
           plan.capture,
           plan.sink,
+          [],
         ),
       });
     },
@@ -138,10 +139,25 @@ const fakeStore = (rows: ScheduleRow[]) => {
   };
 };
 
+/** fga の代役。問いを積み、`allowed` で答える (関数なら問いごとに。投げれば OpenFGA の不調)。 */
+const fakeFga = (allowed: boolean | (() => boolean) = true) => {
+  const asked: { request: unknown; options: unknown }[] = [];
+  const fga = {
+    check: (request: unknown, options: unknown) => {
+      asked.push({ request, options });
+      return Promise.resolve().then(() => ({
+        allowed: typeof allowed === "function" ? allowed() : allowed,
+      }));
+    },
+  } as unknown as TickDeps["fga"];
+  return { fga, asked };
+};
+
 const depsOf = (store: ScheduleStore, overrides: Partial<TickDeps> = {}) => {
   const levels: DispatchedCrawl[] = [];
   const deps: TickDeps = {
     store,
+    fga: fakeFga().fga,
     capture: parseCaptureFormats("wacz", false),
     dispatchLevel: (level) => {
       levels.push(level);
@@ -245,7 +261,12 @@ describe("定期実行の周回", () => {
     ]);
     const { deps } = depsOf(fake.store, { startedAt: NOW });
     await tickSchedules(deps);
-    expect(fake.fired[0]?.who).toEqual({ orgId: "acme", subject: "alice", name: "alice-name" });
+    expect(fake.fired[0]?.who).toEqual({
+      orgId: "acme",
+      subject: "alice",
+      name: "alice-name",
+      exemptionEligibility: "machine",
+    });
   });
 
   // 名前の分からない予定 (`045` より前の行) は、名前を運ばない
@@ -255,7 +276,11 @@ describe("定期実行の周回", () => {
     ]);
     const { deps } = depsOf(fake.store);
     await tickSchedules(deps);
-    expect(fake.fired[0]?.who).toEqual({ orgId: "acme", subject: "alice" });
+    expect(fake.fired[0]?.who).toEqual({
+      orgId: "acme",
+      subject: "alice",
+      exemptionEligibility: "machine",
+    });
   });
 
   it("止めた予定もいま撮るなら始まり、期限は動かない", async () => {
@@ -300,7 +325,69 @@ describe("定期実行の周回", () => {
     await tickSchedules(deps);
     expect(levels[0]?.scripts.map((script) => script.sha256)).toEqual(["a".repeat(64)]);
     expect(fake.fired[0]?.prepared.scripts).toEqual([SCRIPT]);
-    expect(fake.fired[0]?.who).toEqual({ orgId: "acme", subject: "alice" });
+    expect(fake.fired[0]?.who).toEqual({
+      orgId: "acme",
+      subject: "alice",
+      exemptionEligibility: "machine",
+    });
+  });
+
+  /**
+   * robots.txt の例外の資格 (`exemptions/eligibility.ts`・`047`)。定期の回は、予定の組織と予定を作った主体で訊き、
+   * 持てば machine、持たなければ none。**human にはならない** (「いま撮る」を人が押した回も)。
+   */
+  describe("robots.txt の例外の資格", () => {
+    it("期限の回は、予定の組織と作った主体で can_submit を訊き、持てば machine", async () => {
+      const fake = fakeStore([schedule({ orgId: "acme", createdBy: "alice" })]);
+      const { fga, asked } = fakeFga(true);
+      const { deps } = depsOf(fake.store, { fga });
+      await tickSchedules(deps);
+      expect(fake.fired[0]?.who.exemptionEligibility).toBe("machine");
+      // 訊くのは予定の組織 1 つ。contextual tuple は送らない
+      expect(asked.map(({ request }) => request)).toEqual([
+        { user: "user:alice", relation: "can_submit", object: "organization:acme" },
+      ]);
+    });
+
+    it("「いま撮る」の回も machine —— 押した人ではなく、作った主体で訊く", async () => {
+      const fake = fakeStore([
+        schedule({
+          nextRunAt: jst("2026-11-08T04:00:00"),
+          runRequestedAt: NOW,
+          runRequestedBy: "bob-sub",
+          runRequestedByName: "bob",
+        }),
+      ]);
+      const { fga, asked } = fakeFga(true);
+      const { deps } = depsOf(fake.store, { fga, startedAt: NOW });
+      expect((await tickSchedules(deps)).kind).toBe("started");
+      expect(fake.fired[0]?.scheduledFor).toBeNull();
+      expect(fake.fired[0]?.who.exemptionEligibility).toBe("machine");
+      expect(asked.map(({ request }) => (request as { user: string }).user)).toEqual([
+        "user:alice",
+      ]);
+    });
+
+    it("作った主体が予定の組織で始めてよくなければ none（期限の回も「いま撮る」の回も）。回は始まる", async () => {
+      for (const runRequestedAt of [null, NOW]) {
+        const fake = fakeStore([schedule({ runRequestedAt })]);
+        const { deps, levels } = depsOf(fake.store, { fga: fakeFga(false).fga });
+        expect((await tickSchedules(deps)).kind).toBe("started");
+        expect(fake.fired[0]?.who.exemptionEligibility).toBe("none");
+        expect(levels).toHaveLength(1);
+      }
+    });
+
+    it("OpenFGA に訊けなくても回は始め、none に倒す", async () => {
+      const fake = fakeStore([schedule()]);
+      const { fga } = fakeFga(() => {
+        throw new Error("openfga down");
+      });
+      const { deps, levels } = depsOf(fake.store, { fga });
+      expect((await tickSchedules(deps)).kind).toBe("started");
+      expect(fake.fired[0]?.who.exemptionEligibility).toBe("none");
+      expect(levels).toHaveLength(1);
+    });
   });
 
   it("固定した撮り方の乱数の控えの頼みを、そのまま配る", async () => {

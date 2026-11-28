@@ -91,6 +91,8 @@ const row = (over: Record<string, unknown> = {}) => ({
   skipReason: null,
   taskId: TASK,
   logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
+  // robots.txt を例外で外した頁だけが、行の番号を持つ (`047`)
+  robotsExemptionId: null,
   archiveId: ARCHIVE,
   capturedAt: new Date(CAPTURED_AT),
   bundledRev: 2,
@@ -176,6 +178,8 @@ describe("クロールのページを読む", () => {
       depth: 1,
       state: "failed",
       skipReason: "timeout: capture exceeded its budget",
+      // 例外で外して撮りに行き、撮れなかった頁にも番号は残る
+      robotsExemptionId: "7",
       archiveId: null,
       capturedAt: null,
       bundledRev: null,
@@ -199,6 +203,8 @@ describe("クロールのページを読む", () => {
           capturedAt: CAPTURED_AT,
           bundledRev: 2,
           logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
+          // robots.txt を例外で外していない頁は null
+          robotsExemptionId: null,
           // 読み込みの後の節目のスクリーンショット (`api/stage-screenshot.ts`)
           screenshot: { stage: "after-load", bytes: 47692 },
         },
@@ -213,6 +219,7 @@ describe("クロールのページを読む", () => {
           capturedAt: null,
           bundledRev: null,
           logCounts: null,
+          robotsExemptionId: null,
           screenshot: null,
         },
         {
@@ -226,6 +233,7 @@ describe("クロールのページを読む", () => {
           capturedAt: null,
           bundledRev: null,
           logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
+          robotsExemptionId: "7",
           screenshot: null,
         },
       ],
@@ -235,7 +243,7 @@ describe("クロールのページを読む", () => {
     expect(queries[0]?.sql).toBe('select "id" from "crawls" where "id" = $1');
     expect(queries[1]?.sql).toBe(
       'select distinct on ("p"."id") "p"."id", "p"."url", "p"."depth", "p"."state", "p"."skip_reason", ' +
-        '"p"."task_id", "p"."log_counts", "a"."id" as "archive_id", "a"."captured_at", ' +
+        '"p"."task_id", "p"."log_counts", "p"."robots_exemption_id", "a"."id" as "archive_id", "a"."captured_at", ' +
         '"a"."replay_bundle_rev" as "bundled_rev", "sh"."stage" as "shot_stage", "sh"."skipped" as "shot_skipped", ' +
         '"sh"."bytes" as "shot_bytes", "sh"."problem" as "shot_problem" from "crawl_pages" as "p" ' +
         'left join "archives" as "a" on "p"."task_id" = "a"."task_id" ' +
@@ -317,6 +325,7 @@ describe("1 ページの取り込みのログを読む", () => {
       capturedAt: CAPTURED_AT,
       bundledRev: 2,
       logCounts: { debug: 0, info: 12, warn: 1, error: 0, dropped: 0 },
+      robotsExemptionId: null,
       screenshot: { stage: "after-load", bytes: 47692 },
       ...over,
     },
@@ -329,7 +338,7 @@ describe("1 ページの取り込みのログを読む", () => {
     expect(queries).toHaveLength(1);
     expect(queries[0]?.sql).toBe(
       'select distinct on ("p"."id") "p"."id", "p"."url", "p"."depth", "p"."state", "p"."skip_reason", ' +
-        '"p"."task_id", "p"."log_counts", "a"."id" as "archive_id", "a"."captured_at", ' +
+        '"p"."task_id", "p"."log_counts", "p"."robots_exemption_id", "a"."id" as "archive_id", "a"."captured_at", ' +
         '"a"."replay_bundle_rev" as "bundled_rev", "sh"."stage" as "shot_stage", "sh"."skipped" as "shot_skipped", ' +
         '"sh"."bytes" as "shot_bytes", "sh"."problem" as "shot_problem", "s"."manifest_key" ' +
         'from "crawl_pages" as "p" ' +

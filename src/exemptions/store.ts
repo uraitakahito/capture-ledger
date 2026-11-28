@@ -25,7 +25,7 @@
  * (錠の select) で取られ、待つ間に commit された行が見えず、2 本とも通る。`db.transaction()` に分離の度合いを
  * 足さないこと (smoke の「同時の登録は 1 本だけ」が見張る)。
  */
-import { sql, type Kysely, type Selectable } from "kysely";
+import { sql, type ExpressionBuilder, type Kysely, type Selectable } from "kysely";
 
 import type {
   Database,
@@ -35,6 +35,9 @@ import type {
 } from "../db/database.js";
 
 export type ExemptionRow = Selectable<RobotsExemptionsTable>;
+
+/** 枚数の上限 (`daily_limit`) を測る幅。 */
+export const DAY_MS = 24 * 60 * 60_000;
 
 export type ExemptionState = "active" | "expired" | "revoked";
 
@@ -84,19 +87,42 @@ export type RevokeExemptionResult =
   | { kind: "expired" }
   | { kind: "not-found" };
 
-/** その組織の行をみな (効いている・切れた・取り消した)、新しい順に。組織が無ければ SQL を出さない。 */
+/**
+ * その行で、`since` から後に外した頁の数 (`crawl_pages.robots_exemption_id`・`047`)。`robots_exemptions` を引く
+ * select に足す式で、一覧の「24 時間で外した枚数」と、段ごとの残りの枚数 (`exemptions/dispatch.ts`) が同じ数え方を
+ * 使う。測るのは頁を触り終えた時刻 (`finished_at`)。**外して撮りに行き、撮れなかった頁も数える** (上限は相手に送った
+ * 要求の数に掛ける)。`count` は int8 なので int に倒す (node-pg は int8 を字で返す)。
+ */
+export const usedSince = (eb: ExpressionBuilder<Database, "robotsExemptions">, since: Date) =>
+  eb
+    .selectFrom("crawlPages")
+    .select(sql<number>`count(*)::int`.as("n"))
+    .whereRef("crawlPages.robotsExemptionId", "=", "robotsExemptions.id")
+    .where("crawlPages.finishedAt", ">=", since);
+
+/** 一覧の 1 行。行と、24 時間でその行で外した頁の数。 */
+export type ListedExemption = ExemptionRow & { usedLast24h: number };
+
+/**
+ * その組織の行をみな (効いている・切れた・取り消した)、新しい順に。行ごとに、`now` までの 24 時間で外した頁の数を
+ * 付ける。組織が無ければ SQL を出さない。
+ */
 export const listExemptions = async (
   db: Kysely<Database>,
   orgIds: readonly string[],
-): Promise<ExemptionRow[]> => {
+  now: Date,
+): Promise<ListedExemption[]> => {
   if (orgIds.length === 0) return [];
-  return db
+  const rows = await db
     .selectFrom("robotsExemptions")
     .selectAll()
+    .select((eb) => usedSince(eb, new Date(now.getTime() - DAY_MS)).as("usedLast24h"))
     .where("orgId", "in", orgIds)
     .orderBy("createdAt", "desc")
     .orderBy("id", "desc")
     .execute();
+  // 副問い合わせの型は null を含む (count は必ず 1 行返すので、実際には来ない)
+  return rows.map((row) => ({ ...row, usedLast24h: row.usedLast24h ?? 0 }));
 };
 
 /** 行を 1 つ。状態は問わない。 */

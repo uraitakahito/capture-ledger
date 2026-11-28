@@ -340,14 +340,15 @@ describe("GET /api/robots-exemptions", () => {
       identity: { subject: "alice-sub", organizations: ["acme", "contoso", "globex"] },
       // contoso では始められない
       allowed: (_relation, object) => object !== "organization:contoso",
-      rows: [[active, expired, revoked]],
+      // 24 時間で外した枚数は、行と一緒に引く (`listExemptions`)
+      rows: [[{ ...active, usedLast24h: 3 }, { ...expired, usedLast24h: 0 }, revoked]],
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
       exemptions: [
-        answerOf(active, "active"),
-        answerOf(expired, "expired"),
-        answerOf(revoked, "revoked"),
+        { ...answerOf(active, "active"), usedLast24h: 3 },
+        { ...answerOf(expired, "expired"), usedLast24h: 0 },
+        { ...answerOf(revoked, "revoked"), usedLast24h: 0 },
       ],
     });
     // 訊くのは can_submit (読むのに admin は要らない)。contextual tuple は送らない
@@ -357,8 +358,13 @@ describe("GET /api/robots-exemptions", () => {
       { user: "user:alice-sub", relation: "can_submit", object: "organization:globex" },
     ]);
     expect(queries).toHaveLength(1);
-    expect(queries[0]!.sql).toContain('where "org_id" in ($1, $2)');
-    expect(queries[0]!.parameters).toEqual(["acme", "globex"]);
+    expect(queries[0]!.sql).toContain('where "org_id" in ($2, $3)');
+    // 1 つ目は「24 時間で外した枚数」を測り始める時刻 (API の時計から 24 時間前)
+    expect(queries[0]!.parameters).toEqual([
+      new Date(NOW.getTime() - 24 * 60 * 60_000),
+      "acme",
+      "globex",
+    ]);
   });
 
   it("始めてよい組織が無ければ 200 の空で、SQL を出さない", async () => {
