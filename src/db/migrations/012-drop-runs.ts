@@ -20,8 +20,8 @@
  *
  * ## `006` と `010` は残す
  *
- * 既に走った migration を書き換えると、古い DB では kysely が corrupted migrations で
- * 止まる。落とすのは新しい migration の仕事。
+ * 既に走った migration の file を消すと (名前を変えて順をずらしても)、古い DB では kysely が
+ * corrupted migrations で止まる。落とすのは新しい migration の仕事。
  */
 import type { Kysely } from "kysely";
 import { sql } from "kysely";

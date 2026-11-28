@@ -12,7 +12,8 @@
  * 1 行ごとに表を頭から探していた。100 万行で、ページ 1 つ 122 ms・reconcile の全件が約 25 分の見込み。
  *
  * `004`・`008`・`027` の注記にある「uuid を text に倒して繋ぐ」は、この migration より前の話。
- * 注記は書き換えない —— 中身を変えると、既に migrate した DB が `corrupted migrations` で止まる。
+ * その注記は書き換えない —— 書いた時の話として残す。Kysely は file の中身を照らさないので、書き換えても migrate は
+ * 止まらない (`corrupted migrations` で止まるのは、走った file を消した時と、順が変わった時)。
  *
  * ## 空の文字列は NULL に
  *
