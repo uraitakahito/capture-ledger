@@ -50,7 +50,8 @@ export const up = async (db: Kysely<unknown>): Promise<void> => {
     // 礼儀の単位。URL から取り出して保存する —— 後から測るときに再計算したくない。
     .addColumn("host", "text", (col) => col.notNull())
     // `pending` / `captured` / `failed` / `skipped`。
-    // `skipped` は、行を作った後に見送ったもの (いまは robots.txt だけ) で、理由が `skip_reason` に残る。
+    // `skipped` は、行を作った後に見送ったもの (いまは robots.txt に関わる 2 つ) で、理由が `skip_reason` に残る ——
+    // robots.txt が断った頁は `robots`、例外の行の型に当たったが残りの枚数が尽きた頁は `robots-exemption-limit`。
     // 規則で落としたリンクと、上限で切ったリンクは行にならない —— 1 本ずつ `crawl_links` (`039`) に残す。
     .addColumn("state", "text", (col) => col.notNull())
     .addColumn("skip_reason", "text")
