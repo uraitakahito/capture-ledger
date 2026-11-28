@@ -24,7 +24,7 @@ const load: Shot = {
   picture: webpBytes("L"),
 };
 const behaviors: Shot = {
-  stage: "after-behaviors",
+  stage: "after-capture-scripts",
   documentUrl: "http://site.test/a",
   date: "2026-11-15T01:00:05.300Z",
   record: "urn:uuid:22222222-2222-4222-8222-222222222222",
@@ -178,22 +178,55 @@ describe("節目のスクリーンショットを返す", () => {
   });
 
   it("時点は SQL の条件に入る", async () => {
-    const { queries } = await get(shotUrl("after-behaviors"), { results: [[]] });
+    const { queries } = await get(shotUrl("after-capture-scripts"), { results: [[]] });
     expect(queries[0]?.sql).toBe(
       'select "a"."bucket", "a"."object_key", "sh"."wacz_offset", "sh"."wacz_length", "sh"."bytes", "sh"."record_id" ' +
         'from "archive_screenshots" as "sh" inner join "archives" as "a" on "a"."id" = "sh"."archive_id" ' +
         'where "sh"."archive_id" = $1 and "sh"."stage" = $2',
     );
-    expect(queries[0]?.parameters).toEqual([ARCHIVE, "after-behaviors"]);
+    expect(queries[0]?.parameters).toEqual([ARCHIVE, "after-capture-scripts"]);
   });
 
   it("位置が別の時点のレコードを指していたら 502（間違った絵を返さない）", async () => {
-    const { res } = await get(shotUrl("after-behaviors"), {
+    const { res } = await get(shotUrl("after-capture-scripts"), {
       results: [[await placeOf("after-load")]],
       store: { [`browserhive/${KEY}`]: ZIP },
     });
     expect(res.statusCode).toBe(502);
     expect(res.json()).toEqual({ error: "screenshot record unreadable" });
+  });
+
+  // CAPTURE-506: 古い取り込みの絵は、URI の頭が after-behaviors のまま。DB の時点は 049 で新しい名
+  it("古い時点の名の絵（URI の頭が after-behaviors）も、after-capture-scripts の住所で 200", async () => {
+    const old: Shot = { ...behaviors, stage: "after-behaviors" };
+    const zip = screenshotWacz([load, old]);
+    const row = (await locateStageScreenshots(zip))?.find(
+      (r) => r.stage === "after-capture-scripts",
+    );
+    if (row?.kind !== "located") throw new Error("not located");
+    const { res } = await get(shotUrl("after-capture-scripts"), {
+      results: [
+        [
+          {
+            bucket: "browserhive",
+            objectKey: KEY,
+            waczOffset: String(row.waczOffset),
+            waczLength: row.waczLength,
+            bytes: row.bytes,
+            recordId: row.recordId,
+          },
+        ],
+      ],
+      store: { [`browserhive/${KEY}`]: zip },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.rawPayload.equals(old.picture)).toBe(true);
+  });
+
+  it("古い時点の名の住所は 400（API は新しい名だけを話す）で、DB を読まない", async () => {
+    const { res, queries } = await get(shotUrl("after-behaviors"), { results: [[]] });
+    expect(res.statusCode).toBe(400);
+    expect(queries).toEqual([]);
   });
 
   it("WACZ が保管庫に無ければ 404", async () => {

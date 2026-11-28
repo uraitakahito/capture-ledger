@@ -35,7 +35,7 @@ const pageRow = (run: string, url: string, sha: string) => ({
   url,
   capturedAt: AT,
   browserhiveVersion: "29.0.2",
-  stage: "after-behaviors",
+  stage: "after-capture-scripts",
   textSha256: sha,
   textWithheld: null,
 });
@@ -45,7 +45,7 @@ describe("変化の詳細の読み出し", () => {
     const { db, queries } = recordingDb([
       [runRow(PREV)],
       [],
-      [{ url: "https://site.test/b", stage: "after-behaviors", state: "diffed", hunks: [] }],
+      [{ url: "https://site.test/b", stage: "after-capture-scripts", state: "diffed", hunks: [] }],
       [
         pageRow("now", "https://site.test/c", "blank-new"),
         pageRow("now", "https://site.test/b", "new"),
@@ -62,7 +62,7 @@ describe("変化の詳細の読み出し", () => {
     expect(detail?.unchanged).toEqual([
       {
         url: "https://site.test/a",
-        stage: "after-behaviors",
+        stage: "after-capture-scripts",
         after: {
           archiveId: "now-https://site.test/a",
           objectKey: "now-https://site.test/a.wacz",

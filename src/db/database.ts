@@ -228,7 +228,7 @@ export interface CrawlsTable {
    *
    * 書くときは JSON の文字列 (`fgaOutbox.payload` と同じ扱い)。
    */
-  scripts: ColumnType<CrawlScript[], string | undefined, string>;
+  captureScripts: ColumnType<CrawlScript[], string | undefined, string>;
   /**
    * 頼みで渡された変数 (名前 → 文字列。`024`)。スクリプトの宣言 (`params`) に照らして受け、行に固定する。
    * 段ごとに flow へ運ばれ、BrowserHive が `datapackage.json` の `browserhive:capture.settings.variables` に**値を書く**。
@@ -390,7 +390,7 @@ export interface CrawlSchedulesTable {
 }
 
 /**
- * 走らせるもの 1 本。**`scripts` の行から解決した写し**で、`crawls.scripts` と、そこから
+ * 走らせるもの 1 本。**`scripts` の行から解決した写し**で、`crawls.capture_scripts` と、そこから
  * flow へ渡す本文に、同じ形で出る。
  *
  * `source` は TypeScript で、`sha256` は `scripts` の生成列 (その TS の hash) をそのまま運ぶ。
@@ -420,7 +420,7 @@ export interface CrawlScript {
   compiledWith?: { typescript: string; hostTypes: string };
   /**
    * クロールごとの値の宣言 (`024`)。変数は始めるときに ts-compile-service が source の `defineParams` から読んだ物、
-   * シークレットは `scripts.params` か頼みの `inline.params` の写し (`crawl/values.ts` の `pinDeclarations`)。
+   * シークレットは `capture_scripts.params` か頼みの `inline.params` の写し (`crawl/values.ts` の `pinDeclarations`)。
    * 古い行には無いことがある。flow へは渡さない (`toDispatched`)。
    */
   params?: ScriptParam[];
@@ -493,7 +493,7 @@ export type ScriptPhase = "preload" | "behavior";
  *
  * BrowserHive は顔ぶれを持たないので、**ここが「何を走らせるか」の唯一の出どころ**。
  */
-export interface ScriptsTable {
+export interface CaptureScriptsTable {
   id: string;
   version: number;
   phase: ScriptPhase;
@@ -761,7 +761,7 @@ export interface Database {
   crawls: CrawlsTable;
   crawlPages: CrawlPagesTable;
   crawlDecisions: CrawlDecisionsTable;
-  scripts: ScriptsTable;
+  captureScripts: CaptureScriptsTable;
   hostTypes: HostTypesTable;
   derivations: DerivationsTable;
   pageChanges: PageChangesTable;

@@ -92,7 +92,7 @@ const insertArchive = async (
 
 const DOC: Page = { stage: null, sha: "doc" };
 const LOADED: Page = { stage: "after-load", sha: "loaded" };
-const BEHAVED: Page = { stage: "after-behaviors", sha: "behaved" };
+const BEHAVED: Page = { stage: "after-capture-scripts", sha: "behaved" };
 
 try {
   await sql`
@@ -110,7 +110,7 @@ try {
   });
   const second = await insertArchive(URL_A, ago(20), { crawlId: manual, pages: [DOC, LOADED] });
   const third = await insertArchive(URL_A, ago(30), {
-    pages: [DOC, { stage: "after-behaviors", sha: null, withheld: "no-archive" }],
+    pages: [DOC, { stage: "after-capture-scripts", sha: null, withheld: "no-archive" }],
   });
   const oldest = await insertArchive(URL_A, ago(40), { inspected: false });
   const longer = await insertArchive(URL_A_LONGER, ago(5), { pages: [DOC] });
@@ -201,18 +201,19 @@ try {
   // ── 比べる行 ─────────────────────────────────────────────
   const lines = await reads.comparedLines([newest, second, third, oldest]);
   check(
-    "写しと文書の行の両方を持つ取り込みは、比べる行が after-behaviors の写し",
-    lines.get(newest)?.stage === "after-behaviors" && lines.get(newest)?.textSha256 === "behaved",
+    "写しと文書の行の両方を持つ取り込みは、比べる行が after-capture-scripts の写し",
+    lines.get(newest)?.stage === "after-capture-scripts" &&
+      lines.get(newest)?.textSha256 === "behaved",
     JSON.stringify(lines.get(newest)),
   );
   check(
-    "after-behaviors の写しが無い取り込みは、文書の行 (after-load の写しは選ばない)",
+    "after-capture-scripts の写しが無い取り込みは、文書の行 (after-load の写しは選ばない)",
     lines.get(second)?.stage === null && lines.get(second)?.textSha256 === "doc",
     JSON.stringify(lines.get(second)),
   );
   check(
     "伏せた写しは、伏せた訳を持つ行のまま選ぶ",
-    lines.get(third)?.stage === "after-behaviors" &&
+    lines.get(third)?.stage === "after-capture-scripts" &&
       lines.get(third)?.textWithheld === "no-archive",
     JSON.stringify(lines.get(third)),
   );
@@ -227,7 +228,7 @@ try {
       pair.after.waczBytes === 123456 &&
       pair.after.orgId === org &&
       pair.after.recipeSha256 === RECIPE &&
-      pair.after.line?.stage === "after-behaviors" &&
+      pair.after.line?.stage === "after-capture-scripts" &&
       pair.before.line?.stage === null,
     JSON.stringify(pair),
   );

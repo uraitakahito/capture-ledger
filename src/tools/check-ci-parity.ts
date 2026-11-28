@@ -78,6 +78,8 @@ const ONLY_IN_CI = {
     "同上。前回からの変化の store と読む SQL を本物の DB に当てる (src/tools/changes-smoke.ts)",
   "Links against Postgres":
     "同上。リンクを 1 本ずつ残す表の置き換え・生成列・CHECK を本物の DB に当てる (src/tools/links-smoke.ts)",
+  "Capture scripts rename against Postgres":
+    "同上。`049` を外して古い名の行を足し、当てて、表・列・制約と索引の名と 3 表の時点の値を本物の DB で見る (src/tools/capture-scripts-rename-smoke.ts)",
   "Screenshots against Postgres":
     "同上。節目のスクリーンショットの在り処の表の CHECK・印・確かめの SQL を本物の DB に当てる (src/tools/screenshots-smoke.ts)",
   "History against Postgres":

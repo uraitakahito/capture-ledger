@@ -24,8 +24,8 @@ const PAGES = [
   JSON.stringify({ format: "json-pages-1.0", id: "pages" }),
   JSON.stringify({ url: "https://site.test/", text: "お知らせ\n更新: 2026-11-22" }),
   JSON.stringify({
-    url: "urn:browserhive:snapshot:after-behaviors:https://site.test/",
-    stage: "after-behaviors",
+    url: "urn:browserhive:snapshot:after-capture-scripts:https://site.test/",
+    stage: "after-capture-scripts",
     text: "お知らせ\n".repeat(400),
   }),
 ].join("\n");

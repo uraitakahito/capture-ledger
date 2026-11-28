@@ -33,7 +33,7 @@ describe("スクリプトの 1 版を読む", () => {
     expect(queries).toHaveLength(1);
     expect(queries[0]?.sql).toBe(
       'select "id", "version", "phase", "sha256", "sites", "params", "enabled", octet_length(source) as "bytes", ' +
-        '"created_at", "source", "options" from "scripts" where "id" = $1 and "version" = $2',
+        '"created_at", "source", "options" from "capture_scripts" where "id" = $1 and "version" = $2',
     );
     expect(queries[0]?.parameters).toEqual(["autoscroll", 1]);
     expect(result).toEqual(row);
@@ -66,7 +66,7 @@ describe("スクリプトを並べる", () => {
 
     expect(queries[0]?.sql).toBe(
       'select "id", "version", "phase", "sha256", "sites", "params", "enabled", octet_length(source) as "bytes", ' +
-        '"created_at" from "scripts" where "id" = $1 order by "id", "version" desc',
+        '"created_at" from "capture_scripts" where "id" = $1 order by "id", "version" desc',
     );
     expect(queries[0]?.parameters).toEqual(["autoscroll"]);
   });
@@ -78,7 +78,7 @@ describe("スクリプトを並べる", () => {
 
     expect(queries[0]?.sql).toBe(
       'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled", ' +
-        'octet_length(source) as "bytes", "created_at" from "scripts" order by "id", "version" desc',
+        'octet_length(source) as "bytes", "created_at" from "capture_scripts" order by "id", "version" desc',
     );
   });
 });
@@ -213,7 +213,7 @@ describe("走らせるものを決める（scripts を省いた頼み）", () =>
 
     expect(queries[0]?.sql).toBe(
       'select distinct on ("id") "id", "version", "phase", "source", "sha256", "options", "sites", "params", "position" ' +
-        'from "scripts" where "enabled" = $1 order by "id", "version" desc',
+        'from "capture_scripts" where "enabled" = $1 order by "id", "version" desc',
     );
   });
 
@@ -314,7 +314,7 @@ describe("既定の実行順を書く（カタログの並び）", () => {
       "update",
       "commit",
     ]);
-    expect(queries[1]?.sql).toBe('update "scripts" set "position" = $1 where "id" = $2');
+    expect(queries[1]?.sql).toBe('update "capture_scripts" set "position" = $1 where "id" = $2');
     expect(queries[1]?.parameters).toEqual([0, "autoscroll"]);
     expect(queries[2]?.parameters).toEqual([1, "autofetch"]);
   });
@@ -350,14 +350,14 @@ describe("新しい版は順を受け継ぐ", () => {
   });
 });
 
-describe("選べるスクリプト（GET /api/scripts）", () => {
+describe("選べるスクリプト（GET /api/capture-scripts）", () => {
   it("各 id に 1 行。有効な版があればその最新、無ければ最新版（既定に入らない物も載せる）", async () => {
     const { db, queries } = recordingDb([[]]);
 
     await pickable(db);
 
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled", "position" from "scripts" ' +
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites", "params", "enabled", "position" from "capture_scripts" ' +
         'order by "id", "enabled" desc, "version" desc',
     );
   });
@@ -381,7 +381,7 @@ describe("有効な各 id の最新版（既定が空のときの 400 が使う�
     await enabledLatest(db);
 
     expect(queries[0]?.sql).toBe(
-      'select distinct on ("id") "id", "version", "phase", "sha256", "sites" from "scripts" ' +
+      'select distinct on ("id") "id", "version", "phase", "sha256", "sites" from "capture_scripts" ' +
         'where "enabled" = $1 order by "id", "version" desc',
     );
   });
@@ -552,7 +552,7 @@ describe("宣言を足す（対象サイトと同じ扱い）", () => {
       params,
     });
 
-    expect(queries[2]?.sql).toContain('insert into "scripts"');
+    expect(queries[2]?.sql).toContain('insert into "capture_scripts"');
     expect(queries[2]?.sql).toContain('"params"');
     expect(queries[2]?.parameters).toContainEqual(JSON.stringify(params));
     expect(result.version).toBe(2);
@@ -623,7 +623,7 @@ describe("対象サイトを足す（options と同じ扱い）", () => {
       sites: ["www.site.test"],
     });
 
-    expect(queries[2]?.sql).toContain('insert into "scripts"');
+    expect(queries[2]?.sql).toContain('insert into "capture_scripts"');
     expect(queries[2]?.parameters).toContainEqual(["www.site.test"]);
     expect(result.version).toBe(2);
   });

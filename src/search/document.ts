@@ -27,15 +27,16 @@
  * ## 1 アーカイブに時点ごとの行
  *
  * BrowserHive は、頁を写した時点ごとに `pages.jsonl` の行を書く（`stage`。読み込みの後が
- * `after-load`、スクリプトの後が `after-behaviors`）。行の `url` は写しの urn
+ * `after-load`、capture scripts の後が `after-capture-scripts`。BrowserHive WACZ Profile 1.30.0 より前は `after-behaviors`）。行の `url` は写しの urn
  * （`urn:browserhive:snapshot:<stage>:<文書の URL>`）。題と本文はその時点で読んだ物なので、
  * 検索前と検索後は別の 1 件として載せる。
  *
  * BrowserHive WACZ Profile 1.18.0 から、1 行目はいつでも取り込んだ文書の行（`stage` が無く、`url` は要求の URL）。
- * 題と本文はスクリプトの後に読んだ物なので、after-behaviors の写しの行とほぼ同じ文になり、両方を載せると
+ * 題と本文はスクリプトの後に読んだ物なので、after-capture-scripts の写しの行とほぼ同じ文になり、両方を載せると
  * 同じ語が 1 アーカイブで 2 回当たる。そこで、写しの行がある WACZ では文書の行を載せない
  * （{@link pagesToIndex}）。写しが 1 つも無い取り込み（本文を伏せた文書など）は、文書の行の 1 件だけ。
  */
+import { normalizeStage } from "../archive/stage-name.js";
 
 /** `pages.jsonl` の 1 行。BrowserHive の `PagesLineInput` に対応する。 */
 export interface PageLine {
@@ -46,7 +47,7 @@ export interface PageLine {
   text?: string;
   textTruncated?: boolean;
   textWithheld?: string;
-  /** 写しの行の時点（`after-load`・`after-behaviors`）。文書の行には無い。 */
+  /** 写しの行の時点（`after-load`・`after-capture-scripts`）。文書の行には無い。 */
   stage?: string;
 }
 
@@ -91,6 +92,9 @@ export interface ArchiveRow {
  * ページには必ず URL がある。
  *
  * 壊れた行は飛ばす。1 行の破損で WACZ 1 本ぶんを落とさない。
+ *
+ * 行の `stage` は新しい名に寄せる (古い取り込みの `after-behaviors` を `after-capture-scripts` に)。索引・変化の比べ・
+ * replay-bundle の検めは、みなここを通るので、DB にも索引にも古い名が入らない。
  */
 export const parsePagesJsonl = (raw: string): PageLine[] => {
   const pages: PageLine[] = [];
@@ -106,7 +110,11 @@ export const parsePagesJsonl = (raw: string): PageLine[] => {
     if (typeof parsed !== "object" || parsed === null) continue;
     const url = (parsed as { url?: unknown }).url;
     if (typeof url !== "string" || url === "") continue;
-    pages.push(parsed as PageLine);
+    const page = parsed as PageLine;
+    // 時点の名は読んだ直後に新しい名へ (`archive/stage-name.ts`)。`url` (写しの urn) は撮った字のまま
+    pages.push(
+      typeof page.stage === "string" ? { ...page, stage: normalizeStage(page.stage) } : page,
+    );
   }
   return pages;
 };

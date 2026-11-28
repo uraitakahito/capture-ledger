@@ -40,7 +40,7 @@ export interface PairArchiveRef {
   sourceUrl: string;
   capturedAt: Date;
   browserhiveVersion: string | null;
-  /** 比べた行が写しなら `after-behaviors`、文書の行なら null。比べる行が無ければ null。 */
+  /** 比べた行が写しなら `after-capture-scripts`、文書の行なら null。比べる行が無ければ null。 */
   stage: string | null;
 }
 

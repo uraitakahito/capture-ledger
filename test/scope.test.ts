@@ -85,13 +85,14 @@ describe("scopeRefusal", () => {
  * —— 狭い scope に開くかどうかを、足す人が選ぶ (一覧に無い書き込みは、門が既定で断る)。GET はみな通す。
  *
  * **拾える形には限りがある。** `src/api/` の直下の `.ts` で、`<何か>.get|post|put|delete|patch(` の後に path の字が
- * そのまま書いてある登録だけ。下の folder・`app.route({…})`・定数の path で登録した route は拾えない (今の src には
- * どれも無い)。そう書く日には、組んだ app から `onRoute` で並べる形に替える。
+ * そのまま書いてある登録だけ。下の folder・`app.route({…})`・定数の path で登録した route は拾えない (今の src では、
+ * `api/scripts.ts` の読む route (GET) だけが `${base}/…` で登録する。GET は門がみな通すので、ここで拾わなくてよい)。書き込みの route をそう書く日には、組んだ app から `onRoute` で並べる形に替える。
  */
 describe("狭い scope で届く route の一覧", () => {
   const API = join(import.meta.dirname, "../src/api");
-  // `app.post<{ … Record<string, never> }>(` のように型引数に `>` が入っても拾えるよう、`(` と path の前まで遅く読む
-  const REGISTER = /\.(get|post|put|delete|patch)\s*(?:<[\s\S]*?>)?\(\s*"(\/[^"]*)"/g;
+  // `app.post<{ … Record<string, never> }>(` のように型引数に `>` が入っても拾えるよう、`(` と path の前まで遅く読む。
+  // 型引数は `(` を越えない —— 越えると、path を字で書かない登録 (`${base}/…`) から次の登録の path まで読んでしまう
+  const REGISTER = /\.(get|post|put|delete|patch)\s*(?:<[^(]*?>)?\(\s*"(\/[^"]*)"/g;
   const routes = readdirSync(API)
     .filter((file) => file.endsWith(".ts"))
     .flatMap((file) =>
@@ -119,6 +120,7 @@ describe("狭い scope で届く route の一覧", () => {
     "POST /api/schedules/:id/pause",
     "POST /api/schedules/:id/repin",
     "POST /api/schedules/:id/resume",
+    "POST /api/capture-scripts/check",
     "POST /api/schedules/:id/run",
     "POST /api/scripts/check",
   ];

@@ -81,7 +81,7 @@ describe("好きな 2 本の差分", () => {
         sourceUrl: URL_A,
         capturedAt: PREV_AT.toISOString(),
         browserhiveVersion: "28.0.1",
-        stage: "after-behaviors",
+        stage: "after-capture-scripts",
       },
       after: {
         archiveId: AFTER,
@@ -89,7 +89,7 @@ describe("好きな 2 本の差分", () => {
         sourceUrl: URL_A,
         capturedAt: NOW.toISOString(),
         browserhiveVersion: "32.0.3",
-        stage: "after-behaviors",
+        stage: "after-capture-scripts",
       },
       summary: null,
       significance: null,
@@ -113,6 +113,24 @@ describe("好きな 2 本の差分", () => {
       "headline",
       "quotes",
     ]);
+  });
+
+  // CAPTURE-506: 前の取り込みの WACZ は写しの行を after-behaviors と書き、DB の行は 049 で新しい名
+  it("前の WACZ の写しの行が古い時点の名でも、その行の文字で比べる（偽の差を出さない）", async () => {
+    const old = before(OLD, {
+      wacz: pagesWacz({ doc: "文書（前）", behaviors: OLD }, URL_A, "after-behaviors"),
+    });
+    const { res } = await get({ archives: [after(), old] });
+    expect(res.statusCode).toBe(200);
+    const expected = changeOf(OLD, NEW);
+    const body = res.json<Answer>();
+    expect([body.added, body.removed, body.hunks]).toEqual([
+      expected.added,
+      expected.removed,
+      expected.hunks,
+    ]);
+    expect(body.stageDiffers).toBe(false);
+    expect(body.before["stage"]).toBe("after-capture-scripts");
   });
 
   it("2 本の WACZ は Range で読み、丸ごとは読まない（末尾の 256 KiB を 1 度ずつ）", async () => {
@@ -312,7 +330,7 @@ describe("好きな 2 本の差分", () => {
       removed: expected.removed,
       hunks: expected.hunks,
       before: { stage: null },
-      after: { stage: "after-behaviors" },
+      after: { stage: "after-capture-scripts" },
     });
   });
 

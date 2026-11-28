@@ -18,7 +18,7 @@ export const HISTORY_PAGE_SIZE = 50;
 
 /** 比べる行 (`archive_pages` の 1 行のうち、比べるのに要る欄)。 */
 export interface ComparedLine {
-  /** 写しなら `after-behaviors`、文書の行なら null。 */
+  /** 写しなら `after-capture-scripts`、文書の行なら null。 */
   stage: string | null;
   textSha256: string | null;
   textChars: number | null;

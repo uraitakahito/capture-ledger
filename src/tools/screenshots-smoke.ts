@@ -76,7 +76,7 @@ try {
       bytes: 4000,
       recordId: "urn:uuid:11111111-1111-4111-8111-111111111111",
     },
-    { stage: "after-behaviors", kind: "skipped" as const, skipped: "withheld" },
+    { stage: "after-capture-scripts", kind: "skipped" as const, skipped: "withheld" },
   ];
   const first = await recordStageScreenshots(db, inspected, rows, at);
   const second = await recordStageScreenshots(db, inspected, rows, at);

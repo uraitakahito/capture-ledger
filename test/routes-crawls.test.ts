@@ -300,7 +300,7 @@ interface FakeCrawl {
   replayBundleDigestKey?: string | null;
   replayBundleSignError?: string | null;
   /** 解決済みの顔ぶれ。**行に固定されたもの**で、段ごとに引き直さない (`018`)。 */
-  scripts: FakeScript[];
+  captureScripts: FakeScript[];
   /** クロールごとの値 (`024`)。本物の行は必ず持つ (NOT NULL DEFAULT) */
   variables: Record<string, string>;
   secrets: Record<string, CrawlSecret>;
@@ -464,7 +464,7 @@ const fakeDb = (
             throw err;
           }
           const inserting = row as unknown as FakeCrawl & {
-            scripts: unknown;
+            captureScripts: unknown;
             rules: unknown;
             variables: unknown;
             secrets: unknown;
@@ -478,9 +478,9 @@ const fakeDb = (
             // **jsonb は文字列で書いて、配列で読む。** 本物は node-pg が戻すので、
             // ここで写さないと「書いた形のまま読める」という、本物では起きない
             // 振る舞いを試験が肯定する。
-            scripts:
-              typeof inserting.scripts === "string"
-                ? (JSON.parse(inserting.scripts) as FakeScript[])
+            captureScripts:
+              typeof inserting.captureScripts === "string"
+                ? (JSON.parse(inserting.captureScripts) as FakeScript[])
                 : [],
             // 値も jsonb (`024`)。同じく文字列で書いて object で読む
             variables:
@@ -591,7 +591,7 @@ const fakeDb = (
           };
           return query;
         }
-        if (table === "scripts") {
+        if (table === "captureScripts") {
           /**
            * `resolveScripts` の読み方を写す。**条件は指定されたものだけを当てる**
            * (上の判断) —— 偽物が `enabled` で勝手に絞ると、
@@ -1239,7 +1239,7 @@ describe("クロール route の認可と単一実行", () => {
     ...NO_REQUESTER_NAMES,
     ...NO_REPLAY_BUNDLE,
     ...NO_SCHEDULE,
-    scripts: [
+    captureScripts: [
       {
         id: "autoscroll",
         version: 2,
@@ -1518,7 +1518,7 @@ describe("クロール route の認可と単一実行", () => {
       lastJobDepth: null,
       ...NO_REPLAY_BUNDLE,
       ...NO_SCHEDULE,
-      scripts: [],
+      captureScripts: [],
       variables: {},
       userAgent: null,
       recordRandom: false,
@@ -1559,7 +1559,7 @@ describe("クロール route の認可と単一実行", () => {
       replayBundleSignedRev: 2,
       replayBundleDigestKey: `org/acme/crawls/${UUID}/r2/replay-digest.json`,
       replayBundleSignError: null,
-      scripts: [],
+      captureScripts: [],
       variables: {},
       userAgent: null,
       recordRandom: false,
@@ -1886,7 +1886,7 @@ describe("走らせるものの解決", () => {
   it("行に固定するのは解決済みの source で、id ではない", async () => {
     // 登録済みのスクリプトは後から変わりうる。段をまたいで同じコードが走ることの根拠がこれ。
     const { crawls } = await start({ seeds: [SEED], scripts: [{ catalog: "autoscroll" }] });
-    expect(crawls[0]?.scripts).toEqual([
+    expect(crawls[0]?.captureScripts).toEqual([
       {
         id: "autoscroll",
         version: 2,
@@ -1929,10 +1929,10 @@ describe("走らせるものの解決", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({
       error: "no scripts are registered",
-      hint: "pnpm run scripts import .upstream/capture-scripts (run nothing on purpose: send scripts: [])",
+      hint: "pnpm run capture-scripts import .upstream/capture-scripts (run nothing on purpose: send scripts: [])",
       // 命令の例と英語の案内は、訳す物でない文。鍵は付かない
       hints: [
-        { text: "pnpm run scripts import .upstream/capture-scripts" },
+        { text: "pnpm run capture-scripts import .upstream/capture-scripts" },
         { text: "(run nothing on purpose: send scripts: [])" },
       ],
     });
@@ -1954,7 +1954,7 @@ describe("走らせるものの解決", () => {
     await app.close();
 
     expect(res.statusCode).toBe(202);
-    expect(crawls[0]?.scripts).toEqual([]);
+    expect(crawls[0]?.captureScripts).toEqual([]);
   });
 
   it("GET は登録済みのスクリプトに身元だけを返す —— source は返さない", async () => {
@@ -1990,7 +1990,7 @@ describe("走らせるものの解決", () => {
   it("その場の TS は inline- の id・版 1・options 空で写り、sha256 は capture-ledger が source から打つ", async () => {
     const { res, crawls } = await start({ seeds: [SEED], scripts: [{ inline: INLINE }] });
     expect(res.statusCode).toBe(202);
-    expect(crawls[0]?.scripts).toEqual([
+    expect(crawls[0]?.captureScripts).toEqual([
       {
         id: "inline-close-banner",
         version: 1,
@@ -2612,7 +2612,7 @@ describe("クロールの一覧", () => {
     ...NO_REQUESTER_NAMES,
     ...NO_REPLAY_BUNDLE,
     ...NO_SCHEDULE,
-    scripts: [],
+    captureScripts: [],
     variables: {},
     userAgent: null,
     recordRandom: false,
@@ -2925,7 +2925,7 @@ describe("対象サイト（サイト用のスクリプト）と起点", () => {
 
   it("クロールの行の写しには対象サイトが入り、flow へ送る scripts には入らない（最初の段も）", async () => {
     const { crawls, dispatched } = await startWith(SITED, { seeds: [SEED] });
-    expect(crawls[0]?.scripts.map((script) => script.sites)).toEqual([[], ["site.test"]]);
+    expect(crawls[0]?.captureScripts.map((script) => script.sites)).toEqual([[], ["site.test"]]);
     expect(dispatched[0]?.every((script) => !("sites" in script))).toBe(true);
   });
 });
@@ -3430,7 +3430,7 @@ describe("クロールごとの値（変数とシークレット）", () => {
     });
     expect(started.res.statusCode).toBe(202);
     // 行に残る宣言は catalog の写しでなく、source から読んだ物 (minLength は DECLARED にだけ在る)
-    expect(started.crawls[0]?.scripts[0]?.params).toEqual([
+    expect(started.crawls[0]?.captureScripts[0]?.params).toEqual([
       {
         name: "query",
         kind: "variable",
@@ -3576,7 +3576,9 @@ describe("クロールごとの値（変数とシークレット）", () => {
     const { crawls } = await start(inline([{ name: "t", kind: "secret" }]), {
       windmill: windmillWith({}),
     });
-    expect(crawls[0]?.scripts[0]?.params).toEqual([{ name: "t", kind: "secret", required: false }]);
+    expect(crawls[0]?.captureScripts[0]?.params).toEqual([
+      { name: "t", kind: "secret", required: false },
+    ]);
   });
 
   it("その場の TS の params に変数は書けない —— 変数の宣言の正は source の defineParams", async () => {
@@ -3696,7 +3698,7 @@ describe("シークレットを WARC に残すか（宣言の archive）", () =>
     );
     expect(res.statusCode).toBe(202);
     // 写しの宣言にも残る (読み直しの元)
-    expect(crawls[0]?.scripts[0]?.params).toEqual([
+    expect(crawls[0]?.captureScripts[0]?.params).toEqual([
       { name: "note", kind: "secret", required: false, archive: "keep" },
       { name: "password", kind: "secret", required: false },
     ]);

@@ -89,6 +89,35 @@ describe("capture-ledger に載せる", () => {
     expect(result.admittedUrls).toEqual(["https://site.test/b"]);
   });
 
+  // CAPTURE-506: 本物の照らしに通す。古い取り込みの時点の名 (after-behaviors) で飛ばさない
+  it.each(["after-behaviors", "after-capture-scripts"])(
+    "screenshots の時点が %s の manifest も、本物の照らしを通って載る",
+    async (stage) => {
+      const actual = await vi.importActual<typeof import("../src/archive/manifest.js")>(
+        "../src/archive/manifest.js",
+      );
+      vi.mocked(readManifest).mockImplementationOnce(actual.readManifest);
+      vi.mocked(getJsonObject).mockResolvedValue({
+        ...manifest("t9"),
+        screenshots: [
+          { stage: "after-load", skipped: "disabled" },
+          { stage, skipped: "disabled" },
+        ],
+      });
+      vi.mocked(admitArchive).mockResolvedValue({ archiveId: 9 } as never);
+
+      const result = await admitLevel([page("t9", "https://site.test/z")], options);
+
+      expect(result.registered).toBe(1);
+      expect(vi.mocked(admitArchive).mock.calls[0]?.[1]).toMatchObject({
+        screenshots: [
+          { stage: "after-load", skipped: "disabled" },
+          { stage: "after-capture-scripts", skipped: "disabled" },
+        ],
+      });
+    },
+  );
+
   it("manifest がまだ無ければ飛ばす（reconcile が後で拾う）", async () => {
     // BrowserHive が書き終える前に段が閉じることはある。ここで投げると
     // 段の報告ごと 500 になって、クロールの進行が止まる。

@@ -58,7 +58,7 @@ const insertArchive = async (crawlId: string, url: string, sha: string) => {
   await sql`
     insert into archive_pages (archive_id, ordinal, url, keys, stage, text_sha256)
     values (${id}, 0, ${url}, ${[url]}, null, 'doc'),
-           (${id}, 1, ${`urn:browserhive:snapshot:after-behaviors:${url}`}, '{}', 'after-behaviors', ${sha})`.execute(
+           (${id}, 1, ${`urn:browserhive:snapshot:after-capture-scripts:${url}`}, '{}', 'after-capture-scripts', ${sha})`.execute(
     db,
   );
   return id;
@@ -93,8 +93,8 @@ try {
       check("前の回は、同じ撮り方の回 (撮り方の違う回を飛ばす)", before === prev, String(before));
       const pages = await store.comparedPages(current);
       check(
-        "回のページは URL ごとに 1 つ、after-behaviors の行",
-        pages.length === 3 && pages.every((p) => p.stage === "after-behaviors"),
+        "回のページは URL ごとに 1 つ、after-capture-scripts の行",
+        pages.length === 3 && pages.every((p) => p.stage === "after-capture-scripts"),
         JSON.stringify(pages),
       );
       const pairs = pairsOf(pages, await store.comparedPages(prev));
@@ -111,7 +111,7 @@ try {
               url: "https://site.test/b",
               archiveId: curB,
               prevArchiveId: prevB,
-              stage: "after-behaviors",
+              stage: "after-capture-scripts",
               state: "diffed",
               added: 1,
               removed: 1,
@@ -253,8 +253,8 @@ try {
       detail?.unchanged.map((p) => [p.url, p.before.archiveId, p.after.archiveId, p.stage]),
     ) ===
       JSON.stringify([
-        ["https://site.test/a", prevA, curA, "after-behaviors"],
-        ["https://site.test/c", prevC, curC, "after-behaviors"],
+        ["https://site.test/a", prevA, curA, "after-capture-scripts"],
+        ["https://site.test/c", prevC, curC, "after-capture-scripts"],
       ]) && detail?.unchanged[0]?.after.browserhiveVersion === "29.0.2",
     JSON.stringify(detail?.unchanged),
   );

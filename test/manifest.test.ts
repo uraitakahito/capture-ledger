@@ -353,10 +353,25 @@ describe("readManifest", () => {
     },
     { stage: "after-behaviors", skipped: "task-budget" },
   ];
+  /** 同じ物を、capture scripts の後の時点の名で (CAPTURE-506 の後の BrowserHive)。 */
+  const renamedScreenshots = v30Screenshots.map((shot) =>
+    shot.stage === "after-behaviors" ? { ...shot, stage: "after-capture-scripts" } : shot,
+  );
 
-  it("v30.2.0 の manifest（screenshots が在る）を読み、screenshots は書かれたまま", () => {
-    const report = readManifest({ ...v12Manifest, screenshots: structuredClone(v30Screenshots) });
-    expect(report.screenshots).toEqual(v30Screenshots);
+  it("v30.2.0 の manifest（screenshots が在る）を読み、時点の名だけを after-capture-scripts に寄せる", () => {
+    const raw = { ...v12Manifest, screenshots: structuredClone(v30Screenshots) };
+    const report = readManifest(raw);
+    expect(report.screenshots).toEqual(renamedScreenshots);
+    // 読んだ物は書き換えない (寄せるのは写し)
+    expect(raw.screenshots).toEqual(v30Screenshots);
+  });
+
+  it("時点を after-capture-scripts と書いた manifest も通り、同じ答えになる", () => {
+    const report = readManifest({
+      ...v12Manifest,
+      screenshots: structuredClone(renamedScreenshots),
+    });
+    expect(report.screenshots).toEqual(renamedScreenshots);
   });
 
   it("v30.2.0 より前の manifest（screenshots も failureScreenshot も無い）も読み、どちらも無いまま（既定で補わない）", () => {

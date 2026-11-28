@@ -40,7 +40,7 @@ const crawlRow = (overrides: Record<string, unknown> = {}) => ({
   pagesDiscovered: 1,
   pagesCaptured: 0,
   artifactKeyPrefix: null,
-  scripts: [],
+  captureScripts: [],
   variables: {},
   secrets: {},
   userAgent: null,

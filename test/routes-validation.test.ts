@@ -120,7 +120,7 @@ describe("route の入力検証", () => {
   it("形の合う絵の要求は、認可まで通る", async () => {
     const res = await app.inject({
       method: "GET",
-      url: `/api/archives/${UUID}/screenshots/after-behaviors`,
+      url: `/api/archives/${UUID}/screenshots/after-capture-scripts`,
       headers: SUBJECT,
     });
     expect(res.statusCode).toBe(500);

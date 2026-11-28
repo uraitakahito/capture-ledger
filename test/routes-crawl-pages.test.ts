@@ -479,7 +479,7 @@ describe("段の報告で、取り込みのログの数をページの行に写�
     pagesDiscovered: 1,
     pagesCaptured: 0,
     artifactKeyPrefix: null,
-    scripts: [],
+    captureScripts: [],
     variables: {},
     secrets: {},
   };

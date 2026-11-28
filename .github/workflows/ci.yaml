@@ -142,7 +142,15 @@ jobs:
           node dist/db/migrate.js down
           node dist/db/migrate.js up
 
-      # スクリプトの CLI (pnpm run scripts) を、本物の Postgres に当てる。
+      # capture scripts の名と時点の名の migration (CAPTURE-506・`049`) を、行の入った表に当てる。
+      #
+      # 上の往復は 049 が落ちずに走ることしか見ない。表・列・制約と索引の名、3 表の時点の値 (主キーの組を含む)、写しの urn を
+      # 書き換えないこと、down が戻すことは、行を入れて見るしかない。049 を down で外して古い名の行を足し、up で当てて見る。
+      # 自分の組織 (smoke-<pid>) の物だけを足して、最後に消す。
+      - name: Capture scripts rename against Postgres
+        run: pnpm run build:tools && node dist/tools/capture-scripts-rename-smoke.js
+
+      # スクリプトの CLI (pnpm run capture-scripts) を、本物の Postgres に当てる。
       #
       # スクリプトを読むエンドポイントと同じ関数 (readScript・listScripts の id・受け皿の型) が Postgres で本当に
       # 通るか、版を本当に絞るか、`020` の表が版を足すかを見るのは、ここだけ。自分の id

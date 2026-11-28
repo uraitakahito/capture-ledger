@@ -133,7 +133,7 @@ describe("検索の認可", () => {
     const app = await build({
       search: fakeSearch([
         hit(MINE, "before", "after-load"),
-        hit(MINE, "after", "after-behaviors"),
+        hit(MINE, "after", "after-capture-scripts"),
       ]) as never,
       fga: {
         batchCheck: (req: { checks: { object: string }[] }) => {
@@ -146,7 +146,7 @@ describe("検索の認可", () => {
 
     expect(res.statusCode).toBe(200);
     const body = res.json<{ hits: { stage: string | null }[] }>();
-    expect(body.hits.map((one) => one.stage)).toEqual(["after-load", "after-behaviors"]);
+    expect(body.hits.map((one) => one.stage)).toEqual(["after-load", "after-capture-scripts"]);
     expect(checked).toEqual([`archive:${MINE}`]);
     await app.close();
   });

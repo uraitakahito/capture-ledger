@@ -8,6 +8,7 @@
  */
 import type { Kysely } from "kysely";
 
+import { CAPTURE_SCRIPTS_STAGE } from "../archive/stage-name.js";
 import type { Database } from "../db/database.js";
 import type { PageLine } from "../search/document.js";
 
@@ -28,11 +29,11 @@ export interface ComparedRow extends ComparedPage {
   browserhiveVersion: string | null;
 }
 
-/** 比べる行の選び方。after-behaviors の写し、無ければ文書の行 (stage の無い行)。after-load だけの回は文書の行。 */
+/** 比べる行の選び方。after-capture-scripts の写し、無ければ文書の行 (stage の無い行)。after-load だけの回は文書の行。 */
 export const comparedLineOf = <T extends { stage: string | null }>(
   rows: readonly T[],
 ): T | undefined =>
-  rows.find((row) => row.stage === "after-behaviors") ?? rows.find((row) => row.stage === null);
+  rows.find((row) => row.stage === CAPTURE_SCRIPTS_STAGE) ?? rows.find((row) => row.stage === null);
 
 /**
  * WACZ の `pages/pages.jsonl` の行から、比べる行の文字を取る。`stage` は `comparedLineOf` が DB の行から選んだ物

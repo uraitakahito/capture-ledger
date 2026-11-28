@@ -48,7 +48,7 @@ const crawlRow = (
   pagesDiscovered: 1,
   pagesCaptured: 0,
   artifactKeyPrefix: null,
-  scripts: [],
+  captureScripts: [],
   // 本物の行は必ず持つ (024 の NOT NULL DEFAULT)。偽物も同じ形で
   variables: values.variables ?? {},
   secrets: values.secrets ?? {},
