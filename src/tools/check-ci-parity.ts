@@ -74,6 +74,8 @@ const ONLY_IN_CI = {
     "同上。同じ URL の取り込みの一覧の SQL・`042` の生成列と索引を本物の DB に当てる (src/tools/history-smoke.ts)",
   "Level report against Postgres":
     "同上。段の報告のページを閉じる書き込みと帰属の書き込みが 1 つのトランザクションかを本物の DB に当てる (src/tools/level-report-smoke.ts)",
+  "Robots exemptions against Postgres":
+    "同上。robots.txt の例外の表の CHECK と、同時の登録が 1 本だけ通ることを本物の DB に当てる (src/tools/robots-exemptions-smoke.ts)",
   "Install OpenFGA CLI": "runner にバイナリを置く step。script には畳めない",
 };
 

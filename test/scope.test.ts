@@ -112,6 +112,8 @@ describe("狭い scope で届く route の一覧", () => {
     "POST /api/crawls/:id/inline/:name/fix",
     "POST /api/crawls/:id/pages",
     "POST /api/crawls/:id/replay-bundle",
+    "POST /api/robots-exemptions",
+    "POST /api/robots-exemptions/:id/revoke",
     "POST /api/schedules",
     "POST /api/schedules/:id/delete",
     "POST /api/schedules/:id/pause",
