@@ -322,7 +322,7 @@ open http://127.0.0.1:7080/
 [capture-workbench](https://github.com/uraitakahito/capture-workbench) は **1 行 = 1 本のクロール**で、
 状態・撮れた数・WACZ の数と、run（Windmill）と 2 つの再生（[replayweb-player](https://github.com/uraitakahito/replayweb-player) の「ReplayWeb.page ↗」と
 [capture-player](https://github.com/uraitakahito/capture-player) の「Web Capture ↗」）への行き先が並びます。
-アーカイブの画面では、行の「検証」から **撮れたものが WACZ 1.1.1 と [BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.29.0/ja/) に適合するか**を見られます
+アーカイブの画面では、行の「検証」から **撮れたものが WACZ 1.1.1 と [BrowserHive WACZ Profile](https://uraitakahito.github.io/browserhive-specs/wacz-profile/1.30.0/ja/) に適合するか**を見られます
 （[wacz-validator](https://github.com/uraitakahito/wacz-validator) が答えます。
 capture-ledger が署名した URL を渡すので、**store の鍵はどこにも増えません**）。
 行の「開く」で **WACZ の中身**も見られます —— ファイルの木、行、field に割った 1 行、
