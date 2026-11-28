@@ -878,6 +878,10 @@
                     "recordRandom": {
                         "type": "boolean",
                         "description": "頁の JS が受け取った乱数 (`Math.random`・`crypto.getRandomValues`・`crypto.randomUUID` の値) を、値を変えずに\n控え、BrowserHive WACZ の `random/values.jsonl` に残す。省略は false で、控えるための物を頁に 1 つも入れない。\ntrue なら、頁の JS より先に控えるスクリプト (BrowserHive WACZ の `random/recorder.js` にそのまま残る) を、\n取り込みのページと同じ process の枠 (別サイトの iframe は除く) に入れる。控えた数は答えの `random` と\n`datapackage.json` の `browserhive:capture.random` に在る。`captureFormats.wacz` と一緒のときだけ有効で、\nwacz の無い要求で true なら 400。シークレットを渡した取り込みでは、`crypto` の 2 つの値を控えない (呼んだことと長さだけ)。"
+                    },
+                    "robotsOverride": {
+                        "$ref": "#/components/schemas/RobotsOverride",
+                        "description": "「この URL は robots.txt が断っていたが、登録された例外で外した」という、求める側の申告。BrowserHive は\nrobots.txt を読まず、申告の中身も確かめない (見るのは形だけ)。渡された値を変えずに、`datapackage.json` の\n`browserhive:capture.robotsOverride` に書く。省略すれば書かない。`captureFormats.wacz` と一緒のときだけ有効で、\nwacz の無い要求に付いていれば 400 (申告の行き先は BrowserHive WACZ だけ)。申告の字に隠すシークレットの値が\n在る取り込みは、WACZ を作らない。"
                     }
                 },
                 "required": [
@@ -1546,6 +1550,63 @@
                     "not-requested",
                     "withheld",
                     "failed"
+                ]
+            },
+            "RobotsOverride": {
+                "type": "object",
+                "description": "robots.txt を例外で外した、という求める側の申告 (BrowserHive WACZ Profile の #robotsoverride)。member はみな必須。",
+                "properties": {
+                    "exemptionId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "求める側が持つ、例外の記録の識別子。"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "minLength": 1,
+                        "description": "例外の理由。登録した人が書いたとおり。Unicode の code point で 1〜500 (生成 server は code point で数える)。"
+                    },
+                    "pathPattern": {
+                        "type": "string",
+                        "pattern": "^/",
+                        "description": "例外が当たる path の型。`/` で始まり、robots.txt の規則の path と同じ書き方 (RFC 9309)。"
+                    },
+                    "scope": {
+                        "$ref": "#/components/schemas/RobotsOverrideScope",
+                        "description": "例外が当たるのが、起点の URL だけか (`seeds`)、そこから link を辿って着く URL もか (`links`)。"
+                    },
+                    "grantedBy": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "例外を登録した主体。求める側の呼び方のまま。"
+                    },
+                    "grantedAt": {
+                        "type": "string",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$",
+                        "description": "例外が登録された時刻。UTC の RFC 3339 の date-time で、offset は `Z` と書く (`+00:00`・`-00:00` も、時差つきも形に合わない)。\n型を Timestamp にしないのは、渡された字を変えずに書くため。暦に無い日時 (2 月 30 日など) は server が 400 で断る。"
+                    },
+                    "expiresAt": {
+                        "type": "string",
+                        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$",
+                        "description": "例外の期限。形は `grantedAt` と同じ。"
+                    }
+                },
+                "required": [
+                    "exemptionId",
+                    "expiresAt",
+                    "grantedAt",
+                    "grantedBy",
+                    "pathPattern",
+                    "reason",
+                    "scope"
+                ]
+            },
+            "RobotsOverrideScope": {
+                "type": "string",
+                "enum": [
+                    "seeds",
+                    "links"
                 ]
             },
             "ScreenshotSkipped": {
