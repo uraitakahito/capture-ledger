@@ -10,7 +10,8 @@
  *   - プール `capture-ledger-dev`
  *   - resource server `capture-ledger` と scope `crawl`・`crawl.start`（在る resource server に足りなければ足す）
  *   - app client 4 つ
- *       workbench  public。authorization code と PKCE（戻り先は 7080 の /callback）
+ *       workbench  public。authorization code と PKCE（戻り先は 7080 の /callback、サインアウトの後の戻り先は
+ *                  7080 の /login。在る client の設定が違えば直す —— t-6nje）
  *       cli        public。パスワードの流れ。`pnpm run idp:token` と picker に貼るトークン用
  *       windmill   secret つき。client credentials（M2M）。scope `crawl`（どの route も通る）
  *       ai         secret つき。client credentials。scope `crawl.start` だけ（始める・読む）・token の期限 10 分。
@@ -43,16 +44,17 @@ import {
   RESOURCE_SERVER,
   START_SCOPE,
   TOKEN_PATH,
+  WORKBENCH_CLIENT,
   cognito,
   readHandoff,
+  syncClient,
   writeHandoff,
+  type AppClient,
 } from "./idp.js";
 
 guardEnv();
 
 const POOL_NAME = "capture-ledger-dev";
-/** workbench の戻り先。capture-workbench の既定の 7080 と `/callback`。 */
-const WORKBENCH_CALLBACK = "http://127.0.0.1:7080/callback";
 
 interface PoolSummary {
   Id: string;
@@ -62,9 +64,7 @@ interface ClientSummary {
   ClientId: string;
   ClientName: string;
 }
-interface Client extends ClientSummary {
-  ClientSecret?: string;
-}
+type Client = AppClient;
 
 /** Cognito の既定のパスワードの決まり（大文字・小文字・数字・記号・8 字以上）を満たす。 */
 const newPassword = () => `Dev-${randomBytes(12).toString("base64url")}9a!`;
@@ -131,47 +131,6 @@ const AI_CLIENT = {
   AllowedOAuthFlowsUserPoolClient: true,
   AccessTokenValidity: 10,
   TokenValidityUnits: { AccessToken: "minutes" },
-};
-
-/**
- * 在る client の設定が `settings` と違えば、直す。UpdateUserPoolClient は渡さない欄を既定に戻すので、
- * 全部の設定を渡す (secret はそのまま)。
- */
-const syncClient = async (
-  pool: string,
-  client: Client & {
-    AllowedOAuthFlows?: string[];
-    AllowedOAuthScopes?: string[];
-    AllowedOAuthFlowsUserPoolClient?: boolean;
-    AccessTokenValidity?: number;
-    TokenValidityUnits?: { AccessToken?: string };
-  },
-  settings: typeof AI_CLIENT,
-): Promise<Client> => {
-  // 作る時だけの欄 (GenerateSecret) のほかを、みな比べる。期限は数と単位の両方 (止め方の段 1 が懸かる)
-  const same =
-    JSON.stringify(client.AllowedOAuthFlows ?? []) === JSON.stringify(settings.AllowedOAuthFlows) &&
-    JSON.stringify(client.AllowedOAuthScopes ?? []) ===
-      JSON.stringify(settings.AllowedOAuthScopes) &&
-    client.AllowedOAuthFlowsUserPoolClient === settings.AllowedOAuthFlowsUserPoolClient &&
-    client.AccessTokenValidity === settings.AccessTokenValidity &&
-    client.TokenValidityUnits?.AccessToken === settings.TokenValidityUnits.AccessToken;
-  if (same) return client;
-  // 在る client の secret は作り直さない (GenerateSecret は作る時だけの欄)
-  const rest: Omit<typeof settings, "GenerateSecret"> = {
-    AllowedOAuthFlows: settings.AllowedOAuthFlows,
-    AllowedOAuthScopes: settings.AllowedOAuthScopes,
-    AllowedOAuthFlowsUserPoolClient: settings.AllowedOAuthFlowsUserPoolClient,
-    AccessTokenValidity: settings.AccessTokenValidity,
-    TokenValidityUnits: settings.TokenValidityUnits,
-  };
-  const { UserPoolClient } = await cognito<{ UserPoolClient: Client }>("UpdateUserPoolClient", {
-    UserPoolId: pool,
-    ClientId: client.ClientId,
-    ClientName: client.ClientName,
-    ...rest,
-  });
-  return { ...UserPoolClient, ClientSecret: UserPoolClient.ClientSecret ?? client.ClientSecret };
 };
 
 const ensureClient = async (pool: string, name: string, settings: object): Promise<Client> => {
@@ -245,13 +204,12 @@ const main = async () => {
   const before = readHandoff();
   const pool = await ensurePool();
   await ensureResourceServer(pool);
-  const workbench = await ensureClient(pool, "workbench", {
-    AllowedOAuthFlows: ["code"],
-    AllowedOAuthScopes: ["openid"],
-    AllowedOAuthFlowsUserPoolClient: true,
-    CallbackURLs: [WORKBENCH_CALLBACK],
-    ExplicitAuthFlows: ["ALLOW_REFRESH_TOKEN_AUTH"],
-  });
+  // 在る client にも設定を合わせる (前の bootstrap が作った client に、サインアウトの後の戻り先を足す —— t-6nje)
+  const workbench = await syncClient(
+    pool,
+    await ensureClient(pool, "workbench", WORKBENCH_CLIENT),
+    WORKBENCH_CLIENT,
+  );
   const cli = await ensureClient(pool, "cli", {
     ExplicitAuthFlows: ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
   });

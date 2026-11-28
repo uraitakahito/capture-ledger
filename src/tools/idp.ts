@@ -106,6 +106,74 @@ export const cognito = async <T>(action: string, body: object): Promise<T> => {
   return json as T;
 };
 
+/** app client。`ClientSecret` は secret つきの client だけが持つ。 */
+export interface AppClient {
+  ClientId: string;
+  ClientName: string;
+  ClientSecret?: string;
+}
+
+/** workbench の戻り先。capture-workbench の既定の 7080 と `/callback`。 */
+export const WORKBENCH_CALLBACK = "http://127.0.0.1:7080/callback";
+
+/**
+ * workbench のサインアウトの後の戻り先 (t-6nje)。workbench は「サインアウト」で IdP の logout の口
+ * (`…/logout?client_id=…&logout_uri=…`) へ回し、IdP は自分のサインイン (cookie) を消して、ここへ戻す ——
+ * `/login` がいつものサインインを 1 から始めるので、人はサインインのフォームに着く。**IdP は、登録した物と
+ * 1 字でも違う戻り先を断る** (query を足しても 400。Floci 2.4.0 で実測) ので、workbench が作る値と揃える。
+ */
+export const WORKBENCH_SIGNED_OUT = "http://127.0.0.1:7080/login";
+
+/**
+ * workbench の app client の設定。public (secret を持たない)・authorization code と PKCE。
+ * 本番の Cognito の app client にも、同じ戻り先 (`CallbackURLs`) とサインアウトの後の戻り先 (`LogoutURLs`) を登録する。
+ */
+export const WORKBENCH_CLIENT = {
+  AllowedOAuthFlows: ["code"],
+  AllowedOAuthScopes: ["openid"],
+  AllowedOAuthFlowsUserPoolClient: true,
+  CallbackURLs: [WORKBENCH_CALLBACK],
+  LogoutURLs: [WORKBENCH_SIGNED_OUT],
+  ExplicitAuthFlows: ["ALLOW_REFRESH_TOKEN_AUTH"],
+};
+
+/**
+ * 在る値が、設定に書いた値に合うか。配列は並びごと (無い欄は空の配列と同じ)、入れ子は**設定に書いた欄だけ**
+ * (`TokenValidityUnits` は、書いていない単位を IdP が既定で埋める)、ほかは同じ値か。
+ */
+const settled = (have: unknown, want: unknown): boolean => {
+  if (Array.isArray(want)) return JSON.stringify(have ?? []) === JSON.stringify(want);
+  if (typeof want === "object" && want !== null) {
+    const held = typeof have === "object" && have !== null ? (have as Record<string, unknown>) : {};
+    return Object.entries(want).every(([name, value]) => settled(held[name], value));
+  }
+  return have === want;
+};
+
+/**
+ * 在る client の設定が `settings` と違えば、直す (同じなら何も呼ばない —— `dev:up` のたびに書き直さない)。
+ * 比べるのは `settings` に書いた欄だけ。UpdateUserPoolClient は渡さない欄を既定に戻すので、`settings` を
+ * みな渡す。作る時だけの欄 (`GenerateSecret`) は比べず、渡さない —— 在る client の secret は作り直さない。
+ * client の ID は変わらず、出ているトークンと IdP のサインインもそのまま (Floci 2.4.0 で実測)。
+ */
+export const syncClient = async <C extends AppClient>(
+  pool: string,
+  client: C,
+  settings: Record<string, unknown>,
+): Promise<C> => {
+  const rest = Object.fromEntries(
+    Object.entries(settings).filter(([name]) => name !== "GenerateSecret"),
+  );
+  if (settled(client, rest)) return client;
+  const { UserPoolClient } = await cognito<{ UserPoolClient: C }>("UpdateUserPoolClient", {
+    UserPoolId: pool,
+    ClientId: client.ClientId,
+    ClientName: client.ClientName,
+    ...rest,
+  });
+  return { ...UserPoolClient, ClientSecret: UserPoolClient.ClientSecret ?? client.ClientSecret };
+};
+
 /** `名前=値` の行のファイルを読む。無ければ空。 */
 export const readEnvFile = (path: string): Record<string, string> => {
   if (!existsSync(path)) return {};

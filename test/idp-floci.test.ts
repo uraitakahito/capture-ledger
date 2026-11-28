@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import type { FastifyRequest } from "fastify";
 import { createRemoteJWKSet } from "jose";
 
@@ -15,8 +15,16 @@ import { createRemoteJWKSet } from "jose";
 const ENDPOINT = process.env["CAPTURE_LEDGER_TEST_IDP_ENDPOINT"];
 if (ENDPOINT !== undefined) process.env["CAPTURE_LEDGER_IDP_ENDPOINT"] = ENDPOINT;
 
-const { cognito, CRAWL_SCOPE, RESOURCE_SERVER, START_SCOPE, TOKEN_PATH } =
-  await import("../src/tools/idp.js");
+const {
+  cognito,
+  syncClient,
+  CRAWL_SCOPE,
+  RESOURCE_SERVER,
+  START_SCOPE,
+  TOKEN_PATH,
+  WORKBENCH_CLIENT,
+  WORKBENCH_SIGNED_OUT,
+} = await import("../src/tools/idp.js");
 const { scopeRefusal } = await import("../src/api/scope.js");
 const { jwtIdentityResolver } = await import("../src/api/identity.js");
 
@@ -218,6 +226,155 @@ describe.skipIf(ENDPOINT === undefined)(
       await expect(
         resolver()(bearer(`${head ?? ""}.${body ?? ""}.${flipped}`)),
       ).resolves.toBeUndefined();
+    });
+  },
+);
+
+/**
+ * workbench の client の、サインアウトの後の戻り先 (t-6nje)。workbench は「サインアウト」で IdP の logout の口へ回す ——
+ * 戻り先 (`LogoutURLs`) が client に無いと、IdP は 400 で断り、人が IdP の誤りの頁で止まる。前の bootstrap が作った
+ * client (戻り先が無い) に `idp:bootstrap` が足せること、足しても client の ID が変わらないこと、Floci の logout の口の
+ * 形 (登録した物と 1 字でも違えば断る) を、ここで留める。
+ */
+describe.skipIf(ENDPOINT === undefined)(
+  "workbench の client に、サインアウトの後の戻り先を足す",
+  () => {
+    interface WorkbenchClient {
+      ClientId: string;
+      ClientName: string;
+      ClientSecret?: string;
+      CallbackURLs?: string[];
+      LogoutURLs?: string[];
+    }
+    let pool = "";
+    let made: WorkbenchClient;
+
+    /** 設定から、名指した欄を除く。 */
+    const without = (settings: Record<string, unknown>, ...names: string[]) =>
+      Object.fromEntries(Object.entries(settings).filter(([name]) => !names.includes(name)));
+
+    const describeClient = async (id: string) =>
+      (
+        await cognito<{ UserPoolClient: WorkbenchClient }>("DescribeUserPoolClient", {
+          UserPoolId: pool,
+          ClientId: id,
+        })
+      ).UserPoolClient;
+
+    /** logout の口を引く (回された先へは行かない)。 */
+    const logout = (clientId: string, uri: string) =>
+      fetch(
+        `${ENDPOINT ?? ""}/cognito-idp/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(uri)}`,
+        { redirect: "manual" },
+      );
+
+    /** `fetch` が Cognito の管理の API をいくつ呼んだか (`run` の間)。 */
+    const managementCalls = async (run: () => Promise<unknown>) => {
+      const spy = vi.spyOn(globalThis, "fetch");
+      try {
+        await run();
+        return spy.mock.calls.length;
+      } finally {
+        spy.mockRestore();
+      }
+    };
+
+    beforeAll(async () => {
+      const { UserPool } = await cognito<{ UserPool: { Id: string } }>("CreateUserPool", {
+        PoolName: `capture-ledger-test-logout-${String(Date.now())}`,
+      });
+      pool = UserPool.Id;
+      // 前の bootstrap が作った形: 戻り先 (LogoutURLs) の無い client
+      made = (
+        await cognito<{ UserPoolClient: WorkbenchClient }>("CreateUserPoolClient", {
+          UserPoolId: pool,
+          ClientName: "workbench",
+          ...without(WORKBENCH_CLIENT, "LogoutURLs"),
+        })
+      ).UserPoolClient;
+    });
+
+    it("戻り先の無い client では、logout の口が断る", async () => {
+      expect((await logout(made.ClientId, WORKBENCH_SIGNED_OUT)).status).toBe(400);
+    });
+
+    it("syncClient が戻り先を足す。client の ID と戻り先 (callback) は変わらない", async () => {
+      const synced = await syncClient(pool, await describeClient(made.ClientId), WORKBENCH_CLIENT);
+      expect(synced.ClientId).toBe(made.ClientId);
+      const now = await describeClient(made.ClientId);
+      expect(now.LogoutURLs).toEqual([WORKBENCH_SIGNED_OUT]);
+      expect(now.CallbackURLs).toEqual(WORKBENCH_CLIENT.CallbackURLs);
+    });
+
+    it("設定が合っていれば、何も呼ばない (dev:up のたびに書き直さない)", async () => {
+      const now = await describeClient(made.ClientId);
+      expect(await managementCalls(() => syncClient(pool, now, WORKBENCH_CLIENT))).toBe(0);
+    });
+
+    it("作った時から設定が合っている client にも、何も呼ばない", async () => {
+      const fresh = (
+        await cognito<{ UserPoolClient: WorkbenchClient }>("CreateUserPoolClient", {
+          UserPoolId: pool,
+          ClientName: "workbench-fresh",
+          ...WORKBENCH_CLIENT,
+        })
+      ).UserPoolClient;
+      const now = await describeClient(fresh.ClientId);
+      expect(await managementCalls(() => syncClient(pool, now, WORKBENCH_CLIENT))).toBe(0);
+    });
+
+    it("logout の口は、登録した戻り先へ回し、IdP のサインインの cookie を消す", async () => {
+      const res = await logout(made.ClientId, WORKBENCH_SIGNED_OUT);
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe(WORKBENCH_SIGNED_OUT);
+      expect(res.headers.getSetCookie().some((line) => /^cognito=;.*Max-Age=0/i.test(line))).toBe(
+        true,
+      );
+    });
+
+    it("logout の口は、登録した物と 1 字でも違う戻り先を断る (query も足せない)", async () => {
+      for (const uri of [
+        "http://127.0.0.1:7080/",
+        `${WORKBENCH_SIGNED_OUT}?back=%2Fcrawls`,
+        "http://127.0.0.1:7081/login",
+      ]) {
+        expect((await logout(made.ClientId, uri)).status, uri).toBe(400);
+      }
+    });
+
+    it("secret つきの client: 設定が違えば直し、secret はそのまま。合えば呼ばない", async () => {
+      const settings = {
+        GenerateSecret: true,
+        AllowedOAuthFlows: ["client_credentials"],
+        AllowedOAuthScopes: [START_SCOPE],
+        AllowedOAuthFlowsUserPoolClient: true,
+        AccessTokenValidity: 10,
+        TokenValidityUnits: { AccessToken: "minutes" },
+      };
+      await cognito("CreateResourceServer", {
+        UserPoolId: pool,
+        Identifier: RESOURCE_SERVER,
+        Name: RESOURCE_SERVER,
+        Scopes: [{ ScopeName: "crawl.start", ScopeDescription: "crawl.start" }],
+      });
+      // 期限を書かずに作った client (既定の 60 分) を、10 分に直す
+      const old = (
+        await cognito<{ UserPoolClient: WorkbenchClient }>("CreateUserPoolClient", {
+          UserPoolId: pool,
+          ClientName: "ai",
+          ...without(settings, "AccessTokenValidity", "TokenValidityUnits"),
+        })
+      ).UserPoolClient;
+      expect(old.ClientSecret).toBeTypeOf("string");
+      const synced = await syncClient(pool, await describeClient(old.ClientId), settings);
+      expect(synced.ClientId).toBe(old.ClientId);
+      expect(synced.ClientSecret).toBe(old.ClientSecret);
+      const now = (await describeClient(old.ClientId)) as WorkbenchClient & {
+        AccessTokenValidity?: number;
+      };
+      expect(now.AccessTokenValidity).toBe(10);
+      expect(now.ClientSecret).toBe(old.ClientSecret);
+      expect(await managementCalls(() => syncClient(pool, now, settings))).toBe(0);
     });
   },
 );
