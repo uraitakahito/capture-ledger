@@ -1,5 +1,5 @@
 /**
- * クロールごとの値 (変数とシークレット) を、スクリプトの宣言に照らす。
+ * クロールごとの値 (変数とシークレット) を、capture scripts の宣言に照らす。
  *
  * **入出力を持たない** (`compiled.ts` と同じ立場)。この repo に DB の試験は無いので、断る条件はここに置いて
  * 単体で見る (`test/crawl-values.test.ts`)。route (`POST /api/crawls`) はこの答えをそのまま status にし、
@@ -8,7 +8,7 @@
  * ## 2 種類の値
  *
  * - **変数** はクロールの頼み (`variables`) で渡され、記録に値が残る (BrowserHive WACZ の `settings.variables`)。
- * - **シークレット** は頼みに欄が無い。スクリプトが宣言した名前を、Windmill の secret 変数
+ * - **シークレット** は頼みに欄が無い。Capture scripts が宣言した名前を、Windmill の secret 変数
  *   `f/waggle_secrets/<名前>` に結ぶ。capture-ledger は在るかを訊くだけで、値は flow の `crawl_host` が解く。値を BrowserHive WARC に
  *   残すかも宣言が決める (`archive: "keep"`。省けば BrowserHive が隠す)。
  *
@@ -17,7 +17,7 @@
  * 宣言が「どの名前を、どちらの種類で、どの形で」を言う。変数の宣言の正は source の `defineParams` で、
  * ts-compile-service が読み、始めるエンドポイントがこの層へ写す (`pinDeclarations`)。シークレットの宣言は `params`。
  * **宣言の無い名前は渡せない** —— 黙って通すと、綴りを間違えた変数が「渡したのに効かない」として残る。
- * 例外は宣言を読めなかったスクリプト (BH0002) が混ざるときで、何を読むかを capture-ledger が知らないので知らない名前を
+ * 例外は宣言を読めなかった capture scripts (BH0002) が混ざるときで、何を読むかを capture-ledger が知らないので知らない名前を
  * 400 にしない。そのクロールは flow の compile の段が BH0002 で落とすので、理由がそこに残る。
  *
  * **必須の変数が渡されているかは、ここでは見ない。** 判定は ts-compile-service の 1 か所 (BH0001) で、始めるエンドポイントが
@@ -47,7 +47,7 @@ export interface DeclaredSecret {
   path: string;
   /** 宣言のどれか 1 つでも required なら true。 */
   required: boolean;
-  /** 宣言したスクリプトの id (その場の TS は `inline-<名前>`)。 */
+  /** 宣言した capture script の id (その場の TS は `inline-<名前>`)。 */
   declaredBy: string[];
   /** 値を BrowserHive WARC に残すなら `"keep"`。無ければ隠す。宣言どうしで食い違えば、ここまで来ない (conflicting params)。 */
   archive?: "keep";
@@ -113,7 +113,7 @@ const shapeProblem = (name: string, value: string, schema: ParamSchema): Hint | 
  * 頼みの変数を宣言に照らし、宣言で結ぶシークレットを集める。
  *
  * 断る順: 同じ名前を別の種類か別の形か、残すかどうかを違えて宣言している (どちらにも渡せない) → シークレットの名前を
- * 変数で渡している (記録に値が残る) → 知らない変数の名前 (宣言を読めなかったスクリプトが在れば見ない) → 値が宣言の形に
+ * 変数で渡している (記録に値が残る) → 知らない変数の名前 (宣言を読めなかった capture scripts が在れば見ない) → 値が宣言の形に
  * 合わない → シークレットが多すぎる。文は route がそのまま 400 の本文にする。人に見せる文 (`hint`) には、
  * 文ごとの鍵と値の組 (`hints`。`types/hint.ts`) を並べる。
  */

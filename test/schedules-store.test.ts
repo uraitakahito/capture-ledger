@@ -158,7 +158,7 @@ describe("予定の store", () => {
     expect(queries[0]!.parameters).toEqual(["running"]);
   });
 
-  it("スクリプトの版は、名指しの最新と、省いた頼みが選ぶ有効な版の最新の 2 つ", async () => {
+  it("Capture scripts の版は、名指しの最新と、省いた頼みが選ぶ有効な版の最新の 2 つ", async () => {
     const { db, queries } = recordingDb([
       [
         { id: "autoscroll", latest: 3, latestEnabled: 2 },

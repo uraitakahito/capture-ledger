@@ -157,7 +157,7 @@ describe("同じ URL の取り込みの一覧", () => {
   it("比べる行は after-capture-scripts の写し、無ければ文書の行。比べられない行には訳が付く", async () => {
     const seeds: ArchiveSeed[] = [
       // 文書の行と写しの両方 → 写し
-      archiveOf(id(1), { doc: "文書", behaviors: "スクリプトの後" }),
+      archiveOf(id(1), { doc: "文書", behaviors: "capture scripts の後" }),
       // 写しは after-load だけ → 文書の行
       archiveOf(id(2), { doc: "文書だけ" }),
       // 写しも文書の行も無い (after-load の写しだけ)
@@ -186,7 +186,7 @@ describe("同じ URL の取り込みの一覧", () => {
     const { res, queries } = await call({ archives: seeds }, { url: historyUrl(URL_A) });
     const rows = res.json<Answer>().archives;
     expect(rows.map((row) => [row.text, row.notComparable])).toEqual([
-      [{ stage: "after-capture-scripts", sha256: sha256("スクリプトの後"), chars: 7 }, null],
+      [{ stage: "after-capture-scripts", sha256: sha256("capture scripts の後"), chars: 18 }, null],
       [{ stage: null, sha256: sha256("文書だけ"), chars: 4 }, null],
       [null, "no_text"],
       [null, "no_text"],

@@ -230,7 +230,7 @@ describe("直し方を訊く輪", () => {
     expect(result.rounds).toBe(1);
     expect(asked).toHaveLength(1);
     const sent = asked[0]!;
-    // 並びは元のまま。登録済みのスクリプトは変えない。その場の TS は sha256 を打ち直す
+    // 並びは元のまま。登録済みの capture scripts は変えない。その場の TS は sha256 を打ち直す
     expect(sent.map((s) => s.id)).toEqual(["inline-press", "autoscroll"]);
     expect(sent[1]).toEqual(CATALOG);
     expect(sent[0]!.source).toContain(FIXED_LINE);

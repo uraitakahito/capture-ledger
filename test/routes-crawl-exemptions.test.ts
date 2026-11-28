@@ -138,7 +138,7 @@ describe("POST /api/crawls: 資格を 1 度決めて行に残し、最初の段�
       method: "POST",
       url: "/api/crawls",
       headers: { "idempotency-key": randomUUID() },
-      // 走らせる物は無い (空を明示する。省くと、登録済みのスクリプトが無い配備として断る)
+      // 走らせる物は無い (空を明示する。省くと、登録済みの capture scripts が無い配備として断る)
       payload: { seeds: [SEED], maxDepth: 1, scripts: [] },
     });
     await built.app.close();

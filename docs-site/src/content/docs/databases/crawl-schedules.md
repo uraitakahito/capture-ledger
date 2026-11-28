@@ -33,10 +33,10 @@ Besides the `032` columns, a schedule row has three more (`045`). All are for di
 
 ## request and recipe
 
-| Column    | What it holds                                                                 | Who reads it |
-| --------- | ----------------------------------------------------------------------------- | ------------ |
-| `request` | The form's contents, shaped like `POST /api/crawls`                           | Repin        |
-| `recipe`  | How to capture, resolved and pinned, including a copy of each script's source | The tick     |
+| Column    | What it holds                                                                         | Who reads it |
+| --------- | ------------------------------------------------------------------------------------- | ------------ |
+| `request` | The form's contents, shaped like `POST /api/crawls`                                   | Repin        |
+| `recipe`  | How to capture, resolved and pinned, including a copy of each capture script's source | The tick     |
 
 Secrets stay as declarations in `recipe` and are asked of Windmill on every run, so that a deleted variable does not get as far as the flow.
 

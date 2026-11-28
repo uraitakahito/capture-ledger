@@ -36,11 +36,11 @@ When a crawl started by hand is the one blocking, the schedule only shows `block
 ## The recipe is pinned
 
 Creating a schedule runs the same checks as `POST /api/crawls`, and keeps what they resolved in
-`recipe`, including a copy of each script's source. A new script version does not change what a run
+`recipe`, including a copy of each capture script's source. A new capture script version does not change what a run
 does: `outdated` in the answer becomes `true`, and a person runs `repin`. Only secrets stay as
 declarations and are asked of Windmill on every run.
 
-A run's row also carries a digest of how it captured (`crawls.recipe_sha256`, `035`): the scripts' id,
+A run's row also carries a digest of how it captured (`crawls.recipe_sha256`, `035`): the capture scripts' id,
 version, phase, sha256 and options, the variables' values, the User-Agent and the names of the
 declared secrets — only what can change a page's content. Seeds, rules, `maxDepth`, `maxPages` and
 pacing are left out. Changes since last time compare only runs of one schedule whose digest is the
@@ -60,7 +60,7 @@ action is a POST (capture-workbench only relays POST for writes).
 | `POST /api/schedules/:id/pause`  | Pause. A run-now request that is waiting goes too. A run in progress carries on                                                                                                                                                               |
 | `POST /api/schedules/:id/resume` | Resume. The next run is computed from now, and the paused time does not count as missed. A schedule that is not paused is left alone                                                                                                          |
 | `POST /api/schedules/:id/run`    | Run now. Answers 202 and the tick starts it. Works on a paused schedule                                                                                                                                                                       |
-| `POST /api/schedules/:id/repin`  | Resolve the request again against the current ledger. Refused for the same reasons if a script has gone                                                                                                                                       |
+| `POST /api/schedules/:id/repin`  | Resolve the request again against the current ledger. Refused for the same reasons if a capture script has gone                                                                                                                               |
 | `POST /api/schedules/:id/delete` | Delete. The row stays, because crawl rows show its name                                                                                                                                                                                       |
 
 `GET /api/crawls` and `GET /api/crawls/:id` also return `schedule` (`{id, name}` or `null`),
@@ -106,7 +106,7 @@ the due time, a run that stopped at 04:00 would say nothing until 05:00 the next
 
 When a scheduled run closes, capture-ledger's worker (every 30 seconds, one at a time) pairs it, page URL by
 page URL, with the previous run of the same schedule whose recipe digest is the same, and compares the text
-(CAPTURE-167). The compared line is the after-behaviors snapshot, or the document line when there is none.
+(CAPTURE-167). The compared line is the after-capture-scripts snapshot, or the document line when there is none.
 Withheld pages are not compared.
 
 1. **Compare (no Claude).** A page whose text digest (`archive_pages.text_sha256`) is the same is not opened.
@@ -157,7 +157,7 @@ The automatic comparison only looks at the previous run of the same schedule and
 it, the captures of one URL can be listed (`GET /api/history`) and any two of them compared on the spot
 (`GET /api/archives/:id/changes?since=`, CAPTURE-462). The compared line and the diff are chosen and built
 exactly as in the automatic comparison. Nothing is stored. Two captures with different recipes, or whose
-compared lines are of different kinds (one the after-behaviors snapshot, the other the document line), are
+compared lines are of different kinds (one the after-capture-scripts snapshot, the other the document line), are
 compared anyway and the answer says so (`recipeDiffers`, `stageDiffers`). The WACZ is not read whole: only
 `pages/pages.jsonl` is read, with Range requests.
 

@@ -1,5 +1,5 @@
 /**
- * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 13 個。
+ * クロールの語を、旧い言い方で書いていないかを見張る。規則は下の RULES の 14 個。
  *
  * ## なぜ要るのか
  *
@@ -9,11 +9,15 @@
  *   「…のクロールを始められます」・docs・コメント・試験の名前で 96 か所）。目的語の無い「起こす」は
  *   「目を覚まさせる」に読める。プロセスの「起こす」（dev:up が起こす・API を起こし直す・webhook で
  *   起こす）は別の意味で、見ない
- * - **ページで走らせる物は「スクリプト」と書く。** 2026-10 に「目録」「台本」から
- *   そろえた（docs・コメント・試験の名前で 194 か所）。「目録」は browserhive と
+ * - **取り込みを頼む側が付けて、BrowserHive が頁の中で走らせる物は capture scripts と書く。** 日本語の文でも英字で、
+ *   1 本は capture script、文と見出しの頭は Capture scripts。2026-11 に（Jira CAPTURE-506）「スクリプト」から替えた
+ *   （docs・コメント・試験の名前・CLI の字）。「スクリプト」だけでは、頁自身の JavaScript と紛れる。BrowserHive が自分で入れる
+ *   乱数を記録するスクリプトと、package.json の script（`pnpm run` の各スクリプト）は capture scripts でないので、その形だけを
+ *   許す（NOT_CAPTURE_SCRIPTS）。その前の 2026-10 に「目録」「台本」から「スクリプト」へそろえた（docs・コメント・試験の名前で 194 か所）。「目録」は browserhive と
  *   wacz-validator では BrowserHive WACZ の中の storage/ の目録を、「台本」は capture-workbench では代役の台本を指す。
  *   capture-ledger はどちらも持たないので、両方とも全部見る（capture-workbench と capture-scheduler も見張っている）。
- *   置き場の呼び名は 2026-11 に「台帳」から「登録済みのスクリプト」へ替えた（下の「台帳」の項）
+ *   置き場の呼び名は 2026-11 に「台帳」から「登録済みのスクリプト」へ替え（下の「台帳」の項）、CAPTURE-506 で「登録済みの
+ *   capture scripts」にした
  * - **network は「通信」と書く。** 2026-11 に「網」から「通信」へそろえた（browserhive の docs・
  *   コメント・試験の名前・契約の説明で 100 か所あまり、この repo では注記 7 か所と browserhive の
  *   契約の写し）。「網」は network を 1 字で写した書き手の癖で、読み手に通じにくい。通信そのもの
@@ -49,6 +53,9 @@
  * - 「種」: 熟語（種類・種別）と、数のあとの「N 種」の外に立つ「種」
  * - 「起こす」: クロールを始める意味の形（OKOSU。capture-workbench・capture-scheduler と同じ並び）
  * - 「目録」「台本」: 全部
+ * - 「スクリプト」: NOT_CAPTURE_SCRIPTS の形を除いて全部。browserhive の契約の写し（src/rpc/generated/）と、走った migration
+ *   （001〜048）の注記と、Claude に渡す決まりの文（PROMPT_FILES）は見ない —— 写しの字は browserhive が決め、走った
+ *   migration の注記は書き換えない（040 の前例）。決まりの文は版と一緒に変える
  * - 「網」: 熟語（安全網・網羅）の外に立つ「網」。browserhive の契約の写し（src/rpc/generated/）も
  *   見る —— 写しに残っていれば、pin の先の browserhive がまだ直っていないということ
  * - 「その場の JS」: 形の並び（OLD_INLINE。capture-workbench・capture-scheduler と同じ並び）
@@ -123,6 +130,22 @@ const OLD_RANDOM =
 const GENERATED = "src/rpc/generated/";
 
 /**
+ * 「スクリプト」のうち、capture scripts でない物（CAPTURE-506）。足すときは、取り込みを頼む側が付けて BrowserHive が頁の中で
+ * 走らせる物でないことを確かめる。
+ */
+const NOT_CAPTURE_SCRIPTS = /乱数を記録するスクリプト|`pnpm run` の各スクリプト/gu;
+/**
+ * Claude に渡す決まりの文。版（`FIX_PROMPT_VERSION`・`PAIR_PROMPT_VERSION`）と結んであり、字を変えると版を上げて
+ * 答えを測り直す要がある（`fix:eval`・`change:eval`）。CAPTURE-506 では変えなかったので、「スクリプト」の規則は見ない。
+ */
+const PROMPT_FILES: ReadonlySet<string> = new Set([
+  "src/changes/summarize.ts",
+  "src/scripts/fix.ts",
+]);
+/** 走った migration（049 より前）。注記は書き換えない。 */
+const RAN_MIGRATION = /^src\/db\/migrations\/0(?:[0-3]\d|4[0-8])-/u;
+
+/**
  * その場で書く物の古い呼び名（2026-11 まで）。JS になるのは変換の後なので、走った JS・変換後の JS は当てない。
  * 足すときは、それらと `jsSha256` に当たらないことを確かめる。
  */
@@ -158,8 +181,19 @@ const RULES: Rule[] = [
   {
     find: (line) => line.includes("目録") || line.includes("台本"),
     say:
-      "「目録」か「台本」が残っています。ページで走らせる物は「スクリプト」、置き場は「登録済みのスクリプト」（登録されていない）、" +
-      "対象サイトのある物は「サイト用のスクリプト」と書きます。",
+      "「目録」か「台本」が残っています。ページで走らせる物は capture scripts、置き場は「登録済みの capture scripts」（登録されていない）、" +
+      "対象サイトのある物は「サイト用の capture scripts」と書きます。",
+  },
+  {
+    find: (line, file) =>
+      !file.startsWith(GENERATED) &&
+      !RAN_MIGRATION.test(file) &&
+      !PROMPT_FILES.has(file) &&
+      line.replace(NOT_CAPTURE_SCRIPTS, "").includes("スクリプト"),
+    say:
+      "「スクリプト」が残っています。取り込みを頼む側が付けて BrowserHive が頁の中で走らせる物は、日本語の文でも " +
+      "capture scripts（1 本は capture script、文と見出しの頭は Capture scripts）と書きます（CAPTURE-506）。" +
+      "頁自身の JavaScript は「頁の JS」と書きます。",
   },
   {
     find: (line) => line.replace(AMI_ALLOWED, "").includes("網"),
@@ -176,7 +210,7 @@ const RULES: Rule[] = [
   {
     find: (line) => line.includes("札"),
     say:
-      "「札」が残っています。スクリプトの `sites` は「対象サイト」、`labels` は「ラベル」、" +
+      "「札」が残っています。capture scripts の `sites` は「対象サイト」、`labels` は「ラベル」、" +
       "`correlationId` は「相関キー」と書きます。",
   },
   {
@@ -201,13 +235,13 @@ const RULES: Rule[] = [
     find: (line) => line.includes("注入口") || line.replace(NOT_KUCHI, "").includes("口"),
     say:
       "「口」が残っています。HTTP の method と path の組は「エンドポイント」、待ち受けの番号は「ポート」、" +
-      "スクリプトを差し込む時（behavior・preload）は「phase」、成果物を PUT する先は「受け取り先」と書きます" +
+      "capture scripts を差し込む時（behavior・preload）は「phase」、成果物を PUT する先は「受け取り先」と書きます" +
       "（切り口・入口・出口・口座はそのまま）。",
   },
   {
     find: (line) => line.includes("台帳"),
     say:
-      "「台帳」が残っています。システムは capture-ledger、置き場は「登録済みのスクリプト」（登録する・登録されていない）、" +
+      "「台帳」が残っています。システムは capture-ledger、置き場は「登録済みの capture scripts」（登録する・登録されていない）、" +
       "DB に入ったことは「capture-ledger に載る」と書きます（CAPTURE-186）。",
   },
   {

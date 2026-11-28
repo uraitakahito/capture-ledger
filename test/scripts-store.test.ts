@@ -18,12 +18,12 @@ import {
 import { recordingDb } from "./recording-db.js";
 
 /**
- * スクリプトを読む芯 (`src/scripts/store.ts`) が、**実際に組む SQL** を見る。
+ * Capture scripts を読む芯 (`src/scripts/store.ts`) が、**実際に組む SQL** を見る。
  *
  * 代役は Kysely 本体に SQL を組ませて記録する (`recording-db.ts`)。版の絞り込みを書き忘れれば、
  * SQL の文字列にそれが出る。Postgres で本当に通るかは、CI の `src/tools/scripts-smoke.ts` が見る。
  */
-describe("スクリプトの 1 版を読む", () => {
+describe("Capture script の 1 版を読む", () => {
   it("id と版で絞り、source と渡す値まで 1 行だけ引く", async () => {
     const row = { id: "autoscroll", version: 1, source: "// a\n" };
     const { db, queries } = recordingDb([[row]]);
@@ -58,7 +58,7 @@ describe("スクリプトの 1 版を読む", () => {
   });
 });
 
-describe("スクリプトを並べる", () => {
+describe("Capture scripts を並べる", () => {
   it("id を渡せば、その id だけに絞る（版を全部なら distinct on を付けない）", async () => {
     const { db, queries } = recordingDb([[]]);
 
@@ -172,7 +172,7 @@ describe("起点で選べるか", () => {
     expect(onSeed(["www.google.com"], [])).toBe(false);
   });
 
-  it("名指しで入れたサイト用のスクリプトのうち、起点に合わない物を対象サイトつきで返す（その場の TS は対象サイトを持たない）", () => {
+  it("名指しで入れたサイト用の capture scripts のうち、起点に合わない物を対象サイトつきで返す（その場の TS は対象サイトを持たない）", () => {
     const script = {
       version: 1,
       phase: "behavior" as const,
@@ -350,7 +350,7 @@ describe("新しい版は順を受け継ぐ", () => {
   });
 });
 
-describe("選べるスクリプト（GET /api/capture-scripts）", () => {
+describe("選べる capture scripts（GET /api/capture-scripts）", () => {
   it("各 id に 1 行。有効な版があればその最新、無ければ最新版（既定に入らない物も載せる）", async () => {
     const { db, queries } = recordingDb([[]]);
 
@@ -375,7 +375,7 @@ describe("選べるスクリプト（GET /api/capture-scripts）", () => {
 });
 
 describe("有効な各 id の最新版（既定が空のときの 400 が使う）", () => {
-  it("対象サイトつきで、サイト用のスクリプトも入れる（source は引かない）", async () => {
+  it("対象サイトつきで、サイト用の capture scripts も入れる（source は引かない）", async () => {
     const { db, queries } = recordingDb([[]]);
 
     await enabledLatest(db);
@@ -516,7 +516,7 @@ describe("宣言を足す（対象サイトと同じ扱い）", () => {
 
   it("jsonb の中の鍵は camelCase に写さない（宣言の名前 api_token はそのまま読める）", async () => {
     // 本物と同じ plugin (`columnNamePlugin`)。既定の CamelCasePlugin は入れ子の鍵まで直すので、
-    // api_token が apiToken に化けて、スクリプトが読む名前と食い違う
+    // api_token が apiToken に化けて、capture scripts が読む名前と食い違う
     const row = {
       id: "members-only",
       version: 1,

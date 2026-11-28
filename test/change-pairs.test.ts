@@ -135,12 +135,12 @@ describe("WACZ の行から、比べる行の文字を取る", () => {
     {
       url: "urn:browserhive:snapshot:after-capture-scripts:https://a.test/",
       stage: "after-capture-scripts",
-      text: "スクリプトの後",
+      text: "capture scripts の後",
     },
   ];
 
   it("時点を言えば、その時点の写しの文字", () => {
-    expect(comparedTextOf(lines, "after-capture-scripts")).toBe("スクリプトの後");
+    expect(comparedTextOf(lines, "after-capture-scripts")).toBe("capture scripts の後");
   });
 
   it("時点が null なら、文書の行（stage の無い行）の文字", () => {

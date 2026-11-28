@@ -1,7 +1,7 @@
 /**
  * 撮り方の digest (`crawls.recipe_sha256`。CAPTURE-167)。前回からの変化は、同じ予定・同じ撮り方の回どうしだけを比べる。
  *
- * **ページの中身を変えうる物だけを入れる。** スクリプト (id・版・phase・sha256・options)、変数の値、User-Agent、宣言した
+ * **ページの中身を変えうる物だけを入れる。** Capture scripts (id・版・phase・sha256・options)、変数の値、User-Agent、宣言した
  * シークレットの名前 (値は capture-ledger を通らない。文字の中では BrowserHive が `***` に置き換える)。起点・規則・
  * `maxDepth`・`maxPages`・間隔・並列の数は入れない —— 組はページの URL で作るので、撮るページの数や礼儀が変わっても
  * 同じページは比べられる。BrowserHive の版も入れない (上げた翌朝の回が「初回」になってしまう。版は `archives` に
@@ -27,7 +27,7 @@ export interface RecipeParts {
   secretNames: readonly string[];
 }
 
-/** 鍵を並べ替えた JSON。配列の並びは保つ (スクリプトの並びは実行順なので意味がある)。 */
+/** 鍵を並べ替えた JSON。配列の並びは保つ (capture scripts の並びは実行順なので意味がある)。 */
 export const canonicalJson = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value !== null && typeof value === "object") {

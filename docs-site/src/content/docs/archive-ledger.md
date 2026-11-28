@@ -158,22 +158,22 @@ curl -X POST http://localhost:7070/api/archives/<id>/changes/summary \
 The shape of every request is a JSON Schema on the route, so the checking is
 the contract rather than a description of it:
 
-|                                                            |                           |                                                                                                     |
-| ---------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------- |
-| `POST /api/archives/:id/url`                               | `id`                      | a UUID — anything else is **400**, before authorization runs                                        |
-| `GET /api/archives`                                        | `before`                  | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
-| `GET /api/archives/:id/screenshots/:stage`                 | `id`, `stage`             | a UUID, and `after-load` or `after-behaviors` — anything else is **400**, before authorization runs |
-| `GET /api/history`                                         | `url`                     | at least one character; **400** when it does not read as an http(s) URL                             |
-|                                                            | `before`                  | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
-| `GET /api/archives/:id/changes`                            | `id`, `since`             | both UUIDs, `since` required — anything else is **400**, before authorization runs                  |
-| `POST /api/archives/:id/changes/summary`                   | `id`, `since` in the body | the same                                                                                            |
-| `GET /api/crawls`                                          | `state`                   | `running` / `succeeded` / `failed` — anything else is **400**                                       |
-|                                                            | `before`                  | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                  |
-| `GET /api/crawls/:id/pages`                                | `after`                   | the previous answer's `next`: digits only, at most 18 — anything else is **400**                    |
-|                                                            | `limit`                   | 1 to 500, default 100 — anything else is **400**                                                    |
-| `GET /api/crawls/:id/pages/:page/log`                      | `page`                    | a page id: digits only, at most 18 — anything else is **400**, before authorization runs            |
-| `GET /api/crawls/:id/pages/:page/trace`                    | `page`                    | the same                                                                                            |
-| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`                    | the same                                                                                            |
+|                                                            |                           |                                                                                                           |
+| ---------------------------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `POST /api/archives/:id/url`                               | `id`                      | a UUID — anything else is **400**, before authorization runs                                              |
+| `GET /api/archives`                                        | `before`                  | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                        |
+| `GET /api/archives/:id/screenshots/:stage`                 | `id`, `stage`             | a UUID, and `after-load` or `after-capture-scripts` — anything else is **400**, before authorization runs |
+| `GET /api/history`                                         | `url`                     | at least one character; **400** when it does not read as an http(s) URL                                   |
+|                                                            | `before`                  | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                        |
+| `GET /api/archives/:id/changes`                            | `id`, `since`             | both UUIDs, `since` required — anything else is **400**, before authorization runs                        |
+| `POST /api/archives/:id/changes/summary`                   | `id`, `since` in the body | the same                                                                                                  |
+| `GET /api/crawls`                                          | `state`                   | `running` / `succeeded` / `failed` — anything else is **400**                                             |
+|                                                            | `before`                  | an ISO 8601 timestamp — anything else is **400**. Omit it to start from the newest                        |
+| `GET /api/crawls/:id/pages`                                | `after`                   | the previous answer's `next`: digits only, at most 18 — anything else is **400**                          |
+|                                                            | `limit`                   | 1 to 500, default 100 — anything else is **400**                                                          |
+| `GET /api/crawls/:id/pages/:page/log`                      | `page`                    | a page id: digits only, at most 18 — anything else is **400**, before authorization runs                  |
+| `GET /api/crawls/:id/pages/:page/trace`                    | `page`                    | the same                                                                                                  |
+| `GET /api/crawls/:id/pages/:page/trace/failure-screenshot` | `page`                    | the same                                                                                                  |
 
 `before` is a cursor: pass the `capturedAt` (or, for crawls, the `startedAt`) of the
 last row you were given. `GET /api/history` is the exception: pass the answer's `next`.
@@ -258,7 +258,8 @@ strongly consistent check.
 
 This endpoint returns one stage screenshot of an archive: a picture of the capture page's viewport, in WebP (CAPTURE-8).
 The picture is a WARC `resource` record inside the BrowserHive WACZ, written from BrowserHive v30.2.0 by a deployment
-set to take them. The stages are `after-load` and `after-behaviors`.
+set to take them. The stages are `after-load` and `after-capture-scripts`. A WACZ from before BrowserHive WACZ Profile 1.30.0
+names the second one `after-behaviors`; capture-ledger reads it as `after-capture-scripts`, so every answer uses the new name.
 
 ```sh
 curl -o after-load.webp http://localhost:7070/api/archives/<id>/screenshots/after-load
@@ -333,7 +334,7 @@ slash on the path and the order of the query are left as they are. `url` in the 
       },
       "recipeSha256": "<64 hex>", // null when unknown
       "browserhiveVersion": "32.0.0", // null when unknown
-      "text": { "stage": "after-behaviors", "sha256": "<64 hex>", "chars": 6543 },
+      "text": { "stage": "after-capture-scripts", "sha256": "<64 hex>", "chars": 6543 },
       "notComparable": null,
     },
   ],
@@ -346,7 +347,7 @@ slash on the path and the order of the query are left as they are. `url` in the 
   (it is a timestamp even when no row of this page was viewable).
 - `origin.kind` is `schedule` for a scheduled run, `manual` for a crawl started by hand, and `unknown` when the
   capture belongs to no crawl.
-- `text` is the compared line, chosen as the automatic comparison chooses it: the after-behaviors snapshot, or
+- `text` is the compared line, chosen as the automatic comparison chooses it: the after-capture-scripts snapshot, or
   the document line when there is none (`stage` is `null`). Whether a capture differs from the one before it
   shows in the `text.sha256` of neighbouring rows. capture-ledger does not count that itself, so that it never
   tells whether a capture the caller may not view has the same text.
@@ -385,7 +386,7 @@ The lookup uses the index on `archives.source_url_hash`, the generated column of
     "sourceUrl": "…",
     "capturedAt": "…",
     "browserhiveVersion": "28.0.1",
-    "stage": "after-behaviors",
+    "stage": "after-capture-scripts",
   },
   "after": {
     "archiveId": "<uuid>",
@@ -393,7 +394,7 @@ The lookup uses the index on `archives.source_url_hash`, the generated column of
     "sourceUrl": "…",
     "capturedAt": "…",
     "browserhiveVersion": "32.0.0",
-    "stage": "after-behaviors",
+    "stage": "after-capture-scripts",
   },
   "summary": null, // when there is one: { "evidence": false, "model": "…", "promptVersion": "change-pair-v1", "usd": 0.0123 }
   "significance": null,
@@ -421,7 +422,7 @@ two lines of context.
 
 - `recipeDiffers` is `true` when the recipe digests of the two crawls (`crawls.recipe_sha256`) differ. The
   automatic comparison only pairs runs with the same recipe; this one compares the two anyway and says so.
-- `stageDiffers` is `true` when the kinds of the compared lines differ (one is the after-behaviors snapshot,
+- `stageDiffers` is `true` when the kinds of the compared lines differ (one is the after-capture-scripts snapshot,
   the other the document line). `before.stage` and `after.stage` name each compared line (`null` for the
   document line).
 - `summary`, `significance`, `headline` and `quotes` are filled only when a summary of the same diff is in the
@@ -460,7 +461,7 @@ tells it not to decide whether a difference comes from the site or from the reci
   version exists, it is returned without calling Claude (`reused: true`). A summary left by the automatic
   comparison matches too, when the diff is the same.
 - The cost is counted against the organization of the crawl that made the "now" capture. The monthly limit
-  (`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`) is shared with the automatic summaries and with the script fixer.
+  (`CAPTURE_LEDGER_CLAUDE_BUDGET_USD`) is shared with the automatic summaries and with the capture script fixer.
 - The stored row has `archive_id` set to the "now" capture, `target` set to `{ archiveId, prevArchiveId }`,
   and `created_by` set to the caller.
 - When Claude does not answer or refuses, nothing is retried automatically (ask again). An attempt that was
@@ -642,7 +643,7 @@ own, so a page is never left closed without the row that `reconcile` reads.
 `seeds`, a non-empty array, is required: without it the answer is **400**. Alongside it:
 `rules`, `maxDepth`, `maxPages`, `perHostDelayMs`,
 `hostParallelism`, `scripts` (what runs in the page), `variables` (per-crawl values the
-scripts declared — see [Capture options](/capture-ledger/capture-options/#per-crawl-values)) and
+capture scripts declared — see [Capture options](/capture-ledger/capture-options/#per-crawl-values)) and
 `userAgent` and `recordRandom` (see the same page).
 An unknown key is **400**, not silently dropped.
 
@@ -1040,7 +1041,7 @@ page that was not exempted has `null`. A page that matched a row with nothing le
 and `reason` `robots-exemption-limit`, and no number.
 
 **capture-ledger does not keep the lines.** They are the capture's log — what the page's
-scripts wrote (`__bh.log`, `__bh.report`, the exceptions they threw), the captured page's own
+capture scripts wrote (`__bh.log`, `__bh.report`, the exceptions they threw), the captured page's own
 console, and BrowserHive's own events — which BrowserHive (from v24.0.0) puts in its answer and in
 the `.result.json` next to the artifacts, with secret values replaced by `***` whatever their
 length. The log route reads that file from the store each time and returns `log` exactly as
@@ -1068,7 +1069,7 @@ carries the page's `page` id, so a failure leads straight to its lines.
 Two holes remain. A `timeout`, `connection` or `internal` failure is captured once more and only
 the second attempt's `taskId` is recorded, so the first attempt's log is in the store but cannot be
 reached from here. And the gate is `maySubmit`, which does not look at organizations: whoever may
-start crawls can read every crawl's lines — what the scripts reported and what the captured pages
+start crawls can read every crawl's lines — what the capture scripts reported and what the captured pages
 printed — just as with `GET /api/crawls/:id`.
 
 ### One capture's trace
@@ -1084,7 +1085,7 @@ curl http://localhost:7070/api/crawls/9072b625-…/pages/1234/trace
 #                  "httpStatusCode": 200, "settle": { "endedBy": "deadline", "waitedMs": 3105, … }, "waczStats": { … },
 #                  "screenshots": [ { "stage": "after-load", "url": "urn:browserhive:screenshot:after-load:https://…/",
 #                                     "date": "2026-11-04T05:12:09.120Z", "record": "urn:uuid:5b0c…", "bytes": 48213 },
-#                                   { "stage": "after-behaviors", "skipped": "task-budget" } ],
+#                                   { "stage": "after-capture-scripts", "skipped": "task-budget" } ],
 #                  "failureScreenshot": false },
 #     "log": { …the same object the log route returns… },
 #     "trace": { "lines": [ { "kind": "request", "id": "3246.2", "hop": 0, "url": "https://…/app.js", "ms": 670,
@@ -1167,7 +1168,7 @@ The answer is JSON and the picture is base64, because capture-workbench's `/api/
 
 **Only a capture that failed while it was working on the page has one.** The picture is put when the document came
 back 4xx or 5xx, and when the capture failed after the document had arrived (a per-operation timeout, a failing
-script), provided the capture's overall budget had time left. **A capture whose load timed out before the document
+capture script), provided the capture's overall budget had time left. **A capture whose load timed out before the document
 reached the page has none** (there is no saying which document the picture would be of). Neither has a capture that ran
 out of its overall budget, was cancelled by its caller, lost its renderer or failed on a policy, nor one that keeps
 no pictures (the conditions above). Ask this route only when the trace answer's `capture.failureScreenshot` is
@@ -1384,8 +1385,9 @@ what the archive signed for.
 store**. The first is a fault worth investigating; the second is normal.
 
 BrowserHive writes one line of the page list for each point at which it
-snapshotted the page (`after-load` once the page has loaded, `after-behaviors`
-after the scripts). The line's `url` is the snapshot's urn, shaped like
+snapshotted the page (`after-load` once the page has loaded, `after-capture-scripts`
+after the capture scripts; a WACZ from before BrowserHive WACZ Profile 1.30.0 writes `after-behaviors`, which
+capture-ledger indexes as `after-capture-scripts`). The line's `url` is the snapshot's urn, shaped like
 `urn:browserhive:snapshot:after-load:https://…` with the document's URL at the
 end. capture-ledger indexes each line as its own hit and puts the point in
 `stage`. When both the before-search and after-search points of one archive
@@ -1394,7 +1396,7 @@ answer.
 
 From WACZ Profile 1.18.0 the first line is always the captured document's: it
 has no `stage`, its `url` is the requested URL, and its title and text were read
-after the scripts — close to the `after-behaviors` line again. Indexing both
+after the capture scripts — close to the `after-capture-scripts` line again. Indexing both
 would make one archive answer twice for the same words, so capture-ledger leaves
 the document's line out when the archive has snapshot lines. A capture with no
 snapshot at all (a withheld document, say) has only the document's line; that
@@ -1520,7 +1522,7 @@ A WACZ that recorded nothing — an empty index, or `waczStats.totalRecorded` of
 answer, a 416. `resources` starts with the seeds' WACZs, then goes by depth and capture time — a
 fixed order, not a hint: the three WACZs replay tries for something a page does not hold are picked
 by name, not by this order. `initialPages`, the list replay shows first, holds 25 lines of
-`pages.json` — document lines and the DOM snapshot lines (after-load and after-behaviors) alike: the
+`pages.json` — document lines and the DOM snapshot lines (after-load and after-capture-scripts) alike: the
 first 25 in the order replayweb-player's `/q/` answers without a query (depth, then time, then `id`). Seeds come
 first, and replay reads the second page of the list from `/q/`'s 26th line, so the two meet with no
 gap. A snapshot line's `isSeed` is its document line's (true at depth 0): when seeds and non-seeds

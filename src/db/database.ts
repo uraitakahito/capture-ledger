@@ -223,14 +223,14 @@ export interface CrawlsTable {
   runRequestedByName: ColumnType<string | null, string | null | undefined, never>;
   /**
    * このクロールがページの中で走らせるもの。**解決済み・並びが実行順**で、
-   * 登録済みのスクリプト (`scripts`) を引き直すことはしない —— 途中で版が足されても、同じクロールの
+   * 登録済みの capture scripts (`capture_scripts`) を引き直すことはしない —— 途中で版が足されても、同じクロールの
    * 前半と後半で違うコードが走ることは無い (`018` を見ること)。
    *
    * 書くときは JSON の文字列 (`fgaOutbox.payload` と同じ扱い)。
    */
   captureScripts: ColumnType<CrawlScript[], string | undefined, string>;
   /**
-   * 頼みで渡された変数 (名前 → 文字列。`024`)。スクリプトの宣言 (`params`) に照らして受け、行に固定する。
+   * 頼みで渡された変数 (名前 → 文字列。`024`)。Capture scripts の宣言 (`params`) に照らして受け、行に固定する。
    * 段ごとに flow へ運ばれ、BrowserHive が `datapackage.json` の `browserhive:capture.settings.variables` に**値を書く**。
    *
    * 書くときは JSON の文字列 (`scripts` と同じ扱い)。後から書き換えない。
@@ -406,7 +406,7 @@ export interface CrawlScript {
   sha256: string;
   options: Record<string, unknown>;
   /**
-   * 対象サイト（どのサイト用か。`021`）。登録済みのスクリプトだけが持つ写しで、その場の TS には無い。古いクロールの行にも
+   * 対象サイト（どのサイト用か。`021`）。登録済みの capture scripts だけが持つ写しで、その場の TS には無い。古いクロールの行にも
    * 無い（無ければ空と読む）。flow へは渡さない（`toDispatched`）—— 選ぶための物で、走らせる側には要らない。
    */
   sites?: string[];
@@ -441,9 +441,9 @@ export interface ParamSchema {
 }
 
 /**
- * スクリプトが読む、クロールごとの値の宣言 1 つ (`024`)。capture-scripts の catalog.json の `params` と同じ形。
+ * Capture scripts が読む、クロールごとの値の宣言 1 つ (`024`)。capture-scripts の catalog.json の `params` と同じ形。
  * `name` は `^[a-z][a-z0-9_]*$` で 64 字まで (`scripts/store.ts` の `VALUE_NAME`)。**既定値は持たない** ——
- * 既定値はソースの中にだけ在り、省かれた値をスクリプトは `undefined` と読む。
+ * 既定値はソースの中にだけ在り、省かれた値を capture scripts は `undefined` と読む。
  */
 export interface ScriptParam {
   name: string;
@@ -456,7 +456,7 @@ export interface ScriptParam {
   schema?: ParamSchema;
   /**
    * 値を BrowserHive WARC に残すか。`secret` だけが持ち、書けるのは `"keep"` だけ (capture-scripts の `/6`)。**省けば隠す**:
-   * BrowserHive (v29.0.0 から) が、スクリプトが通信に載せた値もサイトが返した値も `***` に置き換える。`keep` なら
+   * BrowserHive (v29.0.0 から) が、capture scripts が通信に載せた値もサイトが返した値も `***` に置き換える。`keep` なら
    * 通信の記録に値のまま残る。capture-ledger は行に写し (`CrawlSecret.archive`)、段ごとに BrowserHive の `secretArchive` へ運ぶ。
    */
   archive?: "keep";
@@ -489,7 +489,7 @@ export interface CrawlSecret {
 export type ScriptPhase = "preload" | "behavior";
 
 /**
- * ページの中で走らせるスクリプト。`017` を見ること。
+ * ページの中で走らせる capture scripts。`017` を見ること。
  *
  * BrowserHive は顔ぶれを持たないので、**ここが「何を走らせるか」の唯一の出どころ**。
  */

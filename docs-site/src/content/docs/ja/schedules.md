@@ -34,10 +34,10 @@ description: 予定の表と、capture-ledger の中で 30 秒ごとに回る時
 ## 撮り方の固定
 
 予定を作ったときに、`POST /api/crawls` と同じ確かめを通して解決した撮り方を `recipe` に残します。
-スクリプトの本文の写しまで入るので、新しい版が出ても回の中身は変わりません。答えの `outdated` が
+Capture scripts の本文の写しまで入るので、新しい版が出ても回の中身は変わりません。答えの `outdated` が
 `true` になり、人が `repin` で固定し直します。シークレットだけは宣言を持ち、回ごとに Windmill へ訊き直します。
 
-回の行には撮り方の digest（`crawls.recipe_sha256`・`035`）も入ります。中身はスクリプトの id・版・phase・sha256・
+回の行には撮り方の digest（`crawls.recipe_sha256`・`035`）も入ります。中身は capture scripts の id・版・phase・sha256・
 options、変数の値、User-Agent、宣言したシークレットの名前で、ページの中身を変えうる物だけです。起点・規則・
 `maxDepth`・`maxPages`・間隔は入れません。前回からの変化は、同じ予定でこれが同じ回どうしだけを比べます
 （変数を替えて固定し直した回は、前の回と比べません）。`035` より前の行は `pnpm run changes:backfill` が埋めます
@@ -56,7 +56,7 @@ options、変数の値、User-Agent、宣言したシークレットの名前で
 | `POST /api/schedules/:id/pause`  | 止めます。待っている「いま撮る」の頼みも消します。走っている回はそのままです                                                                                                           |
 | `POST /api/schedules/:id/resume` | 再開します。次の期限は今から計算し直し、止めていた間は欠けに数えません。止めていない予定には何もしません                                                                               |
 | `POST /api/schedules/:id/run`    | いま撮ります。202 を返し、周回が始めます。止めた予定でも撮れます                                                                                                                       |
-| `POST /api/schedules/:id/repin`  | 頼みをいまの capture-ledger で解決し直します。スクリプトが消えていれば同じ理由で断ります                                                                                               |
+| `POST /api/schedules/:id/repin`  | 頼みをいまの capture-ledger で解決し直します。Capture scripts が消えていれば同じ理由で断ります                                                                                         |
 | `POST /api/schedules/:id/delete` | 消します。行は残ります（クロールの行に名前を出すためです）                                                                                                                             |
 
 `GET /api/crawls` と `GET /api/crawls/:id` は、`schedule`（`{id, name}` か `null`）・`scheduledFor`・
@@ -97,7 +97,7 @@ OpenFGA に訊けなかった時は、回を止めずに `none` で始めます�
 ## 前回からの変化
 
 予定の回が締まると、capture-ledger の周回（30 秒ごと・1 本ずつ）が、同じ予定で撮り方の digest が同じ 1 つ前の回と、
-ページの URL で組にして文字を比べます（CAPTURE-167）。比べる行は after-behaviors の写し、無ければ文書の行です。
+ページの URL で組にして文字を比べます（CAPTURE-167）。比べる行は after-capture-scripts の写し、無ければ文書の行です。
 伏せたページは比べません。
 
 1. **比べる（Claude なし）。** 文字の digest（`archive_pages.text_sha256`）が同じページは WACZ を開きません。
@@ -140,7 +140,7 @@ capture-ledger は、その文を頼みの言語で返します（`Accept-Langua
 自動の比べは、同じ予定・同じ撮り方の 1 つ前の回だけを相手にします。それとは別に、同じ URL の取り込みを一覧し
 （`GET /api/history`）、そのうちの好きな 2 本をその場で比べられます（`GET /api/archives/:id/changes?since=`・
 CAPTURE-462）。比べる行の選び方と差分の作り方は、自動の比べと同じ物です。結果は保存しません。撮り方が違う 2 本や、
-比べた行の種類が違う 2 本（片方が after-behaviors の写し、片方が文書の行）も比べ、答えに印を付けます
+比べた行の種類が違う 2 本（片方が after-capture-scripts の写し、片方が文書の行）も比べ、答えに印を付けます
 （`recipeDiffers`・`stageDiffers`）。WACZ は丸ごと読まず、`pages/pages.jsonl` だけを Range で読みます。
 
 要約は、**人が頼んだ時だけ**作ります（`POST /api/archives/:id/changes/summary`）。差分を読んだだけでは Claude を

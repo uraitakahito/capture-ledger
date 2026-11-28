@@ -1,5 +1,5 @@
 /**
- * ページの中で走らせるスクリプト (`scripts`) を足す・見る・切り替える・消す。
+ * ページの中で走らせる capture scripts (`capture_scripts`) を足す・見る・切り替える・消す。
  * `pnpm run capture-scripts` の芯で、クロールを始めるときの解決もここが持つ。
  *
  * **開発用の道具の中身で、認可は通らない。** DB に直接書く。
@@ -18,21 +18,21 @@
  *
  * ## その場の TS は登録しない
  *
- * `scripts` の要素には、登録済みのスクリプトの名指しのほかに、その場で書いた TS（`inline`）を置ける。
+ * `scripts` の要素には、登録済みの capture script の名指しのほかに、その場で書いた TS（`inline`）を置ける。
  * capture-ledger はそれを登録せず、クロールの行の写しにだけ固定する（`inlineScript`）。id は
- * `inline-<name>` で、登録済みのスクリプトの id には `inline-` を使わせない（`019` の CHECK と CLI）——
- * アーカイブの id だけで、登録済みのスクリプトか、その場の物かが分かるようにするため。
+ * `inline-<name>` で、登録済みの capture script の id には `inline-` を使わせない（`019` の CHECK と CLI）——
+ * アーカイブの id だけで、登録済みの capture script か、その場の物かが分かるようにするため。
  *
  * ## 対象サイト（`sites`）は起点で効く
  *
- * 対象サイトのあるスクリプトは、クロールの起点のどれかがそのサイトにあるときだけ走る（`021`）。`scripts` を省いた
+ * 対象サイトのある capture script は、クロールの起点のどれかがそのサイトにあるときだけ走る（`021`）。`scripts` を省いた
  * 頼みでは、有効な各 id の最新版を選んでから、対象サイトの無い物と起点に合う物を残す（`resolveScripts`）。
  * 名指しで起点に合わない物を入れるのは、頼む側が断る（`offsiteScripts`）。**最新版を選ぶのが先** ——
  * 対象サイトで絞ってから版を選ぶと、対象サイトの無い古い版が既定に出てくる（開発の Postgres で確かめた）。
  *
  * ## 受け皿の型も置く
  *
- * `host_types` (`020`) は、スクリプトの source を読む人に見せる受け皿 `__bh` の型の写し。足し方はスクリプトと
+ * `host_types` (`020`) は、capture scripts の source を読む人に見せる受け皿 `__bh` の型の写し。足し方は capture scripts と
  * 同じで、中身が同じなら版を増やさない。走る JS の型を決めるのは ts-compile-service の pin で、ここではない。
  */
 import { createHash } from "node:crypto";
@@ -65,7 +65,7 @@ export interface ScriptRow {
   createdAt: Date;
 }
 
-/** スクリプトの 1 版を丸ごと (`readScript`)。一覧の行に、source と渡す値を足した物。 */
+/** Capture script の 1 版を丸ごと (`readScript`)。一覧の行に、source と渡す値を足した物。 */
 export interface ScriptVersion extends ScriptRow {
   source: string;
   options: Record<string, unknown>;
@@ -277,11 +277,11 @@ export const readParams = (
   return out;
 };
 
-/** その対象サイトのスクリプトを、この起点で走らせてよいか。対象サイトが無ければどこでも。起点はホスト名 (ポートは見ない) */
+/** その対象サイトの capture scripts を、この起点で走らせてよいか。対象サイトが無ければどこでも。起点はホスト名 (ポートは見ない) */
 export const onSeed = (sites: readonly string[], seedHosts: readonly string[]): boolean =>
   sites.length === 0 || sites.some((site) => seedHosts.includes(site));
 
-/** 起点のどれもそのサイトに無い、サイト用のスクリプト (名指しで入れたもの)。その場の TS は対象サイトを持たない */
+/** 起点のどれもそのサイトに無い、サイト用の capture scripts (名指しで入れたもの)。その場の TS は対象サイトを持たない */
 export const offsiteScripts = (
   scripts: readonly CrawlScript[],
   seedHosts: readonly string[],
@@ -290,12 +290,12 @@ export const offsiteScripts = (
     onSeed(script.sites ?? [], seedHosts) ? [] : [{ id: script.id, sites: script.sites ?? [] }],
   );
 
-/** その場の TS の id の頭。capture-ledger が付け、登録済みのスクリプトの id には使わせない。 */
+/** その場の TS の id の頭。capture-ledger が付け、登録済みの capture script の id には使わせない。 */
 export const INLINE_PREFIX = "inline-";
 
 export const isInlineId = (id: string): boolean => id.startsWith(INLINE_PREFIX);
 
-/** 登録済みのスクリプトの id として断るなら、その文。DB の CHECK (`019`) より先に、読める文で言う。 */
+/** 登録済みの capture script の id として断るなら、その文。DB の CHECK (`019`) より先に、読める文で言う。 */
 export const catalogIdRefusal = (id: string): string | undefined =>
   isInlineId(id) ? `${id}: ${INLINE_PREFIX} で始まる id は、その場の TS に取ってある` : undefined;
 
@@ -308,7 +308,7 @@ export interface InlineScript {
   params?: ScriptParam[];
 }
 
-/** 要求の 1 要素。登録済みのスクリプトの名指しか、その場の TS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
+/** 要求の 1 要素。登録済みの capture script の名指しか、その場の TS か —— 鍵はどちらか 1 つだけ (schema が見る)。 */
 export type RequestedScript = { catalog: string } | { inline: InlineScript };
 
 /** 登録されていない id と、同じ id の重ねが在れば、名指しで返す。**黙って落とさない。** */
@@ -418,7 +418,7 @@ export const addScript = async (
 };
 
 /**
- * スクリプトを読む。既定では**各 id の最新版だけ**を返す —— 一覧で知りたいのは
+ * Capture scripts を読む。既定では**各 id の最新版だけ**を返す —— 一覧で知りたいのは
  * 「いま何が走るか」で、版の history はそれを聞いてから読むもの。
  */
 export const listScripts = async (
@@ -434,7 +434,7 @@ export const listScripts = async (
     "params",
     "enabled",
     // **`length` ではなく `octet_length`。** `length` は文字数を数えるので、
-    // 日本語のコメントを持つスクリプトでは「B」と書いた列が実際のバイト数より
+    // 日本語のコメントを持つ capture scripts では「B」と書いた列が実際のバイト数より
     // 小さく出る (autofetch は 3949 B なのに 3093 と出ていた)。
     sql<number>`octet_length(source)`.as("bytes"),
     "createdAt",
@@ -448,7 +448,7 @@ export const listScripts = async (
 };
 
 /**
- * スクリプトの 1 版を丸ごと (source を含む)。**有効かどうかは見ない** —— 無効な版も、過去のクロールが
+ * Capture script の 1 版を丸ごと (source を含む)。**有効かどうかは見ない** —— 無効な版も、過去のクロールが
  * 走らせた物。`GET /api/capture-scripts/:id/versions/:version` と `show --version` の芯。
  */
 export const readScript = async (
@@ -599,8 +599,8 @@ export const removeScripts = async (
 };
 
 /**
- * 有効な各 id の最新版を、対象サイトつきで。**サイト用のスクリプトも入れる**。既定で走るのは、この中の対象サイトの無い物と
- * 起点に合う物。`POST /api/crawls` が、既定が空のときに「スクリプトはあるが起点に合わない」を言うのに使う。
+ * 有効な各 id の最新版を、対象サイトつきで。**サイト用の capture scripts も入れる**。既定で走るのは、この中の対象サイトの無い物と
+ * 起点に合う物。`POST /api/crawls` が、既定が空のときに「capture scripts はあるが起点に合わない」を言うのに使う。
  */
 export const enabledLatest = async (
   db: Kysely<Database>,
@@ -617,8 +617,8 @@ export const enabledLatest = async (
     .execute();
 
 /**
- * 選べるスクリプト (`GET /api/capture-scripts`)。各 id に 1 行で、**既定で走る版があればそれ** (有効な版の中の最新)、
- * 無ければ最新版を `enabled: false` で返す。既定に入らないスクリプト (カタログの `default: false`) も、
+ * 選べる capture scripts (`GET /api/capture-scripts`)。各 id に 1 行で、**既定で走る版があればそれ** (有効な版の中の最新)、
+ * 無ければ最新版を `enabled: false` で返す。既定に入らない capture scripts (カタログの `default: false`) も、
  * 名指しすれば走るので見せる —— capture-workbench はこれで新しいクロールの画面のチェックを並べ、`enabled` で
  * 初めのチェックを決める。並べ替えの `enabled desc` が「有効な版を先に」で、`distinct on` がその先頭を取る。
  * 答えは既定の実行順 (`inRunOrder`) —— workbench の初めの順がこれになる。
@@ -651,8 +651,8 @@ export const pickable = async (
 /**
  * クロールが走らせるものを決める。
  *
- * - `requested` を渡したら**その並びのまま**写しを返す。登録済みのスクリプトの名指しは各 id の最新版
- *   (無効な版でも名指しは通る)、その場の TS は登録済みのスクリプトを引かずに写す (`inlineScript`)。
+ * - `requested` を渡したら**その並びのまま**写しを返す。登録済みの capture script の名指しは各 id の最新版
+ *   (無効な版でも名指しは通る)、その場の TS は登録済みの capture scripts を引かずに写す (`inlineScript`)。
  * - 渡さなければ **有効な各 id の最新版**のうち、対象サイトの無い物と、対象サイトのどれかが起点のホストにある物を
  *   既定の実行順 (`inRunOrder`) で返す。**最新版を選んでから対象サイトで絞る** —— SQL で対象サイトを絞ってから `distinct on` すると、
  *   対象サイトの合わない最新版の代わりに、対象サイトの無い古い版が出てくる。絞るのは引いた後で、JS で。
@@ -701,7 +701,7 @@ export const resolveScripts = async (
   const twice = ids.filter((id, i) => ids.indexOf(id) !== i);
   if (twice.length > 0) return { kind: "duplicate", ids: [...new Set(twice)] };
 
-  // **登録済みのスクリプトを引くのは名指しがあるときだけ。** 空の配列は Kysely が `in ()` に組み、Postgres は
+  // **登録済みの capture scripts を引くのは名指しがあるときだけ。** 空の配列は Kysely が `in ()` に組み、Postgres は
   // 構文エラーで断る —— その場の TS だけのクロールが 500 になる。
   const named = requested.flatMap((r) => ("catalog" in r ? [r.catalog] : []));
   const rows =
@@ -733,8 +733,8 @@ const idOf = (r: RequestedScript): string =>
   "catalog" in r ? r.catalog : INLINE_PREFIX + r.inline.name;
 
 /**
- * その場の TS の写し。**形は登録済みのスクリプトの写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
- * 登録済みのスクリプトと区別しない。版は 1、options は空。sha256 は capture-ledger が source から打つ (`scripts` の生成列
+ * その場の TS の写し。**形は登録済みの capture scripts の写しと同じ** —— 段の先 (flow・変換・BrowserHive) は、
+ * 登録済みの capture scripts と区別しない。版は 1、options は空。sha256 は capture-ledger が source から打つ (`scripts` の生成列
  * `encode(digest(source, 'sha256'), 'hex')` と同じ値)。宣言 (`params`) は添えられたときだけ写す ——
  * 添えなかった物と空の宣言は別 (`crawl/values.ts`)。
  */

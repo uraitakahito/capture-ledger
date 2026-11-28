@@ -4,7 +4,7 @@
  * `astro build` が自力で捕まえるずれは 1 種類だけ: .upstream/browserhive の
  * submodule を初期化していないと、描画中に docs-site/src/lib/extract.ts から
  * throw する。固定した版を読んでいるのが .mdx のページなので、こちらはビルドが
- * 落ちる。残りはこのスクリプトの仕事:
+ * 落ちる。残りはこの capture script の仕事:
  *
  *   1. 訳の欠落 —— 日本語版の無い英語ページ、あるいは英語の原文が無い日本語
  *      ページ。Starlight はページが無いと黙って英語に落とすので、半分だけ訳した
@@ -33,7 +33,7 @@
  * 見出しを強いると日本語が悪くなる。ページの歩調を合わせるのは人の仕事で、
  * ページが消えないようにするのがこちらの仕事。
  *
- * `pnpm run site:check` (ビルド + このスクリプト) から走る。問題の一覧を出して 1 で
+ * `pnpm run site:check` (ビルド + この capture script) から走る。問題の一覧を出して 1 で
  * 終わるので、CI が PR を落とす。
  */
 import { createHash } from "node:crypto";

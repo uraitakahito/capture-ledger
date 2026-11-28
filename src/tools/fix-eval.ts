@@ -26,7 +26,7 @@ const HOST_TYPES = ".upstream/capture-scripts/types/host.d.ts";
 interface Sample {
   name: string;
   inline: string;
-  /** 一緒に走る (読むだけの) スクリプト。 */
+  /** 一緒に走る (読むだけの) capture scripts。 */
   others?: readonly [id: string, source: string][];
   /** クロールに渡された変数の名前。 */
   variableNames?: readonly string[];
@@ -49,7 +49,7 @@ const SAMPLES: readonly Sample[] = [
     inline: "await new Promise((resolve) => setTimeout(resolve, 100));\n",
   },
   {
-    name: "登録済みのスクリプトとの const step の重なり (TS2451)",
+    name: "登録済みの capture scripts との const step の重なり (TS2451)",
     inline: "const step = 1;\nvoid step;\n",
     others: [["step-catalog", "const step = 2;\nvoid step;\n"]],
   },

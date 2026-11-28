@@ -1,7 +1,7 @@
 /**
  * Windmill の変数に「在るか」「secret か」「いつ変わったか」を訊くクライアント。**値は読まない。**
  *
- * スクリプトが宣言したシークレット (`crawl/values.ts`) は Windmill の secret 変数 `f/waggle_secrets/<名前>` に
+ * Capture scripts が宣言したシークレット (`crawl/values.ts`) は Windmill の secret 変数 `f/waggle_secrets/<名前>` に
  * 結ぶ。capture-ledger が確かめるのは在るか・secret か・更新時刻だけで、値を解くのは flow の `crawl_host`。
  * 値を読まないので、capture-ledger の process にも log にも DB にも値は通らない。
  *
@@ -9,7 +9,7 @@
  *
  * 新しい env は足さない。Windmill の URL の根と workspace は `CAPTURE_LEDGER_CRAWL_WEBHOOK_URL`
  * (`<base>/api/w/<workspace>/jobs/run/f/<flow の path>`) から読み、token は `CAPTURE_LEDGER_CRAWL_WEBHOOK_TOKEN`。
- * webhook を設定していない配備にはこのクライアントも無く、シークレットを宣言したスクリプトのクロールは
+ * webhook を設定していない配備にはこのクライアントも無く、シークレットを宣言した capture script のクロールは
  * 400 で止まる (そもそも flow が無いので解く者も居ない)。
  *
  * ## `decrypt_secret=false` を必ず付ける

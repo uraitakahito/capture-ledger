@@ -101,7 +101,7 @@ describe("節目のスクリーンショットの在り処", () => {
   });
 
   it("同じ秒に撮った 2 つの時点を、url で取り違えない", async () => {
-    // 2 つの時点が同じ秒で、索引ではスクリプトの後の行が先。秒だけで選ぶと、読み込みの後の時点が別の絵を指す
+    // 2 つの時点が同じ秒で、索引では capture scripts の後の行が先。秒だけで選ぶと、読み込みの後の時点が別の絵を指す
     const same = { ...behaviors, date: "2026-11-15T01:00:00.900Z" };
     const zip = screenshotWacz([load, same], { indexOrder: [1, 0] });
     const rows = await locateStageScreenshots(zip);
@@ -193,7 +193,7 @@ describe("位置の member から絵を取り出す", () => {
     const rows = await locateStageScreenshots(zip);
     const first = rows?.[0];
     if (first?.kind !== "located") throw new Error("not located");
-    // 読み込みの後の位置を、スクリプトの後として読む
+    // 読み込みの後の位置を、capture scripts の後として読む
     expect(() =>
       pictureOf(zip.subarray(first.waczOffset, first.waczOffset + first.waczLength), {
         stage: "after-capture-scripts",

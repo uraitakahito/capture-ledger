@@ -22,7 +22,7 @@ description: クロールの段。Windmill の job の id を段の鍵として�
 
 ## 引数を持つ
 
-`args` は webhook に送る段そのもの（この段で撮る URL `frontier`・スクリプト・変数・シークレットの名前と Windmill の変数の path・User-Agent など）です。送り直しと、API を起こし直した後に投げる前の段を送るのに要ります。シークレットの値は持ちません。受け取り先の印（`artifactSink` の bearer）も残さず、送り直すときに作り直します（期限も新しくなる）。
+`args` は webhook に送る段そのもの（この段で撮る URL `frontier`・capture scripts・変数・シークレットの名前と Windmill の変数の path・User-Agent など）です。送り直しと、API を起こし直した後に投げる前の段を送るのに要ります。シークレットの値は持ちません。受け取り先の印（`artifactSink` の bearer）も残さず、送り直すときに作り直します（期限も新しくなる）。
 
 ## 数は段ごとに書く
 

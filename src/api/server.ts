@@ -143,10 +143,10 @@ const start = async (options: ServerOptions): Promise<void> => {
   registerScopeGate(app, resolveIdentity);
   registerRoutes(app, { db, fga, s3, resolveIdentity });
   registerMeRoute(app, { fga, resolveIdentity });
-  // 型の検査のクライアント (ts-compile-service を host の loopback で)。クロールとスクリプトのエンドポイントの両方が使う
+  // 型の検査のクライアント (ts-compile-service を host の loopback で)。クロールと capture scripts のエンドポイントの両方が使う
   const tsCompile = createTsCompile();
   // 何が走るかを、**頼む前に**訊けるエンドポイント。webhook の設定が無い配備でも出す ——
-  // 登録済みのスクリプトが無いことは、クロールを始められるかどうかとは別の問いなので。
+  // 登録済みの capture scripts が無いことは、クロールを始められるかどうかとは別の問いなので。
   registerScriptsRoute(app, { db, fga, resolveIdentity, ...(tsCompile && { tsCompile }) });
   // robots.txt の例外 (`046`)。表を読み書きするだけなので、webhook の無い配備でも出す。名乗りの経路を渡すのは、
   // ヘッダの経路では登録と取り消しを断るため (そこでは主体が申告なので、admin の検査が申告で満たせる)

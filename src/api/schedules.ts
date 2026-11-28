@@ -317,7 +317,7 @@ export const registerScheduleRoutes = (app: FastifyInstance, deps: ScheduleRoute
     },
   );
 
-  /** 固定し直す。頼みをいまの capture-ledger で解決し直す。スクリプトが消えていれば、同じ理由で断る。 */
+  /** 固定し直す。頼みをいまの capture-ledger で解決し直す。Capture scripts が消えていれば、同じ理由で断る。 */
   app.post<{ Params: { id: string } }>(
     "/api/schedules/:id/repin",
     { schema: { params: uuidParams } },
