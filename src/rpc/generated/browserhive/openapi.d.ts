@@ -415,6 +415,14 @@ export interface components {
              *     wacz の無い要求で true なら 400。シークレットを渡した取り込みでは、`crypto` の 2 つの値を控えない (呼んだことと長さだけ)。
              */
             recordRandom?: boolean;
+            /**
+             * @description 「この URL は robots.txt が断っていたが、登録された例外で外した」という、求める側の申告。BrowserHive は
+             *     robots.txt を読まず、申告の中身も確かめない (見るのは形だけ)。渡された値を変えずに、`datapackage.json` の
+             *     `browserhive:capture.robotsOverride` に書く。省略すれば書かない。`captureFormats.wacz` と一緒のときだけ有効で、
+             *     wacz の無い要求に付いていれば 400 (申告の行き先は BrowserHive WACZ だけ)。申告の字に隠すシークレットの値が
+             *     在る取り込みは、WACZ を作らない。
+             */
+            robotsOverride?: components["schemas"]["RobotsOverride"];
         };
         /** @description Capture の応答。結果そのものと、それを記録できたか。 */
         CaptureResponseContent: {
@@ -876,6 +884,28 @@ export interface components {
          * @enum {string}
          */
         RandomSkipped: "not-requested" | "withheld" | "failed";
+        /** @description robots.txt を例外で外した、という求める側の申告 (BrowserHive WACZ Profile の #robotsoverride)。member はみな必須。 */
+        RobotsOverride: {
+            /** @description 求める側が持つ、例外の記録の識別子。 */
+            exemptionId: string;
+            /** @description 例外の理由。登録した人が書いたとおり。Unicode の code point で 1〜500 (生成 server は code point で数える)。 */
+            reason: string;
+            /** @description 例外が当たる path の型。`/` で始まり、robots.txt の規則の path と同じ書き方 (RFC 9309)。 */
+            pathPattern: string;
+            /** @description 例外が当たるのが、起点の URL だけか (`seeds`)、そこから link を辿って着く URL もか (`links`)。 */
+            scope: components["schemas"]["RobotsOverrideScope"];
+            /** @description 例外を登録した主体。求める側の呼び方のまま。 */
+            grantedBy: string;
+            /**
+             * @description 例外が登録された時刻。UTC の RFC 3339 の date-time で、offset は `Z` と書く (`+00:00`・`-00:00` も、時差つきも形に合わない)。
+             *     型を Timestamp にしないのは、渡された字を変えずに書くため。暦に無い日時 (2 月 30 日など) は server が 400 で断る。
+             */
+            grantedAt: string;
+            /** @description 例外の期限。形は `grantedAt` と同じ。 */
+            expiresAt: string;
+        };
+        /** @enum {string} */
+        RobotsOverrideScope: "seeds" | "links";
         /**
          * @description 節目のスクリーンショットを残さなかった理由。2 つ以上が当たるときは、この並びで先の物。
          *
