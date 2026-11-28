@@ -1,0 +1,79 @@
+// roster（uraitakahito/roster）の担当が push するときの設定。書いていない欄は既定のまま。
+{
+  // roster push が、push の前に流す確かめ（書き方は roster の docs-site の設定のページの「push の前の確かめ」）。
+  // CI（ci.yaml の contract-sync と check・site.yaml）の中で、通信に依らず手元で流せる物。
+  // 入れない物: migration と smoke（Postgres）・idp（Floci）・image・audit（通信に依る）・release-version。package.json の check は audit を含むので呼ばず、1 つずつ書く。
+  // roster push は origin/main のこの欄を読むので、変えた一覧は merge の後から効く。
+  "push": {
+    "checks": [
+      {
+        "name": "format",
+        "run": ["pnpm", "run", "format:check"],
+      },
+      {
+        "name": "openapi-diff",
+        "run": ["pnpm", "run", "openapi:diff"],
+      },
+      {
+        "name": "store-name",
+        "run": ["pnpm", "run", "check:store-name"],
+      },
+      {
+        "name": "typecheck",
+        "run": ["pnpm", "run", "typecheck"],
+      },
+      {
+        "name": "lint",
+        "run": ["pnpm", "run", "lint"],
+      },
+      {
+        "name": "overrides",
+        "run": ["pnpm", "run", "check:overrides"],
+      },
+      {
+        "name": "env",
+        "run": ["pnpm", "run", "check-env"],
+      },
+      {
+        "name": "comment-refs",
+        "run": ["pnpm", "run", "check-comment-refs"],
+      },
+      {
+        "name": "flag-style",
+        "run": ["pnpm", "run", "check:flag-style"],
+      },
+      {
+        "name": "terms",
+        "run": ["pnpm", "run", "check:terms"],
+      },
+      {
+        "name": "test-hosts",
+        "run": ["pnpm", "run", "check:test-hosts"],
+      },
+      {
+        "name": "ci-parity",
+        "run": ["pnpm", "run", "check:ci-parity"],
+      },
+      {
+        "name": "fga",
+        "run": ["pnpm", "run", "fga:test"],
+      },
+      {
+        "name": "test",
+        "run": ["pnpm", "test"],
+      },
+      {
+        "name": "build",
+        "run": ["pnpm", "run", "build"],
+      },
+      {
+        "name": "openapi-check",
+        "run": ["pnpm", "run", "openapi:check"],
+      },
+      {
+        "name": "site",
+        "run": ["pnpm", "run", "site:check"],
+      },
+    ],
+  },
+}
