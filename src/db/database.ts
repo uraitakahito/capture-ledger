@@ -685,6 +685,43 @@ export interface LevelAnswer {
   stopReason: string | null;
 }
 
+/** robots.txt の例外の範囲 (`046`)。`seeds` は起点 (深さ 0) だけ、`links` は辿ったリンクも。 */
+export type RobotsExemptionScope = "seeds" | "links";
+
+/** robots.txt の例外が当たるクロール (`046`)。`all` はどのクロールにも、`human` は人が始めたクロールにだけ。 */
+export type RobotsExemptionAppliesTo = "all" | "human";
+
+/**
+ * robots.txt の例外 1 つ (`046`・t-6bc6。`exemptions/store.ts`)。組織の admin が登録し、行は消さない (取り消しは
+ * `revokedAt` を立てる)。**この版では、クロールはまだこの表を読まない。**
+ */
+export interface RobotsExemptionsTable {
+  /** 連番。bigserial なので node-pg は文字列で返す。 */
+  id: Generated<string>;
+  orgId: string;
+  /** `url.host` の形 (小文字・punycode・既定でないポートは残る)。`crawlPages.host` と同じ語彙。 */
+  host: string;
+  /** robots.txt と同じ書き方の path の型。 */
+  pathPattern: ColumnType<string, string | undefined, never>;
+  scope: ColumnType<RobotsExemptionScope, RobotsExemptionScope, never>;
+  appliesTo: ColumnType<RobotsExemptionAppliesTo, RobotsExemptionAppliesTo | undefined, never>;
+  /** このホストで名乗る名。形は `exemptions/validate.ts` が決める。 */
+  userAgent: string;
+  reason: string;
+  /** この行で外して撮る枚数の上限。24 時間で。 */
+  dailyLimit: ColumnType<number, number | undefined, never>;
+  /** 同じく、1 クロールの辿ったリンクで。 */
+  linkLimit: ColumnType<number, number | undefined, never>;
+  createdBy: string;
+  createdByName: ColumnType<string | null, string | null | undefined, never>;
+  createdAt: ColumnType<Date, string | undefined, never>;
+  expiresAt: ColumnType<Date, string, never>;
+  /** 取り消した時刻と主体。一緒に在るか一緒に無い (CHECK)。 */
+  revokedAt: ColumnType<Date | null, never, string>;
+  revokedBy: ColumnType<string | null, never, string>;
+  revokedByName: ColumnType<string | null, never, string | null>;
+}
+
 export interface Database {
   crawlSchedules: CrawlSchedulesTable;
   archives: ArchivesTable;
@@ -703,4 +740,5 @@ export interface Database {
   crawlRequests: CrawlRequestsTable;
   crawlLevels: CrawlLevelsTable;
   crawlLinks: CrawlLinksTable;
+  robotsExemptions: RobotsExemptionsTable;
 }

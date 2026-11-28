@@ -22,6 +22,7 @@ import { startupNotes, type StartupFacts } from "./startup-notes.js";
 import { registerRoutes } from "./routes.js";
 import { registerMeRoute } from "./me.js";
 import { registerScriptsRoute } from "./scripts.js";
+import { registerRobotsExemptionsRoute } from "./robots-exemptions.js";
 import { registerPicker, replaywebPlayerOriginFromEnv } from "./picker.js";
 import { parseCaptureFormats } from "../config/capture-formats.js";
 import { registerCrawlRoutes } from "./crawls.js";
@@ -147,6 +148,15 @@ const start = async (options: ServerOptions): Promise<void> => {
   // 何が走るかを、**頼む前に**訊けるエンドポイント。webhook の設定が無い配備でも出す ——
   // 登録済みのスクリプトが無いことは、クロールを始められるかどうかとは別の問いなので。
   registerScriptsRoute(app, { db, fga, resolveIdentity, ...(tsCompile && { tsCompile }) });
+  // robots.txt の例外 (`046`)。表を読み書きするだけなので、webhook の無い配備でも出す。名乗りの経路を渡すのは、
+  // ヘッダの経路では登録と取り消しを断るため (そこでは主体が申告なので、admin の検査が申告で満たせる)
+  registerRobotsExemptionsRoute(app, {
+    db,
+    fga,
+    resolveIdentity,
+    identityMode: identity.mode,
+    now: () => new Date(),
+  });
 
   // 成果物の受け取り先。**BrowserHive が保管庫を持たずに済むためのエンドポイント。**
   //

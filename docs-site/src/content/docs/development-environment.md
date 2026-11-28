@@ -457,6 +457,9 @@ reaches it (the organization's permission narrows those). If you add a `GET` rou
 something, revisit the gate (`src/api/scope.ts`). A machine token is obtained by asking for `crawl` or
 `crawl.start`; a token with neither gets 403 even on `GET`. `POST /api/crawls/:id/failed`
 only closes the row — it does not stop the crawl, and the flow keeps running — so `ai` does not get it.
+Registering and revoking [exemptions from robots.txt](/capture-ledger/archive-ledger/#exemptions-from-robotstxt)
+(`POST /api/robots-exemptions` and `POST /api/robots-exemptions/:id/revoke`) are not open to `ai` either. A machine token
+with the wide scope (`crawl`) passes the gate, but the route refuses a machine identity with 403 (only a person who is an admin registers and revokes).
 
 **Stopping it takes three steps.** Cognito has no way to stop a machine token before it expires.
 

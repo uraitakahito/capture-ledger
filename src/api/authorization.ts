@@ -31,27 +31,21 @@ export const unauthorized = (reply: FastifyReply): FastifyReply =>
   reply.code(401).send({ error: "unauthenticated" });
 
 /**
- * この呼び出し元が、**どれか 1 つでも**自分の組織で取り込みを始めてよいか。
- *
- * 頼みは撮る URL を言うだけで組織を言わないので、「どの組織について訊くか」を選べない。
- * 許されている組織がどこかに 1 つあれば始められる、とする —— **許しをくれた組織と、クロールが
- * 帰属する組織 (呼び出し元の 1 つ目) は同じとは限らない**。組織を跨いで信頼できる相手にだけ
- * `submitter` を与えること。
- *
- * **contextual tuple を送らない。** `routes.ts` の `can_view` はそれを送るが、あちらは
- * 特定の archive について訊くので object が組織を固定する。こちらの object は呼び出し元が
- * 名乗った組織なので、所属の申告を一緒に渡すと「member だと言った者に member か訊く」
- * 形になり、検査が常に通る。実際そう書いて往復で見つけた。判断材料は**保存された
- * tuple だけ**にする。
+ * 名乗りの組織のうち、取り込みを始めてよい (`can_submit`) 組織。`maySubmit` の検査そのもので、**写しではない** ——
+ * `maySubmit` はこれが空でないかを見る。組織ごとの物 (robots.txt の例外の一覧) は、ここで残った組織だけを引く。
+ * contextual tuple を送らない訳は、下の `maySubmit` の注。
  */
-export const maySubmit = async (fga: OpenFgaClient, identity: Identity): Promise<boolean> => {
+export const submittableOrganizations = async (
+  fga: OpenFgaClient,
+  identity: Identity,
+): Promise<string[]> => {
   // 組織を持たない呼び出し元は誰でもない —— 訊く相手が無いので拒む。
   //
   // **この行は挙動を変えない。** 空配列を `Promise.all` に渡せば `[]` が返り、
-  // `includes(true)` は false になるので、消しても同じ答えになる (反証で確認)。
+  // 残る組織は無いので、消しても同じ答えになる (反証で確認)。
   // 残してあるのは意図を書き残すためで、`Promise.all([])` の性質に意味を預けたく
   // ないから。**どんな試験もこの行の有無を区別できない**ことは承知のうえ。
-  if (identity.organizations.length === 0) return false;
+  if (identity.organizations.length === 0) return [];
   const results = await Promise.all(
     identity.organizations.map(async (org) => {
       const { allowed } = await fga.check(
@@ -68,7 +62,44 @@ export const maySubmit = async (fga: OpenFgaClient, identity: Identity): Promise
       return allowed === true;
     }),
   );
-  return results.includes(true);
+  return identity.organizations.filter((_, index) => results[index] === true);
+};
+
+/**
+ * この呼び出し元が、**どれか 1 つでも**自分の組織で取り込みを始めてよいか。
+ *
+ * 頼みは撮る URL を言うだけで組織を言わないので、「どの組織について訊くか」を選べない。
+ * 許されている組織がどこかに 1 つあれば始められる、とする —— **許しをくれた組織と、クロールが
+ * 帰属する組織 (呼び出し元の 1 つ目) は同じとは限らない**。組織を跨いで信頼できる相手にだけ
+ * `submitter` を与えること。
+ *
+ * **contextual tuple を送らない。** `routes.ts` の `can_view` はそれを送るが、あちらは
+ * 特定の archive について訊くので object が組織を固定する。こちらの object は呼び出し元が
+ * 名乗った組織なので、所属の申告を一緒に渡すと「member だと言った者に member か訊く」
+ * 形になり、検査が常に通る。実際そう書いて往復で見つけた。判断材料は**保存された
+ * tuple だけ**にする。
+ */
+export const maySubmit = async (fga: OpenFgaClient, identity: Identity): Promise<boolean> =>
+  (await submittableOrganizations(fga, identity)).length > 0;
+
+/**
+ * この主体が、その組織の admin か。robots.txt の例外の登録と取り消しが訊く (`api/robots-exemptions.ts`)。
+ *
+ * 関係 `admin` を**直に**訊く (`can_submit` は submitter も通すので使わない)。`maySubmit` と同じく
+ * **contextual tuple を送らない** —— 判断材料は保存された tuple だけ。組織は呼び手が本文で名指すので、
+ * 所属の申告を一緒に渡すと「言った者に訊く」形になる。付けるのは `pnpm run fga:grant admin <主体> <組織>`。
+ */
+export const isOrganizationAdmin = async (
+  fga: OpenFgaClient,
+  subject: string,
+  orgId: string,
+): Promise<boolean> => {
+  const { allowed } = await fga.check(
+    { user: `user:${subject}`, relation: "admin", object: `organization:${orgId}` },
+    // 取り消しが即座に効くべき側。外した admin に、例外を登録させない。
+    { consistency: ConsistencyPreference.HigherConsistency },
+  );
+  return allowed === true;
 };
 
 /**

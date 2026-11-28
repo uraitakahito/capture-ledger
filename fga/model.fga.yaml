@@ -185,3 +185,55 @@ tests:
         object: organization:acme
         assertions:
           can_submit: false
+
+  # robots.txt の例外 (`api/robots-exemptions.ts`) の登録と取り消しは、`can_submit` ではなく関係 `admin` を
+  # 直に訊く。下の 3 本は、その問いそのもの。`admin` に submitter や member への経路を足すと赤くなる。
+  - name: 組織の admin は admin の関係を持つ
+    tuples:
+      - user: user:erin
+        relation: admin
+        object: organization:acme
+    check:
+      - user: user:erin
+        object: organization:acme
+        assertions:
+          admin: true
+
+  - name: submitter は始められるが、admin の関係は持たない
+    tuples:
+      - user: user:bob
+        relation: submitter
+        object: organization:acme
+    check:
+      - user: user:bob
+        object: organization:acme
+        assertions:
+          can_submit: true
+          admin: false
+
+  # 所属は呼び出し元の申告。これが true になると、名乗っただけで例外を登録できる。
+  - name: 所属しているだけでは admin の関係を持たない
+    tuples:
+      - user: user:carol
+        relation: member
+        object: organization:acme
+    check:
+      - user: user:carol
+        object: organization:acme
+        assertions:
+          admin: false
+
+  - name: 別の組織の admin は、その組織でしか admin の関係を持たない
+    tuples:
+      - user: user:frank
+        relation: admin
+        object: organization:contoso
+    check:
+      - user: user:frank
+        object: organization:acme
+        assertions:
+          admin: false
+      - user: user:frank
+        object: organization:contoso
+        assertions:
+          admin: true

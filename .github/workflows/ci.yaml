@@ -193,6 +193,14 @@ jobs:
       - name: Level report against Postgres
         run: pnpm run build:tools && node dist/tools/level-report-smoke.js
 
+      # robots.txt の例外の表 (t-6bc6・`046`) と store を、本物の Postgres に当てる。
+      #
+      # 同時の登録が 1 本だけ通ること (行が 1 つも無い所から並べて撃つ。advisory lock を外すと赤くなる)・同時の
+      # 取り消し・CHECK と既定・bigserial と timestamptz の読み返しは、試験の記録する DB では確かめられない。
+      # 自分の組織 (smoke-<pid>) の行だけを足して、最後に消す。
+      - name: Robots exemptions against Postgres
+        run: pnpm run build:tools && node dist/tools/robots-exemptions-smoke.js
+
       # 契約 (openapi.json) から生成した型が、コミットされた物と一致するか。
       - name: OpenAPI types drift check
         run: pnpm run openapi:check
