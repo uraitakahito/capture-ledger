@@ -6,7 +6,8 @@
  *   - ホストは `url.host` の形に整える (`crawl_pages.host` と同じ語彙)。wildcard は持たない
  *   - path の型は robots.txt と同じ書き方の 1 行。改行や `#` を許すと、型を robots.txt の規則として読む側が
  *     別の規則・注として読み、判じが覆る
- *   - 名乗る User-Agent は、道具の名 (`BrowserHive/<版>`) と括弧の注 1 つに限る。browser の名に見せかける字を断る
+ *   - 名乗る User-Agent は、道具の名 (`BrowserHive/<版>`) と、説明の頁の URL を書く括弧の注 1 つに限る。
+ *     browser やほかのクローラの名に見せかける字を断る
  *
  * 断りは、欄の名前と決まった英語の句で返す (`problem`)。句は画面が訳す鍵になるので、字を変える時は
  * capture-workbench の訳の表と揃える。
@@ -63,15 +64,19 @@ export const pathPatternProblem = (pattern: string): string | undefined => {
   return undefined;
 };
 
-/** 道具の名と、任意の括弧の注 1 つ。注の中身は下の `NOTE` で見る。 */
-const USER_AGENT_FORM = /^BrowserHive\/[0-9A-Za-z.+-]{1,32}(?: \(([^()]*)\))?$/;
-/** 注: 英数字・空白・`.,;:_+-` の並びで、終わりに `+https://…` (か `+http://…`) の URL を 1 つだけ置ける。 */
-const NOTE = /^[0-9A-Za-z .,;:_+-]*(?:\+(https?:\/\/[\x21-\x27\x2a-\x7e]+))?$/;
 /**
- * browser の印の語。字のどこに在っても断る (大文字小文字を問わない。URL の中も)。`{chrome}` はクロールの
- * User-Agent の欄の置き換えの字で、`chrome` に含まれるが、意図を残すために並べる。
+ * 道具の名と、任意の括弧の注 1 つ。注に書けるのは、名乗りを説明する頁の URL (`+https://…` か `+http://…`) だけ ——
+ * 地の文を許すと、`(compatible; Googlebot)` のように別の道具や browser の名を並べて名乗れてしまう。
  */
-const BROWSER_WORDS = [
+const USER_AGENT_FORM =
+  /^BrowserHive\/[0-9A-Za-z.+-]{1,32}(?: \(\+(https?:\/\/[\x21-\x27\x2a-\x7e]+)\))?$/;
+/**
+ * browser と、よく知られたクローラの印の語。字のどこに在っても断る (大文字小文字を問わない)。形で注を URL だけに
+ * 絞ってあるので、これが効くのは URL の中 —— UA を見分ける側は字のどこかの `Chrome`・`Googlebot` を探すので、
+ * URL の中でも見せかけの効き目は同じ。並びで閉じ切ることはできない (形の絞りが主で、これは念のため)。
+ * `{chrome}` はクロールの User-Agent の欄の置き換えの字で、`chrome` に含まれるが、意図を残すために並べる。
+ */
+const OTHER_AGENT_WORDS = [
   "mozilla",
   "chrome",
   "safari",
@@ -83,15 +88,27 @@ const BROWSER_WORDS = [
   "crios",
   "fxios",
   "{chrome}",
+  "compatible",
+  "googlebot",
+  "bingbot",
+  "twitterbot",
+  "facebookexternalhit",
+  "applebot",
+  "slurp",
+  "duckduckbot",
+  "baiduspider",
+  "yandex",
+  "linkedinbot",
+  "slackbot",
+  "discordbot",
+  "gptbot",
+  "claudebot",
 ];
+/** 短くて、ほかの語の一部にもなる印 (`knowledge` の edg、`cooperate` の opera)。語の境目で当てる。 */
+const OTHER_AGENT_SHORT_WORDS = /\b(?:edg|edge|edga|edgios|opr|opera)\b/i;
 /**
- * 短くて、ほかの語の一部にもなる印 (`knowledge` の edg、`cooperate` の opera)。語の境目で当てる。
- * UA を見分ける側は `Edg/131`・`OPR/115`・`MSIE 10` のように字のどこかの形を探すので、注の中でも URL の中でも断る。
- */
-const BROWSER_SHORT_WORDS = /\b(?:edg|edge|edga|edgios|opr|opera)\b/i;
-/**
- * 注の URL の中の、製品の印の形 (`<語>/<数字>`: `…/Edg/131.0`・`…/Version/17`)。注の地の文は `/` を許さないので、
- * 印の形を置けるのは URL だけ。
+ * URL の中の、製品の印の形 (`<語>/<数字>`: `…/Edg/131.0`・`…/Version/17`)。日付や番号の段 (`…/docs/2024`) も
+ * 同じ形なので断る —— 字の形が製品の印と見分けられない。
  */
 const PRODUCT_TOKEN_IN_URL = /[A-Za-z]\/\d/;
 
@@ -101,19 +118,20 @@ export const userAgentProblem = (userAgent: string): string | undefined => {
     return `userAgent must be at most ${String(USER_AGENT_MAX)} characters`;
   }
   const lower = userAgent.toLowerCase();
-  if (BROWSER_WORDS.some((word) => lower.includes(word)) || BROWSER_SHORT_WORDS.test(userAgent)) {
-    return "userAgent must not contain a browser token (mozilla, chrome, safari, applewebkit, gecko, firefox, msie, trident, crios, fxios, edg, edge, opr, opera)";
+  if (
+    OTHER_AGENT_WORDS.some((word) => lower.includes(word)) ||
+    OTHER_AGENT_SHORT_WORDS.test(userAgent)
+  ) {
+    return "userAgent must not contain the name of a browser or of another crawler";
   }
-  const form = "userAgent must be BrowserHive/<version>, optionally followed by one (comment)";
-  const matched = USER_AGENT_FORM.exec(userAgent);
-  if (matched === null) return form;
-  const note = matched[1];
-  if (note === undefined) return undefined;
-  if (note === "" || note !== note.trim()) return form;
-  const url = NOTE.exec(note);
-  if (url === null) return form;
-  if (url[1] !== undefined && (!URL.canParse(url[1]) || PRODUCT_TOKEN_IN_URL.test(url[1])))
-    return form;
+  const form =
+    "userAgent must be BrowserHive/<version>, optionally followed by (+https://…) naming a page that describes it";
+  const url = USER_AGENT_FORM.exec(userAgent)?.[1];
+  if (!USER_AGENT_FORM.test(userAgent)) return form;
+  if (url !== undefined && !URL.canParse(url)) return form;
+  if (url !== undefined && PRODUCT_TOKEN_IN_URL.test(url)) {
+    return "userAgent URL must not hold a letter followed by / and a digit (the form of a product token)";
+  }
   return undefined;
 };
 

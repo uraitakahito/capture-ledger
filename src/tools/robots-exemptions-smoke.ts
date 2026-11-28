@@ -49,7 +49,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 const DAY = 86_400_000;
-const UA = "BrowserHive/1.0 (web archiving; user-directed capture)";
+const UA = "BrowserHive/1.0 (+https://site.test/bot)";
 /** 同時に撃つ本数。pg の pool の既定 (10 本) に収め、どれも自分の接続で走らせる。 */
 const PARALLEL = 8;
 

@@ -1179,18 +1179,18 @@ Within one organization and host, at most one row is in effect per path pattern,
 
 ### The User-Agent does not pretend
 
-`userAgent` is required, and its form is limited to the tool's name and one comment in parentheses.
+`userAgent` is required, and its form is limited to the tool's name and one comment in parentheses that holds nothing but the URL of a page describing it.
 
 ```text
 BrowserHive/1.0
-BrowserHive/1.0 (web archiving; user-directed capture)
-BrowserHive/1.0 (evidence capture; +https://example.test/bot)
+BrowserHive/1.0 (+https://example.test/bot)
 ```
 
 - It starts with `BrowserHive/<version>`; the version is letters, digits and `.+-`, at most 32 characters.
-- One optional comment: letters, digits, spaces and `.,;:_+-`, which may end with exactly one `+https://…` (or `+http://…`) URL.
+- One optional comment, which is exactly one `+https://…` (or `+http://…`) URL. Free text is not accepted: it would let the string line up the name of another crawler or of a browser (`(compatible; Googlebot)`).
 - At most 512 characters in all.
-- Nowhere in it may `mozilla`, `chrome`, `safari`, `applewebkit`, `gecko`, `firefox`, `msie`, `trident`, `crios`, `fxios` (in any case) or `{chrome}` appear, nor the words `edg`, `edge`, `edga`, `edgios`, `opr`, `opera`. The URL may not hold the form of a product token (`<word>/<digit>`, as in `/Edg/131.0`). A string that lines up another product token (`BrowserHive/1.0 Chrome/131.0`) is refused by its form as well.
+- Nowhere in it, the URL included, may the name of a browser or of a well-known crawler appear (`mozilla`, `chrome`, `safari`, `applewebkit`, `gecko`, `firefox`, `msie`, `trident`, `crios`, `fxios`, `compatible`, `googlebot`, `bingbot`, `twitterbot`, `facebookexternalhit`, `applebot` and the like, in any case; `{chrome}`; the words `edg`, `edge`, `edga`, `edgios`, `opr`, `opera`).
+- The path of the URL may not hold a letter followed by `/` and a digit. That is the form of a product token (`/Edg/131.0`), and a date or number segment (`/docs/2024`) cannot be told from it, so it is refused as well.
 
 ### API
 
@@ -1203,7 +1203,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-exemptio
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   http://127.0.0.1:7070/api/robots-exemptions \
   -d '{"orgId":"acme","host":"example.test","pathPattern":"/*/status/*","scope":"seeds",
-       "userAgent":"BrowserHive/1.0 (evidence capture; +https://example.test/bot)",
+       "userAgent":"BrowserHive/1.0 (+https://example.test/bot)",
        "reason":"keep a public post as evidence","expiresAt":"2026-12-28T00:00:00+09:00"}'
 # → 201 and the registered row
 

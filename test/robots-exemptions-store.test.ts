@@ -17,7 +17,7 @@ import { recordingDb } from "./recording-db.js";
  */
 const NOW = new Date("2026-11-28T03:00:00.000Z");
 const EXPIRES = new Date("2026-12-28T03:00:00.000Z");
-const UA = "BrowserHive/1.0 (web archiving; user-directed capture)";
+const UA = "BrowserHive/1.0 (+https://site.test/bot)";
 
 const exemption = (overrides: Partial<NewExemption> = {}): NewExemption => ({
   orgId: "acme",

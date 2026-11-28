@@ -1058,18 +1058,18 @@ WACZ は `can_view` で絞りますが、失敗した取り込みには WACZ が
 
 ### 名乗りは偽らない
 
-`userAgent` は必須で、形は道具の名と括弧の注 1 つに限ります。
+`userAgent` は必須で、形は道具の名と、名乗りを説明する頁の URL だけを書く括弧の注 1 つに限ります。
 
 ```text
 BrowserHive/1.0
-BrowserHive/1.0 (web archiving; user-directed capture)
-BrowserHive/1.0 (evidence capture; +https://example.test/bot)
+BrowserHive/1.0 (+https://example.test/bot)
 ```
 
 - 頭は `BrowserHive/<版>`。版は英数字と `.+-` で 32 字まで。
-- 注は任意で 1 つ。英数字・空白・`.,;:_+-` の並びで、終わりに `+https://…`（か `+http://…`）の URL を 1 つだけ置けます。
+- 注は任意で 1 つ。中身は `+https://…`（か `+http://…`）の URL ちょうど 1 つです。地の文は書けません（`(compatible; Googlebot)` のように、ほかのクローラや browser の名を並べて名乗れてしまうため）。
 - 全体で 512 字まで。
-- 字のどこにも、`mozilla`・`chrome`・`safari`・`applewebkit`・`gecko`・`firefox`・`msie`・`trident`・`crios`・`fxios`（大文字小文字を問わない）と `{chrome}` を含められません。語としての `edg`・`edge`・`edga`・`edgios`・`opr`・`opera` も同じです。URL には、製品の印の形（`<語>/<数字>`。`/Edg/131.0` など）を置けません。ほかの製品の印を並べた字（`BrowserHive/1.0 Chrome/131.0`）も、形で断ります。
+- 字のどこにも（URL の中も）、browser とよく知られたクローラの名を含められません（`mozilla`・`chrome`・`safari`・`applewebkit`・`gecko`・`firefox`・`msie`・`trident`・`crios`・`fxios`・`compatible`・`googlebot`・`bingbot`・`twitterbot`・`facebookexternalhit`・`applebot` など。大文字小文字を問わない。`{chrome}` と、語としての `edg`・`edge`・`edga`・`edgios`・`opr`・`opera` も）。
+- URL の path に、英字の直後の `/` と数字は置けません。製品の印の形（`/Edg/131.0`）で、日付や番号の段（`/docs/2024`）もこれと見分けられないので、同じく断ります。
 
 ### API
 
@@ -1082,7 +1082,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7070/api/robots-exemptio
 curl -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   http://127.0.0.1:7070/api/robots-exemptions \
   -d '{"orgId":"acme","host":"example.test","pathPattern":"/*/status/*","scope":"seeds",
-       "userAgent":"BrowserHive/1.0 (evidence capture; +https://example.test/bot)",
+       "userAgent":"BrowserHive/1.0 (+https://example.test/bot)",
        "reason":"公開の投稿を証拠として残す","expiresAt":"2026-12-28T00:00:00+09:00"}'
 # → 201 と、登録した行
 

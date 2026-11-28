@@ -81,12 +81,11 @@ describe("userAgentProblem", () => {
   it.each([
     "BrowserHive/1.0",
     "BrowserHive/32.1.1+build-7",
-    "BrowserHive/1.0 (web archiving; user-directed capture)",
-    "BrowserHive/1.0 (evidence capture; +https://example.test/bot)",
-    "BrowserHive/1.0 (+http://example.test/bot)",
-    // browser の印の語を一部に含むだけの語は断らない
-    "BrowserHive/1.0 (knowledge archive)",
-    "BrowserHive/1.0 (cooperate; operation)",
+    "BrowserHive/1.0 (+https://site.test/bot)",
+    "BrowserHive/1.0 (+http://site.test/bot)",
+    // 印の語を一部に含むだけの語は断らない
+    "BrowserHive/1.0 (+https://site.test/knowledge)",
+    "BrowserHive/1.0 (+https://cooperate.test/operation)",
   ])("%s は通る", (userAgent) => {
     expect(userAgentProblem(userAgent)).toBeUndefined();
   });
@@ -101,21 +100,31 @@ describe("userAgentProblem", () => {
     " BrowserHive/1.0",
     "BrowserHive/1.0 OtherBot/2.0",
     "BrowserHive/1.0 ()",
-    "BrowserHive/1.0 ( padded )",
-    "BrowserHive/1.0 (a) (b)",
-    "BrowserHive/1.0 (a (b))",
-    "BrowserHive/1.0 (a/b)",
-    "BrowserHive/1.0 (bot\nX-Injected: 1)",
     "BrowserHive/1.0\n",
-    // URL は終わりに 1 つだけ。空白と括弧を含まない
-    "BrowserHive/1.0 (+https://example.test/a +https://example.test/b)",
-    "BrowserHive/1.0 (+https://example.test/bot; contact)",
-    "BrowserHive/1.0 (+ftp://example.test/bot)",
+    // 注に書けるのは URL だけ。地の文は書けない
+    "BrowserHive/1.0 (web archiving; user-directed capture)",
+    "BrowserHive/1.0 (evidence capture; +https://site.test/bot)",
+    "BrowserHive/1.0 (Windows NT 10.0; Win64; x64)",
+    "BrowserHive/1.0 (a) (b)",
+    "BrowserHive/1.0 (bot\nX-Injected: 1)",
+    // URL は 1 つだけ。空白と括弧を含まない
+    "BrowserHive/1.0 (+https://site.test/a +https://site.test/b)",
+    "BrowserHive/1.0 (+https://site.test/bot; contact)",
+    "BrowserHive/1.0 ( +https://site.test/bot )",
+    "BrowserHive/1.0 (+ftp://site.test/bot)",
     "BrowserHive/1.0 (+https://)",
-    // URL の中の、製品の印の形 (<語>/<数字>)
-    "BrowserHive/1.0 (+https://site.test/Version/17.0)",
+    "BrowserHive/1.0 (https://site.test/bot)",
   ])("%j は形で断る", (userAgent) => {
     expect(userAgentProblem(userAgent)).toContain("must be BrowserHive/<version>");
+  });
+
+  it.each([
+    "BrowserHive/1.0 (+https://site.test/Version/17.0)",
+    "BrowserHive/1.0 (+https://site.test/Brave/1.60)",
+    // 日付や番号の段も同じ形なので断る
+    "BrowserHive/1.0 (+https://site.test/docs/2024)",
+  ])("%j は URL の中の製品の印の形で断る", (userAgent) => {
+    expect(userAgentProblem(userAgent)).toContain("form of a product token");
   });
 
   it.each([
@@ -125,27 +134,30 @@ describe("userAgentProblem", () => {
     "BrowserHive/1.0 ({chrome})",
     "{chrome} BrowserHive/1.0",
     "BrowserHive/1.0 (like GECKO)",
-    "BrowserHive/1.0 (safari compatible)",
     "BrowserHive/1.0 (AppleWebKit)",
-    "BrowserHive/1.0 (firefox)",
     // IE の名乗りの注の形
     "BrowserHive/1.0 (compatible; MSIE 10.0; Windows NT 6.2)",
-    "BrowserHive/1.0 (Trident 7.0)",
-    // 短い印は語の境目で当てる。注の中でも URL の中でも
-    "BrowserHive/1.0 (Edg 131)",
+    // ほかのクローラの名
+    "BrowserHive/1.0 (compatible; Twitterbot)",
+    "BrowserHive/1.0 (compatible; Googlebot; +http://www.google.com/bot.html)",
+    "BrowserHive/1.0 (facebookexternalhit)",
+    // 語は字のどこに在っても断る (URL の中も)。短い印は語の境目で当てる
+    "BrowserHive/1.0 (+https://site.test/chrome)",
+    "BrowserHive/1.0 (+https://site.test/Googlebot)",
     "BrowserHive/1.0 (+https://site.test/Edg/131.0)",
-    "BrowserHive/1.0 (Windows NT 10.0; Win64; x64 +https://site.test/OPR/115.0)",
-    "BrowserHive/1.0 (Opera 12)",
-    // 語は字のどこに在っても断る (URL の中も)
-    "BrowserHive/1.0 (+https://example.test/chrome)",
-  ])("%j は browser の印の語で断る", (userAgent) => {
-    expect(userAgentProblem(userAgent)).toContain("browser token");
+    "BrowserHive/1.0 (+https://site.test/OPR/115.0)",
+    "BrowserHive/1.0 (+https://opera.test/bot)",
+  ])("%j はほかの名乗りの語で断る", (userAgent) => {
+    expect(userAgentProblem(userAgent)).toContain("name of a browser or of another crawler");
   });
 
   it("512 字を超えたら断る", () => {
-    const note = "a".repeat(512);
-    expect(userAgentProblem(`BrowserHive/1.0 (${note})`)).toContain("at most 512");
-    expect(userAgentProblem(`BrowserHive/1.0 (${"a".repeat(494)})`)).toBeUndefined();
+    expect(userAgentProblem(`BrowserHive/1.0 (+https://site.test/${"a".repeat(512)})`)).toContain(
+      "at most 512",
+    );
+    const fits = `BrowserHive/1.0 (+https://site.test/${"a".repeat(512 - 37)})`;
+    expect(fits).toHaveLength(512);
+    expect(userAgentProblem(fits)).toBeUndefined();
   });
 });
 
@@ -175,7 +187,7 @@ describe("checkExemption", () => {
   const request = (overrides: ExemptionRequest = {}): ExemptionRequest => ({
     host: "Site.TEST",
     scope: "seeds",
-    userAgent: "BrowserHive/1.0 (web archiving; user-directed capture)",
+    userAgent: "BrowserHive/1.0 (+https://site.test/bot)",
     reason: "  公開の投稿を証拠として残す  ",
     expiresAt: "2026-12-28T03:00:00Z",
     ...overrides,
@@ -193,7 +205,7 @@ describe("checkExemption", () => {
         pathPattern: "/",
         scope: "seeds",
         appliesTo: "all",
-        userAgent: "BrowserHive/1.0 (web archiving; user-directed capture)",
+        userAgent: "BrowserHive/1.0 (+https://site.test/bot)",
         reason: "公開の投稿を証拠として残す",
         expiresAt: new Date("2026-12-28T03:00:00.000Z"),
         dailyLimit: 100,
